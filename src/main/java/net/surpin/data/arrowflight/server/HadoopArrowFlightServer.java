@@ -71,23 +71,12 @@ public class HadoopArrowFlightServer {
         hadoopConfig.setInt("io.file.buffer.size", 131072); // 128KB
         hadoopConfig.setBoolean("dfs.client.read.shortcircuit", true);
         hadoopConfig.setBoolean("dfs.client.read.shortcircuit.skip.checksum", false);
+        hadoopConfig.setBoolean("fs.file.impl.disable.cache", true);
 
         try {
             this.fileSystem = FileSystem.get(hadoopConfig);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
-        } catch (UnsupportedOperationException e) {
-            // Java 21+: Subject.getSubject(AccessControlContext) was removed; UGI cannot obtain
-            // current user via the legacy security-manager API. Fall back to a direct LocalFileSystem
-            // (no UGI lookup needed) for local-filesystem data directories.
-            LOGGER.warn("Subject.getSubject() not supported (Java 21+) – falling back to LocalFileSystem", e);
-            try {
-                org.apache.hadoop.fs.LocalFileSystem localFs = new org.apache.hadoop.fs.LocalFileSystem();
-                localFs.initialize(java.net.URI.create("file:///"), hadoopConfig);
-                this.fileSystem = localFs;
-            } catch (IOException ioe) {
-                throw new UncheckedIOException(ioe);
-            }
         }
 
         // Инициализация менеджера Parquet файлов
@@ -167,6 +156,14 @@ public class HadoopArrowFlightServer {
         if (allocator != null) {
             allocator.close();
             LOGGER.info("Arrow allocator закрыт");
+        }
+        if (fileSystem != null) {
+            try {
+                fileSystem.close();
+            } catch (IOException e) {
+                throw new RuntimeException("Ошибка закрытия файловой системы", e);
+            }
+            LOGGER.info("Файловая система закрыта");
         }
     }
 
