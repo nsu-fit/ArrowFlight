@@ -74,7 +74,7 @@ public class HadoopArrowFlightServer {
         hadoopConfig.setBoolean("fs.file.impl.disable.cache", true);
 
         try {
-            this.fileSystem = FileSystem.get(hadoopConfig);
+            this.fileSystem = new Path(dataDirectory).getFileSystem(hadoopConfig);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
