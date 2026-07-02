@@ -96,8 +96,6 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
 
     @Override
     protected <T extends Message> List<FlightEndpoint> determineEndpoints(T request, FlightDescriptor descriptor, Schema schema) {
-        Ticket ticket = new Ticket(Any.pack(request).toByteArray());
-
         try {
             if (request instanceof FlightSql.TicketStatementQuery statementQuery) {
                 final ByteString handle = statementQuery.getStatementHandle();
@@ -143,6 +141,7 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
                         endpoints.size(), sortedPaths.size(), query);
                 return endpoints;
             } else {
+                Ticket ticket = new Ticket(Any.pack(request).toByteArray());
                 return List.of(new FlightEndpoint(ticket, this.location));
             }
         } catch (IOException e) {
@@ -371,117 +370,22 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
 
         // Per-server ticket: this server owns all files in the "files" list.
         String[] filePaths = (String[]) statementCache.get(cacheKey(handle, "files"));
-        if (filePaths != null) {
-            LOGGER.info("Server-grouped getStream: {} file(s), query='{}'", filePaths.length, query);
-            try {
-                // readParquet delegates to executeAggregation for aggregation queries.
-                // Both paths receive all files at once → single FileSystemDatasetFactory
-                // lets Arrow Dataset's internal C++ thread pool parallelise the scan.
-                parquetManager.readParquet(allocator, query, filePaths, listener, true);
-                listener.completed();
-            } catch (Exception e) {
-                LOGGER.error("Failed to process server-grouped ticket, files: " + Arrays.toString(filePaths), e);
-                listener.error(e);
-            }
+        if (filePaths == null) {
+            String msg = "No 'files' entry found in cache for handle: " + handle;
+            LOGGER.error(msg);
+            listener.error(new IllegalStateException(msg));
             return;
         }
 
-        // Legacy claiming path (backward compatibility for handles without a "file" entry).
-        String[] paths = (String[]) statementCache.get(cacheKey(handle, "paths"));
-        if (paths == null) {
-            LOGGER.error("No 'file' or 'paths' entry found in cache for handle: {}", handle);
-            listener.error(new IllegalStateException("Unknown ticket handle: " + handle));
-            return;
-        }
-
-        LOGGER.info("Got statement by ticket {} with {} paths: {}", ticket, paths.length, query);
-        String localhost = location.getUri().getHost();
-
-        // Aggregation queries must be computed over ALL claimed files in a single pass
-        // so that each node emits one complete (possibly partial-group) result rather
-        // than N per-file partial results that the client cannot merge automatically.
-        boolean isAggregation = ParquetQueryParser.parse(query).hasAggregation;
-
+        LOGGER.info("Server-grouped getStream: {} file(s), query='{}'", filePaths.length, query);
         try {
-            List<String> deferred = new ArrayList<>();
-            // Accumulate all claimed paths regardless of query type.
-            // All files are passed to a single readParquet() call so that the listener
-            // is started once (with one VectorSchemaRoot) and every putNext() uses
-            // that same root — reading each file independently would start a new
-            // ArrowReader with a different root, causing subsequent putNext() calls
-            // to silently send stale/empty data from the first (already-cleared) root.
-            List<String> claimedPaths = new ArrayList<>();
-
-            // Pass 1: claim files that have blocks on this node.
-            for (String path : paths) {
-                String key = cacheKey(handle, "path", path);
-                boolean claimed = false;
-                try {
-                    statementCache.lock(key);
-                    if (!statementCache.containsKey(key)) {
-                        LOGGER.info("Pass 1: path '{}' already claimed by another node", path);
-                        continue;
-                    }
-                    String[] hostsForPath = (String[]) Objects.requireNonNull(statementCache.get(key));
-                    if (Arrays.asList(hostsForPath).contains(localhost)) {
-                        statementCache.remove(key);
-                        claimed = true;
-                        LOGGER.info("Pass 1: claimed local path '{}' on '{}'", path, localhost);
-                    } else {
-                        LOGGER.info("Pass 1: path '{}' is not local on '{}', deferring to pass 2", path, localhost);
-                        deferred.add(path);
-                    }
-                } finally {
-                    statementCache.unlock(key);
-                }
-                if (claimed) {
-                    claimedPaths.add(path);
-                }
-            }
-
-            // Give data-local nodes a head start before stealing unclaimed files.
-            if (deferred.size() == paths.length && paths.length > 0) {
-                LOGGER.info("Pass 1: no local paths on '{}', waiting briefly before pass 2", localhost);
-                Thread.sleep(500);
-            }
-
-            // Pass 2: claim whatever is still unclaimed (covers orphaned / non-local files).
-            for (String path : deferred) {
-                String key = cacheKey(handle, "path", path);
-                boolean claimed = false;
-                try {
-                    statementCache.lock(key);
-                    if (statementCache.containsKey(key)) {
-                        statementCache.remove(key);
-                        claimed = true;
-                        LOGGER.info("Pass 2: claimed orphaned path '{}' on '{}'", path, localhost);
-                    } else {
-                        LOGGER.info("Pass 2: path '{}' was claimed by its local node", path);
-                    }
-                } finally {
-                    statementCache.unlock(key);
-                }
-                if (claimed) {
-                    claimedPaths.add(path);
-                }
-            }
-
-            // One readParquet call over all claimed paths — both aggregation and non-aggregation.
-            // For aggregation: always call even when claimedPaths is empty — executeAggregation()
-            // pre-seeds the default key so the result is a valid zero-count row the client can
-            // safely combine with other nodes' partial results.
-            // For non-aggregation: skip when claimedPaths is empty to avoid the "scan all files"
-            // fallback inside readParquet() (which treats a null/empty fileUris as "no restriction").
-            // listener.completed() below signals an empty stream to the client in that case.
-            if (isAggregation || !claimedPaths.isEmpty()) {
-                parquetManager.readParquet(allocator, query, claimedPaths.toArray(new String[0]), listener, true);
-            }
-
-            LOGGER.info("Finished processing files for query: {}", query);
+            // readParquet delegates to executeAggregation for aggregation queries.
+            // Both paths receive all files at once → single FileSystemDatasetFactory
+            // lets Arrow Dataset's internal C++ thread pool parallelise the scan.
+            parquetManager.readParquet(allocator, query, filePaths, listener, true);
             listener.completed();
-            LOGGER.info("Completed listener for query: {}", query);
         } catch (Exception e) {
-            LOGGER.error("Failed to process getStreamStatement for query: " + query, e);
+            LOGGER.error("Failed to process server-grouped ticket, files: " + Arrays.toString(filePaths), e);
             listener.error(e);
         }
     }
