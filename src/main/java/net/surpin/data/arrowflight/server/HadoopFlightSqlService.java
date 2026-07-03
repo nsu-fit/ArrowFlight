@@ -438,24 +438,18 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
      * or when no server matches any block host.
      */
     private static String pickServer(Set<String> fileHosts, List<String> allServerUris, int fileIndex) {
+        Set<String> normalizedFileHosts = fileHosts.stream()
+                .map(HostUtils::normalize)
+                .collect(Collectors.toSet());
+
         List<String> localServers = allServerUris.stream()
-                .filter(uri -> fileHosts.contains(extractHost(uri)))
+                .filter(uri -> normalizedFileHosts.contains(HostUtils.normalize(uri)))
                 .collect(Collectors.toList());
-        // Use local servers only when they are a strict subset of all servers —
-        // otherwise
-        // all servers are "local" (localhost case) and we must round-robin for balance.
+
         if (!localServers.isEmpty() && localServers.size() < allServerUris.size()) {
             return localServers.get(fileIndex % localServers.size());
         }
         return allServerUris.get(fileIndex % allServerUris.size());
-    }
-
-    private static String extractHost(String serverUri) {
-        try {
-            return URI.create(serverUri).getHost();
-        } catch (Exception e) {
-            return "";
-        }
     }
 
     protected <T extends Message> FlightInfo getFlightInfoForSchema(T request, FlightDescriptor descriptor,
