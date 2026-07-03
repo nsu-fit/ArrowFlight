@@ -37,7 +37,6 @@ public class HadoopArrowFlightServer {
     private static final String DEFAULT_DATA_DIR = "/data/parquet";
     private static final int DEFAULT_PORT = 32010;
     private static final int DEFAULT_HAZELCAST_PORT = 5701;
-    private static final String STATEMENT_CACHE_NAME = "statement-cache";
 
     private FlightServer server;
     private ParquetManager parquetManager;
@@ -45,7 +44,6 @@ public class HadoopArrowFlightServer {
     private FileSystem fileSystem;
     private BufferAllocator allocator;
     private HazelcastInstance hazelcastInstance;
-    private IMap<String, Serializable> statementCache;
 
     /**
      * Запуск сервера.
@@ -64,8 +62,7 @@ public class HadoopArrowFlightServer {
         LOGGER.info("Port: {}", port);
 
         // Инициализация hazelcast
-        setupHazelcast(hazelcastPort, localhost, hosts.split(","));
-        statementCache = hazelcastInstance.getMap(STATEMENT_CACHE_NAME);
+        setupHazelcast(hazelcastPort, hosts.split(","));
 
         // Инициализация конфигурации Hadoop
         this.hadoopConfig = new Configuration();
@@ -120,11 +117,10 @@ public class HadoopArrowFlightServer {
         }
     }
 
-    protected void setupHazelcast(int hazelcastPort, String localhost, String... hosts) {
+    protected void setupHazelcast(int hazelcastPort, String... hosts) {
         Config config = new Config();
         NetworkConfig network = config.getNetworkConfig();
         network.setPort(hazelcastPort);
-//        network.getInterfaces().addInterface(localhost).setEnabled(true);
         network.setPortAutoIncrement(false);
         JoinConfig join = network.getJoin();
         join.getMulticastConfig().setEnabled(false);
@@ -132,7 +128,6 @@ public class HadoopArrowFlightServer {
         Arrays.stream(hosts).forEach(tcpIpConfig::addMember);
         tcpIpConfig.setEnabled(true);
 
-        LOGGER.info("Hosts: {}", Arrays.asList(hosts));
         LOGGER.info("Hazelcast config: {}", config);
 
         hazelcastInstance = Hazelcast.newHazelcastInstance(config);

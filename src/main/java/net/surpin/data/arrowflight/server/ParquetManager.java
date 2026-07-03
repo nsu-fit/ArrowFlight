@@ -68,8 +68,10 @@ public final class ParquetManager {
     private static final Logger LOGGER = LoggerFactory.getLogger(ParquetManager.class);
 
     // Daemon thread pool for parallel per-file I/O (footer reads + Acero scans).
-    private static final int IO_PARALLELISM = Integer.getInteger("arrowflight.io.parallelism",
-            Math.max(32, Runtime.getRuntime().availableProcessors() * 8));
+    private static final int IO_PARALLELISM = Integer.getInteger(
+            "arrowflight.io.parallelism",
+            Math.max(32, Runtime.getRuntime().availableProcessors() * 8)
+    );
     private static final java.util.concurrent.ExecutorService IO_POOL = java.util.concurrent.Executors
             .newFixedThreadPool(IO_PARALLELISM, r -> {
                 Thread t = new Thread(r, "parquet-io");
@@ -82,8 +84,10 @@ public final class ParquetManager {
     // reducing
     // the per-task native-init overhead versus one DuckDB call per file.
     // Configurable via -Darrowflight.duckdb.groups=N.
-    private static final int DUCKDB_GROUPS = Integer.getInteger("arrowflight.duckdb.groups",
-            Math.min(8, IO_PARALLELISM));
+    private static final int DUCKDB_GROUPS = Integer.getInteger(
+            "arrowflight.duckdb.groups",
+            Math.min(8, IO_PARALLELISM)
+    );
 
     // One reusable DuckDB connection per IO-pool thread. DuckDB native init is
     // expensive;
@@ -1431,7 +1435,7 @@ public final class ParquetManager {
                 .flatMap(bl -> {
                     try {
                         return Stream.of(bl.getHosts())
-                                .map(host -> "localhost".equals(host) ? localhost : host);
+                                .map(host -> HostUtils.LOOPBACK_HOSTS.contains(host) ? localhost : host);
                     } catch (IOException e) {
                         throw new UncheckedIOException(e);
                     }
