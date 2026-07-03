@@ -91,7 +91,7 @@ public class HadoopArrowFlightServer {
             // Создание allocator для Arrow
             System.setProperty(ALLOCATION_MANAGER_TYPE_PROPERTY_NAME, DefaultAllocationManagerOption.AllocationManagerType.Netty.name());
             allocator = new RootAllocator(Long.MAX_VALUE);
-                
+
             // Инициализация Flight SQL сервера
             HadoopFlightSqlService sqlService = new HadoopFlightSqlService(location, parquetManager, allocator, hazelcastInstance);
 

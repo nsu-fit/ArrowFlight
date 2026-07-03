@@ -58,7 +58,7 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
     private final String serverRegistrationKey;
 
     public HadoopFlightSqlService(Location location, ParquetManager parquetManager,
-                                   BufferAllocator allocator, HazelcastInstance hazelcastInstance) {
+            BufferAllocator allocator, HazelcastInstance hazelcastInstance) {
         this.location = Objects.requireNonNull(location);
         this.parquetManager = Objects.requireNonNull(parquetManager);
         this.allocator = Objects.requireNonNull(allocator);
@@ -70,7 +70,6 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
 
         sqlInfoBuilder = new SqlInfoBuilder();
 
-
         sqlInfoBuilder
                 .withFlightSqlServerName("Hadoop-Arrow-Parquet Source")
                 .withFlightSqlServerVersion("0.0.1")
@@ -79,7 +78,7 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
                 .withFlightSqlServerSql(true)
                 .withFlightSqlServerSubstrait(false)
                 .withFlightSqlServerTransaction(FlightSql.SqlSupportedTransaction.SQL_SUPPORTED_TRANSACTION_NONE)
-//                .withSqlIdentifierQuoteChar()
+                // .withSqlIdentifierQuoteChar()
                 .withSqlDdlCatalog(false)
                 .withSqlDdlSchema(true)
                 .withSqlDdlTable(true)
@@ -88,14 +87,16 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
                 .withSqlAllTablesAreSelectable(true)
                 .withSqlNullOrdering(FlightSql.SqlNullOrdering.SQL_NULLS_SORTED_AT_END)
                 .withSqlMaxColumnsInTable(1000);
-//                .withFlightSqlServerBulkIngestion(false)
-//                .withFlightSqlServerBulkIngestionTransaction(false);
+        // .withFlightSqlServerBulkIngestion(false)
+        // .withFlightSqlServerBulkIngestionTransaction(false);
 
         LOGGER.info("{} initialized", getClass().getName());
     }
 
+
     @Override
-    protected <T extends Message> List<FlightEndpoint> determineEndpoints(T request, FlightDescriptor descriptor, Schema schema) {
+    protected <T extends Message> List<FlightEndpoint> determineEndpoints(T request, FlightDescriptor descriptor,
+            Schema schema) {
         try {
             if (request instanceof FlightSql.TicketStatementQuery statementQuery) {
                 final ByteString handle = statementQuery.getStatementHandle();
@@ -133,8 +134,8 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
                             serverFiles.toArray(new String[0]), 10, TimeUnit.MINUTES);
 
                     Ticket serverTicket = new Ticket(Any.pack(
-                            FlightSql.TicketStatementQuery.newBuilder().setStatementHandle(serverHandle).build()
-                    ).toByteArray());
+                            FlightSql.TicketStatementQuery.newBuilder().setStatementHandle(serverHandle).build())
+                            .toByteArray());
                     endpoints.add(new FlightEndpoint(serverTicket, serverLoc));
                 }
                 LOGGER.info("determineEndpoints: {} server endpoint(s) for {} file(s), query: {}",
@@ -150,12 +151,14 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
     }
 
     @Override
-    public FlightInfo getFlightInfoSqlInfo(final FlightSql.CommandGetSqlInfo request, final CallContext context, final FlightDescriptor descriptor) {
+    public FlightInfo getFlightInfoSqlInfo(final FlightSql.CommandGetSqlInfo request, final CallContext context,
+            final FlightDescriptor descriptor) {
         return getFlightInfoForSchema(request, descriptor, Schemas.GET_SQL_INFO_SCHEMA);
     }
 
     @Override
-    public void getStreamSqlInfo(final FlightSql.CommandGetSqlInfo command, final CallContext context, final ServerStreamListener listener) {
+    public void getStreamSqlInfo(final FlightSql.CommandGetSqlInfo command, final CallContext context,
+            final ServerStreamListener listener) {
         this.sqlInfoBuilder.send(command.getInfoList(), listener);
     }
 
@@ -191,9 +194,11 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
             final CallContext context,
             final ServerStreamListener listener) {
         final String catalog = command.hasCatalog() ? command.getCatalog() : null;
-        final String schemaFilterPattern = command.hasDbSchemaFilterPattern() ? command.getDbSchemaFilterPattern() : null;
+        final String schemaFilterPattern = command.hasDbSchemaFilterPattern() ? command.getDbSchemaFilterPattern()
+                : null;
 
-        try (VectorSchemaRoot vectorSchemaRoot = MetadataUtils.getSchemasRoot(parquetManager.getSchemas(schemaFilterPattern).keySet(), allocator)) {
+        try (VectorSchemaRoot vectorSchemaRoot = MetadataUtils
+                .getSchemasRoot(parquetManager.getSchemas(schemaFilterPattern).keySet(), allocator)) {
             listener.start(vectorSchemaRoot);
             listener.putNext();
         } catch (IOException e) {
@@ -241,20 +246,27 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
             final ServerStreamListener listener) {
 
         final String catalog = command.hasCatalog() ? command.getCatalog() : null;
-        final String schemaFilterPattern = command.hasDbSchemaFilterPattern() ? command.getDbSchemaFilterPattern() : null;
-        final String tableFilterPattern = command.hasTableNameFilterPattern() ? command.getTableNameFilterPattern() : null;
+        final String schemaFilterPattern = command.hasDbSchemaFilterPattern() ? command.getDbSchemaFilterPattern()
+                : null;
+        final String tableFilterPattern = command.hasTableNameFilterPattern() ? command.getTableNameFilterPattern()
+                : null;
 
         if (catalog != null && !MetadataUtils.CATALOG_NAME.equalsIgnoreCase(catalog)) {
             LOGGER.info("Catalog doesn't exists in call to getStreamTables: {}", catalog);
-            throw CallStatus.NOT_FOUND.withDescription("Could not getStreamTables for catalog: " + catalog).toRuntimeException();
+            throw CallStatus.NOT_FOUND.withDescription("Could not getStreamTables for catalog: " + catalog)
+                    .toRuntimeException();
         }
 
         final ProtocolStringList protocolStringList = command.getTableTypesList();
         final int protocolSize = protocolStringList.size();
         final String[] tableTypes = protocolStringList.toArray(new String[protocolSize]);
         if (!Arrays.stream(tableTypes).allMatch(MetadataUtils.TABLE_TYPE::equalsIgnoreCase)) {
-            LOGGER.info("Table type (at least one of) doesn't exists in call to getStreamTables: {}", Arrays.toString(tableTypes));
-            throw CallStatus.NOT_FOUND.withDescription("Table type (at least one of) doesn't exists in call to getStreamTables: " + Arrays.toString(tableTypes)).toRuntimeException();
+            LOGGER.info("Table type (at least one of) doesn't exists in call to getStreamTables: {}",
+                    Arrays.toString(tableTypes));
+            throw CallStatus.NOT_FOUND
+                    .withDescription("Table type (at least one of) doesn't exists in call to getStreamTables: "
+                            + Arrays.toString(tableTypes))
+                    .toRuntimeException();
         }
 
         Map<String, Map<String, Schema>> tables = new HashMap<>();
@@ -262,8 +274,11 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
             for (Map.Entry<String, Path> schemaEntry : parquetManager.getSchemas(schemaFilterPattern).entrySet()) {
                 Map<String, Schema> tablesForSchema = new HashMap<>();
                 tables.put(schemaEntry.getKey(), tablesForSchema);
-                for (Map.Entry<String, Path> tableEntry : parquetManager.getTables(schemaEntry.getKey(), tableFilterPattern).entrySet()) {
-                    Schema schema = command.getIncludeSchema() ? parquetManager.getTableSchema(schemaEntry.getKey(), tableEntry.getKey()) : null;
+                for (Map.Entry<String, Path> tableEntry : parquetManager
+                        .getTables(schemaEntry.getKey(), tableFilterPattern).entrySet()) {
+                    Schema schema = command.getIncludeSchema()
+                            ? parquetManager.getTableSchema(schemaEntry.getKey(), tableEntry.getKey())
+                            : null;
                     tablesForSchema.put(tableEntry.getKey(), schema);
                 }
             }
@@ -273,13 +288,12 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
             return;
         }
 
-        try (VectorSchemaRoot vectorSchemaRoot =
-                     MetadataUtils.getTablesRoot(
-                             tables,
-                             allocator,
-                             command.getIncludeSchema(),
-                             schemaFilterPattern,
-                             tableFilterPattern)) {
+        try (VectorSchemaRoot vectorSchemaRoot = MetadataUtils.getTablesRoot(
+                tables,
+                allocator,
+                command.getIncludeSchema(),
+                schemaFilterPattern,
+                tableFilterPattern)) {
             listener.start(vectorSchemaRoot);
             listener.putNext();
         } catch (Exception e) {
@@ -297,7 +311,8 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
     }
 
     @Override
-    public void getStreamTypeInfo(FlightSql.CommandGetXdbcTypeInfo request, CallContext context, ServerStreamListener listener) {
+    public void getStreamTypeInfo(FlightSql.CommandGetXdbcTypeInfo request, CallContext context,
+            ServerStreamListener listener) {
         try (VectorSchemaRoot vectorSchemaRoot = MetadataUtils.getTypeInfoRoot(request, allocator)) {
             listener.start(vectorSchemaRoot);
             listener.putNext();
@@ -307,7 +322,8 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
     }
 
     @Override
-    public FlightInfo getFlightInfoStatement(FlightSql.CommandStatementQuery command, CallContext context, FlightDescriptor descriptor) {
+    public FlightInfo getFlightInfoStatement(FlightSql.CommandStatementQuery command, CallContext context,
+            FlightDescriptor descriptor) {
         ByteString handle = copyFrom(randomUUID().toString().getBytes(StandardCharsets.UTF_8));
         String query = command.getQuery();
         LOGGER.info("getFlightInfoStatement, ticket {}: {}", handle, query);
@@ -317,26 +333,30 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
             arrowSchema = parquetManager.getQuerySchema(query);
         } catch (Exception e) {
             LOGGER.error("Error while getting Arrow schema for the query: " + query, e);
-            throw CallStatus.INTERNAL.withDescription("Error while getting Arrow schema for the query: " + query).withCause(e).toRuntimeException();
+            throw CallStatus.INTERNAL.withDescription("Error while getting Arrow schema for the query: " + query)
+                    .withCause(e).toRuntimeException();
         }
 
         if (arrowSchema == null) {
             LOGGER.error("Error while getting Arrow schema for the query: " + query);
-            throw CallStatus.NOT_FOUND.withDescription("Could not get Arrow schema for the query: " + query).toRuntimeException();
+            throw CallStatus.NOT_FOUND.withDescription("Could not get Arrow schema for the query: " + query)
+                    .toRuntimeException();
         }
 
         if (LOGGER.isInfoEnabled()) {
             StringBuilder sb = new StringBuilder("getFlightInfoStatement schema for '").append(query).append("': [");
             List<org.apache.arrow.vector.types.pojo.Field> fields = arrowSchema.getFields();
             for (int i = 0; i < fields.size(); i++) {
-                if (i > 0) sb.append(", ");
+                if (i > 0)
+                    sb.append(", ");
                 sb.append(fields.get(i).getName()).append(':').append(fields.get(i).getType());
             }
             sb.append(']');
             LOGGER.info("{}", sb);
         }
 
-        FlightSql.TicketStatementQuery ticket = FlightSql.TicketStatementQuery.newBuilder().setStatementHandle(handle).build();
+        FlightSql.TicketStatementQuery ticket = FlightSql.TicketStatementQuery.newBuilder().setStatementHandle(handle)
+                .build();
 
         statementCache.put(cacheKey(handle, "query"), query, 10, TimeUnit.MINUTES);
 
@@ -344,7 +364,8 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
     }
 
     @Override
-    public SchemaResult getSchemaStatement(FlightSql.CommandStatementQuery command, CallContext context, FlightDescriptor descriptor) {
+    public SchemaResult getSchemaStatement(FlightSql.CommandStatementQuery command, CallContext context,
+            FlightDescriptor descriptor) {
         String query = command.getQuery();
         LOGGER.info("getSchemaStatement: {}", query);
 
@@ -353,18 +374,21 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
             arrowSchema = parquetManager.getQuerySchema(query);
         } catch (Exception e) {
             LOGGER.error("Error while getting Arrow schema for the query: " + query, e);
-            throw CallStatus.INTERNAL.withDescription("Error while getting Arrow schema for the query: " + query).withCause(e).toRuntimeException();
+            throw CallStatus.INTERNAL.withDescription("Error while getting Arrow schema for the query: " + query)
+                    .withCause(e).toRuntimeException();
         }
 
         if (arrowSchema == null) {
-            throw CallStatus.NOT_FOUND.withDescription("Could not get Arrow schema for the query: " + query).toRuntimeException();
+            throw CallStatus.NOT_FOUND.withDescription("Could not get Arrow schema for the query: " + query)
+                    .toRuntimeException();
         }
 
         return new SchemaResult(arrowSchema);
     }
 
     @Override
-    public void getStreamStatement(FlightSql.TicketStatementQuery ticket, CallContext context, ServerStreamListener listener) {
+    public void getStreamStatement(FlightSql.TicketStatementQuery ticket, CallContext context,
+            ServerStreamListener listener) {
         final ByteString handle = ticket.getStatementHandle();
         String query = (String) Objects.requireNonNull(statementCache.get(cacheKey(handle, "query")));
 
@@ -398,22 +422,27 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
             // Hazelcast may already be shut down; log and continue.
             LOGGER.warn("Failed to deregister server from registry: {}", t.getMessage());
         }
-        // Don't clear statementCache: doing so would wipe other servers' in-flight entries
-        // from the shared distributed map.  Individual statement entries expire after 10 min.
+        // Don't clear statementCache: doing so would wipe other servers' in-flight
+        // entries
+        // from the shared distributed map. Individual statement entries expire after 10
+        // min.
         AutoCloseables.close(allocator);
     }
 
     /**
      * Picks the Flight server URI that should handle a given file.
-     * Prefers a server whose hostname matches one of the file's block hosts (data locality).
-     * Falls back to round-robin when all servers share the same host (e.g., localhost in tests)
+     * Prefers a server whose hostname matches one of the file's block hosts (data
+     * locality).
+     * Falls back to round-robin when all servers share the same host (e.g.,
+     * localhost in tests)
      * or when no server matches any block host.
      */
     private static String pickServer(Set<String> fileHosts, List<String> allServerUris, int fileIndex) {
         List<String> localServers = allServerUris.stream()
                 .filter(uri -> fileHosts.contains(extractHost(uri)))
                 .collect(Collectors.toList());
-        // Use local servers only when they are a strict subset of all servers — otherwise
+        // Use local servers only when they are a strict subset of all servers —
+        // otherwise
         // all servers are "local" (localhost case) and we must round-robin for balance.
         if (!localServers.isEmpty() && localServers.size() < allServerUris.size()) {
             return localServers.get(fileIndex % localServers.size());
@@ -422,11 +451,15 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
     }
 
     private static String extractHost(String serverUri) {
-        try { return URI.create(serverUri).getHost(); }
-        catch (Exception e) { return ""; }
+        try {
+            return URI.create(serverUri).getHost();
+        } catch (Exception e) {
+            return "";
+        }
     }
 
-    protected <T extends Message> FlightInfo getFlightInfoForSchema(T request, FlightDescriptor descriptor, Schema schema) {
+    protected <T extends Message> FlightInfo getFlightInfoForSchema(T request, FlightDescriptor descriptor,
+            Schema schema) {
         final List<FlightEndpoint> endpoints = determineEndpoints(request, descriptor, schema);
         return new FlightInfo(schema, descriptor, endpoints, -1, -1);
     }
@@ -435,7 +468,8 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
         Objects.requireNonNull(handle);
         Objects.requireNonNull(keys);
         if (Arrays.stream(keys).anyMatch(key -> key == null || key.contains(KEY_DELIMITER))) {
-            throw new IllegalArgumentException("Keys can't be empty or contain '" + KEY_DELIMITER + "'. But got " + String.join(",", keys));
+            throw new IllegalArgumentException(
+                    "Keys can't be empty or contain '" + KEY_DELIMITER + "'. But got " + String.join(",", keys));
         }
 
         return handle.toStringUtf8() + KEY_DELIMITER + String.join(":", keys);
