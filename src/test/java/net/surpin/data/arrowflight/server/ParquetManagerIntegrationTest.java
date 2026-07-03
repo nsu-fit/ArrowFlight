@@ -159,6 +159,10 @@ class ParquetManagerIntegrationTest {
         public boolean isCancelled() { return false; }
 
         @Override
+        public void setOnReadyHandler(Runnable handler) {
+        }
+
+        @Override
         public void setOnCancelHandler(Runnable handler) {}
 
         @Override
