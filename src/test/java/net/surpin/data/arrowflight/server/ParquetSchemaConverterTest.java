@@ -369,7 +369,6 @@ class ParquetSchemaConverterTest {
                 "tinyint_col must NOT be reported as INT32 — that causes ClassCastException in JOIN codegen");
     }
 
-    // ─── helpers ──────────────────────────────────────────────────────────
 
     private static Field convert(org.apache.parquet.schema.Type type) {
         return ParquetSchemaConverter.convert(type.getName(), type);
