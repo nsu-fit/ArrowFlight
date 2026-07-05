@@ -78,24 +78,13 @@ Server selection is handled by `pickServer`.
 
 Selection logic:
 
-1. If any Flight servers match the hosts that store the file blocks, one of those local servers is selected.
-2. If there are no local servers, or locality does not provide a useful choice, round-robin distribution across all registered Flight servers is used.
+1. If any Flight servers match the hosts that store the file blocks, only those local servers are considered (data locality priority).
+2. Among candidate servers, the one with the smallest cumulative assigned data volume (sum of file sizes) is selected.
 
-After a server is selected, the file is added to the list of files assigned to that node. Then a separate endpoint and ticket are created for each node.
+After a server is selected, the file is added to the list of files assigned to that node and the server's cumulative load is incremented by the file size. Then a separate endpoint and ticket are created for each node.
 
 ## Current Distribution Limitations
 
-The current balancing strategy distributes files, not data volume. This means that nodes may receive the same number of files but different amounts of work.
+The greedy load-aware strategy distributes data volume (file size). However, it operates at the whole-file level and does not split files across nodes. Extremely large single files still pin all their data to one node.
 
-If Parquet file sizes differ significantly, one node may receive much heavier work than the others. In that case, total query time is determined by the most loaded node.
-
-Future distribution improvements may take into account:
-
-1. File size.
-2. Row count.
-3. Row group count.
-4. Parquet statistics.
-5. Current node load.
-
-A practical benchmark/production improvement is weighted file distribution: assign the next file to the least-loaded suitable node. A more advanced approach is to plan work at the row group level instead of the whole-file level.
 

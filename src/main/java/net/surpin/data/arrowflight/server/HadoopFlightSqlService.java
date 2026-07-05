@@ -25,6 +25,7 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.Objects;
 import java.util.Arrays;
@@ -101,7 +102,7 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
             if (request instanceof FlightSql.TicketStatementQuery statementQuery) {
                 final ByteString handle = statementQuery.getStatementHandle();
                 String query = (String) Objects.requireNonNull(statementCache.get(cacheKey(handle, "query")));
-                Map<String, Set<String>> pathLocations = parquetManager.locationsForQuery(query);
+                Map<String, FileAssignment> pathLocations = parquetManager.locationsForQuery(query);
 
                 // All registered Flight servers, sorted for deterministic file assignment.
                 List<String> allServerUris = new ArrayList<>(serverRegistry.values());
@@ -112,12 +113,18 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
 
                 // One endpoint per server: group files by their assigned server so each
                 // server streams all its partial aggregation rows in a single response.
+                // Data locality is the primary criterion; among eligible servers, pick
+                // the one with the smallest cumulative load (greedy size-aware).
                 List<String> sortedPaths = pathLocations.keySet().stream().sorted().collect(Collectors.toList());
+                Map<String, Long> serverLoad = new HashMap<>();
+                for (String uri : allServerUris) serverLoad.put(uri, 0L);
                 Map<String, List<String>> serverToFiles = new LinkedHashMap<>();
                 for (int i = 0; i < sortedPaths.size(); i++) {
                     String path = sortedPaths.get(i);
-                    String serverUri = pickServer(pathLocations.get(path), allServerUris, i);
-                    serverToFiles.computeIfAbsent(serverUri, k -> new ArrayList<>()).add(path);
+                    FileAssignment fa = pathLocations.get(path);
+                    String bestServer = pickServer(fa.hosts(), allServerUris, serverLoad);
+                    serverToFiles.computeIfAbsent(bestServer, k -> new ArrayList<>()).add(path);
+                    serverLoad.merge(bestServer, fa.size(), Long::sum);
                 }
 
                 List<FlightEndpoint> endpoints = new ArrayList<>();
@@ -139,7 +146,7 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
                     endpoints.add(new FlightEndpoint(serverTicket, serverLoc));
                 }
                 LOGGER.info("determineEndpoints: {} server endpoint(s) for {} file(s), query: {}",
-                        endpoints.size(), sortedPaths.size(), query);
+                        endpoints.size(), pathLocations.size(), query);
                 return endpoints;
             } else {
                 Ticket ticket = new Ticket(Any.pack(request).toByteArray());
@@ -430,14 +437,12 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
     }
 
     /**
-     * Picks the Flight server URI that should handle a given file.
-     * Prefers a server whose hostname matches one of the file's block hosts (data
-     * locality).
-     * Falls back to round-robin when all servers share the same host (e.g.,
-     * localhost in tests)
-     * or when no server matches any block host.
+     * Picks the Flight server URI with the smallest cumulative load.
+     * Prefers a server whose hostname matches one of the file's block hosts
+     * (data locality) when not all servers are equally local.
      */
-    private static String pickServer(Set<String> fileHosts, List<String> allServerUris, int fileIndex) {
+    private static String pickServer(Set<String> fileHosts, List<String> allServerUris,
+            Map<String, Long> serverLoad) {
         Set<String> normalizedFileHosts = fileHosts.stream()
                 .map(HostUtils::normalize)
                 .collect(Collectors.toSet());
@@ -446,10 +451,9 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
                 .filter(uri -> normalizedFileHosts.contains(HostUtils.normalize(uri)))
                 .collect(Collectors.toList());
 
-        if (!localServers.isEmpty() && localServers.size() < allServerUris.size()) {
-            return localServers.get(fileIndex % localServers.size());
-        }
-        return allServerUris.get(fileIndex % allServerUris.size());
+        boolean hasLocality = !localServers.isEmpty() && localServers.size() < allServerUris.size();
+        List<String> candidates = hasLocality ? localServers : allServerUris;
+        return candidates.stream().min(Comparator.comparingLong(serverLoad::get)).orElse(candidates.get(0));
     }
 
     protected <T extends Message> FlightInfo getFlightInfoForSchema(T request, FlightDescriptor descriptor,
