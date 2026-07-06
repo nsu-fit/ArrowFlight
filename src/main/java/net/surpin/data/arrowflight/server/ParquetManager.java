@@ -61,6 +61,7 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
+
 /**
  * Управление Parquet файлами с учётом локальности данных.
  */
@@ -68,38 +69,31 @@ public final class ParquetManager {
     private static final Logger LOGGER = LoggerFactory.getLogger(ParquetManager.class);
 
     // Daemon thread pool for parallel per-file I/O (footer reads + Acero scans).
-    private static final int IO_PARALLELISM = Integer.getInteger(
-            "arrowflight.io.parallelism",
-            Math.max(32, Runtime.getRuntime().availableProcessors() * 8)
-    );
-    private static final java.util.concurrent.ExecutorService IO_POOL = java.util.concurrent.Executors
-            .newFixedThreadPool(IO_PARALLELISM, r -> {
+    private static final int IO_PARALLELISM =
+            Integer.getInteger("arrowflight.io.parallelism",
+                    Math.max(32, Runtime.getRuntime().availableProcessors() * 8));
+    private static final java.util.concurrent.ExecutorService IO_POOL =
+            java.util.concurrent.Executors.newFixedThreadPool(IO_PARALLELISM, r -> {
                 Thread t = new Thread(r, "parquet-io");
                 t.setDaemon(true);
                 return t;
             });
 
     // Number of parallel DuckDB tasks for GROUP BY / aggregation queries.
-    // Each task processes a group of files via UNION ALL in one DuckDB query,
-    // reducing
+    // Each task processes a group of files via UNION ALL in one DuckDB query, reducing
     // the per-task native-init overhead versus one DuckDB call per file.
     // Configurable via -Darrowflight.duckdb.groups=N.
-    private static final int DUCKDB_GROUPS = Integer.getInteger(
-            "arrowflight.duckdb.groups",
-            Math.min(8, IO_PARALLELISM)
-    );
+    private static final int DUCKDB_GROUPS =
+            Integer.getInteger("arrowflight.duckdb.groups", Math.min(8, IO_PARALLELISM));
 
-    // One reusable DuckDB connection per IO-pool thread. DuckDB native init is
-    // expensive;
-    // reusing the connection across files within the same query avoids repeated
-    // startup cost.
+    // One reusable DuckDB connection per IO-pool thread. DuckDB native init is expensive;
+    // reusing the connection across files within the same query avoids repeated startup cost.
     private static final ThreadLocal<Connection> DUCKDB_THREAD_CONN = ThreadLocal.withInitial(() -> {
         try {
             Connection conn = DriverManager.getConnection("jdbc:duckdb:");
             try (java.sql.Statement s = conn.createStatement()) {
                 // Prevent DuckDB's C++ worker threads from calling Arrow JNI get_next callbacks
-                // from threads not attached to the JVM, which causes SIGSEGV on GROUP BY
-                // queries.
+                // from threads not attached to the JVM, which causes SIGSEGV on GROUP BY queries.
                 s.execute("SET threads = 1");
             }
             return conn;
@@ -107,6 +101,7 @@ public final class ParquetManager {
             throw new RuntimeException("Failed to create thread-local DuckDB connection", e);
         }
     });
+
 
     private final JavaTypeFactory typeFactory = new JavaTypeFactoryImpl(RelDataTypeSystem.DEFAULT);
 
@@ -214,20 +209,14 @@ public final class ParquetManager {
                 }
             }
 
-            if (parquetPath == null)
-                return new Schema(Collections.emptyList(), null);
+            if (parquetPath == null) return new Schema(Collections.emptyList(), null);
 
             MessageType parquetSchema;
             final long fileLen = fileSystem.getFileStatus(parquetPath).getLen();
             final Path finalPath = parquetPath;
             try (ParquetFileReader reader = ParquetFileReader.open(new org.apache.parquet.io.InputFile() {
-                @Override
-                public long getLength() {
-                    return fileLen;
-                }
-
-                @Override
-                public org.apache.parquet.io.SeekableInputStream newStream() throws IOException {
+                @Override public long getLength() { return fileLen; }
+                @Override public org.apache.parquet.io.SeekableInputStream newStream() throws IOException {
                     return org.apache.parquet.hadoop.util.HadoopStreams.wrap(fileSystem.open(finalPath));
                 }
             })) {
@@ -237,7 +226,8 @@ public final class ParquetManager {
             return ParquetSchemaConverter.convert(
                     parquetSchema,
                     cd -> columns == null || columns.isEmpty()
-                            || cd.getPath().length == 1 && columns.contains(cd.getPath()[0]));
+                            || cd.getPath().length == 1 && columns.contains(cd.getPath()[0])
+            );
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
@@ -266,13 +256,13 @@ public final class ParquetManager {
             throw new IllegalStateException("Can't parse schemas", e);
         }
 
-        if (ddlBuilder.length() == 0)
-            return;
+        if (ddlBuilder.length() == 0) return;
 
         // ── 1. Substrait / Calcite warm-up ───────────────────────────────────────
         List<String> strippedDdls = new ArrayList<>();
-        tableDdlCache.forEach((schemaName, tableMap) -> tableMap
-                .forEach((tableName, ddl) -> strippedDdls.add(ddl.replace(schemaName + ".", ""))));
+        tableDdlCache.forEach((schemaName, tableMap) ->
+                tableMap.forEach((tableName, ddl) ->
+                        strippedDdls.add(ddl.replace(schemaName + ".", ""))));
         LOGGER.info("Pre-warming Substrait converter ({} DDL(s))...", strippedDdls.size());
         long t0 = System.currentTimeMillis();
         SubstraitFilterConverter.warmUp(strippedDdls);
@@ -283,10 +273,10 @@ public final class ParquetManager {
             LOGGER.info("Pre-warming Acero JNI (file: {})...", uri);
             long ta = System.currentTimeMillis();
             try (BufferAllocator warmAlloc = new org.apache.arrow.memory.RootAllocator(Long.MAX_VALUE);
-                    FileSystemDatasetFactory factory = new FileSystemDatasetFactory(
-                            warmAlloc, NativeMemoryPool.getDefault(), FileFormat.PARQUET,
-                            new String[] { uri });
-                    Dataset dataset = factory.finish()) {
+                 FileSystemDatasetFactory factory = new FileSystemDatasetFactory(
+                         warmAlloc, NativeMemoryPool.getDefault(), FileFormat.PARQUET,
+                         new String[]{uri});
+                 Dataset dataset = factory.finish()) {
                 dataset.newScan(new ScanOptions.Builder(1).build());
                 LOGGER.info("Acero JNI warm-up done in {}ms", System.currentTimeMillis() - ta);
             } catch (Exception e) {
@@ -299,21 +289,12 @@ public final class ParquetManager {
         LOGGER.info("Pre-warming {} DuckDB thread-local connections...", duckWarm);
         long td = System.currentTimeMillis();
         List<Future<?>> duckFutures = new ArrayList<>(duckWarm);
-        for (int i = 0; i < duckWarm; i++)
-            duckFutures.add(IO_POOL.submit(DUCKDB_THREAD_CONN::get));
-        for (Future<?> f : duckFutures) {
-            try {
-                f.get();
-            } catch (Exception ignored) {
-            }
-        }
+        for (int i = 0; i < duckWarm; i++) duckFutures.add(IO_POOL.submit(DUCKDB_THREAD_CONN::get));
+        for (Future<?> f : duckFutures) { try { f.get(); } catch (Exception ignored) {} }
         LOGGER.info("DuckDB warm-up done in {}ms", System.currentTimeMillis() - td);
     }
 
-    /**
-     * Returns the URI of the first Parquet file found in any known table directory,
-     * or empty.
-     */
+    /** Returns the URI of the first Parquet file found in any known table directory, or empty. */
     private Optional<String> findFirstParquetUri() {
         for (Map<String, Path> tables : tableCache.values()) {
             for (Path tablePath : tables.values()) {
@@ -325,8 +306,7 @@ public final class ParquetManager {
                             return Optional.of(lfs.getPath().toUri().toString());
                         }
                     }
-                } catch (IOException ignored) {
-                }
+                } catch (IOException ignored) {}
             }
         }
         return Optional.empty();
@@ -337,8 +317,7 @@ public final class ParquetManager {
         Objects.requireNonNull(schema);
 
         StringBuilder result = new StringBuilder("CREATE TABLE ");
-        if (tableSchema != null)
-            result.append(tableSchema).append(".");
+        if (tableSchema != null) result.append(tableSchema).append(".");
         result.append(tableName).append("(\n");
 
         List<Field> fields = schema.getFields();
@@ -350,8 +329,7 @@ public final class ParquetManager {
             } else {
                 relDataType = ArrowFieldTypeFactory.toType(field.getType(), typeFactory);
             }
-            if (i > 0)
-                result.append(",\n");
+            if (i > 0) result.append(",\n");
             result.append("\t\"").append(field.getName()).append("\" ").append(relDataType);
         });
         result.append(")");
@@ -396,22 +374,17 @@ public final class ParquetManager {
         return new Schema(resultFields);
     }
 
-    /**
-     * Case-insensitive column lookup; throws a clear error if the column is not
-     * found.
-     */
+    /** Case-insensitive column lookup; throws a clear error if the column is not found. */
     private static Field resolveColumn(Map<String, Field> colFieldMap, String inputColumn) {
         Field src = colFieldMap.get(inputColumn);
-        if (src != null)
-            return src;
+        if (src != null) return src;
         // Case-insensitive fallback
         for (Map.Entry<String, Field> entry : colFieldMap.entrySet()) {
-            if (entry.getKey().equalsIgnoreCase(inputColumn))
-                return entry.getValue();
+            if (entry.getKey().equalsIgnoreCase(inputColumn)) return entry.getValue();
         }
         throw new IllegalArgumentException(
                 "Unsupported function in select expression: column '" + inputColumn
-                        + "' not found in table schema. Available columns: " + colFieldMap.keySet());
+                + "' not found in table schema. Available columns: " + colFieldMap.keySet());
     }
 
     public Map<String, FileAssignment> locationsForQuery(String query) throws IOException {
@@ -445,7 +418,7 @@ public final class ParquetManager {
         }
 
         String schema = parsedQuery.schema;
-        String table = parsedQuery.table;
+        String table  = parsedQuery.table;
         List<String> selectedColumns = parsedQuery.columns;
         String filter = parsedQuery.filter;
 
@@ -461,8 +434,7 @@ public final class ParquetManager {
             RemoteIterator<LocatedFileStatus> filesIter = fileSystem.listFiles(tablePath, true);
             while (filesIter.hasNext()) {
                 LocatedFileStatus file = filesIter.next();
-                if (file.isDirectory() || !file.getPath().getName().endsWith(".parquet"))
-                    continue;
+                if (file.isDirectory() || !file.getPath().getName().endsWith(".parquet")) continue;
                 parquetUris.add(file.getPath().toUri().toString());
             }
         }
@@ -480,41 +452,45 @@ public final class ParquetManager {
             byteBuffer = SubstraitFilterConverter.toByteBuffer(filter, Collections.singletonList(ddl));
         }
 
+        // Build one Arrow Dataset over all Parquet files assigned to this ticket.
+        // The files are not fully read here; actual I/O starts when batches are loaded.
         try (FileSystemDatasetFactory factory = new FileSystemDatasetFactory(
-                allocator, NativeMemoryPool.getDefault(), FileFormat.PARQUET,
-                parquetUris.toArray(new String[0]))) {
+                     allocator, NativeMemoryPool.getDefault(), FileFormat.PARQUET,
+                     parquetUris.toArray(new String[0]))) {
             Dataset dataset = factory.finish();
+
+            // Configure the scan: batch size, projected columns, and optional pushed-down filter.
             ScanOptions.Builder sb = new ScanOptions.Builder(32768)
                     .columns(selectedColumns.isEmpty() ? Optional.empty()
                             : Optional.of(selectedColumns.toArray(new String[0])));
-            if (byteBuffer != null)
+            if (byteBuffer != null) {
                 sb.substraitFilter(byteBuffer);
+            }
 
             Scanner scanner = dataset.newScan(sb.build());
             Schema aceroSchema = scanner.schema();
             LOGGER.info("Build scanner for query: {} with Acero schema: {}", query, aceroSchema);
+
+            // Keep the schema promised in FlightInfo aligned with what Acero will stream.
             checkSchemaAlignment(query, aceroSchema, selectedColumns);
+
+            // The reader exposes one reusable VectorSchemaRoot filled by loadNextBatch().
             ArrowReader reader = scanner.scanBatches();
             VectorSchemaRoot vsr = reader.getVectorSchemaRoot();
 
-            Object readyLock = configureReadySignal(listener);
-            if (startListener)
+            if (startListener) {
                 listener.start(vsr);
+            }
 
             int read = 0, sent = 0;
-            batchLoop: while (true) {
-                if (!awaitReady(listener, readyLock)) {
-                    break;
-                }
-                if (!reader.loadNextBatch()) {
-                    break;
-                }
+            batchLoop:
+            while (reader.loadNextBatch()) {
                 read++;
                 if (vsr.getRowCount() == 0) {
                     vsr.clear();
                     continue;
                 }
-                if (listener.isCancelled()) {
+                if (!awaitListenerReady(listener)) {
                     vsr.clear();
                     break batchLoop;
                 }
@@ -532,13 +508,10 @@ public final class ParquetManager {
     /**
      * Routes aggregation queries:
      * <ul>
-     * <li>No files → emit zero/null result with correct schema.</li>
-     * <li>COUNT(*) only, no filter → Parquet footer fast path (zero column
-     * I/O).</li>
-     * <li>MIN/MAX/COUNT(col) only, no filter → Parquet footer statistics fast
-     * path.</li>
-     * <li>Everything else → {@link #parallelAggregate}: Acero + DuckDB
-     * grouped.</li>
+     *   <li>No files → emit zero/null result with correct schema.</li>
+     *   <li>COUNT(*) only, no filter → Parquet footer fast path (zero column I/O).</li>
+     *   <li>MIN/MAX/COUNT(col) only, no filter → Parquet footer statistics fast path.</li>
+     *   <li>Everything else → {@link #parallelAggregate}: Acero + DuckDB grouped.</li>
      * </ul>
      */
     private void executeAggregation(BufferAllocator allocator, ParquetQueryParser pq,
@@ -554,17 +527,14 @@ public final class ParquetManager {
                 && (pq.filter == null || pq.filter.isBlank())
                 && !pq.selectExprs.isEmpty();
 
-        // Fast path A: COUNT(*) only — read row counts from Parquet footer (zero column
-        // I/O).
+        // Fast path A: COUNT(*) only — read row counts from Parquet footer (zero column I/O).
         if (noGroupByNoFilter
                 && pq.selectExprs.stream().allMatch(
                         e -> e.func == ParquetQueryParser.SelectExpr.AggFunc.COUNT_STAR)) {
             List<Future<Long>> futs = new ArrayList<>(fileUris.length);
-            for (String rel : fileUris)
-                futs.add(IO_POOL.submit(() -> footerRowCount(rel)));
+            for (String rel : fileUris) futs.add(IO_POOL.submit(() -> footerRowCount(rel)));
             long total = 0;
-            for (Future<Long> f : futs)
-                total += f.get();
+            for (Future<Long> f : futs) total += f.get();
             LOGGER.debug("COUNT(*) footer fast-path: {} file(s), total={}", fileUris.length, total);
             int n = pq.selectExprs.size();
             Object[] row = new Object[n];
@@ -573,39 +543,33 @@ public final class ParquetManager {
             return;
         }
 
-        // Fast path B: MIN / MAX / COUNT(col) / COUNT(*) only — read per-row-group
-        // statistics
+        // Fast path B: MIN / MAX / COUNT(col) / COUNT(*) only — read per-row-group statistics
         // from the Parquet footer (zero column I/O).
         boolean statsEligible = noGroupByNoFilter
-                && pq.selectExprs.stream().allMatch(e -> e.func == ParquetQueryParser.SelectExpr.AggFunc.MIN
+                && pq.selectExprs.stream().allMatch(e ->
+                        e.func == ParquetQueryParser.SelectExpr.AggFunc.MIN
                         || e.func == ParquetQueryParser.SelectExpr.AggFunc.MAX
                         || e.func == ParquetQueryParser.SelectExpr.AggFunc.COUNT
                         || e.func == ParquetQueryParser.SelectExpr.AggFunc.COUNT_STAR)
-                && pq.selectExprs.stream().anyMatch(e -> e.func == ParquetQueryParser.SelectExpr.AggFunc.MIN
+                && pq.selectExprs.stream().anyMatch(e ->
+                        e.func == ParquetQueryParser.SelectExpr.AggFunc.MIN
                         || e.func == ParquetQueryParser.SelectExpr.AggFunc.MAX
                         || e.func == ParquetQueryParser.SelectExpr.AggFunc.COUNT);
         if (statsEligible) {
             List<Future<Optional<Object[]>>> futs = new ArrayList<>(fileUris.length);
-            for (String rel : fileUris)
-                futs.add(IO_POOL.submit(() -> footerStats(rel, pq)));
+            for (String rel : fileUris) futs.add(IO_POOL.submit(() -> footerStats(rel, pq)));
             Object[] merged = null;
             boolean allHaveStats = true;
             for (Future<Optional<Object[]>> f : futs) {
                 Optional<Object[]> opt = f.get();
-                if (opt.isEmpty()) {
-                    allHaveStats = false;
-                    break;
-                }
-                if (merged == null)
-                    merged = opt.get().clone();
-                else
-                    mergeAggCols(pq.selectExprs, merged, opt.get(), 0);
+                if (opt.isEmpty()) { allHaveStats = false; break; }
+                if (merged == null) merged = opt.get().clone();
+                else mergeAggCols(pq.selectExprs, merged, opt.get(), 0);
             }
             if (allHaveStats) {
                 LOGGER.debug("MIN/MAX footer stats fast-path: {} file(s)", fileUris.length);
                 List<Object[]> rows = merged != null
-                        ? Collections.singletonList(merged)
-                        : Collections.emptyList();
+                        ? Collections.singletonList(merged) : Collections.emptyList();
                 emitRowsAsArrow(allocator, pq, rows, listener, startListener);
                 return;
             }
@@ -621,14 +585,11 @@ public final class ParquetManager {
      * Runs aggregation in parallel across files.
      *
      * <ul>
-     * <li>COUNT(*)-only with no GROUP BY (and filter expressible as Substrait): one
-     * Acero
-     * task per file — counts rows directly, no DuckDB involved.</li>
-     * <li>Everything else: files are partitioned into at most {@code DUCKDB_GROUPS}
-     * groups.
-     * Each group runs a single DuckDB {@code read_parquet([...])} query — no Arrow
-     * C
-     * streams, no Acero scan, no native lifecycle to manage.</li>
+     *   <li>COUNT(*)-only with no GROUP BY (and filter expressible as Substrait): one Acero
+     *       task per file — counts rows directly, no DuckDB involved.</li>
+     *   <li>Everything else: files are partitioned into at most {@code DUCKDB_GROUPS} groups.
+     *       Each group runs a single DuckDB {@code read_parquet([...])} query — no Arrow C
+     *       streams, no Acero scan, no native lifecycle to manage.</li>
      * </ul>
      */
     private void parallelAggregate(BufferAllocator allocator, ParquetQueryParser pq,
@@ -652,7 +613,8 @@ public final class ParquetManager {
                 List<Future<List<Object[]>>> futures = new ArrayList<>(parquetUris.size());
                 for (String uri : parquetUris) {
                     futures.add(IO_POOL.submit(() -> {
-                        try (BufferAllocator child = allocator.newChildAllocator("par-agg", 0, Long.MAX_VALUE)) {
+                        try (BufferAllocator child =
+                                     allocator.newChildAllocator("par-agg", 0, Long.MAX_VALUE)) {
                             return aggregateFile(child, uri, filterBytes, cols, numCountStarCols);
                         }
                     }));
@@ -677,14 +639,11 @@ public final class ParquetManager {
         }
         List<VectorSchemaRoot> partials = new ArrayList<>(vsrFutures.size());
         try {
-            for (Future<VectorSchemaRoot> f : vsrFutures)
-                partials.add(f.get());
+            for (Future<VectorSchemaRoot> f : vsrFutures) partials.add(f.get());
             try (VectorSchemaRoot merged = mergeVsrPartials(allocator, pq, partials)) {
-                Object readyLock = configureReadySignal(listener);
-                if (startListener)
-                    listener.start(merged);
+                if (startListener) listener.start(merged);
                 if (merged.getRowCount() > 0) {
-                    if (awaitReady(listener, readyLock)) {
+                    if (awaitListenerReady(listener)) {
                         listener.putNext();
                     }
                 }
@@ -703,9 +662,9 @@ public final class ParquetManager {
             int numCountStarCols) throws Exception {
 
         try (FileSystemDatasetFactory factory = new FileSystemDatasetFactory(
-                allocator, NativeMemoryPool.getDefault(), FileFormat.PARQUET,
-                new String[] { fileUri });
-                Dataset dataset = factory.finish()) {
+                     allocator, NativeMemoryPool.getDefault(), FileFormat.PARQUET,
+                     new String[]{fileUri});
+             Dataset dataset = factory.finish()) {
 
             ScanOptions.Builder optBuilder = new ScanOptions.Builder(65536).columns(cols);
             if (filterBytes != null) {
@@ -725,17 +684,12 @@ public final class ParquetManager {
     }
 
     /**
-     * Scans a group of Parquet files with Acero, feeds the Arrow streams into
-     * DuckDB,
+     * Scans a group of Parquet files with Acero, feeds the Arrow streams into DuckDB,
      * and returns the aggregation result as a {@link VectorSchemaRoot}.
      *
-     * <p>
-     * Resource lifecycle note: {@code Scanner} objects are kept in an explicit list
-     * so
-     * the GC cannot finalize them (releasing the native C++ scanner) while DuckDB
-     * is still
-     * reading the Arrow C stream backed by that scanner. This prevents the
-     * intermittent
+     * <p>Resource lifecycle note: {@code Scanner} objects are kept in an explicit list so
+     * the GC cannot finalize them (releasing the native C++ scanner) while DuckDB is still
+     * reading the Arrow C stream backed by that scanner. This prevents the intermittent
      * native crash caused by DuckDB's JNI callbacks into a freed C++ scanner.
      */
     private static VectorSchemaRoot aggregateGroupToVsr(
@@ -746,7 +700,7 @@ public final class ParquetManager {
         int n = fileUris.size();
         List<FileSystemDatasetFactory> factories = new ArrayList<>(n);
         List<Dataset> datasets = new ArrayList<>(n);
-        List<Scanner> scanners = new ArrayList<>(n); // kept alive to prevent GC during native use
+        List<Scanner> scanners = new ArrayList<>(n);   // kept alive to prevent GC during native use
         List<ArrowReader> readers = new ArrayList<>(n); // closed before scanners
         List<ArrowArrayStream> cStreams = new ArrayList<>(n);
 
@@ -757,7 +711,7 @@ public final class ParquetManager {
             for (int i = 0; i < n; i++) {
                 FileSystemDatasetFactory factory = new FileSystemDatasetFactory(
                         allocator, NativeMemoryPool.getDefault(), FileFormat.PARQUET,
-                        new String[] { fileUris.get(i) });
+                        new String[]{fileUris.get(i)});
                 factories.add(factory);
                 Dataset dataset = factory.finish();
                 datasets.add(dataset);
@@ -769,7 +723,7 @@ public final class ParquetManager {
                     optBuilder.substraitFilter(direct);
                 }
                 Scanner scanner = dataset.newScan(optBuilder.build());
-                scanners.add(scanner); // hold reference — prevents premature GC
+                scanners.add(scanner);                   // hold reference — prevents premature GC
                 ArrowReader reader = scanner.scanBatches();
                 readers.add(reader);
                 ArrowArrayStream cStream = ArrowArrayStream.allocateNew(allocator);
@@ -779,46 +733,28 @@ public final class ParquetManager {
             }
 
             try (Statement stmt = conn.createStatement()) {
-                org.duckdb.DuckDBResultSet drs = (org.duckdb.DuckDBResultSet) stmt.executeQuery(duckSql);
+                org.duckdb.DuckDBResultSet drs =
+                        (org.duckdb.DuckDBResultSet) stmt.executeQuery(duckSql);
                 try (ArrowReader arrowReader = (ArrowReader) drs.arrowExportStream(allocator, 2048)) {
                     return concatBatches(allocator, arrowReader);
                 }
             }
         } finally {
-            // Close in reverse-dependency order: streams → readers → scanners → datasets →
-            // factories.
+            // Close in reverse-dependency order: streams → readers → scanners → datasets → factories.
             for (int i = cStreams.size() - 1; i >= 0; i--)
-                try {
-                    cStreams.get(i).close();
-                } catch (Exception ignored) {
-                }
+                try { cStreams.get(i).close(); } catch (Exception ignored) {}
             for (int i = readers.size() - 1; i >= 0; i--)
-                try {
-                    readers.get(i).close();
-                } catch (Exception ignored) {
-                }
+                try { readers.get(i).close(); } catch (Exception ignored) {}
             for (int i = scanners.size() - 1; i >= 0; i--)
-                try {
-                    scanners.get(i).close();
-                } catch (Exception ignored) {
-                }
+                try { scanners.get(i).close(); } catch (Exception ignored) {}
             for (int i = datasets.size() - 1; i >= 0; i--)
-                try {
-                    datasets.get(i).close();
-                } catch (Exception ignored) {
-                }
+                try { datasets.get(i).close(); } catch (Exception ignored) {}
             for (int i = factories.size() - 1; i >= 0; i--)
-                try {
-                    factories.get(i).close();
-                } catch (Exception ignored) {
-                }
+                try { factories.get(i).close(); } catch (Exception ignored) {}
         }
     }
 
-    /**
-     * Concatenates all batches from an ArrowReader into a single VectorSchemaRoot
-     * using copyFromSafe.
-     */
+    /** Concatenates all batches from an ArrowReader into a single VectorSchemaRoot using copyFromSafe. */
     private static VectorSchemaRoot concatBatches(BufferAllocator allocator, ArrowReader reader)
             throws IOException {
         VectorSchemaRoot src = reader.getVectorSchemaRoot();
@@ -837,8 +773,7 @@ public final class ParquetManager {
                 outRow++;
             }
         }
-        for (FieldVector v : outVecs)
-            v.setValueCount(outRow);
+        for (FieldVector v : outVecs) v.setValueCount(outRow);
         VectorSchemaRoot result = new VectorSchemaRoot(src.getSchema().getFields(), outVecs);
         result.setRowCount(outRow);
         return result;
@@ -857,14 +792,13 @@ public final class ParquetManager {
 
         if (numGbCols == 0) {
             // Scalar aggregates — one output row; merge column-by-column with primitives.
-            long[] longAccum = new long[exprs.size()];
-            double[] dblAccum = new double[exprs.size()];
-            Object[] objAccum = new Object[exprs.size()]; // MIN / MAX
+            long[]   longAccum = new long[exprs.size()];
+            double[] dblAccum  = new double[exprs.size()];
+            Object[] objAccum  = new Object[exprs.size()]; // MIN / MAX
             boolean any = false;
 
             for (VectorSchemaRoot partial : partials) {
-                if (partial.getRowCount() == 0)
-                    continue;
+                if (partial.getRowCount() == 0) continue;
                 any = true;
                 int col = 0;
                 for (ParquetQueryParser.SelectExpr expr : exprs) {
@@ -872,13 +806,11 @@ public final class ParquetManager {
                     if (!vec.isNull(0)) {
                         switch (expr.func) {
                             case COUNT_STAR, COUNT -> longAccum[col] += toLong(vec, 0);
-                            case SUM -> dblAccum[col] += toDouble(vec, 0);
+                            case SUM               -> dblAccum[col]  += toDouble(vec, 0);
                             case MIN -> objAccum[col] = objAccum[col] == null
-                                    ? vec.getObject(0)
-                                    : minOf(objAccum[col], vec.getObject(0));
+                                    ? vec.getObject(0) : minOf(objAccum[col], vec.getObject(0));
                             case MAX -> objAccum[col] = objAccum[col] == null
-                                    ? vec.getObject(0)
-                                    : maxOf(objAccum[col], vec.getObject(0));
+                                    ? vec.getObject(0) : maxOf(objAccum[col], vec.getObject(0));
                         }
                     }
                     col++;
@@ -888,10 +820,8 @@ public final class ParquetManager {
             List<FieldVector> outVecs = new ArrayList<>();
             for (Field f : outSchema.getFields()) {
                 FieldVector v = f.createVector(allocator);
-                if (v instanceof FixedWidthVector fv)
-                    fv.allocateNew(1);
-                else if (v instanceof VariableWidthVector vv)
-                    vv.allocateNew(32);
+                if      (v instanceof FixedWidthVector fv)   fv.allocateNew(1);
+                else if (v instanceof VariableWidthVector vv) vv.allocateNew(32);
                 outVecs.add(v);
             }
             if (any) {
@@ -900,8 +830,8 @@ public final class ParquetManager {
                     FieldVector v = outVecs.get(col);
                     switch (expr.func) {
                         case COUNT_STAR, COUNT -> ((BigIntVector) v).setSafe(0, longAccum[col]);
-                        case SUM -> ((Float8Vector) v).setSafe(0, dblAccum[col]);
-                        case MIN, MAX -> setVectorValue(v, 0, objAccum[col]);
+                        case SUM               -> ((Float8Vector) v).setSafe(0, dblAccum[col]);
+                        case MIN, MAX          -> setVectorValue(v, 0, objAccum[col]);
                     }
                     col++;
                 }
@@ -911,8 +841,7 @@ public final class ParquetManager {
             return r;
 
         } else {
-            // GROUP BY — map keyed by GB-column values, Object[] accumulator for agg
-            // values.
+            // GROUP BY — map keyed by GB-column values, Object[] accumulator for agg values.
             int numAggExprs = (int) exprs.stream()
                     .filter(e -> e.func != ParquetQueryParser.SelectExpr.AggFunc.COLUMN).count();
             Map<List<Object>, Object[]> byKey = new LinkedHashMap<>();
@@ -927,14 +856,13 @@ public final class ParquetManager {
                     Object[] accum = byKey.computeIfAbsent(key, k -> new Object[numAggExprs]);
                     int ai = 0;
                     for (ParquetQueryParser.SelectExpr expr : exprs) {
-                        if (expr.func == ParquetQueryParser.SelectExpr.AggFunc.COLUMN)
-                            continue;
+                        if (expr.func == ParquetQueryParser.SelectExpr.AggFunc.COLUMN) continue;
                         FieldVector vec = partial.getVector(numGbCols + ai);
                         if (!vec.isNull(r)) {
                             Object val = vec.getObject(r);
                             switch (expr.func) {
                                 case COUNT_STAR, COUNT -> accum[ai] = addLongs(accum[ai], val);
-                                case SUM -> accum[ai] = addDoubles(accum[ai], val);
+                                case SUM               -> accum[ai] = addDoubles(accum[ai], val);
                                 case MIN -> accum[ai] = accum[ai] == null ? val : minOf(accum[ai], val);
                                 case MAX -> accum[ai] = accum[ai] == null ? val : maxOf(accum[ai], val);
                             }
@@ -948,16 +876,14 @@ public final class ParquetManager {
             List<FieldVector> outVecs = new ArrayList<>();
             for (Field f : outSchema.getFields()) {
                 FieldVector v = f.createVector(allocator);
-                if (v instanceof FixedWidthVector fv)
-                    fv.allocateNew(totalRows);
-                else if (v instanceof VariableWidthVector vv)
-                    vv.allocateNew(totalRows * 16);
+                if      (v instanceof FixedWidthVector fv)   fv.allocateNew(totalRows);
+                else if (v instanceof VariableWidthVector vv) vv.allocateNew(totalRows * 16);
                 outVecs.add(v);
             }
             int row = 0;
             for (Map.Entry<List<Object>, Object[]> entry : byKey.entrySet()) {
-                List<Object> key = entry.getKey();
-                Object[] accum = entry.getValue();
+                List<Object> key   = entry.getKey();
+                Object[]     accum = entry.getValue();
                 int vecIdx = 0, ai = 0;
                 for (ParquetQueryParser.SelectExpr expr : exprs) {
                     FieldVector v = outVecs.get(vecIdx++);
@@ -968,8 +894,7 @@ public final class ParquetManager {
                 }
                 row++;
             }
-            for (FieldVector v : outVecs)
-                v.setValueCount(totalRows);
+            for (FieldVector v : outVecs) v.setValueCount(totalRows);
             VectorSchemaRoot result = new VectorSchemaRoot(outSchema.getFields(), outVecs);
             result.setRowCount(totalRows);
             return result;
@@ -977,24 +902,17 @@ public final class ParquetManager {
     }
 
     private static long toLong(FieldVector vec, int index) {
-        if (vec instanceof BigIntVector v)
-            return v.get(index);
-        if (vec instanceof IntVector v)
-            return v.get(index);
-        if (vec instanceof SmallIntVector v)
-            return v.get(index);
-        if (vec instanceof TinyIntVector v)
-            return v.get(index);
+        if (vec instanceof BigIntVector v)   return v.get(index);
+        if (vec instanceof IntVector v)      return v.get(index);
+        if (vec instanceof SmallIntVector v) return v.get(index);
+        if (vec instanceof TinyIntVector v)  return v.get(index);
         return ((Number) vec.getObject(index)).longValue();
     }
 
     private static double toDouble(FieldVector vec, int index) {
-        if (vec instanceof Float8Vector v)
-            return v.get(index);
-        if (vec instanceof Float4Vector v)
-            return v.get(index);
-        if (vec instanceof BigIntVector v)
-            return v.get(index);
+        if (vec instanceof Float8Vector v) return v.get(index);
+        if (vec instanceof Float4Vector v) return v.get(index);
+        if (vec instanceof BigIntVector v) return v.get(index);
         return ((Number) vec.getObject(index)).doubleValue();
     }
 
@@ -1011,13 +929,10 @@ public final class ParquetManager {
             Object[] merged = null;
             for (Future<List<Object[]>> f : futures) {
                 List<Object[]> rows = f.get();
-                if (rows.isEmpty())
-                    continue;
+                if (rows.isEmpty()) continue;
                 Object[] row = rows.get(0);
-                if (merged == null)
-                    merged = row.clone();
-                else
-                    mergeAggCols(exprs, merged, row, 0);
+                if (merged == null) merged = row.clone();
+                else mergeAggCols(exprs, merged, row, 0);
             }
             return merged != null ? Collections.singletonList(merged) : Collections.emptyList();
         }
@@ -1027,10 +942,8 @@ public final class ParquetManager {
             for (Object[] row : f.get()) {
                 List<Object> key = new ArrayList<>(Arrays.asList(row).subList(0, numGbCols));
                 Object[] existing = byKey.get(key);
-                if (existing == null)
-                    byKey.put(key, row.clone());
-                else
-                    mergeAggCols(exprs, existing, row, numGbCols);
+                if (existing == null) byKey.put(key, row.clone());
+                else mergeAggCols(exprs, existing, row, numGbCols);
             }
         }
         return new ArrayList<>(byKey.values());
@@ -1040,51 +953,41 @@ public final class ParquetManager {
             Object[] into, Object[] from, int numGbCols) {
         int aggIdx = 0;
         for (ParquetQueryParser.SelectExpr expr : exprs) {
-            if (expr.func == ParquetQueryParser.SelectExpr.AggFunc.COLUMN)
-                continue;
+            if (expr.func == ParquetQueryParser.SelectExpr.AggFunc.COLUMN) continue;
             int pos = numGbCols + aggIdx++;
             switch (expr.func) {
                 case COUNT_STAR, COUNT -> into[pos] = addLongs(into[pos], from[pos]);
-                case SUM -> into[pos] = addDoubles(into[pos], from[pos]);
-                case MIN -> into[pos] = minOf(into[pos], from[pos]);
-                case MAX -> into[pos] = maxOf(into[pos], from[pos]);
-                default -> {
-                }
+                case SUM               -> into[pos] = addDoubles(into[pos], from[pos]);
+                case MIN               -> into[pos] = minOf(into[pos], from[pos]);
+                case MAX               -> into[pos] = maxOf(into[pos], from[pos]);
+                default -> {}
             }
         }
     }
 
     private static Object addLongs(Object a, Object b) {
-        if (a == null)
-            return b == null ? 0L : ((Number) b).longValue();
-        if (b == null)
-            return ((Number) a).longValue();
+        if (a == null) return b == null ? 0L : ((Number) b).longValue();
+        if (b == null) return ((Number) a).longValue();
         return ((Number) a).longValue() + ((Number) b).longValue();
     }
 
     private static Object addDoubles(Object a, Object b) {
-        if (a == null)
-            return b == null ? 0.0 : ((Number) b).doubleValue();
-        if (b == null)
-            return ((Number) a).doubleValue();
+        if (a == null) return b == null ? 0.0 : ((Number) b).doubleValue();
+        if (b == null) return ((Number) a).doubleValue();
         return ((Number) a).doubleValue() + ((Number) b).doubleValue();
     }
 
     @SuppressWarnings("unchecked")
     private static Object minOf(Object a, Object b) {
-        if (a == null)
-            return b;
-        if (b == null)
-            return a;
+        if (a == null) return b;
+        if (b == null) return a;
         return ((Comparable<Object>) a).compareTo(b) <= 0 ? a : b;
     }
 
     @SuppressWarnings("unchecked")
     private static Object maxOf(Object a, Object b) {
-        if (a == null)
-            return b;
-        if (b == null)
-            return a;
+        if (a == null) return b;
+        if (b == null) return a;
         return ((Comparable<Object>) a).compareTo(b) >= 0 ? a : b;
     }
 
@@ -1100,10 +1003,8 @@ public final class ParquetManager {
         List<FieldVector> vectors = new ArrayList<>();
         for (Field field : aggSchema.getFields()) {
             FieldVector v = field.createVector(allocator);
-            if (v instanceof FixedWidthVector fv)
-                fv.allocateNew(rows.size());
-            else if (v instanceof VariableWidthVector vv)
-                vv.allocateNew(rows.size() * 16);
+            if      (v instanceof FixedWidthVector fv)   fv.allocateNew(rows.size());
+            else if (v instanceof VariableWidthVector vv) vv.allocateNew(rows.size() * 16);
             vectors.add(v);
         }
 
@@ -1123,11 +1024,9 @@ public final class ParquetManager {
                 }
             }
 
-            Object readyLock = configureReadySignal(listener);
-            if (startListener)
-                listener.start(root);
+            if (startListener) listener.start(root);
             if (!rows.isEmpty()) {
-                if (awaitReady(listener, readyLock)) {
+                if (awaitListenerReady(listener)) {
                     listener.putNext();
                 }
             }
@@ -1136,29 +1035,44 @@ public final class ParquetManager {
 
     // ── helpers ───────────────────────────────────────────────────────────────
 
-    private static Object configureReadySignal(FlightProducer.ServerStreamListener listener) {
-        Object readyLock = new Object();
-        Runnable signalReady = () -> {
-            synchronized (readyLock) {
-                readyLock.notifyAll();
+    /**
+     * Waits for Flight backpressure to clear without polling/sleeping.
+     *
+     * <p>Flight invokes the ready handler when the client can accept more data and
+     * the cancel handler when the client disconnects or cancels the request. The
+     * readiness flag is still checked after waking because callbacks can be delayed
+     * or spurious.
+     */
+    private static boolean awaitListenerReady(FlightProducer.ServerStreamListener listener)
+            throws InterruptedException {
+        if (listener.isCancelled()) {
+            return false;
+        }
+        if (listener.isReady()) {
+            return true;
+        }
+
+        Object lock = new Object();
+        boolean[] signalled = {false};
+        Runnable notifyWaiter = () -> {
+            synchronized (lock) {
+                signalled[0] = true;
+                lock.notifyAll();
             }
         };
-        listener.setOnReadyHandler(signalReady);
-        listener.setOnCancelHandler(signalReady);
-        return readyLock;
-    }
 
-    private static boolean awaitReady(FlightProducer.ServerStreamListener listener,
-            Object readyLock) throws InterruptedException {
-        synchronized (readyLock) {
-            while (!listener.isReady()) {
-                if (listener.isCancelled()) {
-                    return false;
+        listener.setOnReadyHandler(notifyWaiter);
+        listener.setOnCancelHandler(notifyWaiter);
+
+        synchronized (lock) {
+            while (!listener.isReady() && !listener.isCancelled()) {
+                if (!signalled[0]) {
+                    lock.wait();
                 }
-                readyLock.wait();
+                signalled[0] = false;
             }
-            return !listener.isCancelled();
         }
+        return !listener.isCancelled();
     }
 
     /** Resolves relative file paths to absolute {@code file://} URIs. */
@@ -1180,14 +1094,13 @@ public final class ParquetManager {
             }
         }
         if (pq.filter != null && !pq.filter.isBlank()) {
-            java.util.regex.Matcher m = java.util.regex.Pattern.compile("\"([^\"]+)\"").matcher(pq.filter);
-            while (m.find())
-                scanCols.add(m.group(1));
+            java.util.regex.Matcher m =
+                    java.util.regex.Pattern.compile("\"([^\"]+)\"").matcher(pq.filter);
+            while (m.find()) scanCols.add(m.group(1));
         }
         if (scanCols.isEmpty()) {
             Schema tSchema = getTableSchema(pq.schema, pq.table);
-            if (!tSchema.getFields().isEmpty())
-                scanCols.add(tSchema.getFields().get(0).getName());
+            if (!tSchema.getFields().isEmpty()) scanCols.add(tSchema.getFields().get(0).getName());
         }
         return scanCols.isEmpty() ? Optional.empty()
                 : Optional.of(scanCols.toArray(new String[0]));
@@ -1195,11 +1108,9 @@ public final class ParquetManager {
 
     private byte[] buildFilterBytes(ParquetQueryParser pq) {
         String filter = pq.filter;
-        if (filter == null || filter.trim().isEmpty())
-            return null;
+        if (filter == null || filter.trim().isEmpty()) return null;
         String ddl = tableDdlCache.getOrDefault(pq.schema, Collections.emptyMap()).get(pq.table);
-        if (ddl == null)
-            return null;
+        if (ddl == null) return null;
         try {
             ddl = ddl.replace(pq.schema + ".", "");
             ByteBuffer bb = SubstraitFilterConverter.toByteBuffer(filter, Collections.singletonList(ddl));
@@ -1214,12 +1125,10 @@ public final class ParquetManager {
 
     private static String buildGroupedDuckSql(ParquetQueryParser pq, int numFiles,
             boolean filterAlreadyApplied) {
-        if (numFiles == 1)
-            return buildDuckSqlWithFrom(pq, "\"t0\"", filterAlreadyApplied);
+        if (numFiles == 1) return buildDuckSqlWithFrom(pq, "\"t0\"", filterAlreadyApplied);
         StringBuilder from = new StringBuilder("(");
         for (int i = 0; i < numFiles; i++) {
-            if (i > 0)
-                from.append(" UNION ALL ");
+            if (i > 0) from.append(" UNION ALL ");
             from.append("SELECT * FROM \"t").append(i).append('"');
         }
         from.append(')');
@@ -1232,8 +1141,7 @@ public final class ParquetManager {
         boolean first = true;
 
         for (String gbCol : pq.groupByColumnNames) {
-            if (!first)
-                sql.append(", ");
+            if (!first) sql.append(", ");
             first = false;
             sql.append('"').append(gbCol).append('"');
         }
@@ -1241,18 +1149,16 @@ public final class ParquetManager {
         Set<String> gbSet = new LinkedHashSet<>(pq.groupByColumnNames);
         for (ParquetQueryParser.SelectExpr expr : pq.selectExprs) {
             if (expr.func == ParquetQueryParser.SelectExpr.AggFunc.COLUMN
-                    && gbSet.contains(expr.inputColumn))
-                continue;
-            if (!first)
-                sql.append(", ");
+                    && gbSet.contains(expr.inputColumn)) continue;
+            if (!first) sql.append(", ");
             first = false;
             switch (expr.func) {
                 case COUNT_STAR -> sql.append("count(*)");
-                case COUNT -> sql.append("count(\"").append(expr.inputColumn).append("\")");
-                case SUM -> sql.append("sum(\"").append(expr.inputColumn).append("\")");
-                case MIN -> sql.append("min(\"").append(expr.inputColumn).append("\")");
-                case MAX -> sql.append("max(\"").append(expr.inputColumn).append("\")");
-                case COLUMN -> sql.append('"').append(expr.inputColumn).append('"');
+                case COUNT      -> sql.append("count(\"").append(expr.inputColumn).append("\")");
+                case SUM        -> sql.append("sum(\"").append(expr.inputColumn).append("\")");
+                case MIN        -> sql.append("min(\"").append(expr.inputColumn).append("\")");
+                case MAX        -> sql.append("max(\"").append(expr.inputColumn).append("\")");
+                case COLUMN     -> sql.append('"').append(expr.inputColumn).append('"');
             }
         }
 
@@ -1262,8 +1168,7 @@ public final class ParquetManager {
         if (!pq.groupByColumnNames.isEmpty()) {
             sql.append(" GROUP BY ");
             for (int i = 0; i < pq.groupByColumnNames.size(); i++) {
-                if (i > 0)
-                    sql.append(", ");
+                if (i > 0) sql.append(", ");
                 sql.append('"').append(pq.groupByColumnNames.get(i)).append('"');
             }
         }
@@ -1273,33 +1178,21 @@ public final class ParquetManager {
     /** Distributes {@code items} into {@code numGroups} buckets via round-robin. */
     private static <T> List<List<T>> partitionIntoGroups(List<T> items, int numGroups) {
         List<List<T>> groups = new ArrayList<>(numGroups);
-        for (int i = 0; i < numGroups; i++)
-            groups.add(new ArrayList<>());
-        for (int i = 0; i < items.size(); i++)
-            groups.get(i % numGroups).add(items.get(i));
+        for (int i = 0; i < numGroups; i++) groups.add(new ArrayList<>());
+        for (int i = 0; i < items.size(); i++) groups.get(i % numGroups).add(items.get(i));
         return groups;
     }
 
     @SuppressWarnings("unchecked")
     private static void setVectorValue(FieldVector vec, int index, Object value) {
-        if (value == null) {
-            vec.setNull(index);
-            return;
-        }
-        if (vec instanceof BigIntVector)
-            ((BigIntVector) vec).setSafe(index, ((Number) value).longValue());
-        else if (vec instanceof IntVector)
-            ((IntVector) vec).setSafe(index, ((Number) value).intValue());
-        else if (vec instanceof SmallIntVector)
-            ((SmallIntVector) vec).setSafe(index, ((Number) value).shortValue());
-        else if (vec instanceof TinyIntVector)
-            ((TinyIntVector) vec).setSafe(index, ((Number) value).byteValue());
-        else if (vec instanceof Float8Vector)
-            ((Float8Vector) vec).setSafe(index, ((Number) value).doubleValue());
-        else if (vec instanceof Float4Vector)
-            ((Float4Vector) vec).setSafe(index, ((Number) value).floatValue());
-        else if (vec instanceof BitVector)
-            ((BitVector) vec).setSafe(index, ((Boolean) value) ? 1 : 0);
+        if (value == null) { vec.setNull(index); return; }
+        if      (vec instanceof BigIntVector)   ((BigIntVector)   vec).setSafe(index, ((Number) value).longValue());
+        else if (vec instanceof IntVector)      ((IntVector)      vec).setSafe(index, ((Number) value).intValue());
+        else if (vec instanceof SmallIntVector) ((SmallIntVector) vec).setSafe(index, ((Number) value).shortValue());
+        else if (vec instanceof TinyIntVector)  ((TinyIntVector)  vec).setSafe(index, ((Number) value).byteValue());
+        else if (vec instanceof Float8Vector)   ((Float8Vector)   vec).setSafe(index, ((Number) value).doubleValue());
+        else if (vec instanceof Float4Vector)   ((Float4Vector)   vec).setSafe(index, ((Number) value).floatValue());
+        else if (vec instanceof BitVector)      ((BitVector)      vec).setSafe(index, ((Boolean) value) ? 1 : 0);
         else if (vec instanceof VarCharVector) {
             byte[] bytes = value instanceof Text
                     ? ((Text) value).getBytes()
@@ -1308,21 +1201,13 @@ public final class ParquetManager {
         }
     }
 
-    /**
-     * Reads only the Parquet footer to get the total row count for a file. Zero
-     * column I/O.
-     */
+    /** Reads only the Parquet footer to get the total row count for a file. Zero column I/O. */
     private long footerRowCount(String rel) throws IOException {
         Path full = new Path(dataDirectory, rel);
         final long fileLen = fileSystem.getFileStatus(full).getLen();
         try (ParquetFileReader pfr = ParquetFileReader.open(new org.apache.parquet.io.InputFile() {
-            @Override
-            public long getLength() {
-                return fileLen;
-            }
-
-            @Override
-            public org.apache.parquet.io.SeekableInputStream newStream() throws IOException {
+            @Override public long getLength() { return fileLen; }
+            @Override public org.apache.parquet.io.SeekableInputStream newStream() throws IOException {
                 return org.apache.parquet.hadoop.util.HadoopStreams.wrap(fileSystem.open(full));
             }
         })) {
@@ -1338,13 +1223,8 @@ public final class ParquetManager {
         Path full = new Path(dataDirectory, rel);
         final long fileLen = fileSystem.getFileStatus(full).getLen();
         try (ParquetFileReader pfr = ParquetFileReader.open(new org.apache.parquet.io.InputFile() {
-            @Override
-            public long getLength() {
-                return fileLen;
-            }
-
-            @Override
-            public org.apache.parquet.io.SeekableInputStream newStream() throws IOException {
+            @Override public long getLength() { return fileLen; }
+            @Override public org.apache.parquet.io.SeekableInputStream newStream() throws IOException {
                 return org.apache.parquet.hadoop.util.HadoopStreams.wrap(fileSystem.open(full));
             }
         })) {
@@ -1353,18 +1233,20 @@ public final class ParquetManager {
             Object[] result = new Object[n];
             long totalRows = 0;
 
-            for (org.apache.parquet.hadoop.metadata.BlockMetaData block : pfr.getFooter().getBlocks()) {
+            for (org.apache.parquet.hadoop.metadata.BlockMetaData block
+                    : pfr.getFooter().getBlocks()) {
                 totalRows += block.getRowCount();
 
-                for (org.apache.parquet.hadoop.metadata.ColumnChunkMetaData cc : block.getColumns()) {
+                for (org.apache.parquet.hadoop.metadata.ColumnChunkMetaData cc
+                        : block.getColumns()) {
                     String colName = cc.getPath().toDotString();
 
                     for (int i = 0; i < n; i++) {
                         ParquetQueryParser.SelectExpr expr = exprs.get(i);
-                        if (!colName.equals(expr.inputColumn))
-                            continue;
+                        if (!colName.equals(expr.inputColumn)) continue;
 
-                        org.apache.parquet.column.statistics.Statistics<?> stats = cc.getStatistics();
+                        org.apache.parquet.column.statistics.Statistics<?> stats =
+                                cc.getStatistics();
                         if (expr.func == ParquetQueryParser.SelectExpr.AggFunc.MIN) {
                             if (stats == null || stats.isEmpty() || !stats.hasNonNullValue())
                                 return Optional.empty();
@@ -1393,23 +1275,17 @@ public final class ParquetManager {
     }
 
     /**
-     * Compares Acero's schema against the schema ParquetSchemaConverter would
-     * report for the
-     * same table. Any mismatch means the schema sent to Spark via FlightInfo
-     * disagrees with the
-     * data Acero actually streams — the telltale root cause of ClassCastException
-     * in join codegen.
+     * Compares Acero's schema against the schema ParquetSchemaConverter would report for the
+     * same table. Any mismatch means the schema sent to Spark via FlightInfo disagrees with the
+     * data Acero actually streams — the telltale root cause of ClassCastException in join codegen.
      */
     private void checkSchemaAlignment(String query, Schema aceroSchema, List<String> selectedColumns) {
         try {
             ParquetQueryParser pq = ParquetQueryParser.parse(query);
-            if (pq.hasAggregation)
-                return;
-            Schema expectedSchema = getTableSchema(pq.schema, pq.table,
-                    selectedColumns.isEmpty() ? null : selectedColumns);
+            if (pq.hasAggregation) return;
+            Schema expectedSchema = getTableSchema(pq.schema, pq.table, selectedColumns.isEmpty() ? null : selectedColumns);
             Map<String, org.apache.arrow.vector.types.pojo.ArrowType> expected = new java.util.LinkedHashMap<>();
-            for (org.apache.arrow.vector.types.pojo.Field f : expectedSchema.getFields())
-                expected.put(f.getName(), f.getType());
+            for (org.apache.arrow.vector.types.pojo.Field f : expectedSchema.getFields()) expected.put(f.getName(), f.getType());
 
             boolean mismatch = false;
             for (org.apache.arrow.vector.types.pojo.Field af : aceroSchema.getFields()) {
@@ -1436,7 +1312,7 @@ public final class ParquetManager {
                 .flatMap(bl -> {
                     try {
                         return Stream.of(bl.getHosts())
-                                .map(host -> HostUtils.LOOPBACK_HOSTS.contains(host) ? localhost : host);
+                                .map(host -> "localhost".equals(host) ? localhost : host);
                     } catch (IOException e) {
                         throw new UncheckedIOException(e);
                     }
