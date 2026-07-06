@@ -387,17 +387,19 @@ public final class ParquetManager {
                 + "' not found in table schema. Available columns: " + colFieldMap.keySet());
     }
 
-    public Map<String, Set<String>> locationsForQuery(String query) throws IOException {
+    public Map<String, FileAssignment> locationsForQuery(String query) throws IOException {
         ParquetQueryParser parsedQuery = ParquetQueryParser.parse(query);
-        Map<String, Set<String>> result = new HashMap<>();
+        Map<String, FileAssignment> result = new HashMap<>();
         URI dataDirectoryURI = fileSystem.getFileStatus(new Path(dataDirectory)).getPath().toUri();
         Path parquetPath = new Path(dataDirectory, parsedQuery.schema + "/" + parsedQuery.table);
         RemoteIterator<LocatedFileStatus> filesIter = fileSystem.listFiles(parquetPath, true);
         while (filesIter.hasNext()) {
             LocatedFileStatus file = filesIter.next();
-            if (file.isDirectory() || !file.getPath().getName().toLowerCase().endsWith(".parquet")) continue;
+            if (file.isDirectory() || !file.getPath().getName().toLowerCase().endsWith(".parquet")) {
+                continue;
+            }
             String relativePath = dataDirectoryURI.relativize(file.getPath().toUri()).toString();
-            result.put(relativePath, fileLocality(file).keySet());
+            result.put(relativePath, new FileAssignment(file.getLen(), fileLocality(file).keySet()));
         }
         return result;
     }
@@ -499,6 +501,7 @@ public final class ParquetManager {
             LOGGER.info("Sent {}, read {} batches to client", sent, read);
         }
     }
+
 
     // ── aggregation dispatch ──────────────────────────────────────────────────
 

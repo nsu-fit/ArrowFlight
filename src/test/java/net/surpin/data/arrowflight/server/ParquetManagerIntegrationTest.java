@@ -19,7 +19,6 @@ import java.net.URI;
 import java.nio.file.Paths;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -84,7 +83,7 @@ class ParquetManagerIntegrationTest {
 
     @Test
     void locationsForQueryReturnsRelativePaths() throws IOException {
-        Map<String, Set<String>> locations = manager.locationsForQuery(
+        Map<String, FileAssignment> locations = manager.locationsForQuery(
                 "SELECT * FROM test_schema.test_table");
         assertFalse(locations.isEmpty(), "Should find at least one parquet file");
         for (String path : locations.keySet()) {

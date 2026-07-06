@@ -6,6 +6,7 @@ import com.google.protobuf.Message;
 import com.google.protobuf.ProtocolStringList;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.map.IMap;
+import com.hazelcast.map.listener.EntryExpiredListener;
 import org.apache.arrow.flight.*;
 import org.apache.arrow.flight.sql.BasicFlightSqlProducer;
 import org.apache.arrow.flight.sql.SqlInfoBuilder;
@@ -23,30 +24,18 @@ import java.io.Serializable;
 import java.io.UncheckedIOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.LinkedHashMap;
-import java.util.Objects;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import static com.google.protobuf.ByteString.copyFrom;
-import static java.lang.String.format;
 import static java.util.UUID.randomUUID;
 
-/**
- * Реализация Flight SQL сервиса для Hadoop Parquet сервера.
- */
 public class HadoopFlightSqlService extends BasicFlightSqlProducer implements FlightProducer, AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger(HadoopFlightSqlService.class);
 
-    private static final String KEY_DELIMITER = ":";
     private static final String SERVER_REGISTRY_MAP = "server-registry";
+    private static final String STATEMENT_CACHE_MAP = "statement-cache";
 
     private final Location location;
     private final ParquetManager parquetManager;
@@ -54,8 +43,7 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
     private final HazelcastInstance hazelcastInstance;
     private final SqlInfoBuilder sqlInfoBuilder;
     private final IMap<String, Serializable> statementCache;
-    private final IMap<String, String> serverRegistry;
-    private final String serverRegistrationKey;
+    private final IMap<String, Long> serverRegistry;
 
     public HadoopFlightSqlService(Location location, ParquetManager parquetManager,
             BufferAllocator allocator, HazelcastInstance hazelcastInstance) {
@@ -63,10 +51,25 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
         this.parquetManager = Objects.requireNonNull(parquetManager);
         this.allocator = Objects.requireNonNull(allocator);
         this.hazelcastInstance = Objects.requireNonNull(hazelcastInstance);
-        this.statementCache = hazelcastInstance.getMap("statement-cache");
+        this.statementCache = hazelcastInstance.getMap(STATEMENT_CACHE_MAP);
         this.serverRegistry = hazelcastInstance.getMap(SERVER_REGISTRY_MAP);
-        this.serverRegistrationKey = "~srv~:" + randomUUID();
-        serverRegistry.put(serverRegistrationKey, location.getUri().toString());
+
+        String uri = location.getUri().toString();
+        LOGGER.info("Registering server: {}", uri);
+        serverRegistry.put(uri, 0L);
+
+        statementCache.addLocalEntryListener((EntryExpiredListener<String, Serializable>) event -> {
+            Serializable value = event.getOldValue();
+            if (value instanceof HandleState state && state.serverUri() != null) {
+                serverRegistry.compute(state.serverUri(), (k, v) -> {
+                    if (v == null) {
+                        return null;
+                    }
+                    long updated = v - state.bytes();
+                    return updated <= 0 ? 0L : updated;
+                });
+            }
+        });
 
         sqlInfoBuilder = new SqlInfoBuilder();
 
@@ -78,7 +81,6 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
                 .withFlightSqlServerSql(true)
                 .withFlightSqlServerSubstrait(false)
                 .withFlightSqlServerTransaction(FlightSql.SqlSupportedTransaction.SQL_SUPPORTED_TRANSACTION_NONE)
-                // .withSqlIdentifierQuoteChar()
                 .withSqlDdlCatalog(false)
                 .withSqlDdlSchema(true)
                 .withSqlDdlTable(true)
@@ -87,8 +89,6 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
                 .withSqlAllTablesAreSelectable(true)
                 .withSqlNullOrdering(FlightSql.SqlNullOrdering.SQL_NULLS_SORTED_AT_END)
                 .withSqlMaxColumnsInTable(1000);
-        // .withFlightSqlServerBulkIngestion(false)
-        // .withFlightSqlServerBulkIngestionTransaction(false);
 
         LOGGER.info("{} initialized", getClass().getName());
     }
@@ -100,24 +100,36 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
         try {
             if (request instanceof FlightSql.TicketStatementQuery statementQuery) {
                 final ByteString handle = statementQuery.getStatementHandle();
-                String query = (String) Objects.requireNonNull(statementCache.get(cacheKey(handle, "query")));
-                Map<String, Set<String>> pathLocations = parquetManager.locationsForQuery(query);
+                HandleState outerState = (HandleState) statementCache.get(handle.toStringUtf8());
+                String query = outerState.query();
+                Map<String, FileAssignment> pathLocations = parquetManager.locationsForQuery(query);
 
-                // All registered Flight servers, sorted for deterministic file assignment.
-                List<String> allServerUris = new ArrayList<>(serverRegistry.values());
-                Collections.sort(allServerUris);
+                // All registered Flight servers.
+                Set<String> allServerUris = new HashSet<>();
+                for (var entry : serverRegistry.entrySet()) {
+                    allServerUris.add(entry.getKey());
+                }
                 if (allServerUris.isEmpty()) {
-                    allServerUris = List.of(location.getUri().toString());
+                    allServerUris = Set.of(location.getUri().toString());
                 }
 
-                // One endpoint per server: group files by their assigned server so each
-                // server streams all its partial aggregation rows in a single response.
-                List<String> sortedPaths = pathLocations.keySet().stream().sorted().collect(Collectors.toList());
+                // Read current server loads from Hazelcast in one bulk call.
+                Map<String, Long> serverLoad = new HashMap<>(serverRegistry.getAll(allServerUris));
+                for (String uri : allServerUris) {
+                    serverLoad.putIfAbsent(uri, 0L);
+                }
+
+                // Group files by assigned server. Data locality is the primary criterion;
+                // among eligible servers, pick the one with the smallest cumulative load.
                 Map<String, List<String>> serverToFiles = new LinkedHashMap<>();
-                for (int i = 0; i < sortedPaths.size(); i++) {
-                    String path = sortedPaths.get(i);
-                    String serverUri = pickServer(pathLocations.get(path), allServerUris, i);
-                    serverToFiles.computeIfAbsent(serverUri, k -> new ArrayList<>()).add(path);
+                Map<String, Long> serverAdditions = new HashMap<>();
+                for (Map.Entry<String, FileAssignment> entry : pathLocations.entrySet()) {
+                    String path = entry.getKey();
+                    FileAssignment fa = entry.getValue();
+                    String bestServer = pickServer(fa.hosts(), allServerUris, serverLoad);
+                    serverToFiles.computeIfAbsent(bestServer, k -> new ArrayList<>()).add(path);
+                    serverLoad.merge(bestServer, fa.size(), Long::sum);
+                    serverAdditions.merge(bestServer, fa.size(), Long::sum);
                 }
 
                 List<FlightEndpoint> endpoints = new ArrayList<>();
@@ -129,17 +141,26 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
                     Location serverLoc = Location.forGrpcInsecure(parsedUri.getHost(), parsedUri.getPort());
 
                     ByteString serverHandle = copyFrom(randomUUID().toString().getBytes(StandardCharsets.UTF_8));
-                    statementCache.put(cacheKey(serverHandle, "query"), query, 10, TimeUnit.MINUTES);
-                    statementCache.put(cacheKey(serverHandle, "files"),
-                            serverFiles.toArray(new String[0]), 10, TimeUnit.MINUTES);
+                    long addedBytes = serverAdditions.getOrDefault(serverUri, 0L);
+                    statementCache.put(serverHandle.toStringUtf8(),
+                            HandleState.forServerFiles(query, serverFiles.toArray(new String[0]), serverUri, addedBytes),
+                            10, TimeUnit.MINUTES);
 
                     Ticket serverTicket = new Ticket(Any.pack(
                             FlightSql.TicketStatementQuery.newBuilder().setStatementHandle(serverHandle).build())
                             .toByteArray());
                     endpoints.add(new FlightEndpoint(serverTicket, serverLoc));
                 }
-                LOGGER.info("determineEndpoints: {} server endpoint(s) for {} file(s), query: {}",
-                        endpoints.size(), sortedPaths.size(), query);
+
+                // Persist cumulative server loads in Hazelcast for cross-query planning.
+                for (Map.Entry<String, Long> addition : serverAdditions.entrySet()) {
+                    String uri = addition.getKey();
+                    long delta = addition.getValue();
+                    serverRegistry.compute(uri, (k, v) -> (v == null ? 0L : v) + delta);
+                }
+                LOGGER.info("determineEndpoints: {} server(s) registered, {} endpoint(s) for {} file(s), query: {}",
+                        allServerUris.size(), endpoints.size(), pathLocations.size(), query);
+                LOGGER.debug("determineEndpoints: servers={}, files={}", allServerUris, pathLocations.keySet());
                 return endpoints;
             } else {
                 Ticket ticket = new Ticket(Any.pack(request).toByteArray());
@@ -358,7 +379,7 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
         FlightSql.TicketStatementQuery ticket = FlightSql.TicketStatementQuery.newBuilder().setStatementHandle(handle)
                 .build();
 
-        statementCache.put(cacheKey(handle, "query"), query, 10, TimeUnit.MINUTES);
+        statementCache.put(handle.toStringUtf8(), HandleState.forQuery(query), 10, TimeUnit.MINUTES);
 
         return getFlightInfoForSchema(ticket, descriptor, arrowSchema);
     }
@@ -390,12 +411,18 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
     public void getStreamStatement(FlightSql.TicketStatementQuery ticket, CallContext context,
             ServerStreamListener listener) {
         final ByteString handle = ticket.getStatementHandle();
-        String query = (String) Objects.requireNonNull(statementCache.get(cacheKey(handle, "query")));
+        HandleState state = (HandleState) statementCache.get(handle.toStringUtf8());
+        if (state == null) {
+            String msg = "No HandleState found in cache for handle: " + handle;
+            LOGGER.error(msg);
+            listener.error(new IllegalStateException(msg));
+            return;
+        }
 
-        // Per-server ticket: this server owns all files in the "files" list.
-        String[] filePaths = (String[]) statementCache.get(cacheKey(handle, "files"));
+        String query = state.query();
+        String[] filePaths = state.filePaths();
         if (filePaths == null) {
-            String msg = "No 'files' entry found in cache for handle: " + handle;
+            String msg = "No file paths in handle state: " + handle;
             LOGGER.error(msg);
             listener.error(new IllegalStateException(msg));
             return;
@@ -403,69 +430,56 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
 
         LOGGER.info("Server-grouped getStream: {} file(s), query='{}'", filePaths.length, query);
         try {
-            // readParquet delegates to executeAggregation for aggregation queries.
-            // Both paths receive all files at once → single FileSystemDatasetFactory
-            // lets Arrow Dataset's internal C++ thread pool parallelise the scan.
             parquetManager.readParquet(allocator, query, filePaths, listener, true);
             listener.completed();
         } catch (Exception e) {
             LOGGER.error("Failed to process server-grouped ticket, files: " + Arrays.toString(filePaths), e);
             listener.error(e);
+        } finally {
+            if (state.serverUri() != null) {
+                statementCache.remove(handle.toStringUtf8());
+                serverRegistry.compute(state.serverUri(), (k, v) -> {
+                    if (v == null) return null;
+                    long updated = v - state.bytes();
+                    return updated <= 0 ? 0L : updated;
+                });
+            }
         }
     }
 
     @Override
     public void close() throws Exception {
         try {
-            serverRegistry.remove(serverRegistrationKey);
+            serverRegistry.remove(location.getUri().toString());
         } catch (Throwable t) {
-            // Hazelcast may already be shut down; log and continue.
             LOGGER.warn("Failed to deregister server from registry: {}", t.getMessage());
         }
-        // Don't clear statementCache: doing so would wipe other servers' in-flight
-        // entries
-        // from the shared distributed map. Individual statement entries expire after 10
-        // min.
         AutoCloseables.close(allocator);
     }
 
     /**
-     * Picks the Flight server URI that should handle a given file.
-     * Prefers a server whose hostname matches one of the file's block hosts (data
-     * locality).
-     * Falls back to round-robin when all servers share the same host (e.g.,
-     * localhost in tests)
-     * or when no server matches any block host.
+     * Picks the Flight server URI with the smallest cumulative load.
+     * Prefers a server whose hostname matches one of the file's block hosts
+     * (data locality) when not all servers are equally local.
      */
-    private static String pickServer(Set<String> fileHosts, List<String> allServerUris, int fileIndex) {
+    private static String pickServer(Set<String> fileHosts, Set<String> allServerUris,
+            Map<String, Long> serverLoad) {
         Set<String> normalizedFileHosts = fileHosts.stream()
                 .map(HostUtils::normalize)
                 .collect(Collectors.toSet());
 
-        List<String> localServers = allServerUris.stream()
+        var localServers = allServerUris.stream()
                 .filter(uri -> normalizedFileHosts.contains(HostUtils.normalize(uri)))
-                .collect(Collectors.toList());
+                .toList();
 
-        if (!localServers.isEmpty() && localServers.size() < allServerUris.size()) {
-            return localServers.get(fileIndex % localServers.size());
-        }
-        return allServerUris.get(fileIndex % allServerUris.size());
+        boolean hasLocality = !localServers.isEmpty() && localServers.size() < allServerUris.size();
+        var candidates = hasLocality ? localServers : List.copyOf(allServerUris);
+        return candidates.stream().min(Comparator.comparingLong(serverLoad::get)).orElseThrow();
     }
 
     protected <T extends Message> FlightInfo getFlightInfoForSchema(T request, FlightDescriptor descriptor,
             Schema schema) {
         final List<FlightEndpoint> endpoints = determineEndpoints(request, descriptor, schema);
         return new FlightInfo(schema, descriptor, endpoints, -1, -1);
-    }
-
-    private String cacheKey(ByteString handle, String... keys) {
-        Objects.requireNonNull(handle);
-        Objects.requireNonNull(keys);
-        if (Arrays.stream(keys).anyMatch(key -> key == null || key.contains(KEY_DELIMITER))) {
-            throw new IllegalArgumentException(
-                    "Keys can't be empty or contain '" + KEY_DELIMITER + "'. But got " + String.join(",", keys));
-        }
-
-        return handle.toStringUtf8() + KEY_DELIMITER + String.join(":", keys);
     }
 }
