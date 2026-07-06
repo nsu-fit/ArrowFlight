@@ -54,7 +54,9 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
         this.statementCache = hazelcastInstance.getMap(STATEMENT_CACHE_MAP);
         this.serverRegistry = hazelcastInstance.getMap(SERVER_REGISTRY_MAP);
 
-        serverRegistry.put(location.getUri().toString(), 0L);
+        String uri = location.getUri().toString();
+        LOGGER.info("Registering server: {}", uri);
+        serverRegistry.put(uri, 0L);
 
         statementCache.addLocalEntryListener((EntryExpiredListener<String, Serializable>) event -> {
             Serializable value = event.getOldValue();
@@ -64,7 +66,7 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
                         return null;
                     }
                     long updated = v - state.bytes();
-                    return updated <= 0 ? null : updated;
+                    return updated <= 0 ? 0L : updated;
                 });
             }
         });
@@ -103,7 +105,10 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
                 Map<String, FileAssignment> pathLocations = parquetManager.locationsForQuery(query);
 
                 // All registered Flight servers.
-                Set<String> allServerUris = serverRegistry.keySet();
+                Set<String> allServerUris = new HashSet<>();
+                for (var entry : serverRegistry.entrySet()) {
+                    allServerUris.add(entry.getKey());
+                }
                 if (allServerUris.isEmpty()) {
                     allServerUris = Set.of(location.getUri().toString());
                 }
@@ -153,8 +158,9 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
                     long delta = addition.getValue();
                     serverRegistry.compute(uri, (k, v) -> (v == null ? 0L : v) + delta);
                 }
-                LOGGER.info("determineEndpoints: {} server endpoint(s) for {} file(s), query: {}",
-                        endpoints.size(), pathLocations.size(), query);
+                LOGGER.info("determineEndpoints: {} server(s) registered, {} endpoint(s) for {} file(s), query: {}",
+                        allServerUris.size(), endpoints.size(), pathLocations.size(), query);
+                LOGGER.debug("determineEndpoints: servers={}, files={}", allServerUris, pathLocations.keySet());
                 return endpoints;
             } else {
                 Ticket ticket = new Ticket(Any.pack(request).toByteArray());
@@ -435,7 +441,7 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
                 serverRegistry.compute(state.serverUri(), (k, v) -> {
                     if (v == null) return null;
                     long updated = v - state.bytes();
-                    return updated <= 0 ? null : updated;
+                    return updated <= 0 ? 0L : updated;
                 });
             }
         }
