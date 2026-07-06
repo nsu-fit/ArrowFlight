@@ -102,18 +102,22 @@ class ArrowFlightPerfTest {
             Location location = Location.forGrpcInsecure("localhost", port);
             HadoopFlightSqlService sqlService =
                     new HadoopFlightSqlService(location, parquetManager, allocator, hz);
-            FlightServer flightServer = FlightServer.builder(allocator, location, sqlService).build();
+            FlightServer flightServer = FlightServer.builder(allocator, location, sqlService)
+                    .maxInboundMessageSize(Integer.MAX_VALUE)
+                    .build();
             flightServer.start();
             System.out.println("Arrow Flight server started on port " + port);
 
-            // ── build parquet file URIs (for local Dataset Scanner) ───────
+            // ── build parquet paths for local DuckDB ──────────────────────
             String parquetDir = dataDir + "/" + schema + "/" + table;
             String[] parquetUris = findParquetFiles(localFs, parquetDir);
             System.out.println("Parquet files  : " + Arrays.toString(parquetUris));
             System.out.println();
 
             // ── Flight client ─────────────────────────────────────────────
-            FlightClient flightClient = FlightClient.builder(allocator, location).build();
+            FlightClient flightClient = FlightClient.builder(allocator, location)
+                    .maxInboundMessageSize(Integer.MAX_VALUE)
+                    .build();
             FlightSqlClient sqlClient  = new FlightSqlClient(flightClient);
 
             // ── scenarios ─────────────────────────────────────────────────
