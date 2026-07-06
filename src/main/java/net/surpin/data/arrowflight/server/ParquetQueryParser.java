@@ -133,30 +133,32 @@ public class ParquetQueryParser {
         DSLContext noQuoteCtx = DSL.using(SQLDialect.DEFAULT,
                 new Settings().withRenderQuotedNames(RenderQuotedNames.NEVER));
 
-        // Detect JOIN: multiple FROM entries, or a single FROM entry that is a join tree.
-        boolean isJoin = fromTables.size() > 1
-                || (fromTables.size() == 1 && hasJoinKeywords(originalSql, fromTables.get(0)));
+        // Detect JOIN: comma-separated tables are NOT supported — throw as before.
+        if (fromTables.size() > 1) {
+            throw new IllegalArgumentException(
+                    "Can only select from ONE table, but got query: " + select.getSQL());
+        }
+
+        // A single FROM entry that contains an explicit JOIN keyword.
+        boolean isJoin = hasJoinKeywords(originalSql);
 
         if (isJoin) {
-            return parseJoinSelect(select, fromTables, noQuoteCtx, originalSql);
+            return parseJoinSelect(select, noQuoteCtx, originalSql);
         }
         return parseSingleTableSelect(select, fromTables, noQuoteCtx);
     }
 
-    /** Checks whether the given table renders as a JOIN clause. */
-    private static boolean hasJoinKeywords(String sql, Table<?> fromTable) {
+    /** Checks whether the original SQL string contains an explicit JOIN keyword. */
+    private static boolean hasJoinKeywords(String sql) {
         return sql.toLowerCase(java.util.Locale.ROOT).contains(" join ");
     }
 
     /** Parses a JOIN query: extracts table references and builds DuckDB-compatible SQL. */
     private static ParquetQueryParser parseJoinSelect(Select<?> select,
-            List<? extends Table<?>> fromTables, DSLContext noQuoteCtx, String originalSql) {
+            DSLContext noQuoteCtx, String originalSql) {
 
         // Collect leaf tables from the JOIN tree (schema, table, alias)
-        List<JoinTable> joinTables = new ArrayList<>();
-        for (Table<?> t : fromTables) {
-            collectLeafTables(t, joinTables);
-        }
+        List<JoinTable> joinTables = extractJoinTables(originalSql);
         if (joinTables.isEmpty()) {
             throw new IllegalArgumentException("Could not extract table references from JOIN: " + originalSql);
         }
@@ -265,44 +267,38 @@ public class ParquetQueryParser {
 
     // ── JOIN helper methods ───────────────────────────────────────────────
 
-    private static void collectLeafTables(Table<?> t, List<JoinTable> out) {
-        Object[] children = tryGetJoinChildren(t);
-        if (children != null) {
-            collectLeafTables((Table<?>) children[0], out);
-            collectLeafTables((Table<?>) children[1], out);
-            return;
+    private static final Pattern JOIN_KEYWORD = Pattern.compile(
+            "\\b(?:FROM|(?:(?:LEFT|RIGHT|FULL(?:\\s+OUTER)?|INNER|CROSS)\\s+)?JOIN)\\s+",
+            Pattern.CASE_INSENSITIVE);
+
+    private static final Pattern TABLE_REF = Pattern.compile(
+            "^(\\w+(?:\\.\\w+)?)(?:\\s+(?:AS\\s+)?(\\w+))?",
+            Pattern.CASE_INSENSITIVE);
+
+    private static List<JoinTable> extractJoinTables(String sql) {
+        List<JoinTable> tables = new ArrayList<>();
+        Matcher kw = JOIN_KEYWORD.matcher(sql);
+        while (kw.find()) {
+            String rest = sql.substring(kw.end()).trim();
+            Matcher tr = TABLE_REF.matcher(rest);
+            if (tr.find()) {
+                String qualified = tr.group(1);
+                String alias = tr.group(2);
+                int dot = qualified.indexOf('.');
+                String schema = dot > 0 ? qualified.substring(0, dot) : null;
+                String table = dot > 0 ? qualified.substring(dot + 1) : qualified;
+                if (alias == null) alias = table;
+                tables.add(new JoinTable(schema, table, alias));
+            }
         }
-        String schema = t.getSchema() != null ? t.getSchema().getName() : null;
-        String name = t.getName();
-        String alias = t.getQualifiedName().first();
-        out.add(new JoinTable(schema, name, alias));
+        return tables;
     }
 
-    private static Object[] tryGetJoinChildren(Table<?> t) {
-        try {
-            java.lang.reflect.Field left = findJoinChildField(t.getClass());
-            if (left == null) return null;
-            java.lang.reflect.Field right = findJoinChildField(t.getClass(), left.getName());
-            if (right == null) return null;
-            left.setAccessible(true);
-            right.setAccessible(true);
-            return new Object[]{left.get(t), right.get(t)};
-        } catch (Exception e) {
-            return null;
-        }
-    }
+    private static final Pattern JOIN_ANY = Pattern.compile(
+            "\\b(?:FROM|(?:(?:LEFT|RIGHT|FULL(?:\\s+OUTER)?|INNER|CROSS)\\s+)?JOIN)\\s+",
+            Pattern.CASE_INSENSITIVE);
 
-    private static java.lang.reflect.Field findJoinChildField(Class<?> clazz, String... exclude) {
-        for (java.lang.reflect.Field f : clazz.getDeclaredFields()) {
-            String name = f.getName();
-            if (java.lang.reflect.Modifier.isStatic(f.getModifiers())) continue;
-            if (!Table.class.isAssignableFrom(f.getType())) continue;
-            boolean skip = false;
-            for (String ex : exclude) { if (name.equals(ex)) { skip = true; break; } }
-            if (!skip) return f;
-        }
-        return null;
-    }
+    private static final String JOIN_ANY_RE = "(?:FROM|(?:(?:LEFT|RIGHT|FULL(?:\\s+OUTER)?|INNER|CROSS)\\s+)?JOIN)";
 
     static String rewriteTableRefs(String sql, List<JoinTable> joinTables) {
         String result = sql;
@@ -311,12 +307,12 @@ public class ParquetQueryParser {
                     ? jt.schema() + "." + jt.table() : jt.table();
             if (!jt.alias().equals(jt.table())) {
                 result = result.replaceAll(
-                        "(?i)(\\bFROM\\s+|\\bJOIN\\s+)" + Pattern.quote(qualified)
+                        "(?i)(\\b" + JOIN_ANY_RE + "\\s+)" + Pattern.quote(qualified)
                                 + "\\s+(?:AS\\s+)?" + Pattern.quote(jt.alias()),
                         "$1" + Matcher.quoteReplacement(jt.alias()));
             } else {
                 result = result.replaceAll(
-                        "(?i)(\\bFROM\\s+|\\bJOIN\\s+|,\\s*)" + Pattern.quote(qualified) + "\\b",
+                        "(?i)(\\b" + JOIN_ANY_RE + "\\s+|,\\s*)" + Pattern.quote(qualified) + "\\b",
                         "$1" + Matcher.quoteReplacement(jt.table()));
             }
         }
