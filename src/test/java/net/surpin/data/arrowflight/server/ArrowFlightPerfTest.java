@@ -20,11 +20,15 @@ import org.apache.hadoop.fs.LocalFileSystem;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+import java.io.File;
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.URI;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
+import java.util.stream.Stream;
 
 import static org.apache.arrow.memory.DefaultAllocationManagerOption.ALLOCATION_MANAGER_TYPE_PROPERTY_NAME;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -44,24 +48,30 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ArrowFlightPerfTest {
 
     private static final int WARMUP_RUNS = 1;
-    private static final int BENCH_RUNS  = 3;
+    private static final int BENCH_RUNS  = 10;
+    private static final int PERF_DATA_SIZE = 100000;
 
     // ─── JUnit entry-point ───────────────────────────────────────────────
 
     @Test
     void compareLocalArrowVsArrowFlight() throws Exception {
-        String dataDir = Paths.get("src/test/resources/test_db").toAbsolutePath().toString();
-        run(dataDir, "test_schema", "test_table");
+        String genDir = generatePerfData("target/perf-data", "test_schema", "test_table");
+        try {
+            run(genDir, "test_schema", "test_table");
+        } finally {
+            deleteDir(new File("target/perf-data"));
+        }
     }
 
     // ─── standalone entry-point ──────────────────────────────────────────
 
     public static void main(String[] args) throws Exception {
-        String dataDir = args.length > 0 ? args[0]
-                : Paths.get("src/test/resources/test_db").toAbsolutePath().toString();
-        String schema  = args.length > 1 ? args[1] : "test_schema";
-        String table   = args.length > 2 ? args[2] : "test_table";
-        run(dataDir, schema, table);
+        String genDir = generatePerfData("target/perf-data", "test_schema", "test_table");
+        try {
+            run(genDir, "test_schema", "test_table");
+        } finally {
+            deleteDir(new File("target/perf-data"));
+        }
     }
 
     // ─── benchmark logic ─────────────────────────────────────────────────
@@ -178,6 +188,48 @@ class ArrowFlightPerfTest {
             sqlClient.close();
             flightServer.shutdown();
             hz.shutdown();
+        }
+    }
+
+    // ─── data generation ─────────────────────────────────────────────────
+
+    static String generatePerfData(String baseDir, String schema, String table) throws Exception {
+        String tableDir = baseDir + "/" + schema + "/" + table;
+        new File(tableDir).mkdirs();
+        String parquetPath = tableDir + "/gen.parquet";
+
+        System.out.println("Generating " + PERF_DATA_SIZE + " rows of perf data...");
+        try (Connection conn = DriverManager.getConnection("jdbc:duckdb:");
+             Statement stmt = conn.createStatement()) {
+            stmt.execute("CREATE TABLE gen AS SELECT" +
+                    " range AS id," +
+                    " (range % 2 = 0) AS bool_col," +
+                    " CAST(range % 128 AS TINYINT) AS tinyint_col," +
+                    " CAST(range AS SMALLINT) AS smallint_col," +
+                    " range AS int_col," +
+                    " CAST(range AS BIGINT) AS bigint_col," +
+                    " CAST(range AS REAL) AS float_col," +
+                    " CAST(range AS DOUBLE) AS double_col," +
+                    " 'd' || LPAD(CAST(range % 31 + 1 AS VARCHAR), 2, '0') AS date_string_col," +
+                    " 'val_' || range AS string_col," +
+                    " CAST(range * 1000000 AS BIGINT) AS timestamp_col," +
+                    " CAST(range % 4 + 2022 AS INTEGER) AS year," +
+                    " CAST(range % 12 + 1 AS INTEGER) AS month" +
+                    " FROM range(0, " + PERF_DATA_SIZE + ")");
+            stmt.execute("COPY gen TO '" + parquetPath + "' (FORMAT PARQUET)");
+        }
+        System.out.println("Generated: " + parquetPath);
+        System.out.println();
+        return new File(baseDir).getAbsolutePath();
+    }
+
+    static void deleteDir(File dir) {
+        if (dir == null || !dir.exists()) return;
+        try (Stream<Path> files = Files.walk(dir.toPath())) {
+            files.sorted(java.util.Comparator.reverseOrder())
+                    .map(Path::toFile)
+                    .forEach(File::delete);
+        } catch (IOException ignored) {
         }
     }
 
