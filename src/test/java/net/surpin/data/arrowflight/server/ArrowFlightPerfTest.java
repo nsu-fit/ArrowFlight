@@ -49,7 +49,7 @@ class ArrowFlightPerfTest {
 
     private static final int WARMUP_RUNS = 1;
     private static final int BENCH_RUNS  = 10;
-    private static final int PERF_DATA_SIZE = 100000;
+    private static final int PERF_DATA_SIZE = 10_000_000;
 
     // ─── JUnit entry-point ───────────────────────────────────────────────
 
@@ -163,15 +163,15 @@ class ArrowFlightPerfTest {
                 long rowCount = 0;
 
                 for (int i = 0; i < BENCH_RUNS; i++) {
-                    long t0 = System.currentTimeMillis();
+                    long t0 = System.nanoTime();
                     rowCount = s.localRead.countRows();
-                    localTimes[i] = System.currentTimeMillis() - t0;
+                    localTimes[i] = System.nanoTime() - t0;
 
-                    t0 = System.currentTimeMillis();
+                    t0 = System.nanoTime();
                     s.flightRead.countRows();
-                    flightTimes[i] = System.currentTimeMillis() - t0;
+                    flightTimes[i] = System.nanoTime() - t0;
                 }
-                results.add(new BenchResult(s.label, median(localTimes), median(flightTimes), rowCount));
+                results.add(new BenchResult(s.label, median(localTimes) / 1_000_000, median(flightTimes) / 1_000_000, rowCount));
             }
 
             // ── print results ─────────────────────────────────────────────
