@@ -205,8 +205,8 @@ class ArrowFlightPerfTest {
                     " range AS id," +
                     " (range % 2 = 0) AS bool_col," +
                     " CAST(range % 128 AS TINYINT) AS tinyint_col," +
-                    " CAST(range AS SMALLINT) AS smallint_col," +
-                    " range AS int_col," +
+                    " CAST(range % 32767 AS SMALLINT) AS smallint_col," +
+                    " range % 1000000 AS int_col," +
                     " CAST(range AS BIGINT) AS bigint_col," +
                     " CAST(range AS REAL) AS float_col," +
                     " CAST(range AS DOUBLE) AS double_col," +
