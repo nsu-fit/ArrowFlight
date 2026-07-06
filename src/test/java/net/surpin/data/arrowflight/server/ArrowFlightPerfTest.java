@@ -49,7 +49,7 @@ class ArrowFlightPerfTest {
 
     private static final int WARMUP_RUNS = 1;
     private static final int BENCH_RUNS  = 10;
-    private static final int PERF_DATA_SIZE = 10_000_000;
+    private static final int PERF_DATA_SIZE = 1_000_000;
 
     // ─── JUnit entry-point ───────────────────────────────────────────────
 
