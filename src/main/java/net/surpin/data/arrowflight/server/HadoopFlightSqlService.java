@@ -26,6 +26,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Objects;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -112,31 +113,44 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
 
                 // One endpoint per server: group files by their assigned server so each
                 // server streams all its partial aggregation rows in a single response.
+                ParquetQueryParser pq = ParquetQueryParser.parse(query);
                 List<String> sortedPaths = pathLocations.keySet().stream().sorted().collect(Collectors.toList());
-                Map<String, List<String>> serverToFiles = new LinkedHashMap<>();
-                for (int i = 0; i < sortedPaths.size(); i++) {
-                    String path = sortedPaths.get(i);
-                    String serverUri = pickServer(pathLocations.get(path), allServerUris, i);
-                    serverToFiles.computeIfAbsent(serverUri, k -> new ArrayList<>()).add(path);
+
+                if (pq.isJoin) {
+                    String allFilesServer = findServerWithAllFiles(pathLocations, allServerUris);
+                    if (allFilesServer != null) {
+                        LOGGER.info("Join executes server-side on {} with {} file(s)", allFilesServer, sortedPaths.size());
+                        return List.of(createEndpoint(allFilesServer, sortedPaths, query));
+                    }
+                    LOGGER.info("Join query spans multiple servers; splitting into per-table reads for Spark-side join");
+                    List<FlightEndpoint> endpoints = new ArrayList<>();
+                    Map<String, Set<String>> seenTables = new LinkedHashMap<>();
+                    for (String path : sortedPaths) {
+                        String table = extractTableFromPath(path);
+                        seenTables.computeIfAbsent(table, k -> new LinkedHashSet<>()).add(path);
+                    }
+                    for (Map.Entry<String, Set<String>> entry : seenTables.entrySet()) {
+                        String table = entry.getKey();
+                        List<String> tablePaths = new ArrayList<>(entry.getValue());
+                        String perTableQuery = "SELECT * FROM " + table;
+                        Map<String, List<String>> byServer = groupFilesByServer(pathLocations, allServerUris, tablePaths);
+
+                        for (Map.Entry<String, List<String>> e : byServer.entrySet()) {
+                            endpoints.add(createEndpoint(e.getKey(), e.getValue(), perTableQuery));
+                        }
+                    }
+                    return endpoints;
                 }
+
+                // Non-join: existing per-server file grouping logic.
+                Map<String, List<String>> serverToFiles = groupFilesByServer(pathLocations, allServerUris, sortedPaths);
 
                 List<FlightEndpoint> endpoints = new ArrayList<>();
                 for (Map.Entry<String, List<String>> entry : serverToFiles.entrySet()) {
                     String serverUri = entry.getKey();
                     List<String> serverFiles = entry.getValue();
 
-                    URI parsedUri = URI.create(serverUri);
-                    Location serverLoc = Location.forGrpcInsecure(parsedUri.getHost(), parsedUri.getPort());
-
-                    ByteString serverHandle = copyFrom(randomUUID().toString().getBytes(StandardCharsets.UTF_8));
-                    statementCache.put(cacheKey(serverHandle, "query"), query, 10, TimeUnit.MINUTES);
-                    statementCache.put(cacheKey(serverHandle, "files"),
-                            serverFiles.toArray(new String[0]), 10, TimeUnit.MINUTES);
-
-                    Ticket serverTicket = new Ticket(Any.pack(
-                            FlightSql.TicketStatementQuery.newBuilder().setStatementHandle(serverHandle).build())
-                            .toByteArray());
-                    endpoints.add(new FlightEndpoint(serverTicket, serverLoc));
+                    endpoints.add(createEndpoint(serverUri, serverFiles, query));
                 }
                 LOGGER.info("determineEndpoints: {} server endpoint(s) for {} file(s), query: {}",
                         endpoints.size(), sortedPaths.size(), query);
@@ -148,6 +162,16 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
+    }
+
+    private Map<String, List<String>> groupFilesByServer(Map<String, Set<String>> pathLocations, List<String> allServerUris, List<String> sortedPaths) {
+        Map<String, List<String>> serverToFiles = new LinkedHashMap<>();
+        for (int i = 0; i < sortedPaths.size(); i++) {
+            String path = sortedPaths.get(i);
+            String serverUri = pickServer(pathLocations.get(path), allServerUris, i);
+            serverToFiles.computeIfAbsent(serverUri, k -> new ArrayList<>()).add(path);
+        }
+        return serverToFiles;
     }
 
     @Override
@@ -409,9 +433,51 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
             parquetManager.readParquet(allocator, query, filePaths, listener, true);
             listener.completed();
         } catch (Exception e) {
-            LOGGER.error("Failed to process server-grouped ticket, files: " + Arrays.toString(filePaths), e);
+            LOGGER.error("Failed to process server-grouped ticket, files: {}", Arrays.toString(filePaths), e);
             listener.error(e);
         }
+    }
+
+    /** Returns a server URI that has ALL files in the map, or null if none does. */
+    private String findServerWithAllFiles(Map<String, Set<String>> pathLocations,
+            List<String> allServerUris) {
+        outer:
+        for (String serverUri : allServerUris) {
+            String normServer = HostUtils.normalize(serverUri);
+            for (Set<String> hosts : pathLocations.values()) {
+                boolean hasHost = false;
+                for (String host : hosts) {
+                    if (HostUtils.normalize(host).equals(normServer)) {
+                        hasHost = true;
+                        break;
+                    }
+                }
+                if (!hasHost) continue outer;
+            }
+            return serverUri;
+        }
+        return null;
+    }
+
+    private static String extractTableFromPath(String path) {
+        int lastSep = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+        if (lastSep < 0) return path;
+        String parent = path.substring(0, lastSep);
+        return parent.replace('\\', '.').replace('/', '.');
+    }
+
+    private FlightEndpoint createEndpoint(String serverUri, List<String> serverFiles,
+            String query) {
+        URI parsedUri = URI.create(serverUri);
+        Location serverLoc = Location.forGrpcInsecure(parsedUri.getHost(), parsedUri.getPort());
+        ByteString serverHandle = copyFrom(randomUUID().toString().getBytes(StandardCharsets.UTF_8));
+        statementCache.put(cacheKey(serverHandle, "query"), query, 10, TimeUnit.MINUTES);
+        statementCache.put(cacheKey(serverHandle, "files"),
+                serverFiles.toArray(new String[0]), 10, TimeUnit.MINUTES);
+        Ticket serverTicket = new Ticket(Any.pack(
+                FlightSql.TicketStatementQuery.newBuilder().setStatementHandle(serverHandle).build())
+                .toByteArray());
+        return new FlightEndpoint(serverTicket, serverLoc);
     }
 
     @Override
