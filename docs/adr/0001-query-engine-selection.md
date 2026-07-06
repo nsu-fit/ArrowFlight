@@ -6,7 +6,7 @@ Date: 2026-07-06
 ## Decision Record
 
 - Timestamp: 2026-07-06T12:00:00+07:00
-- User: @evilguest
+- User: s.samokhin
 - Question: Which query engine(s) should the Flight SQL server use to read
   Parquet, given that Acero (Arrow Dataset JNI) and DuckDB have complementary
   performance profiles?
@@ -99,6 +99,45 @@ server itself and by any local-optimised client.
   file to initialise JNI. DuckDB pre-warms 8 thread-local connections (pool).
   Acero's Substrait converter warm-up is skipped (not needed when Acero is used
   for filter-less scans only).
+
+## Alternatives Considered
+
+### Option A: Acero-only (always read through Acero)
+
+Always use Acero JNI for all queries, including filtered scans. This
+simplifies the codebase to a single engine. However, Acero does not
+push filters into the Parquet reader — it reads all row groups and
+filters in memory afterwards. Filtered queries are therefore 3-4x slower
+than DuckDB. Aggregations are not supported at all, requiring a separate
+fallback or client-side computation.
+
+- **Pros**: Single engine to maintain, zero-copy Arrow output, fastest
+  for full scans and projections.
+- **Cons**: Slow filters, no aggregations, requires Substrait converter
+  warm-up.
+
+### Option B: DuckDB-only (always read through DuckDB)
+
+Always use DuckDB JDBC for all queries. DuckDB handles full SQL
+semantics: filters, projections, aggregations. This was the state after
+Acero was removed in the `duckdb-only-no-acero` branch.
+
+- **Pros**: Single engine, full SQL support, filter push-down, no native
+  JNI libraries required.
+- **Cons**: Full scans are 1.7x slower than Acero, projections are 2.9x
+  slower. Each query goes through SQL parsing, plan building, and Arrow
+  conversion.
+
+### Option C: Hybrid (selected)
+
+Route each query to the best engine based on parsed SQL structure.
+Full scans and column projections → Acero. Filtered scans and
+aggregations → DuckDB.
+
+- **Pros**: Best performance for each query shape, no engine is
+  overloaded with work the other does faster.
+- **Cons**: Two engines to maintain, heuristic classification may
+  misroute edge cases (e.g. `WHERE 1=1`).
 
 ## Consequences
 
