@@ -3,6 +3,7 @@ package net.surpin.data.arrowflight.server;
 import com.hazelcast.config.Config;
 import com.hazelcast.core.Hazelcast;
 import com.hazelcast.core.HazelcastInstance;
+import com.hazelcast.map.IMap;
 import org.apache.arrow.flight.*;
 import org.apache.arrow.flight.sql.FlightSqlClient;
 import org.apache.arrow.memory.BufferAllocator;
@@ -22,6 +23,7 @@ import java.net.ServerSocket;
 import java.net.URI;
 import java.nio.file.*;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 
 import static org.apache.arrow.memory.DefaultAllocationManagerOption.ALLOCATION_MANAGER_TYPE_PROPERTY_NAME;
 import static org.junit.jupiter.api.Assertions.*;
@@ -112,6 +114,42 @@ class MultiRowGroupGroupByIntegrationTest {
         long second = totalCountStar(sqlClientA, "SELECT count(*) FROM test_schema.test_table");
         assertEquals(NUM_ROWS, first,  "First query total must equal NUM_ROWS");
         assertEquals(NUM_ROWS, second, "Second query total must equal NUM_ROWS");
+    }
+
+    /**
+     * When a statement-cache entry expires (TTL), the EntryExpiredListener
+     * must decrement only the owning server's load.  Other servers must stay
+     * in the registry untouched.  Before the fix, returning null from
+     * serverRegistry.compute at load==0 silently removed the entry.
+     */
+    @SuppressWarnings("unchecked")
+    @Test @Order(4)
+    void ttlExpiryOnlyDecrementsOwningServer() throws Exception {
+        IMap<String, Long> registry = hzA.getMap("server-registry");
+        IMap<Object, Object> cache = hzA.getMap("statement-cache");
+
+        String uriA = locA.getUri().toString();
+        String uriB = locB.getUri().toString();
+
+        assertTrue(registry.containsKey(uriA), "Server A must be registered before TTL test");
+        assertTrue(registry.containsKey(uriB), "Server B must be registered before TTL test");
+
+        String handle = UUID.randomUUID().toString();
+        cache.put(handle,
+                new HandleState("SELECT 1", new String[0], uriA, 500L),
+                1, TimeUnit.SECONDS);
+
+        long deadline = System.currentTimeMillis() + 5_000;
+        while (System.currentTimeMillis() < deadline) {
+            if (cache.get(handle) == null) break;
+            Thread.sleep(200);
+        }
+        assertNull(cache.get(handle), "Statement must have expired via TTL");
+
+        assertTrue(registry.containsKey(uriA), "Server A must remain in registry after TTL expiry");
+        assertEquals(0L, registry.get(uriA).longValue(), "Server A load must be 0 after TTL expiry");
+        assertTrue(registry.containsKey(uriB), "Server B must remain in registry after TTL expiry");
+        assertEquals(0L, registry.get(uriB).longValue(), "Server B load must be 0 after TTL expiry");
     }
 
     // ── data generation ───────────────────────────────────────────────────────
