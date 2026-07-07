@@ -94,7 +94,7 @@ public class TestSubstraitFilter {
         String uri = resource.toURI().toString();
 
         ScanOptions options =
-                new ScanOptions.Builder(/*batchSize*/ 32768)
+                new ScanOptions.Builder(/*batchSize*/ RuntimeSettings.batchSize())
                         .columns(Optional.empty())
                         .substraitFilter(getFilterExpression(sqlExpression))
                         .build();

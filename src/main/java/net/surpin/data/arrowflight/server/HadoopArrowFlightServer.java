@@ -34,10 +34,6 @@ public class HadoopArrowFlightServer {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(HadoopArrowFlightServer.class);
 
-    private static final String DEFAULT_DATA_DIR = "/data/parquet";
-    private static final int DEFAULT_PORT = 32010;
-    private static final int DEFAULT_HAZELCAST_PORT = 5701;
-
     private FlightServer server;
     private ParquetManager parquetManager;
     private Configuration hadoopConfig;
@@ -49,12 +45,15 @@ public class HadoopArrowFlightServer {
      * Запуск сервера.
      */
     public void start(String... args) {
-        String dataDirectory = getArgValue(args, "--data-dir", DEFAULT_DATA_DIR);
-        int port = Integer.parseInt(getArgValue(args, "--port", String.valueOf(DEFAULT_PORT)));
+        String dataDirectory = getArgValue(args, "--data-dir", RuntimeSettings.defaultDataDir());
+        int port = Integer.parseInt(getArgValue(args, "--port", String.valueOf(RuntimeSettings.defaultPort())));
         String hosts = getArgValue(args, "--hosts", "0.0.0.0");
         String localhost = getArgValue(args, "--localhost", "localhost");
 
-        int hazelcastPort = Integer.parseInt(getArgValue(args, "--hazelcast-port", String.valueOf(DEFAULT_HAZELCAST_PORT)));
+        int hazelcastPort = Integer.parseInt(getArgValue(
+                args,
+                "--hazelcast-port",
+                String.valueOf(RuntimeSettings.defaultHazelcastPort())));
 
         LOGGER.info("Запуск Hadoop Arrow Flight SQL сервера...");
         LOGGER.info("Data Directory: {}", dataDirectory);
@@ -66,7 +65,7 @@ public class HadoopArrowFlightServer {
 
         // Инициализация конфигурации Hadoop
         this.hadoopConfig = new Configuration();
-        hadoopConfig.setInt("io.file.buffer.size", 131072); // 128KB
+        hadoopConfig.setInt("io.file.buffer.size", RuntimeSettings.ioFileBufferSize());
         hadoopConfig.setBoolean("dfs.client.read.shortcircuit", true);
         hadoopConfig.setBoolean("dfs.client.read.shortcircuit.skip.checksum", false);
         hadoopConfig.setBoolean("fs.file.impl.disable.cache", true);

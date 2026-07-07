@@ -35,6 +35,10 @@ replay_pid*
 .env.*
 !.env.example
 
+# Local agent/Codex files
+.agents/
+skills-lock.json
+
 # IDE/editor files
 .idea/
 *.iml

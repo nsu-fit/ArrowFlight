@@ -78,6 +78,7 @@ public final class ParquetManager {
                 t.setDaemon(true);
                 return t;
             });
+    private static final int ARROW_BATCH_SIZE = RuntimeSettings.batchSize();
 
     // Number of parallel DuckDB tasks for GROUP BY / aggregation queries.
     // Each task processes a group of files via UNION ALL in one DuckDB query, reducing
@@ -460,7 +461,7 @@ public final class ParquetManager {
             Dataset dataset = factory.finish();
 
             // Configure the scan: batch size, projected columns, and optional pushed-down filter.
-            ScanOptions.Builder sb = new ScanOptions.Builder(32768)
+            ScanOptions.Builder sb = new ScanOptions.Builder(ARROW_BATCH_SIZE)
                     .columns(selectedColumns.isEmpty() ? Optional.empty()
                             : Optional.of(selectedColumns.toArray(new String[0])));
             if (byteBuffer != null) {
@@ -666,7 +667,7 @@ public final class ParquetManager {
                      new String[]{fileUri});
              Dataset dataset = factory.finish()) {
 
-            ScanOptions.Builder optBuilder = new ScanOptions.Builder(65536).columns(cols);
+            ScanOptions.Builder optBuilder = new ScanOptions.Builder(ARROW_BATCH_SIZE).columns(cols);
             if (filterBytes != null) {
                 ByteBuffer direct = ByteBuffer.allocateDirect(filterBytes.length);
                 direct.put(filterBytes).flip();
@@ -716,7 +717,7 @@ public final class ParquetManager {
                 Dataset dataset = factory.finish();
                 datasets.add(dataset);
 
-                ScanOptions.Builder optBuilder = new ScanOptions.Builder(65536).columns(cols);
+                ScanOptions.Builder optBuilder = new ScanOptions.Builder(ARROW_BATCH_SIZE).columns(cols);
                 if (filterBytes != null) {
                     ByteBuffer direct = ByteBuffer.allocateDirect(filterBytes.length);
                     direct.put(filterBytes).flip();
@@ -735,7 +736,7 @@ public final class ParquetManager {
             try (Statement stmt = conn.createStatement()) {
                 org.duckdb.DuckDBResultSet drs =
                         (org.duckdb.DuckDBResultSet) stmt.executeQuery(duckSql);
-                try (ArrowReader arrowReader = (ArrowReader) drs.arrowExportStream(allocator, 2048)) {
+                try (ArrowReader arrowReader = (ArrowReader) drs.arrowExportStream(allocator, ARROW_BATCH_SIZE)) {
                     return concatBatches(allocator, arrowReader);
                 }
             }

@@ -243,7 +243,7 @@ class ArrowFlightPerfTest {
 
     static long localScan(BufferAllocator allocator, String[] uris,
                           String[] columns, Object unused) throws Exception {
-        ScanOptions.Builder opts = new ScanOptions.Builder(32768)
+        ScanOptions.Builder opts = new ScanOptions.Builder(RuntimeSettings.batchSize())
                 .columns(columns == null ? Optional.empty() : Optional.of(columns));
         return countWithDataset(allocator, uris, opts.build());
     }
@@ -256,7 +256,7 @@ class ArrowFlightPerfTest {
                 .replace(schema + ".", "");
         java.nio.ByteBuffer filter = SubstraitFilterConverter.toByteBuffer(
                 filterExpr, Collections.singletonList(ddl));
-        ScanOptions opts = new ScanOptions.Builder(32768)
+        ScanOptions opts = new ScanOptions.Builder(RuntimeSettings.batchSize())
                 .columns(Optional.empty())
                 .substraitFilter(filter)
                 .build();
