@@ -339,9 +339,54 @@ public final class ParquetManager {
 
     public Schema getQuerySchema(String query) {
         ParquetQueryParser pq = ParquetQueryParser.parse(query);
+        if (pq.isJoin) {
+            return buildJoinSchema(pq);
+        }
         return pq.hasAggregation
                 ? buildAggregationSchema(pq)
                 : getTableSchema(pq.schema, pq.table, pq.columns);
+    }
+
+    private Schema buildJoinSchema(ParquetQueryParser pq) {
+        Map<String, Schema> aliasSchemas = new LinkedHashMap<>();
+        for (ParquetQueryParser.JoinTable jt : pq.joinTables) {
+            aliasSchemas.put(jt.alias(), getTableSchema(jt.schema(), jt.table()));
+        }
+        List<Field> resultFields = new ArrayList<>();
+        for (ParquetQueryParser.SelectExpr expr : pq.selectExprs) {
+            String col = expr.inputColumn;
+            int dot = col.indexOf('.');
+            if (dot > 0) {
+                String alias = col.substring(0, dot);
+                String colName = col.substring(dot + 1);
+                Schema ts = aliasSchemas.get(alias);
+                if (ts != null) {
+                    Field found = ts.getFields().stream()
+                            .filter(f -> f.getName().equalsIgnoreCase(colName))
+                            .findFirst().orElse(null);
+                    if (found != null) {
+                        resultFields.add(new Field(expr.outputName,
+                                FieldType.nullable(found.getType()), null));
+                        continue;
+                    }
+                }
+            }
+            for (Schema ts : aliasSchemas.values()) {
+                Field found = ts.getFields().stream()
+                        .filter(f -> f.getName().equalsIgnoreCase(col))
+                        .findFirst().orElse(null);
+                if (found != null) {
+                    resultFields.add(new Field(expr.outputName,
+                            FieldType.nullable(found.getType()), null));
+                    break;
+                }
+            }
+            if (resultFields.size() < pq.selectExprs.indexOf(expr) + 1) {
+                resultFields.add(new Field(expr.outputName,
+                        FieldType.nullable(new ArrowType.Utf8()), null));
+            }
+        }
+        return new Schema(resultFields);
     }
 
     /**
@@ -392,6 +437,21 @@ public final class ParquetManager {
         ParquetQueryParser parsedQuery = ParquetQueryParser.parse(query);
         Map<String, FileAssignment> result = new HashMap<>();
         URI dataDirectoryURI = fileSystem.getFileStatus(new Path(dataDirectory)).getPath().toUri();
+
+        if (parsedQuery.isJoin) {
+            for (ParquetQueryParser.JoinTable jt : parsedQuery.joinTables) {
+                Path parquetPath = new Path(dataDirectory, jt.schema() + "/" + jt.table());
+                RemoteIterator<LocatedFileStatus> filesIter = fileSystem.listFiles(parquetPath, true);
+                while (filesIter.hasNext()) {
+                    LocatedFileStatus file = filesIter.next();
+                    if (file.isDirectory() || !file.getPath().getName().toLowerCase().endsWith(".parquet")) continue;
+                    String relativePath = dataDirectoryURI.relativize(file.getPath().toUri()).toString();
+                    result.putIfAbsent(relativePath, new FileAssignment(file.getLen(), fileLocality(file).keySet()));
+                }
+            }
+            return result;
+        }
+
         Path parquetPath = new Path(dataDirectory, parsedQuery.schema + "/" + parsedQuery.table);
         RemoteIterator<LocatedFileStatus> filesIter = fileSystem.listFiles(parquetPath, true);
         while (filesIter.hasNext()) {
@@ -412,6 +472,11 @@ public final class ParquetManager {
     public void readParquet(BufferAllocator allocator, String query, String[] fileUris,
             FlightProducer.ServerStreamListener listener, boolean startListener) throws Exception {
         ParquetQueryParser parsedQuery = ParquetQueryParser.parse(query);
+
+        if (parsedQuery.isJoin) {
+            executeJoin(allocator, parsedQuery, fileUris, listener, startListener);
+            return;
+        }
 
         if (parsedQuery.hasAggregation) {
             executeAggregation(allocator, parsedQuery, fileUris, listener, startListener);
@@ -578,6 +643,84 @@ public final class ParquetManager {
         }
 
         parallelAggregate(allocator, pq, fileUris, listener, startListener);
+    }
+
+    // ── DuckDB join execution ─────────────────────────────────────────────
+
+    private void executeJoin(BufferAllocator allocator, ParquetQueryParser pq,
+            String[] fileUris, FlightProducer.ServerStreamListener listener,
+            boolean startListener) throws Exception {
+
+        List<DuckDbTableReader> readers = new ArrayList<>();
+        try {
+            Connection conn = DUCKDB_THREAD_CONN.get();
+            DuckDBConnection duckConn = conn.unwrap(DuckDBConnection.class);
+
+            Map<String, List<String>> tableFiles = new LinkedHashMap<>();
+            for (ParquetQueryParser.JoinTable jt : pq.joinTables) {
+                String key = (jt.schema() != null ? jt.schema() + "." : "") + jt.table();
+                tableFiles.computeIfAbsent(key, k -> {
+                    try { return resolveTableFiles(k); }
+                    catch (IOException e) { throw new UncheckedIOException(e); }
+                });
+            }
+
+            for (ParquetQueryParser.JoinTable jt : pq.joinTables) {
+                String key = (jt.schema() != null ? jt.schema() + "." : "") + jt.table();
+                List<String> uris = tableFiles.get(key);
+                if (uris.isEmpty()) {
+                    throw new IOException("No Parquet files found for table: " + key);
+                }
+                DuckDbTableReader reader = DuckDbTableReader.createAcero(
+                        allocator.newChildAllocator("join-" + jt.alias(), 0, Long.MAX_VALUE),
+                        uris, null, Optional.empty());
+                readers.add(reader);
+                reader.register(jt.alias(), duckConn);
+            }
+
+            try (java.sql.Statement stmt = conn.createStatement()) {
+                org.duckdb.DuckDBResultSet drs =
+                        (org.duckdb.DuckDBResultSet) stmt.executeQuery(pq.duckDbSql);
+                try (ArrowReader arrowReader =
+                        (ArrowReader) drs.arrowExportStream(allocator, 32768)) {
+                    VectorSchemaRoot vsr = arrowReader.getVectorSchemaRoot();
+                    boolean started = false;
+                    while (arrowReader.loadNextBatch()) {
+                        if (vsr.getRowCount() == 0) {
+                            vsr.clear();
+                            continue;
+                        }
+                        if (startListener && !started) {
+                            listener.start(vsr);
+                            started = true;
+                        }
+                        if (!awaitListenerReady(listener)) break;
+                        listener.putNext();
+                        vsr.clear();
+                    }
+                }
+            }
+        } finally {
+            for (int i = readers.size() - 1; i >= 0; i--)
+                try { readers.get(i).close(); } catch (Exception ignored) {}
+        }
+    }
+
+    private List<String> resolveTableFiles(String key) throws IOException {
+        int dot = key.indexOf('.');
+        String schema = dot > 0 ? key.substring(0, dot) : null;
+        String table = dot > 0 ? key.substring(dot + 1) : key;
+        Path dir = schema != null
+                ? new Path(dataDirectory, schema + "/" + table)
+                : new Path(dataDirectory, table);
+        List<String> uris = new ArrayList<>();
+        RemoteIterator<LocatedFileStatus> it = fileSystem.listFiles(dir, true);
+        while (it.hasNext()) {
+            LocatedFileStatus f = it.next();
+            if (f.isFile() && f.getPath().getName().endsWith(".parquet"))
+                uris.add(f.getPath().toUri().toString());
+        }
+        return uris;
     }
 
     // ── parallel aggregation (Acero COUNT(*) / DuckDB native read_parquet) ──────
@@ -1283,7 +1426,7 @@ public final class ParquetManager {
     private void checkSchemaAlignment(String query, Schema aceroSchema, List<String> selectedColumns) {
         try {
             ParquetQueryParser pq = ParquetQueryParser.parse(query);
-            if (pq.hasAggregation) return;
+            if (pq.hasAggregation || pq.isJoin) return;
             Schema expectedSchema = getTableSchema(pq.schema, pq.table, selectedColumns.isEmpty() ? null : selectedColumns);
             Map<String, org.apache.arrow.vector.types.pojo.ArrowType> expected = new java.util.LinkedHashMap<>();
             for (org.apache.arrow.vector.types.pojo.Field f : expectedSchema.getFields()) expected.put(f.getName(), f.getType());

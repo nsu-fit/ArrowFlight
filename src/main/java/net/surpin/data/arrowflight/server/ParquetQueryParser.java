@@ -10,8 +10,12 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Парсер SQL запросов с использованием jOOQ Parser.
@@ -19,6 +23,9 @@ import java.util.Optional;
 public class ParquetQueryParser {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ParquetQueryParser.class);
+
+    /** One table reference within a JOIN FROM clause. */
+    public record JoinTable(String schema, String table, String alias) {}
 
     /** One entry per SELECT output column, describing how it is computed. */
     public static final class SelectExpr {
@@ -50,8 +57,22 @@ public class ParquetQueryParser {
     /** One entry per SELECT output expression, in order. */
     public final List<SelectExpr> selectExprs;
 
+    /** True when this query involves a JOIN of multiple tables. */
+    public final boolean isJoin;
+    /** Tables referenced in the JOIN, in FROM-clause order. */
+    public final List<JoinTable> joinTables;
+    /** SQL query reconstructed for DuckDB execution (table names → alias-names). */
+    public final String duckDbSql;
+
     private ParquetQueryParser(String schema, String table, List<String> columns, String filter,
             boolean hasAggregation, List<String> groupByColumnNames, List<SelectExpr> selectExprs) {
+        this(schema, table, columns, filter, hasAggregation, groupByColumnNames, selectExprs,
+                false, Collections.emptyList(), null);
+    }
+
+    private ParquetQueryParser(String schema, String table, List<String> columns, String filter,
+            boolean hasAggregation, List<String> groupByColumnNames, List<SelectExpr> selectExprs,
+            boolean isJoin, List<JoinTable> joinTables, String duckDbSql) {
         this.schema = schema;
         this.table = table;
         this.columns = columns;
@@ -59,6 +80,9 @@ public class ParquetQueryParser {
         this.hasAggregation = hasAggregation;
         this.groupByColumnNames = Collections.unmodifiableList(groupByColumnNames);
         this.selectExprs = Collections.unmodifiableList(selectExprs);
+        this.isJoin = isJoin;
+        this.joinTables = Collections.unmodifiableList(joinTables);
+        this.duckDbSql = duckDbSql;
     }
     
     /**
@@ -86,7 +110,7 @@ public class ParquetQueryParser {
             Query parsedQuery = ctx.parser().parseQuery(query);
             
             if (parsedQuery instanceof Select<?> select) {
-                ParquetQueryParser parser = parseSelect(select);
+                ParquetQueryParser parser = parseSelect(select, flattened);
                 LOGGER.info("Parsed query: {}", parser);
                 return parser;
             } else {
@@ -102,15 +126,76 @@ public class ParquetQueryParser {
     /**
      * Парсинг Select запроса.
      */
-    private static ParquetQueryParser parseSelect(Select<?> select) {
+    private static ParquetQueryParser parseSelect(Select<?> select, String originalSql) {
         List<? extends Table<?>> fromTables = select.$from();
-        if (fromTables.size() != 1) {
-            throw new IllegalArgumentException("Can only select from ONE table, but got query: " + select.getSQL());
-        }
 
         // DSL context that renders identifiers WITHOUT SQL quotes → bare column names.
         DSLContext noQuoteCtx = DSL.using(SQLDialect.DEFAULT,
                 new Settings().withRenderQuotedNames(RenderQuotedNames.NEVER));
+
+        // Detect JOIN: comma-separated tables are NOT supported — throw as before.
+        if (fromTables.size() > 1) {
+            throw new IllegalArgumentException(
+                    "Can only select from ONE table, but got query: " + select.getSQL());
+        }
+
+        // A single FROM entry that contains an explicit JOIN keyword.
+        boolean isJoin = hasJoinKeywords(originalSql);
+
+        if (isJoin) {
+            return parseJoinSelect(select, noQuoteCtx, originalSql);
+        }
+        return parseSingleTableSelect(select, fromTables, noQuoteCtx);
+    }
+
+    /** Checks whether the original SQL string contains an explicit JOIN keyword. */
+    private static boolean hasJoinKeywords(String sql) {
+        return sql.toLowerCase(java.util.Locale.ROOT).contains(" join ");
+    }
+
+    /** Parses a JOIN query: extracts table references and builds DuckDB-compatible SQL. */
+    private static ParquetQueryParser parseJoinSelect(Select<?> select,
+            DSLContext noQuoteCtx, String originalSql) {
+
+        // Collect leaf tables from the JOIN tree (schema, table, alias)
+        List<JoinTable> joinTables = extractJoinTables(originalSql);
+        if (joinTables.isEmpty()) {
+            throw new IllegalArgumentException("Could not extract table references from JOIN: " + originalSql);
+        }
+
+        // Parse SELECT expressions (same as single-table path).
+        List<String> columns = new ArrayList<>();
+        List<SelectExpr> exprs = new ArrayList<>();
+        for (SelectFieldOrAsterisk sfoa : select.$select()) {
+            if (!(sfoa instanceof org.jooq.Field<?>)) continue;
+            org.jooq.Field<?> f = (org.jooq.Field<?>) sfoa;
+            columns.add(f.getName());
+            String outputName = noQuoteCtx.renderInlined(f).trim();
+            exprs.add(new SelectExpr(SelectExpr.AggFunc.COLUMN, outputName, outputName));
+        }
+
+        // WHERE filter.
+        Condition where = select.$where();
+        DSLContext quotedCtx = DSL.using(SQLDialect.DEFAULT,
+                new Settings().withRenderQuotedNames(RenderQuotedNames.ALWAYS));
+        String filter = quotedCtx.renderInlined(where);
+
+        // Rewrite table references: schema.table → alias, so DuckDB matches registered streams.
+        String duckDbSql = rewriteTableRefs(originalSql, joinTables);
+
+        // Use the first table as primary (for backward compat).
+        JoinTable primary = joinTables.get(0);
+        return new ParquetQueryParser(primary.schema, primary.table, columns, filter,
+                false, Collections.emptyList(), exprs, true, joinTables, duckDbSql);
+    }
+
+    /** Original single-table parsing path — unchanged logic. */
+    private static ParquetQueryParser parseSingleTableSelect(Select<?> select,
+            List<? extends Table<?>> fromTables, DSLContext noQuoteCtx) {
+
+        if (fromTables.size() != 1) {
+            throw new IllegalArgumentException("Can only select from ONE table, but got query: " + select.getSQL());
+        }
 
         String schema = Optional.ofNullable(fromTables.get(0).getSchema()).map(Schema::getName).orElse(null);
         String table = fromTables.get(0).getName();
@@ -179,7 +264,63 @@ public class ParquetQueryParser {
 
         return new ParquetQueryParser(schema, table, columns, filter, hasAgg, gbCols, exprs);
     }
-    
+
+    // ── JOIN helper methods ───────────────────────────────────────────────
+
+    private static final Pattern JOIN_KEYWORD = Pattern.compile(
+            "\\b(?:FROM|(?:(?:LEFT|RIGHT|FULL(?:\\s+OUTER)?|INNER|CROSS)\\s+)?JOIN)\\s+",
+            Pattern.CASE_INSENSITIVE);
+
+    private static final Pattern TABLE_REF = Pattern.compile(
+            "^(\\w+(?:\\.\\w+)?)(?:\\s+(?:AS\\s+)?(\\w+))?",
+            Pattern.CASE_INSENSITIVE);
+
+    private static List<JoinTable> extractJoinTables(String sql) {
+        List<JoinTable> tables = new ArrayList<>();
+        Matcher kw = JOIN_KEYWORD.matcher(sql);
+        while (kw.find()) {
+            String rest = sql.substring(kw.end()).trim();
+            Matcher tr = TABLE_REF.matcher(rest);
+            if (tr.find()) {
+                String qualified = tr.group(1);
+                String alias = tr.group(2);
+                int dot = qualified.indexOf('.');
+                String schema = dot > 0 ? qualified.substring(0, dot) : null;
+                String table = dot > 0 ? qualified.substring(dot + 1) : qualified;
+                if (alias == null) alias = table;
+                tables.add(new JoinTable(schema, table, alias));
+            }
+        }
+        return tables;
+    }
+
+    private static final Pattern JOIN_ANY = Pattern.compile(
+            "\\b(?:FROM|(?:(?:LEFT|RIGHT|FULL(?:\\s+OUTER)?|INNER|CROSS)\\s+)?JOIN)\\s+",
+            Pattern.CASE_INSENSITIVE);
+
+    private static final String JOIN_ANY_RE = "(?:FROM|(?:(?:LEFT|RIGHT|FULL(?:\\s+OUTER)?|INNER|CROSS)\\s+)?JOIN)";
+
+    static String rewriteTableRefs(String sql, List<JoinTable> joinTables) {
+        String result = sql;
+        for (JoinTable jt : joinTables) {
+            String qualified = jt.schema() != null
+                    ? jt.schema() + "." + jt.table() : jt.table();
+            if (!jt.alias().equals(jt.table())) {
+                result = result.replaceAll(
+                        "(?i)(\\b" + JOIN_ANY_RE + "\\s+)" + Pattern.quote(qualified)
+                                + "\\s+(?:AS\\s+)?" + Pattern.quote(jt.alias()),
+                        "$1" + Matcher.quoteReplacement(jt.alias()));
+            } else {
+                result = result.replaceAll(
+                        "(?i)(\\b" + JOIN_ANY_RE + "\\s+|,\\s*)" + Pattern.quote(qualified) + "\\b",
+                        "$1" + Matcher.quoteReplacement(jt.table()));
+            }
+        }
+        return result;
+    }
+
+    // ── public accessors ──────────────────────────────────────────────────
+
     /**
      * Получение имени схемы.
      */
@@ -294,6 +435,10 @@ public class ParquetQueryParser {
 
     @Override
     public String toString() {
+        if (isJoin) {
+            return "ParquetQueryParser{isJoin=true, joinTables=" + joinTables
+                    + ", columns=" + columns + ", filter='" + filter + "'}";
+        }
         return "ParquetQueryParser{" +
                 "schema='" + schema + '\'' +
                 ", table='" + table + '\'' +
