@@ -10,13 +10,16 @@ Date: 2026-07-06
 - Question: Which query engine(s) should the Flight SQL server use to read
   Parquet, given that Acero (Arrow Dataset JNI) and DuckDB have complementary
   performance profiles?
-- Decision: Route each query to DuckDB or Acero based on the parsed SQL
-  structure. Full scans and column projections go to Acero. Queries with
-  filters go to DuckDB.
+- Decision: Route each query to a metadata fast path, DuckDB, or Acero based
+  on the parsed SQL structure. Simple metadata-only aggregates are answered
+  from Parquet footer statistics when possible. Full scans and column
+  projections go to Acero. Queries with filters go to DuckDB.
 - Rationale: Acero is faster for full-scan and column-pruning workloads due to
   zero-copy Parquet-to-Arrow path. DuckDB is faster for filtered queries because
-  it pushes predicates into the Parquet reader (row-group pruning). Neither
-  engine alone is optimal for all query shapes.
+  it pushes predicates into the Parquet reader (row-group pruning). Some simple
+  aggregates can be answered even faster by reading Parquet metadata in Java
+  without scanning data pages. Neither engine alone is optimal for all query
+  shapes.
 
 ## Context
 
@@ -29,6 +32,11 @@ reader backends:
 - **DuckDB** (via JDBC): parses SQL through jOOQ, executes via DuckDB's C++
   engine, converts results to Arrow. Full SQL semantics including filters,
   projections, and aggregations.
+
+There is also a lightweight Java metadata path for queries that can be answered
+from Parquet footers. It is not a full query engine: it reads row counts and
+row-group statistics from Parquet metadata and emits the result directly as an
+Arrow batch.
 
 Initially Acero was removed from the codebase (`duckdb-only-no-acero` branch)
 because it introduced complexity (Substrait warming, Acero JNI native libs,
@@ -69,6 +77,16 @@ push filters; it reads all row groups, materialises all rows as Arrow
 batches, then discards non-matching rows in memory. On 1000 rows the
 difference is modest; on millions of rows it would be orders of magnitude.
 
+### Why a metadata fast path is useful
+
+Some aggregate queries do not need to read column data at all. For example,
+`COUNT(*)` can be answered from Parquet row-group row counts in the file footer.
+`COUNT(col)` can be answered from null-count statistics when they are complete.
+`MIN`/`MAX` can be answered from row-group statistics when every relevant row
+group has usable min/max metadata. These cases should be handled in Java before
+choosing Acero or DuckDB. If required statistics are missing, the query falls
+back to DuckDB.
+
 ### Both backends are equal on Flight server latency
 
 When reading through Arrow Flight SQL (gRPC), both backends show
@@ -79,19 +97,24 @@ server itself and by any local-optimised client.
 
 ## Decision
 
-- Classify each SQL query into one of three categories at parse time (before
+- Classify each SQL query into one of five categories at parse time (before
   execution):
-  1. **Full scan** (`SELECT *`, no filter) → Acero
-  2. **Column projection** (`SELECT a, b, c`, no filter) → Acero
-  3. **Filtered scan** (`WHERE ...`) → DuckDB
-  4. **Aggregation** (`GROUP BY`, `COUNT`, `SUM`, etc.) → DuckDB (Acero does not
-     support aggregation)
+  1. **Metadata-only aggregate** (`COUNT(*)`, `COUNT(col)`, and `MIN`/`MAX`
+     when footer statistics are complete, no filter, no `GROUP BY`) → Java
+     Parquet footer fast path
+  2. **Full scan** (`SELECT *`, no filter) → Acero
+  3. **Column projection** (`SELECT a, b, c`, no filter) → Acero
+  4. **Filtered scan** (`WHERE ...`) → DuckDB
+  5. **General aggregation** (`GROUP BY`, `SUM`, filtered aggregates, etc.) →
+     DuckDB (Acero does not support aggregation)
 
 - The classification is cheap: `ParquetQueryParser.parseQuery()` already
   extracts `columns` (empty = `*`), `filter` (empty/non-empty), and
   `hasAggregation` from the SQL before any I/O occurs.
 
-- The `ParquetManager` exposes two read methods:
+- The `ParquetManager` exposes two read methods and one metadata optimization:
+  - `readFooterStats(paths, aggregate)` — Java Parquet footer fast path for
+    metadata-only aggregates
   - `scanWithAcero(paths, columns)` — zero-copy Arrow scan
   - `scanWithDuckDB(paths, columns, filter)` — DuckDB SQL with filter push-down
 
@@ -131,13 +154,15 @@ Acero was removed in the `duckdb-only-no-acero` branch.
 ### Option C: Hybrid (selected)
 
 Route each query to the best engine based on parsed SQL structure.
-Full scans and column projections → Acero. Filtered scans and
-aggregations → DuckDB.
+Metadata-only aggregates → Java Parquet footer fast path. Full scans and
+column projections → Acero. Filtered scans and general aggregations → DuckDB.
 
 - **Pros**: Best performance for each query shape, no engine is
-  overloaded with work the other does faster.
+  overloaded with work the other does faster. Simple `COUNT(*)`/`COUNT(col)`/
+  `MIN`/`MAX` queries can avoid both engines and return from metadata only.
 - **Cons**: Two engines to maintain, heuristic classification may
-  misroute edge cases (e.g. `WHERE 1=1`).
+  misroute edge cases (e.g. `WHERE 1=1`). Footer statistics are optional for
+  some columns and files, so the metadata path must fall back safely.
 
 ## Consequences
 
@@ -147,8 +172,14 @@ aggregations → DuckDB.
 - **Positive**: No engine is a dead weight. Acero is not removed; it is kept
   for the niche where it excels. DuckDB is not overloaded with full-scan work
   where it is 1.7x slower.
+- **Positive**: Metadata-only aggregates avoid unnecessary data-page reads.
+  `COUNT(*)` can use Parquet row counts directly, while `COUNT(col)` and
+  `MIN`/`MAX` can use footer statistics when they are available.
 - **Negative**: Two engines must be maintained, tested, and kept in sync.
   Engine-specific bugs surface only on certain query shapes.
+- **Negative**: Footer statistics are not guaranteed to be present or complete
+  for every Parquet writer/type. The metadata optimization must detect missing
+  statistics and fall back to DuckDB rather than returning an approximate result.
 - **Negative**: The parse-time classification is heuristic. A query like
   `SELECT * FROM t WHERE 1=1` is a full scan that will be routed to DuckDB
   because `filter` is non-empty — but it could have used Acero. This is an
