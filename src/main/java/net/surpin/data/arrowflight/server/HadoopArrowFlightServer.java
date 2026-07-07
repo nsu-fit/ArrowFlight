@@ -91,7 +91,9 @@ public class HadoopArrowFlightServer {
             // Инициализация Flight SQL сервера
             HadoopFlightSqlService sqlService = new HadoopFlightSqlService(location, parquetManager, allocator, hazelcastInstance);
 
-            server = FlightServer.builder(allocator, location, sqlService).build();
+            server = FlightServer.builder(allocator, location, sqlService)
+                    .maxInboundMessageSize(RuntimeSettings.grpcMaxInboundMessageSize())
+                    .build();
             server.start();
 
             LOGGER.info("Сервер Arrow Flight SQL запущен на {}", location);
