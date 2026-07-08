@@ -1202,6 +1202,7 @@ public final class ParquetManager {
             }
         };
         Runnable readyCallback = () -> {
+        
             if (listener.isReady()) {
                 notifyWaiter.run();
             }
