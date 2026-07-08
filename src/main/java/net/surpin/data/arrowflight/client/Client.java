@@ -332,11 +332,11 @@ public final class Client implements AutoCloseable {
     }
 
     @FunctionalInterface
-    private interface RetryableCall<T> {
+    interface RetryableCall<T> {
         T call() throws Exception;
     }
 
-    private <T> T retryWithBackoff(RetryableCall<T> callable, String operation) {
+    <T> T retryWithBackoff(RetryableCall<T> callable, String operation) {
         int maxRetries = config.getMaxRetries();
         long backoffMs = config.getRetryBackoffMs();
         Exception lastException = null;

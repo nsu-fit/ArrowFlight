@@ -578,7 +578,7 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
     /**
      * Filters out servers that haven't sent a heartbeat within the timeout window.
      */
-    private Set<String> filterLiveServers(Set<String> serverUris) {
+    Set<String> filterLiveServers(Set<String> serverUris) {
         long now = System.currentTimeMillis();
         long deadline = now - HEARTBEAT_TIMEOUT_SEC * 1000;
 

@@ -151,18 +151,13 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
         closeStream();
     }
 
-    private boolean openStream() {
-        try {
-            if (this.inputPartition instanceof FlightInputPartition.FlightEndpointInputPartition) {
-                return openEndpointStreamWithRetry((FlightInputPartition.FlightEndpointInputPartition) this.inputPartition);
-            } else if (this.inputPartition instanceof FlightInputPartition.FlightQueryInputPartition) {
-                return openQueryStreamWithRetry((FlightInputPartition.FlightQueryInputPartition) this.inputPartition);
-            } else {
-                LOGGER.error("FlightPartitionReader.openStream(): Unsupported partition, no data read: {}", this.inputPartition);
-            }
-            return false;
-        } catch (Exception e) {
-            LOGGER.error("Failed to open Flight stream: " + e.getMessage(), e);
+    private boolean openStream() throws Exception {
+        if (this.inputPartition instanceof FlightInputPartition.FlightEndpointInputPartition) {
+            return openEndpointStreamWithRetry((FlightInputPartition.FlightEndpointInputPartition) this.inputPartition);
+        } else if (this.inputPartition instanceof FlightInputPartition.FlightQueryInputPartition) {
+            return openQueryStreamWithRetry((FlightInputPartition.FlightQueryInputPartition) this.inputPartition);
+        } else {
+            LOGGER.error("FlightPartitionReader.openStream(): Unsupported partition, no data read: {}", this.inputPartition);
             return false;
         }
     }
@@ -275,7 +270,12 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
             return false;
         }
         closeStream();
-        return openStream();
+        try {
+            return openStream();
+        } catch (Exception e) {
+            LOGGER.error("Reopen stream failed: {}", e.getMessage());
+            return false;
+        }
     }
 
     private boolean openEndpointStream(FlightInputPartition.FlightEndpointInputPartition dePartition) throws Exception {
