@@ -1,5 +1,8 @@
 # Hadoop Arrow Flight SQL Server Overview
 
+[![Java tests and JaCoCo coverage](https://github.com/nsu-fit/ArrowFlight/actions/workflows/coverage.yml/badge.svg)](https://github.com/nsu-fit/ArrowFlight/actions/workflows/coverage.yml)
+[![JaCoCo Coverage Report](https://img.shields.io/badge/JaCoCo-Coverage_Report-brightgreen)](https://nsu-fit.github.io/ArrowFlight/jacoco/)
+
 Provides high-performance Parquet access via **Arrow Flight SQL**. Enables analytical queries with distributed processing, data locality, and optimizations (fast-path, C++ filtering, DuckDB for aggregations). Runs in cluster mode coordinated by Hazelcast.
 
 ---

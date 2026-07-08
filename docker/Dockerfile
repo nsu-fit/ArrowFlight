@@ -6,6 +6,7 @@ ARG RUNTIME_IMAGE=eclipse-temurin:21-jre-jammy
 FROM ${MAVEN_IMAGE} AS build
 WORKDIR /src
 COPY pom.xml .
+COPY checkstyle.xml spotbugs-exclude.xml ./
 RUN mvn -q -DskipTests dependency:go-offline
 COPY src ./src
 RUN mvn -q -DskipTests package
@@ -22,9 +23,25 @@ ENV PATH=/opt/spark/bin:/opt/spark/sbin:${PATH}
 RUN apt-get update \
     && apt-get install -y --no-install-recommends bash ca-certificates curl procps python3 tini \
     && rm -rf /var/lib/apt/lists/* \
-    && curl -fsSL "https://archive.apache.org/dist/spark/spark-${SPARK_VERSION}/${SPARK_PACKAGE}.tgz" \
-        | tar -xz -C /opt \
-    && ln -s "/opt/${SPARK_PACKAGE}" "${SPARK_HOME}"
+    && set -eux; \
+        for url in \
+            "https://dlcdn.apache.org/spark/spark-${SPARK_VERSION}/${SPARK_PACKAGE}.tgz" \
+            "https://archive.apache.org/dist/spark/spark-${SPARK_VERSION}/${SPARK_PACKAGE}.tgz"; do \
+          for attempt in 1 2 3 4 5; do \
+            rm -f /tmp/spark.tgz; \
+            if curl -fL --retry 5 --retry-all-errors --retry-delay 10 --connect-timeout 30 \
+                -o /tmp/spark.tgz "${url}" \
+                && tar -tzf /tmp/spark.tgz >/dev/null; then \
+              break 2; \
+            fi; \
+            echo "Spark download failed from ${url}, attempt ${attempt}" >&2; \
+            sleep 10; \
+          done; \
+        done; \
+        test -s /tmp/spark.tgz; \
+        tar -xzf /tmp/spark.tgz -C /opt; \
+        rm -f /tmp/spark.tgz; \
+        ln -s "/opt/${SPARK_PACKAGE}" "${SPARK_HOME}"
 
 WORKDIR ${APP_HOME}
 COPY --from=build /src/target/hadoop-arrow-flight-1.0-SNAPSHOT.jar ${APP_JAR}
