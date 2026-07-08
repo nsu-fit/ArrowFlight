@@ -81,6 +81,7 @@ public final class ParquetManager {
     private static final int DUCKDB_BATCH_SIZE = RuntimeSettings.duckDbBatchSize();
     private static final long LISTENER_READY_TIMEOUT_MILLIS =
             RuntimeSettings.flightListenerReadyTimeoutMillis();
+    private static final long LISTENER_READY_RECHECK_MILLIS = 5L;
     private static final int DUCKDB_WARM_CONNECTIONS =
             RuntimeSettings.duckDbWarmConnections(IO_PARALLELISM);
     private static final int DUCKDB_GROUPS = RuntimeSettings.duckDbGroups(IO_PARALLELISM);
@@ -1173,12 +1174,11 @@ public final class ParquetManager {
     // ── helpers ───────────────────────────────────────────────────────────────
 
     /**
-     * Waits for Flight backpressure to clear without polling/sleeping.
+     * Waits for Flight backpressure to clear.
      *
-     * <p>Flight invokes the ready handler when the client can accept more data and
-     * the cancel handler when the client disconnects or cancels the request. The
-     * readiness flag is still checked after waking because callbacks can be delayed
-     * or spurious.
+     * <p>Some Arrow Flight listener implementations do not support ready/cancel
+     * callback setters, so local callbacks check listener state and wake the waiter.
+     * The configured timeout is still the hard upper bound.
      */
     private static boolean awaitListenerReady(FlightProducer.ServerStreamListener listener)
             throws InterruptedException {
@@ -1201,14 +1201,21 @@ public final class ParquetManager {
                 lock.notifyAll();
             }
         };
+        Runnable readyCallback = () -> {
+            if (listener.isReady()) {
+                notifyWaiter.run();
+            }
+        };
+        Runnable cancelCallback = () -> {
+            if (listener.isCancelled()) {
+                notifyWaiter.run();
+            }
+        };
 
-        listener.setOnReadyHandler(notifyWaiter);
-        listener.setOnCancelHandler(notifyWaiter);
-
-        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(LISTENER_READY_TIMEOUT_MILLIS);
+        long deadlineNanos = waitStartNanos + TimeUnit.MILLISECONDS.toNanos(LISTENER_READY_TIMEOUT_MILLIS);
         synchronized (lock) {
             while (!listener.isReady() && !listener.isCancelled()) {
-                long remainingNanos = deadline - System.nanoTime();
+                long remainingNanos = deadlineNanos - System.nanoTime();
                 if (remainingNanos <= 0) {
                     long waitedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - waitStartNanos);
                     LOGGER.warn("Timed out waiting for Flight listener readiness after {}ms "
@@ -1218,6 +1225,9 @@ public final class ParquetManager {
                     throw new IllegalStateException("Timed out waiting for Flight listener readiness after "
                             + LISTENER_READY_TIMEOUT_MILLIS + "ms");
                 }
+
+                cancelCallback.run();
+                readyCallback.run();
                 if (signalled[0]) {
                     signalled[0] = false;
                     LOGGER.info("Flight listener wait signalled after {}ms: ready={}, cancelled={}",
@@ -1225,13 +1235,16 @@ public final class ParquetManager {
                             listener.isReady(), listener.isCancelled());
                     continue;
                 }
-                TimeUnit.NANOSECONDS.timedWait(lock, remainingNanos);
+
+                long waitNanos = Math.min(remainingNanos,
+                        TimeUnit.MILLISECONDS.toNanos(LISTENER_READY_RECHECK_MILLIS));
+                TimeUnit.NANOSECONDS.timedWait(lock, waitNanos);
             }
         }
         LOGGER.info("Flight listener wait finished after {}ms: ready={}, cancelled={}",
                 TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - waitStartNanos),
                 listener.isReady(), listener.isCancelled());
-        return !listener.isCancelled();
+        return listener.isReady() && !listener.isCancelled();
     }
 
     private List<Path> resolveParquetFiles(ParquetQueryParser pq, String[] fileUris) throws IOException {
