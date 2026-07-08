@@ -58,9 +58,11 @@ If no projection is specified, the scanner reads all table columns.
 
 ## Filter Pushdown
 
-If a query contains a filter, the project attempts to pass it to Acero through Substrait. This allows rows to be discarded during scanning, before batches are sent to the client.
+If a query contains a filter, the project routes it to DuckDB instead of Acero. DuckDB reads the assigned Parquet files through `read_parquet([...])` and applies SQL predicates in the DuckDB Parquet reader.
 
-`SubstraitFilterConverter` is responsible for converting the filter. The filter is applied inside the Arrow Dataset / Acero scanner.
+For HDFS paths, DuckDB needs the DuckDB HDFS extension to be loaded. The extension path and HDFS options are configured through `arrowflight.properties`, JVM system properties, or environment variables.
+
+This routing is intentional: Acero is used for filter-less full scans and projections, while DuckDB is used for filtered scans because its Parquet reader can use predicate pushdown and row-group pruning.
 
 ## Footer Fast Path
 
@@ -69,6 +71,8 @@ Some aggregations can be executed without reading column data.
 For total row counts, the project can use row count information from the Parquet footer. For some minimum, maximum, and non-null count operations, the project attempts to use Parquet statistics.
 
 If the required statistics are available and the query does not require filtering or grouping, the server reads only metadata. If the statistics are not sufficient, execution falls back to the regular aggregation path.
+
+The current regular aggregation fallback is DuckDB. Acero is not used for grouped or filtered aggregation execution.
 
 ## File Distribution Across Flight Nodes
 
@@ -86,5 +90,4 @@ After a server is selected, the file is added to the list of files assigned to t
 ## Current Distribution Limitations
 
 The greedy load-aware strategy distributes data volume (file size). However, it operates at the whole-file level and does not split files across nodes. Extremely large single files still pin all their data to one node.
-
 

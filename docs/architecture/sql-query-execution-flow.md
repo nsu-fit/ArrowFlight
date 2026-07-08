@@ -8,11 +8,11 @@ This document describes how an SQL query flows through the Arrow Flight server: 
 
 `HadoopFlightSqlService` implements the Flight SQL layer. It receives queries, creates `FlightInfo`, builds `Ticket` objects, creates endpoints, and restores query state during `DoGet`.
 
-`ParquetManager` handles Parquet-related work: file discovery, locality detection, reading through Arrow Dataset / Acero, fast-path aggregations, and delegating complex aggregations to DuckDB.
+`ParquetManager` handles Parquet-related work: file discovery, locality detection, Java footer fast paths, Arrow Dataset / Acero scans, and DuckDB execution.
 
 `ParquetQueryParser` parses SQL and extracts schema, table, selected columns, filters, aggregations, and group by columns.
 
-`SubstraitFilterConverter` converts query filters into a Substrait representation that can be passed to Acero.
+`RuntimeSettings` loads runtime tuning values from `arrowflight.properties`, with JVM system properties and selected environment variables as overrides.
 
 ## High-Level Flow
 
@@ -89,43 +89,87 @@ The server then calls `ParquetManager.readParquet`, passing the allocator, SQL q
 
 Actual query execution starts at this point.
 
-## Regular SELECT
+## Query Engine Selection
 
-A regular query without aggregations is executed in `ParquetManager.readParquet`.
+The project uses three execution paths for Parquet reads. The route is selected in `ParquetManager.readParquet` after `ParquetQueryParser` has extracted projection, filter, aggregation, and group-by information.
 
-The method parses SQL and determines schema, table, projection, and filter. It then resolves assigned relative file paths into absolute URIs and creates an Arrow Dataset scanner.
+Routing rules:
 
-Projection passes the required column list to the scanner. If a filter exists, it is converted to Substrait and also passed to the scanner.
+1. Metadata-only aggregates use Java and Parquet footers.
+2. Full scans and projection-only scans use Arrow Dataset / Acero.
+3. Filtered scans, general aggregations, and joins use DuckDB.
 
-Reading is performed by Arrow Dataset / Acero. It opens Parquet files, reads the required columns, applies the filter, and returns Arrow batches.
+This follows ADR 0001: Acero is kept for the query shapes where it is fastest, DuckDB is used when SQL execution or predicate pushdown is needed, and Java handles the cases that can be answered without reading data pages.
+
+## Java Footer Path
+
+The Java footer path is used for simple aggregate queries without `WHERE` and without `GROUP BY`.
+
+Supported fast-path expressions are:
+
+- `COUNT(*)`
+- `COUNT(col)`, when Parquet null-count statistics are complete
+- `MIN(col)`, when Parquet min statistics are complete
+- `MAX(col)`, when Parquet max statistics are complete
+
+For `COUNT(*)`, Java sums row counts from Parquet row-group metadata. For `COUNT(col)`, Java subtracts null counts from row counts. For `MIN` and `MAX`, Java merges per-row-group statistics.
+
+This path does not read column data pages and does not start Acero or DuckDB for the query. If required statistics are missing or incomplete, execution falls back to DuckDB.
+
+## Acero Path
+
+Full scans and projection-only scans are executed by Arrow Dataset / Acero.
+
+Examples:
+
+- `SELECT * FROM schema.table`
+- `SELECT col1, col2 FROM schema.table`
+
+The method resolves assigned relative file paths into absolute URIs and creates one Arrow Dataset scanner for the files assigned to the current ticket. Projection passes the required column list to the scanner. If no projection is specified, all columns are scanned.
+
+Reading is performed by Arrow Dataset / Acero. It opens Parquet files, reads the required columns, and returns Arrow batches.
 
 The Java code does not manually convert Parquet values into Arrow vectors. This conversion happens inside Arrow Dataset / Acero. On the Java side, the result is exposed as `ArrowReader` and `VectorSchemaRoot`.
 
 Each loaded batch is sent to the client through the Flight listener. Before reading and sending, the server checks backpressure so it does not buffer unnecessary data when the client is not ready for the next batch.
 
-## Aggregations
+## DuckDB Path
 
-If the parser detects an aggregation, `readParquet` delegates execution to `executeAggregation`.
+DuckDB is used for query shapes that need SQL execution beyond a simple scan:
 
-`executeAggregation` chooses the cheapest available execution path.
+- filtered scans (`WHERE ...`)
+- filtered projections
+- `GROUP BY`
+- `SUM`
+- aggregates that cannot use footer statistics
+- joins
 
-For a simple total row count without filtering or grouping, the server uses the Parquet footer. This allows it to produce the result without reading column data.
+For single-table queries, `ParquetManager` builds SQL over DuckDB's `read_parquet([...])` table function. For joins, the manager creates temporary DuckDB views for each table alias, each view backed by `read_parquet([...])`, and then executes the rewritten join SQL against those views.
 
-For some minimum, maximum, and non-null count operations, the server attempts to use Parquet statistics. If the statistics are available, column data is not read either.
+DuckDB returns results through `DuckDBResultSet.arrowExportStream`. The server copies rows from DuckDB's Arrow stream into Flight batches and sends them to the client.
 
-If no fast path is available, execution falls back to `parallelAggregate`.
+When DuckDB reads local files, no extension is required. When DuckDB receives HDFS paths, it must load the DuckDB HDFS extension configured through `arrowflight.properties`, system properties, or environment variables.
 
-## Parallel Aggregate
+Relevant settings include:
 
-`parallelAggregate` is used for more complex aggregations.
+- `duckDbHdfsExtension` or `DUCKDB_HDFS_EXTENSION`
+- `duckDbAllowUnsignedExtensions` or `DUCKDB_ALLOW_UNSIGNED_EXTENSIONS`
+- `duckDbHdfsDefaultNamenode` or `HDFS_DEFAULT_NAMENODE`
+- `duckDbHdfsHaNamenodes` or `HDFS_HA_NAMENODES`
+- `duckDbHdfsShortcircuit` or `HDFS_SHORTCIRCUIT`
+- `duckDbHdfsDomainSocketPath` or `HDFS_DOMAIN_SOCKET_PATH`
 
-For row counts with a filter, if the filter can be expressed through Substrait, the Acero-only path is used. In this path, each file is scanned through Acero, the filter is applied by the scanner, and Java sums the row counts from the produced batches.
+## Runtime Tuning
 
-For more complex aggregations, DuckDB is used. In this path, Acero reads Parquet files and exports them as Arrow streams. DuckDB registers those streams as input tables and executes SQL aggregation on top of them.
+The default runtime configuration lives in `src/main/resources/arrowflight.properties`.
 
-DuckDB returns the result as an Arrow stream. The project then collects it into a `VectorSchemaRoot` and sends it to the client.
+The most important shared value is `batchSize`. It controls both Acero scan batch size and DuckDB Arrow export batch size, so changing it affects the size of batches sent through Flight.
 
-In this design, Acero is responsible for Parquet reading, projection, filtering, and Arrow conversion. DuckDB is used as the execution engine for complex SQL aggregation.
+I/O parallelism is also configurable. If `ioParallelism` is set, that exact thread count is used. Otherwise the value is derived from available CPU cores:
+
+`max(ioParallelismMinThreads, min(availableProcessors, ioParallelismMaxCores) * ioParallelismMultiplier)`
+
+Use `ioParallelismMaxCores=0` to mean "no core cap". JVM system properties such as `-Darrowflight.io.parallelism=64` can override the file configuration.
 
 ## Sending the Result to the Client
 
@@ -144,4 +188,3 @@ Round-robin distribution balances the number of files but does not account for d
 Ticket is a reference to query state in Hazelcast, not a standalone execution plan. If the cache entry expires or is unavailable, reading by ticket is impossible.
 
 Actual query execution starts only during `DoGet`. `GetFlightInfo` is responsible for planning, schema construction, endpoints, and tickets.
-
