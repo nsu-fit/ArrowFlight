@@ -1,0 +1,45 @@
+image: maven:3.9-openjdk-21
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"
+
+stages:
+  - build
+  - test
+
+cache:
+  paths:
+    - .m2/repository/
+
+variables:
+  MAVEN_OPTS: "-Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository"
+  MAVEN_CLI_OPTS: "--batch-mode --errors --fail-at-end"
+
+build-server:
+  stage: build
+  script:
+    - mvn compile -P server $MAVEN_CLI_OPTS
+  artifacts:
+    paths:
+      - target/classes/
+
+build-client:
+  stage: build
+  script:
+    - mvn compile -P client $MAVEN_CLI_OPTS
+  artifacts:
+    paths:
+      - target/classes/
+
+test:
+  stage: test
+  script:
+    - mvn test $MAVEN_CLI_OPTS
+  artifacts:
+    when: always
+    reports:
+      junit:
+        - target/surefire-reports/TEST-*.xml
+    paths:
+      - target/surefire-reports/
