@@ -34,6 +34,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
@@ -48,6 +50,9 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
 
     private static final String SERVER_REGISTRY_MAP = "server-registry";
     private static final String STATEMENT_CACHE_MAP = "statement-cache";
+    private static final String SERVER_HEARTBEAT_MAP = "server-heartbeats";
+    private static final long HEARTBEAT_INTERVAL_SEC = 15;
+    private static final long HEARTBEAT_TIMEOUT_SEC = 45;
 
     private final Location location;
     private final ParquetManager parquetManager;
@@ -56,6 +61,9 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
     private final SqlInfoBuilder sqlInfoBuilder;
     private final IMap<String, Serializable> statementCache;
     private final IMap<String, Long> serverRegistry;
+    private final IMap<String, Long> serverHeartbeats;
+    private final ScheduledExecutorService heartbeatExecutor;
+    private final String serverUri;
 
     public HadoopFlightSqlService(Location location, ParquetManager parquetManager,
             BufferAllocator allocator, HazelcastInstance hazelcastInstance) {
@@ -65,10 +73,25 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
         this.hazelcastInstance = Objects.requireNonNull(hazelcastInstance);
         this.statementCache = hazelcastInstance.getMap(STATEMENT_CACHE_MAP);
         this.serverRegistry = hazelcastInstance.getMap(SERVER_REGISTRY_MAP);
+        this.serverHeartbeats = hazelcastInstance.getMap(SERVER_HEARTBEAT_MAP);
 
-        String uri = location.getUri().toString();
-        LOGGER.info("Registering server: {}", uri);
-        serverRegistry.put(uri, 0L);
+        this.serverUri = location.getUri().toString();
+        LOGGER.info("Registering server: {}", serverUri);
+        serverRegistry.put(serverUri, 0L);
+        serverHeartbeats.put(serverUri, System.currentTimeMillis());
+
+        this.heartbeatExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "flight-heartbeat");
+            t.setDaemon(true);
+            return t;
+        });
+        heartbeatExecutor.scheduleAtFixedRate(() -> {
+            try {
+                serverHeartbeats.put(serverUri, System.currentTimeMillis());
+            } catch (Exception e) {
+                LOGGER.warn("Failed to update heartbeat for {}: {}", serverUri, e.getMessage());
+            }
+        }, HEARTBEAT_INTERVAL_SEC, HEARTBEAT_INTERVAL_SEC, TimeUnit.SECONDS);
 
         statementCache.addLocalEntryListener((EntryExpiredListener<String, Serializable>) event -> {
             Serializable value = event.getOldValue();
@@ -124,6 +147,13 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
                 if (allServerUris.isEmpty()) {
                     LOGGER.info("Server registry is empty, please restart server for registration");
                     allServerUris = Set.of(location.getUri().toString());
+                }
+
+                // Filter out dead servers that haven't sent heartbeat recently.
+                allServerUris = filterLiveServers(allServerUris);
+                if (allServerUris.isEmpty()) {
+                    LOGGER.info("No live servers found, falling back to self");
+                    allServerUris = Set.of(serverUri);
                 }
 
                 // Read current server loads from Hazelcast in one bulk call.
@@ -536,11 +566,42 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
     @Override
     public void close() throws Exception {
         try {
-            serverRegistry.remove(location.getUri().toString());
+            serverRegistry.remove(serverUri);
+            serverHeartbeats.remove(serverUri);
         } catch (Throwable t) {
             LOGGER.warn("Failed to deregister server from registry: {}", t.getMessage());
         }
+        heartbeatExecutor.shutdownNow();
         AutoCloseables.close(allocator);
+    }
+
+    /**
+     * Filters out servers that haven't sent a heartbeat within the timeout window.
+     */
+    private Set<String> filterLiveServers(Set<String> serverUris) {
+        long now = System.currentTimeMillis();
+        long deadline = now - HEARTBEAT_TIMEOUT_SEC * 1000;
+
+        Map<String, Long> heartbeats = serverHeartbeats.getAll(serverUris);
+        Set<String> live = new LinkedHashSet<>();
+        for (String uri : serverUris) {
+            Long lastHb = heartbeats.get(uri);
+            if (lastHb == null) {
+                // No heartbeat yet — probably just registered, give it a chance
+                live.add(uri);
+            } else if (lastHb >= deadline) {
+                live.add(uri);
+            } else {
+                LOGGER.warn("Server {} is stale (last heartbeat {}ms ago), removing from pool",
+                        uri, now - lastHb);
+                serverRegistry.remove(uri);
+                serverHeartbeats.remove(uri);
+            }
+        }
+        if (live.size() < serverUris.size()) {
+            LOGGER.info("filterLiveServers: {} of {} servers are alive", live.size(), serverUris.size());
+        }
+        return live;
     }
 
     /**
