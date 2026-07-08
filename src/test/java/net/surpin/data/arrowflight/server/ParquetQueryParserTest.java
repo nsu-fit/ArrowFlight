@@ -1,5 +1,6 @@
 package net.surpin.data.arrowflight.server;
 
+import net.surpin.data.arrowflight.server.db.ParquetQueryParser;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;

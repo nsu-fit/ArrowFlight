@@ -1,4 +1,4 @@
-package net.surpin.data.arrowflight.client;
+package net.surpin.data.arrowflight.client.query;
 
 import java.io.Serializable;
 import java.net.URI;

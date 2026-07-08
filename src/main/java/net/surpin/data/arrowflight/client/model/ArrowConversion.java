@@ -1,4 +1,4 @@
-package net.surpin.data.arrowflight.client;
+package net.surpin.data.arrowflight.client.model;
 
 import com.google.common.collect.Streams;
 import org.apache.arrow.vector.*;

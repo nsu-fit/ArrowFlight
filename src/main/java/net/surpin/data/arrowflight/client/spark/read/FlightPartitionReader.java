@@ -1,6 +1,10 @@
 package net.surpin.data.arrowflight.client.spark.read;
 
-import net.surpin.data.arrowflight.client.*;
+import net.surpin.data.arrowflight.client.Client;
+import net.surpin.data.arrowflight.client.Configuration;
+import net.surpin.data.arrowflight.client.model.Field;
+import net.surpin.data.arrowflight.client.query.Endpoint;
+import net.surpin.data.arrowflight.client.query.QueryEndpoints;
 import org.apache.arrow.flight.FlightStream;
 import org.apache.arrow.vector.*;
 import org.apache.arrow.vector.types.pojo.Schema;

@@ -3,6 +3,7 @@ package net.surpin.data.arrowflight.server;
 import io.substrait.proto.Expression;
 import io.substrait.proto.ExtendedExpression;
 import io.substrait.proto.FunctionArgument;
+import net.surpin.data.arrowflight.server.db.SubstraitFilterConverter;
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.junit.jupiter.api.Test;
 

@@ -1,4 +1,4 @@
-package net.surpin.data.arrowflight.server;
+package net.surpin.data.arrowflight.server.db;
 
 import io.substrait.isthmus.CallConverter;
 import io.substrait.isthmus.ConverterProvider;

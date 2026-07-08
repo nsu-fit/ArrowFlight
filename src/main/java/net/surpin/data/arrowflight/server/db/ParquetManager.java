@@ -1,5 +1,8 @@
-package net.surpin.data.arrowflight.server;
+package net.surpin.data.arrowflight.server.db;
 
+import net.surpin.data.arrowflight.server.RuntimeSettings;
+import net.surpin.data.arrowflight.server.model.FileAssignment;
+import net.surpin.data.arrowflight.server.utils.MetadataUtils;
 import io.substrait.isthmus.sql.SubstraitCreateStatementParser;
 import org.apache.arrow.c.ArrowArrayStream;
 import org.apache.arrow.c.Data;
@@ -327,7 +330,7 @@ public final class ParquetManager {
         return Optional.empty();
     }
 
-    protected String arrowSchemaToDDL(String tableSchema, String tableName, Schema schema) {
+    public String arrowSchemaToDDL(String tableSchema, String tableName, Schema schema) {
         Objects.requireNonNull(tableName);
         Objects.requireNonNull(schema);
 

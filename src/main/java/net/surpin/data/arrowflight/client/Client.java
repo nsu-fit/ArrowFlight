@@ -1,5 +1,10 @@
 package net.surpin.data.arrowflight.client;
 
+import net.surpin.data.arrowflight.client.model.Field;
+import net.surpin.data.arrowflight.client.model.FieldVector;
+import net.surpin.data.arrowflight.client.model.RowSet;
+import net.surpin.data.arrowflight.client.query.Endpoint;
+import net.surpin.data.arrowflight.client.query.QueryEndpoints;
 import com.google.protobuf.Any;
 import org.apache.arrow.flight.*;
 import org.apache.arrow.flight.auth2.BasicAuthCredentialWriter;

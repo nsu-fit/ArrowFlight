@@ -1,11 +1,11 @@
 package net.surpin.data.arrowflight.client.spark.write;
 
 import net.surpin.data.arrowflight.client.Client;
-import net.surpin.data.arrowflight.client.WriteProtocol;
+import net.surpin.data.arrowflight.client.write.WriteProtocol;
 import net.surpin.data.arrowflight.client.Configuration;
-import net.surpin.data.arrowflight.client.Table;
-import net.surpin.data.arrowflight.client.WriteBehavior;
-import net.surpin.data.arrowflight.client.WriteStatement;
+import net.surpin.data.arrowflight.client.model.Table;
+import net.surpin.data.arrowflight.client.write.WriteBehavior;
+import net.surpin.data.arrowflight.client.write.WriteStatement;
 import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.connector.write.DataWriter;
 import org.apache.spark.sql.connector.write.DataWriterFactory;

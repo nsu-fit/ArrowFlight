@@ -25,6 +25,8 @@ import java.io.UncheckedIOException;
 import java.util.Arrays;
 import java.util.Set;
 
+import net.surpin.data.arrowflight.server.db.ParquetManager;
+
 import static org.apache.arrow.memory.DefaultAllocationManagerOption.ALLOCATION_MANAGER_TYPE_PROPERTY_NAME;
 
 /**

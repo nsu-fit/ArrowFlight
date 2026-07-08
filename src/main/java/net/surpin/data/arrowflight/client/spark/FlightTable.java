@@ -1,10 +1,10 @@
 package net.surpin.data.arrowflight.client.spark;
 
 import net.surpin.data.arrowflight.client.Configuration;
-import net.surpin.data.arrowflight.client.WriteProtocol;
-import net.surpin.data.arrowflight.client.PartitionBehavior;
-import net.surpin.data.arrowflight.client.Table;
-import net.surpin.data.arrowflight.client.WriteBehavior;
+import net.surpin.data.arrowflight.client.write.WriteProtocol;
+import net.surpin.data.arrowflight.client.write.PartitionBehavior;
+import net.surpin.data.arrowflight.client.model.Table;
+import net.surpin.data.arrowflight.client.write.WriteBehavior;
 import net.surpin.data.arrowflight.client.spark.read.FlightScanBuilder;
 import net.surpin.data.arrowflight.client.spark.write.FlightWriteBuilder;
 import org.apache.commons.lang3.ArrayUtils;

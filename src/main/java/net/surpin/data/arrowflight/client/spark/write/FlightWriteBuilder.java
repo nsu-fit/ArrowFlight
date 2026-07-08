@@ -1,8 +1,8 @@
 package net.surpin.data.arrowflight.client.spark.write;
 
 import net.surpin.data.arrowflight.client.Configuration;
-import net.surpin.data.arrowflight.client.Table;
-import net.surpin.data.arrowflight.client.WriteBehavior;
+import net.surpin.data.arrowflight.client.model.Table;
+import net.surpin.data.arrowflight.client.write.WriteBehavior;
 import org.apache.spark.sql.connector.write.SupportsTruncate;
 import org.apache.spark.sql.connector.write.Write;
 import org.apache.spark.sql.connector.write.WriteBuilder;

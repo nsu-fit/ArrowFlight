@@ -1,4 +1,4 @@
-package net.surpin.data.arrowflight.server;
+package net.surpin.data.arrowflight.debug;
 
 
 import java.io.PrintStream;

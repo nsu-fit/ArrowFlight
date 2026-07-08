@@ -1,4 +1,4 @@
-package net.surpin.data.arrowflight.client;
+package net.surpin.data.arrowflight.client.write;
 
 /**
  * The protocol tells the connector how to conduct the write operation

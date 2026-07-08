@@ -1,7 +1,7 @@
 package net.surpin.data.arrowflight.client.spark.read;
 
 import net.surpin.data.arrowflight.client.Configuration;
-import net.surpin.data.arrowflight.client.Table;
+import net.surpin.data.arrowflight.client.model.Table;
 import org.apache.spark.sql.connector.read.Batch;
 import org.apache.spark.sql.connector.read.Scan;
 import org.apache.spark.sql.types.StructType;

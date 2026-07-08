@@ -1,5 +1,7 @@
 package net.surpin.data.arrowflight.server;
 
+import net.surpin.data.arrowflight.server.db.ParquetManager;
+import net.surpin.data.arrowflight.server.db.ParquetQueryParser;
 import org.apache.arrow.flight.FlightProducer.ServerStreamListener;
 import org.apache.arrow.memory.ArrowBuf;
 import org.apache.arrow.memory.BufferAllocator;

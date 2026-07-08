@@ -1,4 +1,4 @@
-package net.surpin.data.arrowflight.server;
+package net.surpin.data.arrowflight.server.utils;
 
 import java.net.InetAddress;
 import java.net.URI;

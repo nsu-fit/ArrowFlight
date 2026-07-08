@@ -1,6 +1,6 @@
 package net.surpin.data.arrowflight.client.spark.read;
 
-import net.surpin.data.arrowflight.client.Endpoint;
+import net.surpin.data.arrowflight.client.query.Endpoint;
 import org.apache.arrow.vector.types.pojo.Schema;
 import org.apache.spark.sql.connector.read.InputPartition;
 import org.slf4j.Logger;

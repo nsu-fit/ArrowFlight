@@ -39,6 +39,13 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
+import net.surpin.data.arrowflight.server.db.ParquetManager;
+import net.surpin.data.arrowflight.server.db.ParquetQueryParser;
+import net.surpin.data.arrowflight.server.model.HandleState;
+import net.surpin.data.arrowflight.server.model.FileAssignment;
+import net.surpin.data.arrowflight.server.utils.MetadataUtils;
+import net.surpin.data.arrowflight.server.utils.HostUtils;
+
 import static com.google.protobuf.ByteString.copyFrom;
 import static java.util.UUID.randomUUID;
 

@@ -1,5 +1,7 @@
 package net.surpin.data.arrowflight.server;
 
+import net.surpin.data.arrowflight.server.db.ParquetSchemaConverter;
+import net.surpin.data.arrowflight.server.utils.MetadataUtils;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.RootAllocator;
 import org.apache.arrow.vector.VectorSchemaRoot;
