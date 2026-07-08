@@ -20,6 +20,7 @@ import org.slf4j.LoggerFactory;
 import java.io.ByteArrayInputStream;
 import java.net.URI;
 import java.util.Arrays;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Describes the data-structure of Client for communicating with remote flight service
@@ -39,6 +40,12 @@ public final class Client implements AutoCloseable {
     //the token for calls
     private final CredentialCallOption bearerToken;
 
+    //the configuration for retry/timeout
+    private final Configuration config;
+
+    //timeout call option (null if no timeout configured)
+    private final CallOption timeoutOption;
+
     /**
      * Get the underlying FlightClient (for streaming reads)
      */
@@ -53,6 +60,16 @@ public final class Client implements AutoCloseable {
         return this.bearerToken;
     }
 
+    /**
+     * Get the combined call options (bearer token + timeout).
+     */
+    public CallOption[] callOptions() {
+        if (timeoutOption != null) {
+            return new CallOption[] { this.bearerToken, timeoutOption };
+        }
+        return new CallOption[] { this.bearerToken };
+    }
+
     //the buffer
     private final BufferAllocator allocator;
     //the connection string to identify the client
@@ -63,14 +80,20 @@ public final class Client implements AutoCloseable {
      * @param client - the client object of the flight service
      * @param bearerToken - the credential token
      * @param connectionString - the connection string to identify the client
+     * @param allocator - the buffer allocator
+     * @param config - the client configuration
      */
-    private Client(FlightClient client, CredentialCallOption bearerToken, String connectionString, BufferAllocator allocator) {
+    private Client(FlightClient client, CredentialCallOption bearerToken, String connectionString, BufferAllocator allocator, Configuration config) {
         this.client = client;
         this.sqlClient = new FlightSqlClient(this.client);
         this.bearerToken = bearerToken;
+        this.config = config;
 
         this.connectionString = connectionString;
         this.allocator = allocator;
+
+        long timeoutMs = config.getConnectTimeoutMs();
+        this.timeoutOption = timeoutMs > 0 ? CallOptions.timeout(timeoutMs, TimeUnit.MILLISECONDS) : null;
     }
 
     /**
@@ -79,15 +102,16 @@ public final class Client implements AutoCloseable {
      * @return - the schema and end-points for the query
      */
     public QueryEndpoints getQueryEndpoints(String query) {
-//        FlightInfo fi = this.client.getInfo(FlightDescriptor.command(query.getBytes(StandardCharsets.UTF_8)), this.bearerToken);
-        final FlightSql.CommandStatementQuery.Builder builder = FlightSql.CommandStatementQuery.newBuilder().setQuery(query);
-        final FlightDescriptor descriptor = FlightDescriptor.command(Any.pack(builder.build()).toByteArray());
+        return retryWithBackoff(() -> {
+            final FlightSql.CommandStatementQuery.Builder builder = FlightSql.CommandStatementQuery.newBuilder().setQuery(query);
+            final FlightDescriptor descriptor = FlightDescriptor.command(Any.pack(builder.build()).toByteArray());
 
-        FlightInfo fi = this.client.getInfo(descriptor, this.bearerToken);
-        LOGGER.info("Client.getQueryEndpoints('{}'): got endpoints \n{}", query, fi.getEndpoints());
-        Endpoint[] endpoints = fi.getEndpoints().stream().map(ep -> new Endpoint(ep.getLocations().stream().map(Location::getUri).toArray(URI[]::new), ep.getTicket().getBytes())).toArray(Endpoint[]::new);
-        LOGGER.info("Client.getQueryEndpoints('{}'): return endpoints \n{}", query, Arrays.asList(endpoints));
-        return new QueryEndpoints(fi.getSchema(), endpoints);
+            FlightInfo fi = this.client.getInfo(descriptor, callOptions());
+            LOGGER.info("Client.getQueryEndpoints('{}'): got endpoints \n{}", query, fi.getEndpoints());
+            Endpoint[] endpoints = fi.getEndpoints().stream().map(ep -> new Endpoint(ep.getLocations().stream().map(Location::getUri).toArray(URI[]::new), ep.getTicket().getBytes())).toArray(Endpoint[]::new);
+            LOGGER.info("Client.getQueryEndpoints('{}'): return endpoints \n{}", query, Arrays.asList(endpoints));
+            return new QueryEndpoints(fi.getSchema(), endpoints);
+        }, "getQueryEndpoints");
     }
 
     /**
@@ -97,11 +121,11 @@ public final class Client implements AutoCloseable {
      * @return - row set from the end-point
      */
     public RowSet fetch(Endpoint ep, Schema schema) {
-        RowSet rs = new RowSet(schema);
-        Field[] fields = Field.from(schema);
-        FlightEndpoint fep = new FlightEndpoint(new Ticket(ep.getTicket()), Arrays.stream(ep.getURIs()).map(Location::new).toArray(Location[]::new));
-        try {
-            try (FlightStream stream = this.client.getStream(fep.getTicket(), this.bearerToken)) {
+        return retryWithBackoff(() -> {
+            RowSet rs = new RowSet(schema);
+            Field[] fields = Field.from(schema);
+            FlightEndpoint fep = new FlightEndpoint(new Ticket(ep.getTicket()), Arrays.stream(ep.getURIs()).map(Location::new).toArray(Location[]::new));
+            try (FlightStream stream = this.client.getStream(fep.getTicket(), callOptions())) {
                 VectorSchemaRoot root = stream.getRoot();
                 while (stream.next()) {
                     FieldVector[] fs = root.getFieldVectors().stream().map(fv -> FieldVector.fromArrow(fv, Field.find(fields, fv.getName()), root.getRowCount())).toArray(FieldVector[]::new);
@@ -114,10 +138,8 @@ public final class Client implements AutoCloseable {
                     }
                 }
             }
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-        return rs;
+            return rs;
+        }, "fetch");
     }
 
     /**
@@ -137,10 +159,10 @@ public final class Client implements AutoCloseable {
      * without accumulating all rows in memory.
      */
     public void fetchStreaming(Endpoint ep, Schema schema, BatchCallback callback) {
-        Field[] fields = Field.from(schema);
-        FlightEndpoint fep = new FlightEndpoint(new Ticket(ep.getTicket()), Arrays.stream(ep.getURIs()).map(Location::new).toArray(Location[]::new));
-        try {
-            try (FlightStream stream = this.client.getStream(fep.getTicket(), this.bearerToken)) {
+        retryWithBackoff(() -> {
+            Field[] fields = Field.from(schema);
+            FlightEndpoint fep = new FlightEndpoint(new Ticket(ep.getTicket()), Arrays.stream(ep.getURIs()).map(Location::new).toArray(Location[]::new));
+            try (FlightStream stream = this.client.getStream(fep.getTicket(), callOptions())) {
                 VectorSchemaRoot root = stream.getRoot();
                 while (stream.next()) {
                     boolean shouldContinue = callback.onBatch(root, fields);
@@ -149,9 +171,8 @@ public final class Client implements AutoCloseable {
                     }
                 }
             }
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
+            return null;
+        }, "fetchStreaming");
     }
 
     /**
@@ -182,22 +203,20 @@ public final class Client implements AutoCloseable {
      * @param stmt - the literal sql-statement
      */
     public long execute(String stmt) {
-        FlightInfo fi = this.sqlClient.execute(stmt, this.bearerToken);
-        LOGGER.info("Client.execute('{}'): got endpoints \n{}", stmt, fi.getEndpoints());
-        long count = 0;
-        for (FlightEndpoint endpoint: fi.getEndpoints()) {
-            try {
-                try (FlightStream stream = this.client.getStream(endpoint.getTicket(), this.bearerToken)) {
+        return retryWithBackoff(() -> {
+            FlightInfo fi = this.sqlClient.execute(stmt, callOptions());
+            LOGGER.info("Client.execute('{}'): got endpoints \n{}", stmt, fi.getEndpoints());
+            long count = 0;
+            for (FlightEndpoint endpoint: fi.getEndpoints()) {
+                try (FlightStream stream = this.client.getStream(endpoint.getTicket(), callOptions())) {
                     while (stream.next()) {
                         VectorSchemaRoot root = stream.getRoot();
                         count += root.getRowCount();
                     }
                 }
-            } catch (Exception e) {
-                throw new RuntimeException(e);
             }
-        }
-        return count;
+            return count;
+        }, "execute");
     }
 
     /**
@@ -277,7 +296,7 @@ public final class Client implements AutoCloseable {
             }
             final HeaderCallOption clientProperties = (callHeaders.keys().size() > 0) ? new HeaderCallOption(callHeaders) : null;
 
-            Client.clients.put(cs, new Client(client, authenticate(client, config.getUser(), config.getPassword(), config.getBearerToken(), clientProperties), cs, allocator));
+            Client.clients.put(cs, new Client(client, authenticate(client, config.getUser(), config.getPassword(), config.getBearerToken(), clientProperties), cs, allocator, config));
         }
         return Client.clients.get(cs);
     }
@@ -310,5 +329,69 @@ public final class Client implements AutoCloseable {
         client.handshake(callOptions.toArray(new CallOption[0]));
         LOGGER.info("Client.authenticate: handshake finished");
         return usePassword ? Client.factory.getCredentialCallOption() : (CredentialCallOption) callOptions.get(0);
+    }
+
+    @FunctionalInterface
+    interface RetryableCall<T> {
+        T call() throws Exception;
+    }
+
+    <T> T retryWithBackoff(RetryableCall<T> callable, String operation) {
+        int maxRetries = config.getMaxRetries();
+        long backoffMs = config.getRetryBackoffMs();
+        Exception lastException = null;
+
+        for (int attempt = 0; attempt <= maxRetries; attempt++) {
+            try {
+                if (attempt > 0) {
+                    long delay = backoffMs * (1L << (attempt - 1));
+                    LOGGER.info("Retry attempt {} for '{}', waiting {}ms", attempt, operation, delay);
+                    Thread.sleep(delay);
+                }
+                return callable.call();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException("Interrupted during retry of " + operation, e);
+            } catch (FlightRuntimeException e) {
+                lastException = e;
+                LOGGER.warn("Flight error in '{}' (attempt {} of {}): {}", operation, attempt, maxRetries + 1, e.getMessage());
+                if (isInternalError(e) && attempt < maxRetries) {
+                    continue;
+                }
+                break;
+            } catch (Exception e) {
+                lastException = e;
+                LOGGER.warn("Error in '{}' (attempt {} of {}): {}", operation, attempt, maxRetries + 1, e.getMessage());
+                if (attempt < maxRetries) {
+                    continue;
+                }
+            }
+        }
+
+        if (lastException instanceof RuntimeException) {
+            throw (RuntimeException) lastException;
+        }
+        throw new RuntimeException("Failed " + operation + " after " + (maxRetries + 1) + " attempts", lastException);
+    }
+
+    private static boolean isInternalError(FlightRuntimeException e) {
+        Throwable cause = e.getCause();
+        if (cause instanceof io.grpc.StatusRuntimeException) {
+            io.grpc.Status.Code code = ((io.grpc.StatusRuntimeException) cause).getStatus().getCode();
+            return code == io.grpc.Status.Code.INTERNAL
+                    || code == io.grpc.Status.Code.UNAVAILABLE
+                    || code == io.grpc.Status.Code.RESOURCE_EXHAUSTED
+                    || code == io.grpc.Status.Code.DEADLINE_EXCEEDED
+                    || code == io.grpc.Status.Code.ABORTED;
+        }
+        return false;
+    }
+
+    public FlightStream openStream(FlightEndpoint fep) throws Exception {
+        return this.client.getStream(fep.getTicket(), callOptions());
+    }
+
+    public Configuration getConfig() {
+        return this.config;
     }
 }

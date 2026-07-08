@@ -51,6 +51,13 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
     // whether we have a valid current row
     private boolean hasCurrent = false;
 
+    // retry state
+    private int openRetryCount = 0;
+    private int nextRetryCount = 0;
+    private static final int MAX_RETRIES = 3;
+    private static final long BACKOFF_BASE_MS = 1000;
+    private static final int MAX_NEXT_RETRIES = 2;
+
     /**
      * Construct a streaming partition reader
      */
@@ -69,6 +76,7 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
                     LOGGER.info("FlightPartitionReader.next(): openStream() returned false");
                     return false;
                 }
+                nextRetryCount = 0;
             }
 
             LOGGER.info("FlightPartitionReader.next(): rowIdx = {}, batchRowCount = {}", rowIdx, batchRowCount);
@@ -81,16 +89,27 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
 
             LOGGER.info("FlightPartitionReader.next(): try to read next batch");
             // current batch exhausted, try next batch
-            while (stream.next()) {
-                root = stream.getRoot();
-                batchRowCount = root.getRowCount();
-                fields = Field.from(stream.getSchema());
-                rowIdx = 0;
-                LOGGER.info("FlightPartitionReader.next(): started new batch rowIdx = {}, batchRowCount = {}", rowIdx, batchRowCount);
+            while (true) {
+                try {
+                    if (!stream.next()) {
+                        break;
+                    }
+                    root = stream.getRoot();
+                    batchRowCount = root.getRowCount();
+                    fields = Field.from(stream.getSchema());
+                    rowIdx = 0;
+                    LOGGER.info("FlightPartitionReader.next(): started new batch rowIdx = {}, batchRowCount = {}", rowIdx, batchRowCount);
+                    nextRetryCount = 0;
 
-                if (batchRowCount > 0) {
-                    hasCurrent = true;
-                    return true;
+                    if (batchRowCount > 0) {
+                        hasCurrent = true;
+                        return true;
+                    }
+                } catch (Exception midStreamError) {
+                    LOGGER.warn("Mid-stream read error: {}, attempt reconnect", midStreamError.getMessage());
+                    if (!reopenStream()) {
+                        throw midStreamError;
+                    }
                 }
             }
 
@@ -132,18 +151,129 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
         closeStream();
     }
 
-    private boolean openStream() {
-        try {
-            if (this.inputPartition instanceof FlightInputPartition.FlightEndpointInputPartition) {
-                return openEndpointStream((FlightInputPartition.FlightEndpointInputPartition) this.inputPartition);
-            } else if (this.inputPartition instanceof FlightInputPartition.FlightQueryInputPartition) {
-                return openQueryStream((FlightInputPartition.FlightQueryInputPartition) this.inputPartition);
-            } else {
-                LOGGER.error("FlightPartitionReader.openStream(): Unsupported partition, no data read: {}", this.inputPartition);
-            }
+    private boolean openStream() throws Exception {
+        if (this.inputPartition instanceof FlightInputPartition.FlightEndpointInputPartition) {
+            return openEndpointStreamWithRetry((FlightInputPartition.FlightEndpointInputPartition) this.inputPartition);
+        } else if (this.inputPartition instanceof FlightInputPartition.FlightQueryInputPartition) {
+            return openQueryStreamWithRetry((FlightInputPartition.FlightQueryInputPartition) this.inputPartition);
+        } else {
+            LOGGER.error("FlightPartitionReader.openStream(): Unsupported partition, no data read: {}", this.inputPartition);
             return false;
+        }
+    }
+
+    private boolean openEndpointStreamWithRetry(FlightInputPartition.FlightEndpointInputPartition dePartition) throws Exception {
+        int maxRetries = this.configuration.getMaxRetries();
+        long backoffMs = this.configuration.getRetryBackoffMs();
+
+        for (int attempt = 0; attempt <= maxRetries; attempt++) {
+            try {
+                closeStream();
+                return openEndpointStream(dePartition);
+            } catch (Exception e) {
+                LOGGER.warn("Failed to open endpoint stream (attempt {} of {}): {}", attempt, maxRetries + 1, e.getMessage());
+                if (attempt >= maxRetries) {
+                    throw e;
+                }
+                long delay = backoffMs * (1L << attempt);
+                LOGGER.info("Retrying in {}ms", delay);
+                Thread.sleep(delay);
+            }
+        }
+        return false;
+    }
+
+    private boolean openQueryStreamWithRetry(FlightInputPartition.FlightQueryInputPartition dqPartition) throws Exception {
+        int maxRetries = this.configuration.getMaxRetries();
+        long backoffMs = this.configuration.getRetryBackoffMs();
+
+        for (int attempt = 0; attempt <= maxRetries; attempt++) {
+            try {
+                closeStream();
+                QueryEndpoints qeps = this.client.getQueryEndpoints(dqPartition.getQuery());
+                LOGGER.info("FlightPartitionReader.openQueryStream(): endpoints: {}", qeps);
+                if (qeps.getEndpoints().length == 0) {
+                    return false;
+                }
+
+                // try each endpoint in sequence
+                Exception lastEpError = null;
+                for (int epIdx = 0; epIdx < qeps.getEndpoints().length; epIdx++) {
+                    Endpoint endpoint = qeps.getEndpoints()[epIdx];
+                    try {
+                        if (openSingleEndpoint(endpoint, qeps.getSchema())) {
+                            return true;
+                        }
+                    } catch (Exception epErr) {
+                        lastEpError = epErr;
+                        LOGGER.warn("Failed to open query endpoint {} of {}: {}", epIdx + 1, qeps.getEndpoints().length, epErr.getMessage());
+                    }
+                }
+
+                if (lastEpError instanceof RuntimeException) {
+                    throw lastEpError;
+                }
+                if (lastEpError != null) {
+                    throw lastEpError;
+                }
+            } catch (Exception e) {
+                LOGGER.warn("Failed to open query stream (attempt {} of {}): {}", attempt, maxRetries + 1, e.getMessage());
+                if (attempt >= maxRetries) {
+                    throw e;
+                }
+                long delay = backoffMs * (1L << attempt);
+                LOGGER.info("Retrying in {}ms", delay);
+                Thread.sleep(delay);
+            }
+        }
+        return false;
+    }
+
+    private boolean openSingleEndpoint(Endpoint endpoint, Schema schema) throws Exception {
+        org.apache.arrow.flight.FlightEndpoint fep = new org.apache.arrow.flight.FlightEndpoint(
+                new org.apache.arrow.flight.Ticket(endpoint.getTicket()),
+                Arrays.stream(endpoint.getURIs())
+                        .map(org.apache.arrow.flight.Location::new)
+                        .toArray(org.apache.arrow.flight.Location[]::new)
+        );
+
+        this.stream = this.client.openStream(fep);
+        this.root = stream.getRoot();
+        this.fields = Field.from(schema);
+        this.sparkFields = this.fields;
+        this.rowIdx = -1;
+        this.batchRowCount = 0;
+
+        if (stream.next()) {
+            batchRowCount = root.getRowCount();
+        }
+        return batchRowCount > 0;
+    }
+
+    /**
+     * Attempt to reopen the stream after a mid-stream failure.
+     * Reconnects from the beginning of the partition.
+     */
+    private boolean reopenStream() {
+        if (nextRetryCount >= MAX_NEXT_RETRIES) {
+            LOGGER.error("Max mid-stream retries ({}) exceeded", MAX_NEXT_RETRIES);
+            return false;
+        }
+        nextRetryCount++;
+        long delay = BACKOFF_BASE_MS * (1L << (nextRetryCount - 1));
+        LOGGER.info("Reopening stream after mid-stream failure, retry {}/{}, waiting {}ms",
+                nextRetryCount, MAX_NEXT_RETRIES, delay);
+        try {
+            Thread.sleep(delay);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
+        closeStream();
+        try {
+            return openStream();
         } catch (Exception e) {
-            LOGGER.error("Failed to open Flight stream: " + e.getMessage(), e);
+            LOGGER.error("Reopen stream failed: {}", e.getMessage());
             return false;
         }
     }
@@ -161,7 +291,7 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
         );
 
         LOGGER.info("FlightPartitionReader.openEndpointStream(): endpoint: {}", fep);
-        this.stream = this.client.getFlightClient().getStream(fep.getTicket(), this.client.getBearerToken());
+        this.stream = this.client.openStream(fep);
         LOGGER.info("FlightPartitionReader.openEndpointStream(): stream: {}", stream);
         this.root = stream.getRoot();
         LOGGER.info("FlightPartitionReader.openEndpointStream(): vector schema root: {}", root);
@@ -178,37 +308,6 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
 
         LOGGER.info("FlightPartitionReader.openEndpointStream(): first batch row count: {}", batchRowCount);
         return true;
-    }
-
-    private boolean openQueryStream(FlightInputPartition.FlightQueryInputPartition dqPartition) throws Exception {
-        LOGGER.error("FlightPartitionReader.openQueryStream(): partition: {}", dqPartition);
-        QueryEndpoints qeps = this.client.getQueryEndpoints(dqPartition.getQuery());
-        LOGGER.info("FlightPartitionReader.openQueryStream(): endpoints: {}", qeps);
-        if (qeps.getEndpoints().length == 0) {
-            return false;
-        }
-
-        // Use first endpoint for now (multi-endpoint streaming is handled by Spark partitioning)
-        Endpoint endpoint = qeps.getEndpoints()[0];
-        Schema schema = qeps.getSchema();
-        org.apache.arrow.flight.FlightEndpoint fep = new org.apache.arrow.flight.FlightEndpoint(
-                new org.apache.arrow.flight.Ticket(endpoint.getTicket()),
-                Arrays.stream(endpoint.getURIs())
-                        .map(org.apache.arrow.flight.Location::new)
-                        .toArray(org.apache.arrow.flight.Location[]::new)
-        );
-
-        this.stream = this.client.getFlightClient().getStream(fep.getTicket(), this.client.getBearerToken());
-        this.root = stream.getRoot();
-        this.fields = Field.from(schema);
-        this.sparkFields = this.fields;  // FlightInfo schema = what Spark's codegen expects
-        this.rowIdx = -1;
-        this.batchRowCount = 0;
-
-        if (stream.next()) {
-            batchRowCount = root.getRowCount();
-        }
-        return batchRowCount > 0;
     }
 
     private void closeStream() {
