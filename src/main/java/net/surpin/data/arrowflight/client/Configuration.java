@@ -47,6 +47,11 @@ public final class Configuration implements Serializable {
     //memory allocation limit (bytes, 0 = default 2GB)
     private long allocationLimit = 0;
 
+    //retry configuration
+    private int maxRetries = 3;
+    private long retryBackoffMs = 1000;
+    private long connectTimeoutMs = 30000;
+
     /**
      * Construct a Configuration object
      * @param host - the host name of the remote flight service
@@ -285,6 +290,30 @@ public final class Configuration implements Serializable {
         this.allocationLimit = limit;
     }
 
+    public int getMaxRetries() {
+        return this.maxRetries;
+    }
+
+    public void setMaxRetries(int maxRetries) {
+        this.maxRetries = maxRetries;
+    }
+
+    public long getRetryBackoffMs() {
+        return this.retryBackoffMs;
+    }
+
+    public void setRetryBackoffMs(long retryBackoffMs) {
+        this.retryBackoffMs = retryBackoffMs;
+    }
+
+    public long getConnectTimeoutMs() {
+        return this.connectTimeoutMs;
+    }
+
+    public void setConnectTimeoutMs(long connectTimeoutMs) {
+        this.connectTimeoutMs = connectTimeoutMs;
+    }
+
     @Override
     public String toString() {
         return "Configuration{" +
@@ -302,6 +331,9 @@ public final class Configuration implements Serializable {
                 ", routingQueue='" + routingQueue + '\'' +
                 ", certBytes=" + Arrays.toString(certBytes) +
                 ", allocationLimit=" + allocationLimit +
+                ", maxRetries=" + maxRetries +
+                ", retryBackoffMs=" + retryBackoffMs +
+                ", connectTimeoutMs=" + connectTimeoutMs +
                 '}';
     }
 }

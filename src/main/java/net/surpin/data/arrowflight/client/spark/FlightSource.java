@@ -35,6 +35,11 @@ public class FlightSource implements TableProvider, DataSourceRegister {
     public static final String KEY_ROUTING_TAG = "routing.tag";
     public static final String KEY_ROUTING_QUEUE = "routing.queue";
 
+    //Retry & timeout
+    private static final String KEY_MAX_RETRIES = "client.maxRetries";
+    private static final String KEY_RETRY_BACKOFF_MS = "client.retryBackoffMs";
+    private static final String KEY_CONNECT_TIMEOUT_MS = "client.connectTimeoutMs";
+
     //the service configuration
     private Configuration configuration = null;
     //the name of the table
@@ -77,6 +82,20 @@ public class FlightSource implements TableProvider, DataSourceRegister {
         this.configuration.setDefaultSchema(options.getOrDefault(FlightSource.KEY_DEFAULT_SCHEMA, ""));
         this.configuration.setRoutingTag(options.getOrDefault(FlightSource.KEY_ROUTING_TAG, ""));
         this.configuration.setRoutingQueue(options.getOrDefault(FlightSource.KEY_ROUTING_QUEUE, ""));
+
+        //retry and timeout settings
+        String maxRetries = options.get(FlightSource.KEY_MAX_RETRIES);
+        if (maxRetries != null) {
+            this.configuration.setMaxRetries(Integer.parseInt(maxRetries));
+        }
+        String retryBackoff = options.get(FlightSource.KEY_RETRY_BACKOFF_MS);
+        if (retryBackoff != null) {
+            this.configuration.setRetryBackoffMs(Long.parseLong(retryBackoff));
+        }
+        String connectTimeout = options.get(FlightSource.KEY_CONNECT_TIMEOUT_MS);
+        if (connectTimeout != null) {
+            this.configuration.setConnectTimeoutMs(Long.parseLong(connectTimeout));
+        }
 
         //the table name
         String tableName = options.getOrDefault(FlightSource.TABLE, "");
