@@ -20,6 +20,79 @@ public final class RuntimeSettings {
         return batchSize();
     }
 
+    public static int ioParallelism() {
+        Integer explicit = getOptionalInt("ioParallelism", "arrowflight.io.parallelism");
+        if (explicit != null && explicit > 0) {
+            return explicit;
+        }
+
+        int availableCores = Runtime.getRuntime().availableProcessors();
+        int maxCores = getInt("ioParallelismMaxCores", "arrowflight.io.maxCores", 0);
+        int effectiveCores = maxCores > 0 ? Math.min(availableCores, maxCores) : availableCores;
+        int multiplier = getInt("ioParallelismMultiplier", "arrowflight.io.parallelismMultiplier", 8);
+        int minThreads = getInt("ioParallelismMinThreads", "arrowflight.io.minParallelism", 32);
+
+        return Math.max(minThreads, effectiveCores * multiplier);
+    }
+
+    public static int duckDbWarmConnections(int ioParallelism) {
+        return getInt("duckDbWarmConnections",
+                "arrowflight.duckdb.warmConnections",
+                Math.min(8, ioParallelism));
+    }
+
+    public static int duckDbGroups(int ioParallelism) {
+        return getInt("duckDbGroups",
+                "arrowflight.duckdb.groups",
+                Math.min(8, ioParallelism));
+    }
+
+    public static int duckDbThreads() {
+        return getInt("duckDbThreads", "arrowflight.duckdb.threads", 1);
+    }
+
+    public static String duckDbHdfsExtension() {
+        return getString("duckDbHdfsExtension",
+                "arrowflight.duckdb.hdfs.extension",
+                "DUCKDB_HDFS_EXTENSION",
+                null);
+    }
+
+    public static boolean duckDbAllowUnsignedExtensions(boolean fallback) {
+        return getBoolean("duckDbAllowUnsignedExtensions",
+                "arrowflight.duckdb.allowUnsignedExtensions",
+                "DUCKDB_ALLOW_UNSIGNED_EXTENSIONS",
+                fallback);
+    }
+
+    public static String duckDbHdfsDefaultNamenode() {
+        return getString("duckDbHdfsDefaultNamenode",
+                "arrowflight.duckdb.hdfs.defaultNamenode",
+                "HDFS_DEFAULT_NAMENODE",
+                null);
+    }
+
+    public static String duckDbHdfsHaNamenodes() {
+        return getString("duckDbHdfsHaNamenodes",
+                "arrowflight.duckdb.hdfs.haNamenodes",
+                "HDFS_HA_NAMENODES",
+                null);
+    }
+
+    public static String duckDbHdfsShortcircuit() {
+        return getString("duckDbHdfsShortcircuit",
+                "arrowflight.duckdb.hdfs.shortcircuit",
+                "HDFS_SHORTCIRCUIT",
+                null);
+    }
+
+    public static String duckDbHdfsDomainSocketPath() {
+        return getString("duckDbHdfsDomainSocketPath",
+                "arrowflight.duckdb.hdfs.domainSocketPath",
+                "HDFS_DOMAIN_SOCKET_PATH",
+                null);
+    }
+
     public static int grpcMaxInboundMessageSize() {
         return getInt("grpcMaxInboundMessageSize",
                 "arrowflight.grpc.maxInboundMessageSize",
@@ -56,6 +129,23 @@ public final class RuntimeSettings {
         return value == null || value.isBlank() ? fallback : value.trim();
     }
 
+    private static String getString(String key, String systemPropertyAlias, String envName, String fallback) {
+        String value = System.getProperty(key);
+        if (value == null || value.isBlank()) {
+            value = System.getProperty(systemPropertyAlias);
+        }
+        if (value == null || value.isBlank()) {
+            value = System.getenv(envName);
+        }
+        if (value == null || value.isBlank()) {
+            value = PROPERTIES.getProperty(key);
+        }
+        if (value == null || value.isBlank()) {
+            value = PROPERTIES.getProperty(systemPropertyAlias);
+        }
+        return value == null || value.isBlank() ? fallback : value.trim();
+    }
+
     private static int getInt(String key, int fallback) {
         return parseInt(key, getString(key, String.valueOf(fallback)));
     }
@@ -72,6 +162,26 @@ public final class RuntimeSettings {
             value = PROPERTIES.getProperty(systemPropertyAlias);
         }
         return parseInt(key, value == null || value.isBlank() ? String.valueOf(fallback) : value.trim());
+    }
+
+    private static Integer getOptionalInt(String key, String systemPropertyAlias) {
+        String value = System.getProperty(key);
+        if (value == null || value.isBlank()) {
+            value = System.getProperty(systemPropertyAlias);
+        }
+        if (value == null || value.isBlank()) {
+            value = PROPERTIES.getProperty(key);
+        }
+        if (value == null || value.isBlank()) {
+            value = PROPERTIES.getProperty(systemPropertyAlias);
+        }
+        return value == null || value.isBlank() ? null : parseInt(key, value.trim());
+    }
+
+    private static boolean getBoolean(String key, String systemPropertyAlias, String envName,
+            boolean fallback) {
+        String value = getString(key, systemPropertyAlias, envName, null);
+        return value == null ? fallback : Boolean.parseBoolean(value);
     }
 
     private static long getLong(String key, String systemPropertyAlias, long fallback) {

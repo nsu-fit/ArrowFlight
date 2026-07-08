@@ -70,9 +70,7 @@ public final class ParquetManager {
     private static final Logger LOGGER = LoggerFactory.getLogger(ParquetManager.class);
 
     // Daemon thread pool for parallel per-file I/O (footer reads + Acero scans).
-    private static final int IO_PARALLELISM =
-            Integer.getInteger("arrowflight.io.parallelism",
-                    Math.max(32, Runtime.getRuntime().availableProcessors() * 8));
+    private static final int IO_PARALLELISM = RuntimeSettings.ioParallelism();
     private static final java.util.concurrent.ExecutorService IO_POOL =
             java.util.concurrent.Executors.newFixedThreadPool(IO_PARALLELISM, r -> {
                 Thread t = new Thread(r, "parquet-io");
@@ -84,20 +82,12 @@ public final class ParquetManager {
     private static final long LISTENER_READY_TIMEOUT_MILLIS =
             RuntimeSettings.flightListenerReadyTimeoutMillis();
     private static final int DUCKDB_WARM_CONNECTIONS =
-            Integer.getInteger("arrowflight.duckdb.warmConnections",
-                    Math.min(8, IO_PARALLELISM));
-    private static final int DUCKDB_GROUPS =
-            Integer.getInteger("arrowflight.duckdb.groups", Math.min(8, IO_PARALLELISM));
-    private static final int DUCKDB_THREADS =
-            Integer.getInteger("arrowflight.duckdb.threads", 1);
-    private static final String DUCKDB_HDFS_EXTENSION = firstNonBlank(
-            System.getProperty("arrowflight.duckdb.hdfs.extension"),
-            System.getenv("DUCKDB_HDFS_EXTENSION"));
+            RuntimeSettings.duckDbWarmConnections(IO_PARALLELISM);
+    private static final int DUCKDB_GROUPS = RuntimeSettings.duckDbGroups(IO_PARALLELISM);
+    private static final int DUCKDB_THREADS = RuntimeSettings.duckDbThreads();
+    private static final String DUCKDB_HDFS_EXTENSION = RuntimeSettings.duckDbHdfsExtension();
     private static final boolean DUCKDB_ALLOW_UNSIGNED_EXTENSIONS =
-            Boolean.parseBoolean(firstNonBlank(
-                    System.getProperty("arrowflight.duckdb.allowUnsignedExtensions"),
-                    System.getenv("DUCKDB_ALLOW_UNSIGNED_EXTENSIONS"),
-                    DUCKDB_HDFS_EXTENSION == null ? "false" : "true"));
+            RuntimeSettings.duckDbAllowUnsignedExtensions(DUCKDB_HDFS_EXTENSION != null);
 
     // One reusable DuckDB connection per Java worker thread. DuckDB native init is
     // expensive, so each thread keeps its own configured in-memory connection.
@@ -137,16 +127,6 @@ public final class ParquetManager {
 
         initCatalogReader();
     }
-
-    private static String firstNonBlank(String... values) {
-        for (String value : values) {
-            if (value != null && !value.isBlank()) {
-                return value;
-            }
-        }
-        return null;
-    }
-
     private static void configureDuckDbConnection(Connection conn) throws Exception {
         try (Statement s = conn.createStatement()) {
             s.execute("SET threads = " + DUCKDB_THREADS);
@@ -157,19 +137,18 @@ public final class ParquetManager {
                 s.execute("LOAD " + sqlStringLiteral(DUCKDB_HDFS_EXTENSION));
             }
             setDuckDbOptionIfPresent(s, "hdfs_default_namenode",
-                    "arrowflight.duckdb.hdfs.defaultNamenode", "HDFS_DEFAULT_NAMENODE");
+                    RuntimeSettings.duckDbHdfsDefaultNamenode());
             setDuckDbOptionIfPresent(s, "hdfs_ha_namenodes",
-                    "arrowflight.duckdb.hdfs.haNamenodes", "HDFS_HA_NAMENODES");
+                    RuntimeSettings.duckDbHdfsHaNamenodes());
             setDuckDbOptionIfPresent(s, "hdfs_shortcircuit",
-                    "arrowflight.duckdb.hdfs.shortcircuit", "HDFS_SHORTCIRCUIT");
+                    RuntimeSettings.duckDbHdfsShortcircuit());
             setDuckDbOptionIfPresent(s, "hdfs_domain_socket_path",
-                    "arrowflight.duckdb.hdfs.domainSocketPath", "HDFS_DOMAIN_SOCKET_PATH");
+                    RuntimeSettings.duckDbHdfsDomainSocketPath());
         }
     }
 
     private static void setDuckDbOptionIfPresent(Statement statement, String optionName,
-            String propertyName, String envName) throws Exception {
-        String value = firstNonBlank(System.getProperty(propertyName), System.getenv(envName));
+            String value) throws Exception {
         if (value == null) {
             return;
         }
