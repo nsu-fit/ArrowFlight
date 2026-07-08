@@ -540,19 +540,37 @@ public final class ParquetManager {
                 listener.start(vsr);
             }
 
-            int read = 0, sent = 0;
-            while (reader.loadNextBatch()) {
+            int read = 0;
+            int sent = 0;
+            LOGGER.info("Acero scan loop started: query={}, files={}, batchSize={}",
+                    query, parquetUris.size(), ARROW_BATCH_SIZE);
+            while (true) {
+                LOGGER.info("Acero waiting for batch {}: sent={}, query={}", read + 1, sent, query);
+                if (!reader.loadNextBatch()) {
+                    LOGGER.info("Acero reader reached EOF after {} batch(es), sent {} batch(es): query={}",
+                            read, sent, query);
+                    break;
+                }
                 read++;
-                if (vsr.getRowCount() == 0) {
+                int rowCount = vsr.getRowCount();
+                LOGGER.info("Acero loaded batch {} with {} row(s): query={}", read, rowCount, query);
+                if (rowCount == 0) {
+                    LOGGER.info("Acero skipping empty batch {}: query={}", read, query);
                     vsr.clear();
                     continue;
                 }
+                LOGGER.info("Flight waiting for listener readiness before batch {}: rows={}, query={}",
+                        read, rowCount, query);
                 if (!awaitListenerReady(listener)) {
+                    LOGGER.warn("Flight listener cancelled before batch {}: sent={}, query={}", read, sent, query);
                     vsr.clear();
                     break;
                 }
+                LOGGER.info("Flight listener ready for batch {}, sending {} row(s): query={}",
+                        read, rowCount, query);
                 listener.putNext();
                 sent++;
+                LOGGER.info("Flight sent batch {}: sent={}, rows={}, query={}", read, sent, rowCount, query);
                 vsr.clear();
             }
             LOGGER.info("Acero sent {} batch(es), read {} batch(es)", sent, read);
@@ -1165,11 +1183,15 @@ public final class ParquetManager {
     private static boolean awaitListenerReady(FlightProducer.ServerStreamListener listener)
             throws InterruptedException {
         if (listener.isCancelled()) {
+            LOGGER.warn("Flight listener is already cancelled before readiness wait");
             return false;
         }
         if (listener.isReady()) {
             return true;
         }
+
+        long waitStartNanos = System.nanoTime();
+        LOGGER.info("Flight listener is not ready; waiting up to {}ms", LISTENER_READY_TIMEOUT_MILLIS);
 
         Object lock = new Object();
         boolean[] signalled = {false};
@@ -1188,16 +1210,27 @@ public final class ParquetManager {
             while (!listener.isReady() && !listener.isCancelled()) {
                 long remainingNanos = deadline - System.nanoTime();
                 if (remainingNanos <= 0) {
+                    long waitedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - waitStartNanos);
+                    LOGGER.warn("Timed out waiting for Flight listener readiness after {}ms "
+                                    + "(configured {}ms): ready={}, cancelled={}",
+                            waitedMillis, LISTENER_READY_TIMEOUT_MILLIS,
+                            listener.isReady(), listener.isCancelled());
                     throw new IllegalStateException("Timed out waiting for Flight listener readiness after "
                             + LISTENER_READY_TIMEOUT_MILLIS + "ms");
                 }
                 if (signalled[0]) {
                     signalled[0] = false;
+                    LOGGER.info("Flight listener wait signalled after {}ms: ready={}, cancelled={}",
+                            TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - waitStartNanos),
+                            listener.isReady(), listener.isCancelled());
                     continue;
                 }
                 TimeUnit.NANOSECONDS.timedWait(lock, remainingNanos);
             }
         }
+        LOGGER.info("Flight listener wait finished after {}ms: ready={}, cancelled={}",
+                TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - waitStartNanos),
+                listener.isReady(), listener.isCancelled());
         return !listener.isCancelled();
     }
 
