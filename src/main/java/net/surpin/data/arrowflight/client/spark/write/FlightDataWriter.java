@@ -167,7 +167,7 @@ public final class FlightDataWriter implements DataWriter<InternalRow> {
         throw (this.epochId.length() == 0) ? new FlightWriteAbortException(this.partitionId, this.taskId, this.count)
             : new FlightWriteAbortException(this.partitionId, this.taskId, this.epochId, this.count);
     }
-
+    
     /**
      * Close any connections
      */
