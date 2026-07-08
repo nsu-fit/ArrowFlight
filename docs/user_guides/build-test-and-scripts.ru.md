@@ -30,7 +30,7 @@ git switch feature/adr-0001-hybrid-query-engine
 git pull --ff-only
 ```
 
-Если локальной ветки еще нет:
+Если локальной ветки еще  нет:
 
 ```bash
 git switch --track origin/feature/adr-0001-hybrid-query-engine
