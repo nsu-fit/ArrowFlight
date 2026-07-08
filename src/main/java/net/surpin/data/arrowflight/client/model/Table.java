@@ -1,5 +1,12 @@
-package net.surpin.data.arrowflight.client;
+package net.surpin.data.arrowflight.client.model;
 
+import net.surpin.data.arrowflight.client.Client;
+import net.surpin.data.arrowflight.client.Configuration;
+import net.surpin.data.arrowflight.client.query.Endpoint;
+import net.surpin.data.arrowflight.client.query.PushAggregation;
+import net.surpin.data.arrowflight.client.query.QueryEndpoints;
+import net.surpin.data.arrowflight.client.query.QueryStatement;
+import net.surpin.data.arrowflight.client.write.PartitionBehavior;
 import org.apache.arrow.vector.types.pojo.Schema;
 import org.apache.spark.sql.sources.*;
 import org.apache.spark.sql.types.Metadata;

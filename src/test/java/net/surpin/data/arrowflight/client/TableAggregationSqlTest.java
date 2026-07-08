@@ -1,5 +1,7 @@
 package net.surpin.data.arrowflight.client;
 
+import net.surpin.data.arrowflight.client.model.Table;
+import net.surpin.data.arrowflight.client.query.PushAggregation;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;

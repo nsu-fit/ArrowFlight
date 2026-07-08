@@ -1,4 +1,4 @@
-package net.surpin.data.arrowflight.client;
+package net.surpin.data.arrowflight.client.query;
 
 import org.apache.arrow.vector.types.pojo.Schema;
 import java.io.Serializable;

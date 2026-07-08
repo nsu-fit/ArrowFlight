@@ -1,4 +1,4 @@
-package net.surpin.data.arrowflight.server;
+package net.surpin.data.arrowflight.debug;
 
 import org.apache.spark.SparkConf;
 import org.apache.spark.sql.Dataset;

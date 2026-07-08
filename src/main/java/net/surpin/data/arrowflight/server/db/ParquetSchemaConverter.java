@@ -1,4 +1,4 @@
-package net.surpin.data.arrowflight.server;
+package net.surpin.data.arrowflight.server.db;
 
 import org.apache.arrow.vector.types.DateUnit;
 import org.apache.arrow.vector.types.FloatingPointPrecision;
@@ -241,7 +241,7 @@ public class ParquetSchemaConverter {
             };
         }
 
-        Map<String, ?> toMap() {
+        public Map<String, ?> toMap() {
             Map<String, Object> result = new HashMap<>();
             result.put("TYPE_NAME", this.typeName());
             result.put("DATA_TYPE", this.dataType());

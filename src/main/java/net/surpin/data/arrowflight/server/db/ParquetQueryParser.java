@@ -1,4 +1,4 @@
-package net.surpin.data.arrowflight.server;
+package net.surpin.data.arrowflight.server.db;
 
 import org.jooq.*;
 import org.jooq.conf.ParseNameCase;

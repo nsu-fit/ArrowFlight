@@ -1,5 +1,6 @@
 package net.surpin.data.arrowflight.server;
 
+import net.surpin.data.arrowflight.server.db.ParquetSchemaConverter;
 import org.apache.arrow.vector.types.DateUnit;
 import org.apache.arrow.vector.types.TimeUnit;
 import org.apache.arrow.vector.types.pojo.ArrowType;

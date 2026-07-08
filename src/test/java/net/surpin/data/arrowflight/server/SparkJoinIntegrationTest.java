@@ -3,6 +3,7 @@ package net.surpin.data.arrowflight.server;
 import com.hazelcast.config.Config;
 import com.hazelcast.core.Hazelcast;
 import com.hazelcast.core.HazelcastInstance;
+import net.surpin.data.arrowflight.server.db.ParquetManager;
 import org.apache.arrow.flight.FlightServer;
 import org.apache.arrow.flight.Location;
 import org.apache.arrow.memory.DefaultAllocationManagerOption;

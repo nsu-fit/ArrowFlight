@@ -1,7 +1,7 @@
 package net.surpin.data.arrowflight.client.spark;
 
 import net.surpin.data.arrowflight.client.Configuration;
-import net.surpin.data.arrowflight.client.Table;
+import net.surpin.data.arrowflight.client.model.Table;
 import org.apache.spark.sql.connector.catalog.TableProvider;
 import org.apache.spark.sql.connector.expressions.Transform;
 import org.apache.spark.sql.sources.DataSourceRegister;

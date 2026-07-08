@@ -1,9 +1,9 @@
 package net.surpin.data.arrowflight.client.spark.read;
 
 import net.surpin.data.arrowflight.client.Configuration;
-import net.surpin.data.arrowflight.client.PartitionBehavior;
-import net.surpin.data.arrowflight.client.PushAggregation;
-import net.surpin.data.arrowflight.client.Table;
+import net.surpin.data.arrowflight.client.write.PartitionBehavior;
+import net.surpin.data.arrowflight.client.query.PushAggregation;
+import net.surpin.data.arrowflight.client.model.Table;
 import org.apache.spark.sql.connector.expressions.Expression;
 import org.apache.spark.sql.connector.expressions.aggregate.Aggregation;
 import org.apache.spark.sql.connector.expressions.aggregate.*;

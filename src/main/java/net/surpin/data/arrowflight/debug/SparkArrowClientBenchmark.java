@@ -1,5 +1,7 @@
-package net.surpin.data.arrowflight.server;
+package net.surpin.data.arrowflight.debug;
 
+import net.surpin.data.arrowflight.server.HadoopFlightSqlService;
+import net.surpin.data.arrowflight.server.db.ParquetManager;
 import com.hazelcast.config.Config;
 import com.hazelcast.core.Hazelcast;
 import com.hazelcast.core.HazelcastInstance;
@@ -47,7 +49,7 @@ import static org.apache.arrow.memory.DefaultAllocationManagerOption.ALLOCATION_
  *
  * <p>Tuning: {@code --rows N} overrides the default row count (default 20 000 000).
  */
-public class SparkArrowClient {
+public class SparkArrowClientBenchmark {
 
     private static final String SCHEMA = "perf_schema";
     private static final String TABLE  = "perf_table";
@@ -99,7 +101,7 @@ public class SparkArrowClient {
             // 3. Start the Flight server in a SEPARATE JVM so it has its own heap
             //    and SparkSession — no GC / memory contention with data generation.
             int port = freePort();
-            String jarPath = SparkArrowClient.class.getProtectionDomain()
+            String jarPath = SparkArrowClientBenchmark.class.getProtectionDomain()
                     .getCodeSource().getLocation().toURI().getPath();
             String javaExe = ProcessHandle.current().info().command().orElse("java");
 
@@ -119,7 +121,7 @@ public class SparkArrowClient {
                     "--add-opens=java.base/sun.security.action=ALL-UNNAMED",
                     "--add-opens=java.base/sun.util.calendar=ALL-UNNAMED",
                     "-cp", jarPath,
-                    "server.net.surpin.data.arrowflight.SparkArrowClient",
+                    "net.surpin.data.arrowflight.debug.SparkArrowClientBenchmark",
                     "--server-only",
                     "--datadir", dataDir.toAbsolutePath().toString(),
                     "--port", String.valueOf(port)

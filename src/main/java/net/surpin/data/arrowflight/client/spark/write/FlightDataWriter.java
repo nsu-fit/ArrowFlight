@@ -1,10 +1,10 @@
 package net.surpin.data.arrowflight.client.spark.write;
 
-import net.surpin.data.arrowflight.client.ArrowConversion;
+import net.surpin.data.arrowflight.client.model.ArrowConversion;
 import net.surpin.data.arrowflight.client.Client;
 import net.surpin.data.arrowflight.client.Configuration;
-import net.surpin.data.arrowflight.client.WriteProtocol;
-import net.surpin.data.arrowflight.client.WriteStatement;
+import net.surpin.data.arrowflight.client.write.WriteProtocol;
+import net.surpin.data.arrowflight.client.write.WriteStatement;
 import org.apache.arrow.flight.sql.FlightSqlClient;
 import org.apache.arrow.memory.RootAllocator;
 import org.apache.arrow.vector.VectorSchemaRoot;
