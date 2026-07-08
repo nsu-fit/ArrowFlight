@@ -1,0 +1,151 @@
+x-arrowflight-image: &arrowflight-image
+  image: arrowflight-test:latest
+  build:
+    context: .
+    dockerfile: docker/Dockerfile
+
+x-server-env: &server-env
+  FLIGHT_DATA_DIR: /data/parquet
+  FLIGHT_PORT: "32010"
+  FLIGHT_HOSTS: flight-server-1,flight-server-2,flight-server-3
+  HAZELCAST_PORT: "5701"
+  JAVA_OPTS: -Xmx2g
+
+services:
+  spark-master:
+    <<: *arrowflight-image
+    command: ["spark-master"]
+    ports:
+      - "7077:7077"
+      - "8080:8080"
+
+  spark-worker-1:
+    <<: *arrowflight-image
+    command: ["spark-worker"]
+    environment:
+      SPARK_WORKER_CORES: "2"
+      SPARK_WORKER_MEMORY: 2g
+      SPARK_WORKER_WEBUI_PORT: "8081"
+    depends_on:
+      - spark-master
+    volumes:
+      - generated-data:/generated
+    ports:
+      - "8081:8081"
+
+  spark-worker-2:
+    <<: *arrowflight-image
+    command: ["spark-worker"]
+    environment:
+      SPARK_WORKER_CORES: "2"
+      SPARK_WORKER_MEMORY: 2g
+      SPARK_WORKER_WEBUI_PORT: "8082"
+    depends_on:
+      - spark-master
+    volumes:
+      - generated-data:/generated
+    ports:
+      - "8082:8082"
+
+  data-generator:
+    <<: *arrowflight-image
+    command: ["generate"]
+    environment:
+      SPARK_MASTER_URL: spark://spark-master:7077
+      SPARK_DRIVER_HOST: data-generator
+      TEST_ROWS: "${TEST_ROWS:-1000000}"
+      TEST_PARTITIONS: "${TEST_PARTITIONS:-24}"
+      TEST_SCHEMA: "${TEST_SCHEMA:-test_schema}"
+      TEST_TABLE: "${TEST_TABLE:-test_table}"
+      FLIGHT_SERVER_DATA_DIRS: /server-data/flight-server-1,/server-data/flight-server-2,/server-data/flight-server-3
+    depends_on:
+      - spark-master
+      - spark-worker-1
+      - spark-worker-2
+    volumes:
+      - generated-data:/generated
+      - flight-server-1-data:/server-data/flight-server-1
+      - flight-server-2-data:/server-data/flight-server-2
+      - flight-server-3-data:/server-data/flight-server-3
+    restart: "no"
+
+  flight-server-1:
+    <<: *arrowflight-image
+    command: ["server"]
+    environment:
+      <<: *server-env
+      FLIGHT_LOCALHOST: flight-server-1
+    depends_on:
+      data-generator:
+        condition: service_completed_successfully
+    volumes:
+      - flight-server-1-data:/data/parquet
+    ports:
+      - "32010:32010"
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/32010'"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+
+  flight-server-2:
+    <<: *arrowflight-image
+    command: ["server"]
+    environment:
+      <<: *server-env
+      FLIGHT_LOCALHOST: flight-server-2
+    depends_on:
+      data-generator:
+        condition: service_completed_successfully
+    volumes:
+      - flight-server-2-data:/data/parquet
+    ports:
+      - "32011:32010"
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/32010'"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+
+  flight-server-3:
+    <<: *arrowflight-image
+    command: ["server"]
+    environment:
+      <<: *server-env
+      FLIGHT_LOCALHOST: flight-server-3
+    depends_on:
+      data-generator:
+        condition: service_completed_successfully
+    volumes:
+      - flight-server-3-data:/data/parquet
+    ports:
+      - "32012:32010"
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/32010'"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+
+  spark-client:
+    <<: *arrowflight-image
+    profiles: ["test"]
+    command: ["flight-count"]
+    environment:
+      SPARK_MASTER_URL: spark://spark-master:7077
+      SPARK_DRIVER_HOST: spark-client
+      FLIGHT_SERVERS: flight-server-1:32010,flight-server-2:32010,flight-server-3:32010
+      FLIGHT_TABLE: "${TEST_SCHEMA:-test_schema}.${TEST_TABLE:-test_table}"
+      FLIGHT_QUERY: SELECT count(*) AS rows FROM flight_table
+    depends_on:
+      flight-server-1:
+        condition: service_healthy
+      flight-server-2:
+        condition: service_healthy
+      flight-server-3:
+        condition: service_healthy
+
+volumes:
+  generated-data:
+  flight-server-1-data:
+  flight-server-2-data:
+  flight-server-3-data:
