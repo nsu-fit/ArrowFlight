@@ -135,13 +135,44 @@ public class HadoopArrowFlightServer {
 
         hazelcastInstance = Hazelcast.newHazelcastInstance(config);
 
-        LOGGER.info("Waiting for all {} nodes to connect", hosts.length);
+        if (hosts.length <= 1) {
+            LOGGER.info("Single-node mode: {} host(s) configured, skipping cluster join wait", hosts.length);
+            return;
+        }
+
+        int timeoutSec = RuntimeSettings.hazelcastClusterJoinTimeoutSec();
+        long deadline = System.currentTimeMillis() + timeoutSec * 1000L;
+        long started = System.currentTimeMillis();
+
+        LOGGER.info("Waiting up to {}s for all {} nodes to connect (hosts: {})",
+                timeoutSec, hosts.length, Arrays.toString(hosts));
+
         Set<Member> members;
         do {
             members = hazelcastInstance.getCluster().getMembers();
-            LOGGER.info("Connected: {} of {} nodes", members.size(), hosts.length);
+            long elapsed = (System.currentTimeMillis() - started) / 1000;
+            LOGGER.info("Connected: {} of {} nodes ({}s elapsed)", members.size(), hosts.length, elapsed);
+
+            if (System.currentTimeMillis() >= deadline) {
+                String msg = String.format(
+                        "Cluster join timeout after %ds: only %d of %d nodes connected. "
+                                + "Expected hosts: %s. Check host spelling, network connectivity, "
+                                + "and that all configured servers are running.",
+                        timeoutSec, members.size(), hosts.length, Arrays.toString(hosts));
+                LOGGER.error(msg);
+                throw new IllegalStateException(msg);
+            }
+
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("Interrupted while waiting for cluster join", e);
+            }
         } while (members.size() < hosts.length);
-        LOGGER.info("All {} nodes connected. Initializing...", hosts.length);
+
+        long totalSec = (System.currentTimeMillis() - started) / 1000;
+        LOGGER.info("All {} nodes connected in {}s. Initializing...", hosts.length, totalSec);
     }
 
     /**
