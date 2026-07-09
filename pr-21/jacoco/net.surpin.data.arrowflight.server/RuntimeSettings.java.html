@@ -1,0 +1,234 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>RuntimeSettings.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Hadoop Arrow Flight SQL Server</a> &gt; <a href="index.source.html" class="el_package">net.surpin.data.arrowflight.server</a> &gt; <span class="el_source">RuntimeSettings.java</span></div><h1>RuntimeSettings.java</h1><pre class="source lang-java linenums">package net.surpin.data.arrowflight.server;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.Properties;
+
+public final class RuntimeSettings {
+    private static final String CONFIG_RESOURCE = &quot;arrowflight.properties&quot;;
+<span class="fc" id="L9">    private static final Properties PROPERTIES = loadProperties();</span>
+    private static final int DEFAULT_GRPC_MAX_INBOUND_MESSAGE_SIZE = Integer.MAX_VALUE;
+
+    private RuntimeSettings() {
+    }
+
+    public static int batchSize() {
+<span class="fc" id="L16">        return getInt(&quot;batchSize&quot;, &quot;arrowflight.duckdb.batchSize&quot;, 4096);</span>
+    }
+
+    public static int duckDbBatchSize() {
+<span class="fc" id="L20">        return batchSize();</span>
+    }
+
+    public static int ioParallelism() {
+<span class="fc" id="L24">        Integer explicit = getOptionalInt(&quot;ioParallelism&quot;, &quot;arrowflight.io.parallelism&quot;);</span>
+<span class="pc bpc" id="L25" title="3 of 4 branches missed.">        if (explicit != null &amp;&amp; explicit &gt; 0) {</span>
+<span class="nc" id="L26">            return explicit;</span>
+        }
+
+<span class="fc" id="L29">        int availableCores = Runtime.getRuntime().availableProcessors();</span>
+<span class="fc" id="L30">        int maxCores = getInt(&quot;ioParallelismMaxCores&quot;, &quot;arrowflight.io.maxCores&quot;, 0);</span>
+<span class="pc bpc" id="L31" title="1 of 2 branches missed.">        int effectiveCores = maxCores &gt; 0 ? Math.min(availableCores, maxCores) : availableCores;</span>
+<span class="fc" id="L32">        int multiplier = getInt(&quot;ioParallelismMultiplier&quot;, &quot;arrowflight.io.parallelismMultiplier&quot;, 8);</span>
+<span class="fc" id="L33">        int minThreads = getInt(&quot;ioParallelismMinThreads&quot;, &quot;arrowflight.io.minParallelism&quot;, 32);</span>
+
+<span class="fc" id="L35">        return Math.max(minThreads, effectiveCores * multiplier);</span>
+    }
+
+    public static int duckDbWarmConnections(int ioParallelism) {
+<span class="fc" id="L39">        return getInt(&quot;duckDbWarmConnections&quot;,</span>
+                &quot;arrowflight.duckdb.warmConnections&quot;,
+<span class="fc" id="L41">                Math.min(8, ioParallelism));</span>
+    }
+
+    public static int duckDbGroups(int ioParallelism) {
+<span class="fc" id="L45">        return getInt(&quot;duckDbGroups&quot;,</span>
+                &quot;arrowflight.duckdb.groups&quot;,
+<span class="fc" id="L47">                Math.min(8, ioParallelism));</span>
+    }
+
+    public static int duckDbThreads() {
+<span class="fc" id="L51">        return getInt(&quot;duckDbThreads&quot;, &quot;arrowflight.duckdb.threads&quot;, 1);</span>
+    }
+
+    public static String duckDbHdfsExtension() {
+<span class="fc" id="L55">        return getString(&quot;duckDbHdfsExtension&quot;,</span>
+                &quot;arrowflight.duckdb.hdfs.extension&quot;,
+                &quot;DUCKDB_HDFS_EXTENSION&quot;,
+                null);
+    }
+
+    public static boolean duckDbAllowUnsignedExtensions(boolean fallback) {
+<span class="fc" id="L62">        return getBoolean(&quot;duckDbAllowUnsignedExtensions&quot;,</span>
+                &quot;arrowflight.duckdb.allowUnsignedExtensions&quot;,
+                &quot;DUCKDB_ALLOW_UNSIGNED_EXTENSIONS&quot;,
+                fallback);
+    }
+
+    public static String duckDbHdfsDefaultNamenode() {
+<span class="fc" id="L69">        return getString(&quot;duckDbHdfsDefaultNamenode&quot;,</span>
+                &quot;arrowflight.duckdb.hdfs.defaultNamenode&quot;,
+                &quot;HDFS_DEFAULT_NAMENODE&quot;,
+                null);
+    }
+
+    public static String duckDbHdfsHaNamenodes() {
+<span class="fc" id="L76">        return getString(&quot;duckDbHdfsHaNamenodes&quot;,</span>
+                &quot;arrowflight.duckdb.hdfs.haNamenodes&quot;,
+                &quot;HDFS_HA_NAMENODES&quot;,
+                null);
+    }
+
+    public static String duckDbHdfsShortcircuit() {
+<span class="fc" id="L83">        return getString(&quot;duckDbHdfsShortcircuit&quot;,</span>
+                &quot;arrowflight.duckdb.hdfs.shortcircuit&quot;,
+                &quot;HDFS_SHORTCIRCUIT&quot;,
+                null);
+    }
+
+    public static String duckDbHdfsDomainSocketPath() {
+<span class="fc" id="L90">        return getString(&quot;duckDbHdfsDomainSocketPath&quot;,</span>
+                &quot;arrowflight.duckdb.hdfs.domainSocketPath&quot;,
+                &quot;HDFS_DOMAIN_SOCKET_PATH&quot;,
+                null);
+    }
+
+    public static int grpcMaxInboundMessageSize() {
+<span class="nc" id="L97">        return getInt(&quot;grpcMaxInboundMessageSize&quot;,</span>
+                &quot;arrowflight.grpc.maxInboundMessageSize&quot;,
+                DEFAULT_GRPC_MAX_INBOUND_MESSAGE_SIZE);
+    }
+
+    public static long flightListenerReadyTimeoutMillis() {
+<span class="fc" id="L103">        return getLong(&quot;flightListenerReadyTimeoutMs&quot;,</span>
+                &quot;arrowflight.flight.listenerReadyTimeoutMs&quot;,
+                60_000L);
+    }
+
+    public static String defaultDataDir() {
+<span class="nc" id="L109">        return getString(&quot;dataDir&quot;, &quot;/data/parquet&quot;);</span>
+    }
+
+    public static int defaultPort() {
+<span class="nc" id="L113">        return getInt(&quot;port&quot;, 32010);</span>
+    }
+
+    public static int defaultHazelcastPort() {
+<span class="nc" id="L117">        return getInt(&quot;hazelcastPort&quot;, 5701);</span>
+    }
+
+    public static int hazelcastClusterJoinTimeoutSec() {
+<span class="nc" id="L121">        return getInt(&quot;hazelcastClusterJoinTimeoutSec&quot;,</span>
+                &quot;arrowflight.hazelcast.clusterJoinTimeoutSec&quot;, 60);
+    }
+
+    public static int ioFileBufferSize() {
+<span class="nc" id="L126">        return getInt(&quot;ioFileBufferSize&quot;, 131072);</span>
+    }
+
+    private static String getString(String key, String fallback) {
+<span class="nc" id="L130">        String value = System.getProperty(key);</span>
+<span class="nc bnc" id="L131" title="All 4 branches missed.">        if (value == null || value.isBlank()) {</span>
+<span class="nc" id="L132">            value = PROPERTIES.getProperty(key);</span>
+        }
+<span class="nc bnc" id="L134" title="All 4 branches missed.">        return value == null || value.isBlank() ? fallback : value.trim();</span>
+    }
+
+    private static String getString(String key, String systemPropertyAlias, String envName, String fallback) {
+<span class="fc" id="L138">        String value = System.getProperty(key);</span>
+<span class="pc bpc" id="L139" title="3 of 4 branches missed.">        if (value == null || value.isBlank()) {</span>
+<span class="fc" id="L140">            value = System.getProperty(systemPropertyAlias);</span>
+        }
+<span class="pc bpc" id="L142" title="3 of 4 branches missed.">        if (value == null || value.isBlank()) {</span>
+<span class="fc" id="L143">            value = System.getenv(envName);</span>
+        }
+<span class="pc bpc" id="L145" title="3 of 4 branches missed.">        if (value == null || value.isBlank()) {</span>
+<span class="fc" id="L146">            value = PROPERTIES.getProperty(key);</span>
+        }
+<span class="pc bpc" id="L148" title="2 of 4 branches missed.">        if (value == null || value.isBlank()) {</span>
+<span class="fc" id="L149">            value = PROPERTIES.getProperty(systemPropertyAlias);</span>
+        }
+<span class="pc bpc" id="L151" title="3 of 4 branches missed.">        return value == null || value.isBlank() ? fallback : value.trim();</span>
+    }
+
+    private static int getInt(String key, int fallback) {
+<span class="nc" id="L155">        return parseInt(key, getString(key, String.valueOf(fallback)));</span>
+    }
+
+    private static int getInt(String key, String systemPropertyAlias, int fallback) {
+<span class="fc" id="L159">        String value = System.getProperty(key);</span>
+<span class="pc bpc" id="L160" title="3 of 4 branches missed.">        if (value == null || value.isBlank()) {</span>
+<span class="fc" id="L161">            value = System.getProperty(systemPropertyAlias);</span>
+        }
+<span class="pc bpc" id="L163" title="3 of 4 branches missed.">        if (value == null || value.isBlank()) {</span>
+<span class="fc" id="L164">            value = PROPERTIES.getProperty(key);</span>
+        }
+<span class="pc bpc" id="L166" title="2 of 4 branches missed.">        if (value == null || value.isBlank()) {</span>
+<span class="nc" id="L167">            value = PROPERTIES.getProperty(systemPropertyAlias);</span>
+        }
+<span class="pc bpc" id="L169" title="2 of 4 branches missed.">        return parseInt(key, value == null || value.isBlank() ? String.valueOf(fallback) : value.trim());</span>
+    }
+
+    private static Integer getOptionalInt(String key, String systemPropertyAlias) {
+<span class="fc" id="L173">        String value = System.getProperty(key);</span>
+<span class="pc bpc" id="L174" title="3 of 4 branches missed.">        if (value == null || value.isBlank()) {</span>
+<span class="fc" id="L175">            value = System.getProperty(systemPropertyAlias);</span>
+        }
+<span class="pc bpc" id="L177" title="3 of 4 branches missed.">        if (value == null || value.isBlank()) {</span>
+<span class="fc" id="L178">            value = PROPERTIES.getProperty(key);</span>
+        }
+<span class="pc bpc" id="L180" title="2 of 4 branches missed.">        if (value == null || value.isBlank()) {</span>
+<span class="fc" id="L181">            value = PROPERTIES.getProperty(systemPropertyAlias);</span>
+        }
+<span class="pc bpc" id="L183" title="3 of 4 branches missed.">        return value == null || value.isBlank() ? null : parseInt(key, value.trim());</span>
+    }
+
+    private static boolean getBoolean(String key, String systemPropertyAlias, String envName,
+            boolean fallback) {
+<span class="fc" id="L188">        String value = getString(key, systemPropertyAlias, envName, null);</span>
+<span class="pc bpc" id="L189" title="1 of 2 branches missed.">        return value == null ? fallback : Boolean.parseBoolean(value);</span>
+    }
+
+    private static long getLong(String key, String systemPropertyAlias, long fallback) {
+<span class="fc" id="L193">        String value = System.getProperty(key);</span>
+<span class="pc bpc" id="L194" title="3 of 4 branches missed.">        if (value == null || value.isBlank()) {</span>
+<span class="fc" id="L195">            value = System.getProperty(systemPropertyAlias);</span>
+        }
+<span class="pc bpc" id="L197" title="3 of 4 branches missed.">        if (value == null || value.isBlank()) {</span>
+<span class="fc" id="L198">            value = PROPERTIES.getProperty(key);</span>
+        }
+<span class="pc bpc" id="L200" title="2 of 4 branches missed.">        if (value == null || value.isBlank()) {</span>
+<span class="nc" id="L201">            value = PROPERTIES.getProperty(systemPropertyAlias);</span>
+        }
+<span class="pc bpc" id="L203" title="2 of 4 branches missed.">        return parseLong(key, value == null || value.isBlank() ? String.valueOf(fallback) : value.trim());</span>
+    }
+
+    private static int parseInt(String key, String value) {
+        try {
+<span class="fc" id="L208">            return Integer.parseInt(value);</span>
+<span class="nc" id="L209">        } catch (NumberFormatException e) {</span>
+<span class="nc" id="L210">            throw new IllegalArgumentException(&quot;Invalid integer value for &quot; + key + &quot;: &quot; + value, e);</span>
+        }
+    }
+
+    private static long parseLong(String key, String value) {
+        try {
+<span class="fc" id="L216">            return Long.parseLong(value);</span>
+<span class="nc" id="L217">        } catch (NumberFormatException e) {</span>
+<span class="nc" id="L218">            throw new IllegalArgumentException(&quot;Invalid long value for &quot; + key + &quot;: &quot; + value, e);</span>
+        }
+    }
+
+    private static Properties loadProperties() {
+<span class="fc" id="L223">        Properties properties = new Properties();</span>
+<span class="fc" id="L224">        try (InputStream input = RuntimeSettings.class.getClassLoader().getResourceAsStream(CONFIG_RESOURCE)) {</span>
+<span class="pc bpc" id="L225" title="1 of 2 branches missed.">            if (input != null) {</span>
+<span class="fc" id="L226">                properties.load(input);</span>
+            }
+<span class="nc" id="L228">        } catch (IOException e) {</span>
+<span class="nc" id="L229">            throw new ExceptionInInitializerError(e);</span>
+<span class="fc" id="L230">        }</span>
+<span class="fc" id="L231">        return properties;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>
