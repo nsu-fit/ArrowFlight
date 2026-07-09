@@ -117,6 +117,11 @@ public final class RuntimeSettings {
         return getInt("hazelcastPort", 5701);
     }
 
+    public static int hazelcastClusterJoinTimeoutSec() {
+        return getInt("hazelcastClusterJoinTimeoutSec",
+                "arrowflight.hazelcast.clusterJoinTimeoutSec", 60);
+    }
+
     public static int ioFileBufferSize() {
         return getInt("ioFileBufferSize", 131072);
     }
