@@ -32,6 +32,8 @@
         <jackson.version>2.15.3</jackson.version>
         <hazelcast.version>5.6.0</hazelcast.version>
         <substrate.version>0.91.0</substrate.version>
+        <!-- Override with -Dcheckstyle.failOnViolation=true in lint job -->
+        <checkstyle.failOnViolation>false</checkstyle.failOnViolation>
     </properties>
 
     <dependencies>
@@ -323,8 +325,8 @@
                 <configuration>
                     <configLocation>checkstyle.xml</configLocation>
                     <consoleOutput>true</consoleOutput>
-                    <failsOnError>false</failsOnError>
-                    <failOnViolation>false</failOnViolation>
+                    <failsOnError>true</failsOnError>
+                    <failOnViolation>${checkstyle.failOnViolation}</failOnViolation>
                     <includeTestSourceDirectory>false</includeTestSourceDirectory>
                     <violationSeverity>warning</violationSeverity>
                 </configuration>
@@ -345,7 +347,7 @@
                 <configuration>
                     <effort>Max</effort>
                     <threshold>Medium</threshold>
-                    <failOnError>false</failOnError>
+                    <failOnError>true</failOnError>
                     <xmlOutput>true</xmlOutput>
                     <excludeFilterFile>spotbugs-exclude.xml</excludeFilterFile>
                 </configuration>
