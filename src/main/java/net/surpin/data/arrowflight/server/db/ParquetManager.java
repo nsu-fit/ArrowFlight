@@ -3,7 +3,6 @@ package net.surpin.data.arrowflight.server.db;
 import net.surpin.data.arrowflight.server.RuntimeSettings;
 import net.surpin.data.arrowflight.server.model.FileAssignment;
 import net.surpin.data.arrowflight.server.utils.MetadataUtils;
-import io.substrait.isthmus.sql.SubstraitCreateStatementParser;
 import org.apache.arrow.c.ArrowArrayStream;
 import org.apache.arrow.c.Data;
 import org.apache.arrow.dataset.file.FileFormat;
@@ -28,7 +27,6 @@ import org.apache.calcite.jdbc.JavaTypeFactoryImpl;
 import org.apache.calcite.prepare.CalciteCatalogReader;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeSystem;
-import org.apache.calcite.sql.parser.SqlParseException;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.LocatedFileStatus;
@@ -243,14 +241,21 @@ public final class ParquetManager {
                 }
             }
 
-            if (parquetPath == null) return new Schema(Collections.emptyList(), null);
+            if (parquetPath == null) {
+                return new Schema(Collections.emptyList(), null);
+            }
 
             MessageType parquetSchema;
             final long fileLen = fileSystem.getFileStatus(parquetPath).getLen();
             final Path finalPath = parquetPath;
             try (ParquetFileReader reader = ParquetFileReader.open(new org.apache.parquet.io.InputFile() {
-                @Override public long getLength() { return fileLen; }
-                @Override public org.apache.parquet.io.SeekableInputStream newStream() throws IOException {
+                @Override
+                public long getLength() {
+                    return fileLen;
+                }
+
+                @Override
+                public org.apache.parquet.io.SeekableInputStream newStream() throws IOException {
                     return org.apache.parquet.hadoop.util.HadoopStreams.wrap(fileSystem.open(finalPath));
                 }
             })) {
@@ -284,7 +289,9 @@ public final class ParquetManager {
 
         LOGGER.info("Parsed DDL: {}", ddlBuilder.toString());
 
-        if (ddlBuilder.length() == 0) return;
+        if (ddlBuilder.length() == 0) {
+            return;
+        }
 
         // ── 1. Acero JNI warm-up ─────────────────────────────────────────────────
         findFirstParquetUri().ifPresent(uri -> {
@@ -307,8 +314,15 @@ public final class ParquetManager {
         LOGGER.info("Pre-warming {} DuckDB thread-local connections...", duckWarm);
         long td = System.currentTimeMillis();
         List<Future<?>> duckFutures = new ArrayList<>(duckWarm);
-        for (int i = 0; i < duckWarm; i++) duckFutures.add(IO_POOL.submit(DUCKDB_THREAD_CONN::get));
-        for (Future<?> f : duckFutures) { try { f.get(); } catch (Exception ignored) {} }
+        for (int i = 0; i < duckWarm; i++) {
+            duckFutures.add(IO_POOL.submit(DUCKDB_THREAD_CONN::get));
+        }
+        for (Future<?> f : duckFutures) {
+            try {
+                f.get();
+            } catch (Exception ignored) {
+            }
+        }
         LOGGER.info("DuckDB warm-up done in {}ms", System.currentTimeMillis() - td);
     }
 
@@ -324,7 +338,8 @@ public final class ParquetManager {
                             return Optional.of(lfs.getPath().toUri().toString());
                         }
                     }
-                } catch (IOException ignored) {}
+                } catch (IOException ignored) {
+                }
             }
         }
         return Optional.empty();
@@ -335,7 +350,9 @@ public final class ParquetManager {
         Objects.requireNonNull(schema);
 
         StringBuilder result = new StringBuilder("CREATE TABLE ");
-        if (tableSchema != null) result.append(tableSchema).append(".");
+        if (tableSchema != null) {
+            result.append(tableSchema).append(".");
+        }
         result.append(tableName).append("(\n");
 
         List<Field> fields = schema.getFields();
@@ -347,7 +364,9 @@ public final class ParquetManager {
             } else {
                 relDataType = ArrowFieldTypeFactory.toType(field.getType(), typeFactory);
             }
-            if (i > 0) result.append(",\n");
+            if (i > 0) {
+                result.append(",\n");
+            }
             result.append("\t\"").append(field.getName()).append("\" ").append(relDataType);
         });
         result.append(")");
@@ -432,6 +451,7 @@ public final class ParquetManager {
                     Field src = resolveColumn(colFieldMap, expr.inputColumn);
                     resultFields.add(new Field(expr.outputName, FieldType.nullable(src.getType()), null));
                 }
+                default -> { }
             }
         }
         return new Schema(resultFields);
@@ -440,10 +460,14 @@ public final class ParquetManager {
     /** Case-insensitive column lookup; throws a clear error if the column is not found. */
     private static Field resolveColumn(Map<String, Field> colFieldMap, String inputColumn) {
         Field src = colFieldMap.get(inputColumn);
-        if (src != null) return src;
+        if (src != null) {
+            return src;
+        }
         // Case-insensitive fallback
         for (Map.Entry<String, Field> entry : colFieldMap.entrySet()) {
-            if (entry.getKey().equalsIgnoreCase(inputColumn)) return entry.getValue();
+            if (entry.getKey().equalsIgnoreCase(inputColumn)) {
+                return entry.getValue();
+            }
         }
         throw new IllegalArgumentException(
                 "Unsupported function in select expression: column '" + inputColumn
@@ -461,7 +485,9 @@ public final class ParquetManager {
                 RemoteIterator<LocatedFileStatus> filesIter = fileSystem.listFiles(parquetPath, true);
                 while (filesIter.hasNext()) {
                     LocatedFileStatus file = filesIter.next();
-                    if (file.isDirectory() || !file.getPath().getName().toLowerCase().endsWith(".parquet")) continue;
+                    if (file.isDirectory() || !file.getPath().getName().toLowerCase().endsWith(".parquet")) {
+                        continue;
+                    }
                     String relativePath = dataDirectoryURI.relativize(file.getPath().toUri()).toString();
                     result.putIfAbsent(relativePath, new FileAssignment(file.getLen(), fileLocality(file).keySet()));
                 }
@@ -612,9 +638,13 @@ public final class ParquetManager {
                 && pq.selectExprs.stream().allMatch(
                         e -> e.func == ParquetQueryParser.SelectExpr.AggFunc.COUNT_STAR)) {
             List<Future<Long>> futs = new ArrayList<>(parquetFiles.size());
-            for (Path file : parquetFiles) futs.add(IO_POOL.submit(() -> footerRowCount(file)));
+            for (Path file : parquetFiles) {
+                futs.add(IO_POOL.submit(() -> footerRowCount(file)));
+            }
             long total = 0;
-            for (Future<Long> f : futs) total += f.get();
+            for (Future<Long> f : futs) {
+                total += f.get();
+            }
             LOGGER.debug("COUNT(*) footer fast-path: {} file(s), total={}", parquetFiles.size(), total);
             int n = pq.selectExprs.size();
             Object[] row = new Object[n];
@@ -637,14 +667,22 @@ public final class ParquetManager {
                         || e.func == ParquetQueryParser.SelectExpr.AggFunc.COUNT);
         if (statsEligible) {
             List<Future<Optional<Object[]>>> futs = new ArrayList<>(parquetFiles.size());
-            for (Path file : parquetFiles) futs.add(IO_POOL.submit(() -> footerStats(file, pq)));
+            for (Path file : parquetFiles) {
+                futs.add(IO_POOL.submit(() -> footerStats(file, pq)));
+            }
             Object[] merged = null;
             boolean allHaveStats = true;
             for (Future<Optional<Object[]>> f : futs) {
                 Optional<Object[]> opt = f.get();
-                if (opt.isEmpty()) { allHaveStats = false; break; }
-                if (merged == null) merged = opt.get().clone();
-                else mergeAggCols(pq.selectExprs, merged, opt.get(), 0);
+                if (opt.isEmpty()) {
+                    allHaveStats = false;
+                    break;
+                }
+                if (merged == null) {
+                    merged = opt.get().clone();
+                } else {
+                    mergeAggCols(pq.selectExprs, merged, opt.get(), 0);
+                }
             }
             if (allHaveStats) {
                 LOGGER.debug("MIN/MAX footer stats fast-path: {} file(s)", parquetFiles.size());
@@ -673,8 +711,11 @@ public final class ParquetManager {
             for (ParquetQueryParser.JoinTable jt : pq.joinTables) {
                 String key = (jt.schema() != null ? jt.schema() + "." : "") + jt.table();
                 tableFiles.computeIfAbsent(key, k -> {
-                    try { return resolveTableFiles(k); }
-                    catch (IOException e) { throw new UncheckedIOException(e); }
+                    try {
+                        return resolveTableFiles(k);
+                    } catch (IOException e) {
+                        throw new UncheckedIOException(e);
+                    }
                 });
             }
 
@@ -697,7 +738,8 @@ public final class ParquetManager {
                 for (String alias : registeredAliases) {
                     try {
                         stmt.execute("DROP VIEW IF EXISTS " + quoteIdentifier(alias));
-                    } catch (Exception ignored) {}
+                    } catch (Exception ignored) {
+                    }
                 }
             }
         }
@@ -714,8 +756,9 @@ public final class ParquetManager {
         RemoteIterator<LocatedFileStatus> it = fileSystem.listFiles(dir, true);
         while (it.hasNext()) {
             LocatedFileStatus f = it.next();
-            if (f.isFile() && f.getPath().getName().endsWith(".parquet"))
+            if (f.isFile() && f.getPath().getName().endsWith(".parquet")) {
                 uris.add(toDuckDbPath(f.getPath()));
+            }
         }
         return uris;
     }
@@ -780,9 +823,13 @@ public final class ParquetManager {
         }
         List<VectorSchemaRoot> partials = new ArrayList<>(vsrFutures.size());
         try {
-            for (Future<VectorSchemaRoot> f : vsrFutures) partials.add(f.get());
+            for (Future<VectorSchemaRoot> f : vsrFutures) {
+                partials.add(f.get());
+            }
             try (VectorSchemaRoot merged = mergeVsrPartials(allocator, pq, partials)) {
-                if (startListener) listener.start(merged);
+                if (startListener) {
+                    listener.start(merged);
+                }
                 if (merged.getRowCount() > 0) {
                     if (awaitListenerReady(listener)) {
                         listener.putNext();
@@ -815,8 +862,9 @@ public final class ParquetManager {
             }
             long count = 0;
             try (ArrowReader reader = dataset.newScan(optBuilder.build()).scanBatches()) {
-                while (reader.loadNextBatch())
+                while (reader.loadNextBatch()) {
                     count += reader.getVectorSchemaRoot().getRowCount();
+                }
             }
             Object[] row = new Object[numCountStarCols];
             Arrays.fill(row, count);
@@ -882,16 +930,36 @@ public final class ParquetManager {
             }
         } finally {
             // Close in reverse-dependency order: streams → readers → scanners → datasets → factories.
-            for (int i = cStreams.size() - 1; i >= 0; i--)
-                try { cStreams.get(i).close(); } catch (Exception ignored) {}
-            for (int i = readers.size() - 1; i >= 0; i--)
-                try { readers.get(i).close(); } catch (Exception ignored) {}
-            for (int i = scanners.size() - 1; i >= 0; i--)
-                try { scanners.get(i).close(); } catch (Exception ignored) {}
-            for (int i = datasets.size() - 1; i >= 0; i--)
-                try { datasets.get(i).close(); } catch (Exception ignored) {}
-            for (int i = factories.size() - 1; i >= 0; i--)
-                try { factories.get(i).close(); } catch (Exception ignored) {}
+            for (int i = cStreams.size() - 1; i >= 0; i--) {
+                try {
+                    cStreams.get(i).close();
+                } catch (Exception ignored) {
+                }
+            }
+            for (int i = readers.size() - 1; i >= 0; i--) {
+                try {
+                    readers.get(i).close();
+                } catch (Exception ignored) {
+                }
+            }
+            for (int i = scanners.size() - 1; i >= 0; i--) {
+                try {
+                    scanners.get(i).close();
+                } catch (Exception ignored) {
+                }
+            }
+            for (int i = datasets.size() - 1; i >= 0; i--) {
+                try {
+                    datasets.get(i).close();
+                } catch (Exception ignored) {
+                }
+            }
+            for (int i = factories.size() - 1; i >= 0; i--) {
+                try {
+                    factories.get(i).close();
+                } catch (Exception ignored) {
+                }
+            }
         }
     }
 
@@ -909,12 +977,15 @@ public final class ParquetManager {
         int outRow = 0;
         while (reader.loadNextBatch()) {
             for (int r = 0; r < src.getRowCount(); r++) {
-                for (int c = 0; c < numCols; c++)
+                for (int c = 0; c < numCols; c++) {
                     outVecs.get(c).copyFromSafe(r, outRow, src.getVector(c));
+                }
                 outRow++;
             }
         }
-        for (FieldVector v : outVecs) v.setValueCount(outRow);
+        for (FieldVector v : outVecs) {
+            v.setValueCount(outRow);
+        }
         VectorSchemaRoot result = new VectorSchemaRoot(src.getSchema().getFields(), outVecs);
         result.setRowCount(outRow);
         return result;
@@ -939,7 +1010,9 @@ public final class ParquetManager {
             boolean any = false;
 
             for (VectorSchemaRoot partial : partials) {
-                if (partial.getRowCount() == 0) continue;
+                if (partial.getRowCount() == 0) {
+                    continue;
+                }
                 any = true;
                 int col = 0;
                 for (ParquetQueryParser.SelectExpr expr : exprs) {
@@ -952,6 +1025,7 @@ public final class ParquetManager {
                                     ? vec.getObject(0) : minOf(objAccum[col], vec.getObject(0));
                             case MAX -> objAccum[col] = objAccum[col] == null
                                     ? vec.getObject(0) : maxOf(objAccum[col], vec.getObject(0));
+                            default -> { }
                         }
                     }
                     col++;
@@ -961,8 +1035,11 @@ public final class ParquetManager {
             List<FieldVector> outVecs = new ArrayList<>();
             for (Field f : outSchema.getFields()) {
                 FieldVector v = f.createVector(allocator);
-                if      (v instanceof FixedWidthVector fv)   fv.allocateNew(1);
-                else if (v instanceof VariableWidthVector vv) vv.allocateNew(32);
+                if (v instanceof FixedWidthVector fv) {
+                    fv.allocateNew(1);
+                } else if (v instanceof VariableWidthVector vv) {
+                    vv.allocateNew(32);
+                }
                 outVecs.add(v);
             }
             if (any) {
@@ -973,6 +1050,7 @@ public final class ParquetManager {
                         case COUNT_STAR, COUNT -> ((BigIntVector) v).setSafe(0, longAccum[col]);
                         case SUM               -> ((Float8Vector) v).setSafe(0, dblAccum[col]);
                         case MIN, MAX          -> setVectorValue(v, 0, objAccum[col]);
+                        default -> { }
                     }
                     col++;
                 }
@@ -991,13 +1069,16 @@ public final class ParquetManager {
                 int rowCount = partial.getRowCount();
                 for (int r = 0; r < rowCount; r++) {
                     List<Object> key = new ArrayList<>(numGbCols);
-                    for (int c = 0; c < numGbCols; c++)
+                    for (int c = 0; c < numGbCols; c++) {
                         key.add(partial.getVector(c).getObject(r));
+                    }
 
                     Object[] accum = byKey.computeIfAbsent(key, k -> new Object[numAggExprs]);
                     int ai = 0;
                     for (ParquetQueryParser.SelectExpr expr : exprs) {
-                        if (expr.func == ParquetQueryParser.SelectExpr.AggFunc.COLUMN) continue;
+                        if (expr.func == ParquetQueryParser.SelectExpr.AggFunc.COLUMN) {
+                            continue;
+                        }
                         FieldVector vec = partial.getVector(numGbCols + ai);
                         if (!vec.isNull(r)) {
                             Object val = vec.getObject(r);
@@ -1006,6 +1087,7 @@ public final class ParquetManager {
                                 case SUM               -> accum[ai] = addDoubles(accum[ai], val);
                                 case MIN -> accum[ai] = accum[ai] == null ? val : minOf(accum[ai], val);
                                 case MAX -> accum[ai] = accum[ai] == null ? val : maxOf(accum[ai], val);
+                                default -> { }
                             }
                         }
                         ai++;
@@ -1017,25 +1099,32 @@ public final class ParquetManager {
             List<FieldVector> outVecs = new ArrayList<>();
             for (Field f : outSchema.getFields()) {
                 FieldVector v = f.createVector(allocator);
-                if      (v instanceof FixedWidthVector fv)   fv.allocateNew(totalRows);
-                else if (v instanceof VariableWidthVector vv) vv.allocateNew(totalRows * 16);
+                if (v instanceof FixedWidthVector fv) {
+                    fv.allocateNew(totalRows);
+                } else if (v instanceof VariableWidthVector vv) {
+                    vv.allocateNew(totalRows * 16);
+                }
                 outVecs.add(v);
             }
             int row = 0;
             for (Map.Entry<List<Object>, Object[]> entry : byKey.entrySet()) {
                 List<Object> key   = entry.getKey();
                 Object[]     accum = entry.getValue();
-                int vecIdx = 0, ai = 0;
+                int vecIdx = 0;
+                int ai = 0;
                 for (ParquetQueryParser.SelectExpr expr : exprs) {
                     FieldVector v = outVecs.get(vecIdx++);
-                    if (expr.func == ParquetQueryParser.SelectExpr.AggFunc.COLUMN)
+                    if (expr.func == ParquetQueryParser.SelectExpr.AggFunc.COLUMN) {
                         setVectorValue(v, row, key.get(pq.groupByColumnNames.indexOf(expr.inputColumn)));
-                    else
+                    } else {
                         setVectorValue(v, row, accum[ai++]);
+                    }
                 }
                 row++;
             }
-            for (FieldVector v : outVecs) v.setValueCount(totalRows);
+            for (FieldVector v : outVecs) {
+                v.setValueCount(totalRows);
+            }
             VectorSchemaRoot result = new VectorSchemaRoot(outSchema.getFields(), outVecs);
             result.setRowCount(totalRows);
             return result;
@@ -1043,17 +1132,31 @@ public final class ParquetManager {
     }
 
     private static long toLong(FieldVector vec, int index) {
-        if (vec instanceof BigIntVector v)   return v.get(index);
-        if (vec instanceof IntVector v)      return v.get(index);
-        if (vec instanceof SmallIntVector v) return v.get(index);
-        if (vec instanceof TinyIntVector v)  return v.get(index);
+        if (vec instanceof BigIntVector v) {
+            return v.get(index);
+        }
+        if (vec instanceof IntVector v) {
+            return v.get(index);
+        }
+        if (vec instanceof SmallIntVector v) {
+            return v.get(index);
+        }
+        if (vec instanceof TinyIntVector v) {
+            return v.get(index);
+        }
         return ((Number) vec.getObject(index)).longValue();
     }
 
     private static double toDouble(FieldVector vec, int index) {
-        if (vec instanceof Float8Vector v) return v.get(index);
-        if (vec instanceof Float4Vector v) return v.get(index);
-        if (vec instanceof BigIntVector v) return v.get(index);
+        if (vec instanceof Float8Vector v) {
+            return v.get(index);
+        }
+        if (vec instanceof Float4Vector v) {
+            return v.get(index);
+        }
+        if (vec instanceof BigIntVector v) {
+            return v.get(index);
+        }
         return ((Number) vec.getObject(index)).doubleValue();
     }
 
@@ -1070,10 +1173,15 @@ public final class ParquetManager {
             Object[] merged = null;
             for (Future<List<Object[]>> f : futures) {
                 List<Object[]> rows = f.get();
-                if (rows.isEmpty()) continue;
+                if (rows.isEmpty()) {
+                    continue;
+                }
                 Object[] row = rows.get(0);
-                if (merged == null) merged = row.clone();
-                else mergeAggCols(exprs, merged, row, 0);
+                if (merged == null) {
+                    merged = row.clone();
+                } else {
+                    mergeAggCols(exprs, merged, row, 0);
+                }
             }
             return merged != null ? Collections.singletonList(merged) : Collections.emptyList();
         }
@@ -1083,8 +1191,11 @@ public final class ParquetManager {
             for (Object[] row : f.get()) {
                 List<Object> key = new ArrayList<>(Arrays.asList(row).subList(0, numGbCols));
                 Object[] existing = byKey.get(key);
-                if (existing == null) byKey.put(key, row.clone());
-                else mergeAggCols(exprs, existing, row, numGbCols);
+                if (existing == null) {
+                    byKey.put(key, row.clone());
+                } else {
+                    mergeAggCols(exprs, existing, row, numGbCols);
+                }
             }
         }
         return new ArrayList<>(byKey.values());
@@ -1094,41 +1205,59 @@ public final class ParquetManager {
             Object[] into, Object[] from, int numGbCols) {
         int aggIdx = 0;
         for (ParquetQueryParser.SelectExpr expr : exprs) {
-            if (expr.func == ParquetQueryParser.SelectExpr.AggFunc.COLUMN) continue;
+            if (expr.func == ParquetQueryParser.SelectExpr.AggFunc.COLUMN) {
+                continue;
+            }
             int pos = numGbCols + aggIdx++;
             switch (expr.func) {
                 case COUNT_STAR, COUNT -> into[pos] = addLongs(into[pos], from[pos]);
                 case SUM               -> into[pos] = addDoubles(into[pos], from[pos]);
                 case MIN               -> into[pos] = minOf(into[pos], from[pos]);
                 case MAX               -> into[pos] = maxOf(into[pos], from[pos]);
-                default -> {}
+                default -> { }
             }
         }
     }
 
     private static Object addLongs(Object a, Object b) {
-        if (a == null) return b == null ? 0L : ((Number) b).longValue();
-        if (b == null) return ((Number) a).longValue();
+        if (a == null) {
+            return b == null ? 0L : ((Number) b).longValue();
+        }
+        if (b == null) {
+            return ((Number) a).longValue();
+        }
         return ((Number) a).longValue() + ((Number) b).longValue();
     }
 
     private static Object addDoubles(Object a, Object b) {
-        if (a == null) return b == null ? 0.0 : ((Number) b).doubleValue();
-        if (b == null) return ((Number) a).doubleValue();
+        if (a == null) {
+            return b == null ? 0.0 : ((Number) b).doubleValue();
+        }
+        if (b == null) {
+            return ((Number) a).doubleValue();
+        }
         return ((Number) a).doubleValue() + ((Number) b).doubleValue();
     }
 
     @SuppressWarnings("unchecked")
     private static Object minOf(Object a, Object b) {
-        if (a == null) return b;
-        if (b == null) return a;
+        if (a == null) {
+            return b;
+        }
+        if (b == null) {
+            return a;
+        }
         return ((Comparable<Object>) a).compareTo(b) <= 0 ? a : b;
     }
 
     @SuppressWarnings("unchecked")
     private static Object maxOf(Object a, Object b) {
-        if (a == null) return b;
-        if (b == null) return a;
+        if (a == null) {
+            return b;
+        }
+        if (b == null) {
+            return a;
+        }
         return ((Comparable<Object>) a).compareTo(b) >= 0 ? a : b;
     }
 
@@ -1144,28 +1273,36 @@ public final class ParquetManager {
         List<FieldVector> vectors = new ArrayList<>();
         for (Field field : aggSchema.getFields()) {
             FieldVector v = field.createVector(allocator);
-            if      (v instanceof FixedWidthVector fv)   fv.allocateNew(rows.size());
-            else if (v instanceof VariableWidthVector vv) vv.allocateNew(rows.size() * 16);
+            if (v instanceof FixedWidthVector fv) {
+                fv.allocateNew(rows.size());
+            } else if (v instanceof VariableWidthVector vv) {
+                vv.allocateNew(rows.size() * 16);
+            }
             vectors.add(v);
         }
 
         try (VectorSchemaRoot root = new VectorSchemaRoot(aggSchema.getFields(), vectors)) {
             root.setRowCount(rows.size());
-            int vecIdx = 0, aggIdx = 0;
+            int vecIdx = 0;
+            int aggIdx = 0;
             for (ParquetQueryParser.SelectExpr expr : pq.selectExprs) {
                 FieldVector vec = vectors.get(vecIdx++);
                 if (expr.func == ParquetQueryParser.SelectExpr.AggFunc.COLUMN) {
                     int gbPos = pq.groupByColumnNames.indexOf(expr.inputColumn);
-                    for (int r = 0; r < rows.size(); r++)
+                    for (int r = 0; r < rows.size(); r++) {
                         setVectorValue(vec, r, rows.get(r)[gbPos]);
+                    }
                 } else {
                     int pos = numGbCols + aggIdx++;
-                    for (int r = 0; r < rows.size(); r++)
+                    for (int r = 0; r < rows.size(); r++) {
                         setVectorValue(vec, r, rows.get(r)[pos]);
+                    }
                 }
             }
 
-            if (startListener) listener.start(root);
+            if (startListener) {
+                listener.start(root);
+            }
             if (!rows.isEmpty()) {
                 if (awaitListenerReady(listener)) {
                     listener.putNext();
@@ -1355,6 +1492,7 @@ public final class ParquetManager {
             case MIN -> sql.append("min(").append(quoteIdentifier(expr.inputColumn)).append(")");
             case MAX -> sql.append("max(").append(quoteIdentifier(expr.inputColumn)).append(")");
             case COLUMN -> sql.append(quoteIdentifier(expr.inputColumn));
+            default -> { }
         }
         if (expr.outputName != null && !expr.outputName.isBlank()) {
             sql.append(" AS ").append(quoteIdentifier(expr.outputName));
@@ -1435,9 +1573,10 @@ public final class ParquetManager {
     /** Resolves relative file paths to absolute {@code file://} URIs. */
     private List<String> resolveUris(String[] fileUris) throws IOException {
         List<String> uris = new ArrayList<>(fileUris.length);
-        for (String rel : fileUris)
+        for (String rel : fileUris) {
             uris.add(fileSystem.getFileStatus(new Path(dataDirectory, rel))
                     .getPath().toUri().toString());
+        }
         return uris;
     }
 
@@ -1453,11 +1592,15 @@ public final class ParquetManager {
         if (pq.filter != null && !pq.filter.isBlank()) {
             java.util.regex.Matcher m =
                     java.util.regex.Pattern.compile("\"([^\"]+)\"").matcher(pq.filter);
-            while (m.find()) scanCols.add(m.group(1));
+            while (m.find()) {
+                scanCols.add(m.group(1));
+            }
         }
         if (scanCols.isEmpty()) {
             Schema tSchema = getTableSchema(pq.schema, pq.table);
-            if (!tSchema.getFields().isEmpty()) scanCols.add(tSchema.getFields().get(0).getName());
+            if (!tSchema.getFields().isEmpty()) {
+                scanCols.add(tSchema.getFields().get(0).getName());
+            }
         }
         return scanCols.isEmpty() ? Optional.empty()
                 : Optional.of(scanCols.toArray(new String[0]));
@@ -1465,9 +1608,13 @@ public final class ParquetManager {
 
     private byte[] buildFilterBytes(ParquetQueryParser pq) {
         String filter = pq.filter;
-        if (filter == null || filter.trim().isEmpty()) return null;
+        if (filter == null || filter.trim().isEmpty()) {
+            return null;
+        }
         String ddl = tableDdlCache.getOrDefault(pq.schema, Collections.emptyMap()).get(pq.table);
-        if (ddl == null) return null;
+        if (ddl == null) {
+            return null;
+        }
         try {
             ddl = ddl.replace(pq.schema + ".", "");
             ByteBuffer bb = SubstraitFilterConverter.toByteBuffer(filter, Collections.singletonList(ddl));
@@ -1482,10 +1629,14 @@ public final class ParquetManager {
 
     private static String buildGroupedDuckSql(ParquetQueryParser pq, int numFiles,
             boolean filterAlreadyApplied) {
-        if (numFiles == 1) return buildDuckSqlWithFrom(pq, "\"t0\"", filterAlreadyApplied);
+        if (numFiles == 1) {
+            return buildDuckSqlWithFrom(pq, "\"t0\"", filterAlreadyApplied);
+        }
         StringBuilder from = new StringBuilder("(");
         for (int i = 0; i < numFiles; i++) {
-            if (i > 0) from.append(" UNION ALL ");
+            if (i > 0) {
+                from.append(" UNION ALL ");
+            }
             from.append("SELECT * FROM \"t").append(i).append('"');
         }
         from.append(')');
@@ -1498,7 +1649,9 @@ public final class ParquetManager {
         boolean first = true;
 
         for (String gbCol : pq.groupByColumnNames) {
-            if (!first) sql.append(", ");
+            if (!first) {
+                sql.append(", ");
+            }
             first = false;
             sql.append('"').append(gbCol).append('"');
         }
@@ -1506,8 +1659,12 @@ public final class ParquetManager {
         Set<String> gbSet = new LinkedHashSet<>(pq.groupByColumnNames);
         for (ParquetQueryParser.SelectExpr expr : pq.selectExprs) {
             if (expr.func == ParquetQueryParser.SelectExpr.AggFunc.COLUMN
-                    && gbSet.contains(expr.inputColumn)) continue;
-            if (!first) sql.append(", ");
+                    && gbSet.contains(expr.inputColumn)) {
+                continue;
+            }
+            if (!first) {
+                sql.append(", ");
+            }
             first = false;
             switch (expr.func) {
                 case COUNT_STAR -> sql.append("count(*)");
@@ -1516,16 +1673,20 @@ public final class ParquetManager {
                 case MIN        -> sql.append("min(\"").append(expr.inputColumn).append("\")");
                 case MAX        -> sql.append("max(\"").append(expr.inputColumn).append("\")");
                 case COLUMN     -> sql.append('"').append(expr.inputColumn).append('"');
+                default -> { }
             }
         }
 
         sql.append(" FROM ").append(fromClause);
-        if (!filterAlreadyApplied && pq.filter != null && !pq.filter.isBlank())
+        if (!filterAlreadyApplied && pq.filter != null && !pq.filter.isBlank()) {
             sql.append(" WHERE ").append(pq.filter);
+        }
         if (!pq.groupByColumnNames.isEmpty()) {
             sql.append(" GROUP BY ");
             for (int i = 0; i < pq.groupByColumnNames.size(); i++) {
-                if (i > 0) sql.append(", ");
+                if (i > 0) {
+                    sql.append(", ");
+                }
                 sql.append('"').append(pq.groupByColumnNames.get(i)).append('"');
             }
         }
@@ -1535,22 +1696,36 @@ public final class ParquetManager {
     /** Distributes {@code items} into {@code numGroups} buckets via round-robin. */
     private static <T> List<List<T>> partitionIntoGroups(List<T> items, int numGroups) {
         List<List<T>> groups = new ArrayList<>(numGroups);
-        for (int i = 0; i < numGroups; i++) groups.add(new ArrayList<>());
-        for (int i = 0; i < items.size(); i++) groups.get(i % numGroups).add(items.get(i));
+        for (int i = 0; i < numGroups; i++) {
+            groups.add(new ArrayList<>());
+        }
+        for (int i = 0; i < items.size(); i++) {
+            groups.get(i % numGroups).add(items.get(i));
+        }
         return groups;
     }
 
     @SuppressWarnings("unchecked")
     private static void setVectorValue(FieldVector vec, int index, Object value) {
-        if (value == null) { vec.setNull(index); return; }
-        if      (vec instanceof BigIntVector)   ((BigIntVector)   vec).setSafe(index, ((Number) value).longValue());
-        else if (vec instanceof IntVector)      ((IntVector)      vec).setSafe(index, ((Number) value).intValue());
-        else if (vec instanceof SmallIntVector) ((SmallIntVector) vec).setSafe(index, ((Number) value).shortValue());
-        else if (vec instanceof TinyIntVector)  ((TinyIntVector)  vec).setSafe(index, ((Number) value).byteValue());
-        else if (vec instanceof Float8Vector)   ((Float8Vector)   vec).setSafe(index, ((Number) value).doubleValue());
-        else if (vec instanceof Float4Vector)   ((Float4Vector)   vec).setSafe(index, ((Number) value).floatValue());
-        else if (vec instanceof BitVector)      ((BitVector)      vec).setSafe(index, ((Boolean) value) ? 1 : 0);
-        else if (vec instanceof VarCharVector) {
+        if (value == null) {
+            vec.setNull(index);
+            return;
+        }
+        if (vec instanceof BigIntVector) {
+            ((BigIntVector) vec).setSafe(index, ((Number) value).longValue());
+        } else if (vec instanceof IntVector) {
+            ((IntVector) vec).setSafe(index, ((Number) value).intValue());
+        } else if (vec instanceof SmallIntVector) {
+            ((SmallIntVector) vec).setSafe(index, ((Number) value).shortValue());
+        } else if (vec instanceof TinyIntVector) {
+            ((TinyIntVector) vec).setSafe(index, ((Number) value).byteValue());
+        } else if (vec instanceof Float8Vector) {
+            ((Float8Vector) vec).setSafe(index, ((Number) value).doubleValue());
+        } else if (vec instanceof Float4Vector) {
+            ((Float4Vector) vec).setSafe(index, ((Number) value).floatValue());
+        } else if (vec instanceof BitVector) {
+            ((BitVector) vec).setSafe(index, ((Boolean) value) ? 1 : 0);
+        } else if (vec instanceof VarCharVector) {
             byte[] bytes = value instanceof Text
                     ? ((Text) value).getBytes()
                     : value.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
@@ -1566,14 +1741,20 @@ public final class ParquetManager {
     private long footerRowCount(Path full) throws IOException {
         final long fileLen = fileSystem.getFileStatus(full).getLen();
         try (ParquetFileReader pfr = ParquetFileReader.open(new org.apache.parquet.io.InputFile() {
-            @Override public long getLength() { return fileLen; }
-            @Override public org.apache.parquet.io.SeekableInputStream newStream() throws IOException {
+            @Override
+            public long getLength() {
+                return fileLen;
+            }
+
+            @Override
+            public org.apache.parquet.io.SeekableInputStream newStream() throws IOException {
                 return org.apache.parquet.hadoop.util.HadoopStreams.wrap(fileSystem.open(full));
             }
         })) {
             long count = 0;
-            for (org.apache.parquet.hadoop.metadata.BlockMetaData b : pfr.getFooter().getBlocks())
+            for (org.apache.parquet.hadoop.metadata.BlockMetaData b : pfr.getFooter().getBlocks()) {
                 count += b.getRowCount();
+            }
             return count;
         }
     }
@@ -1587,8 +1768,13 @@ public final class ParquetManager {
             ParquetQueryParser pq) throws IOException {
         final long fileLen = fileSystem.getFileStatus(full).getLen();
         try (ParquetFileReader pfr = ParquetFileReader.open(new org.apache.parquet.io.InputFile() {
-            @Override public long getLength() { return fileLen; }
-            @Override public org.apache.parquet.io.SeekableInputStream newStream() throws IOException {
+            @Override
+            public long getLength() {
+                return fileLen;
+            }
+
+            @Override
+            public org.apache.parquet.io.SeekableInputStream newStream() throws IOException {
                 return org.apache.parquet.hadoop.util.HadoopStreams.wrap(fileSystem.open(full));
             }
         })) {
@@ -1607,21 +1793,26 @@ public final class ParquetManager {
 
                     for (int i = 0; i < n; i++) {
                         ParquetQueryParser.SelectExpr expr = exprs.get(i);
-                        if (!colName.equals(expr.inputColumn)) continue;
+                        if (!colName.equals(expr.inputColumn)) {
+                            continue;
+                        }
 
                         org.apache.parquet.column.statistics.Statistics<?> stats =
                                 cc.getStatistics();
                         if (expr.func == ParquetQueryParser.SelectExpr.AggFunc.MIN) {
-                            if (stats == null || stats.isEmpty() || !stats.hasNonNullValue())
+                            if (stats == null || stats.isEmpty() || !stats.hasNonNullValue()) {
                                 return Optional.empty();
+                            }
                             result[i] = minOf(result[i], stats.genericGetMin());
                         } else if (expr.func == ParquetQueryParser.SelectExpr.AggFunc.MAX) {
-                            if (stats == null || stats.isEmpty() || !stats.hasNonNullValue())
+                            if (stats == null || stats.isEmpty() || !stats.hasNonNullValue()) {
                                 return Optional.empty();
+                            }
                             result[i] = maxOf(result[i], stats.genericGetMax());
                         } else if (expr.func == ParquetQueryParser.SelectExpr.AggFunc.COUNT) {
-                            if (stats == null || stats.getNumNulls() < 0)
+                            if (stats == null || stats.getNumNulls() < 0) {
                                 return Optional.empty();
+                            }
                             long nonNulls = block.getRowCount() - stats.getNumNulls();
                             result[i] = (result[i] == null ? 0L
                                     : ((Number) result[i]).longValue()) + nonNulls;
@@ -1631,8 +1822,9 @@ public final class ParquetManager {
             }
 
             for (int i = 0; i < n; i++) {
-                if (exprs.get(i).func == ParquetQueryParser.SelectExpr.AggFunc.COUNT_STAR)
+                if (exprs.get(i).func == ParquetQueryParser.SelectExpr.AggFunc.COUNT_STAR) {
                     result[i] = totalRows;
+                }
             }
             return Optional.of(result);
         }
@@ -1646,10 +1838,14 @@ public final class ParquetManager {
     private void checkSchemaAlignment(String query, Schema aceroSchema, List<String> selectedColumns) {
         try {
             ParquetQueryParser pq = ParquetQueryParser.parse(query);
-            if (pq.hasAggregation || pq.isJoin) return;
+            if (pq.hasAggregation || pq.isJoin) {
+                return;
+            }
             Schema expectedSchema = getTableSchema(pq.schema, pq.table, selectedColumns.isEmpty() ? null : selectedColumns);
             Map<String, org.apache.arrow.vector.types.pojo.ArrowType> expected = new java.util.LinkedHashMap<>();
-            for (org.apache.arrow.vector.types.pojo.Field f : expectedSchema.getFields()) expected.put(f.getName(), f.getType());
+            for (org.apache.arrow.vector.types.pojo.Field f : expectedSchema.getFields()) {
+                expected.put(f.getName(), f.getType());
+            }
 
             boolean mismatch = false;
             for (org.apache.arrow.vector.types.pojo.Field af : aceroSchema.getFields()) {

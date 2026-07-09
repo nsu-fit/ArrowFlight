@@ -448,9 +448,9 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
                 || vector instanceof TimeStampNanoVector || vector instanceof TimeStampNanoTZVector
                 || vector instanceof TimeStampSecVector || vector instanceof TimeStampSecTZVector) {
             Object someTimestamp = vector.getObject(rowIndex);
-            if(someTimestamp instanceof Timestamp) {
+            if (someTimestamp instanceof Timestamp) {
                 return ((Timestamp) vector.getObject(rowIndex)).getTime() / 1000; // Spark expects seconds
-            } else if(someTimestamp instanceof LocalDateTime) {
+            } else if (someTimestamp instanceof LocalDateTime) {
                 return ((LocalDateTime) vector.getObject(rowIndex)).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli() / 1000; // Spark expects seconds
             } else {
                 throw new UnsupportedOperationException("Unsupported timestamp format: " + someTimestamp.getClass());

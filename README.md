@@ -1,7 +1,6 @@
 # Hadoop Arrow Flight SQL Server
 
-[![Java tests and JaCoCo coverage](https://github.com/nsu-fit/ArrowFlight/actions/workflows/coverage.yml/badge.svg)](https://github.com/nsu-fit/ArrowFlight/actions/workflows/coverage.yml)
-[![JaCoCo Coverage Report](https://img.shields.io/badge/JaCoCo-Coverage_Report-brightgreen)](https://nsu-fit.github.io/ArrowFlight/jacoco/)
+[![CI](https://github.com/nsu-fit/ArrowFlight/actions/workflows/ci.yml/badge.svg)](https://github.com/nsu-fit/ArrowFlight/actions/workflows/ci.yml)
 
 High-performance **Arrow Flight SQL** server for analytical queries on Parquet data. Built for teams running SQL over large Parquet datasets in distributed environments (HDFS, S3, local FS).
 
@@ -116,6 +115,35 @@ Supports exponential backoff retry, connection pooling, TLS, BasicAuth and Beare
 
 ## Configuration
 
+1. **Client** sends SQL via `GetFlightInfo`.
+2. **Flight Adapter** parses the query, extracts the schema, saves it to Hazelcast, and calls `determineEndpoints` to distribute files considering locality.
+3. Returns `FlightInfo` with endpoints (each containing a `Ticket` and node address).
+4. **Client** calls `DoGet` for each endpoint (passing the Ticket).
+5. On each node, **Flight Adapter** restores the query and file list from the Ticket, initiating a two-phase file acquisition via Hazelcast locks.
+6. **Parquet Adapter** executes via Acero or DuckDB (with fast-path if applicable) and streams results as `VectorSchemaRoot`.
+7. **Client** receives and processes data.
+
+---
+
+## CI / CD Quality Gates
+
+PR checks (`.github/workflows/ci.yml`) enforce on every pull request:
+- `build-server` / `build-client` — compilation via `mvn compile -P server` / `-P client`
+- `lint` — Checkstyle violations and SpotBugs errors via `mvn validate spotbugs:check`
+- `test` — unit tests via `mvn test` (excludes integration tests)
+- `integration` — integration tests via `mvn test -DexcludedGroups=""`
+- `coverage` — JaCoCo coverage with per-file table in PR comments and detailed HTML report on GitHub Pages
+
+### Integration Tests
+
+Tagged `@Tag("integration")`. Excluded from default unit test run via `<excludedGroups>integration</excludedGroups>`. Run in CI via `-DexcludedGroups=""`.
+
+**Run locally**: `mvn test -DexcludedGroups=""`
+
+---
+
+## Configuration
+
 Configuration resolves from three tiers: **JVM property** → **`arrowflight.properties`** → **default**. DuckDB HDFS settings additionally support environment variables.
 
 Key properties (see `RuntimeSettings.java` for the full list):
@@ -179,6 +207,5 @@ Key properties (see `RuntimeSettings.java` for the full list):
 
 | Pipeline | Trigger | Description |
 | :--- | :--- | :--- |
-| **GitHub Actions `ci.yml`** | PR to `main` | Builds server/client, runs unit tests, uploads Surefire reports |
-| **GitHub Actions `coverage.yml`** | PR / `workflow_dispatch` | `mvn verify` + JaCoCo → GitHub Pages |
+| **GitHub Actions `ci.yml`** | PR to `main` | Builds server/client, lint, unit/integration tests, JaCoCo coverage (table in PR + detailed HTML) |
 | **GitLab CI** | MR to `main` | Two-stage: build → test, JUnit report upload |

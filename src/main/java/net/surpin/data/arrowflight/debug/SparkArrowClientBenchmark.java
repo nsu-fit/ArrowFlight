@@ -28,7 +28,10 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.ServerSocket;
 import java.net.URI;
-import java.nio.file.*;
+import java.nio.file.FileVisitResult;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -138,7 +141,9 @@ public class SparkArrowClientBenchmark {
                 String line;
                 while ((line = br.readLine()) != null) {
                     System.out.println("[server] " + line);
-                    if (line.startsWith("READY")) break;
+                    if (line.startsWith("READY")) {
+                        break;
+                    }
                 }
             }
             if (!serverProc.isAlive()) {
@@ -239,7 +244,9 @@ public class SparkArrowClientBenchmark {
                 spark.stop();
             }
         } finally {
-            if (serverProc != null) serverProc.destroyForcibly();
+            if (serverProc != null) {
+                serverProc.destroyForcibly();
+            }
             deleteTree(dataDir);
         }
     }
@@ -370,7 +377,9 @@ public class SparkArrowClientBenchmark {
                 .start();
         long resultRows = 0;
         try (BufferedReader br = new BufferedReader(new InputStreamReader(proc.getInputStream()))) {
-            while (br.readLine() != null) resultRows++;
+            while (br.readLine() != null) {
+                resultRows++;
+            }
         }
         proc.waitFor();
         long ms = (System.nanoTime() - start) / 1_000_000;
@@ -412,8 +421,12 @@ public class SparkArrowClientBenchmark {
     // ── formatting / infra ────────────────────────────────────────────────────
 
     private static String formatDuration(long ms) {
-        if (ms < 1_000)        return ms + " ms";
-        if (ms < 60_000)       return String.format("%.2f s",  ms / 1_000.0);
+        if (ms < 1_000) {
+            return ms + " ms";
+        }
+        if (ms < 60_000) {
+            return String.format("%.2f s", ms / 1_000.0);
+        }
         long min = ms / 60_000;
         double sec = (ms % 60_000) / 1_000.0;
         return String.format("%d m %.2f s", min, sec);
@@ -426,29 +439,49 @@ public class SparkArrowClientBenchmark {
     }
 
     private static int freePort() throws IOException {
-        try (ServerSocket s = new ServerSocket(0)) { return s.getLocalPort(); }
+        try (ServerSocket s = new ServerSocket(0)) {
+            return s.getLocalPort();
+        }
     }
 
     private static void deleteTree(Path dir) throws IOException {
-        if (!Files.exists(dir)) return;
+        if (!Files.exists(dir)) {
+            return;
+        }
         Files.walk(dir)
                 .sorted(Comparator.reverseOrder())
-                .forEach(p -> { try { Files.delete(p); } catch (IOException ignored) {} });
+                .forEach(p -> {
+                    try {
+                        Files.delete(p);
+                    } catch (IOException ignored) {
+                    }
+                });
     }
 
     private static String arg(String[] args, String key, String def) {
-        for (int i = 0; i < args.length - 1; i++)
-            if (args[i].equals(key)) return args[i + 1];
+        for (int i = 0; i < args.length - 1; i++) {
+            if (args[i].equals(key)) {
+                return args[i + 1];
+            }
+        }
         return def;
     }
 
     private static boolean flag(String[] args, String key) {
-        for (String a : args) if (a.equals(key)) return true;
+        for (String a : args) {
+            if (a.equals(key)) {
+                return true;
+            }
+        }
         return false;
     }
 
     private static boolean has(String[] args, String key) {
-        for (String a : args) if (a.equals(key)) return true;
+        for (String a : args) {
+            if (a.equals(key)) {
+                return true;
+            }
+        }
         return false;
     }
 }

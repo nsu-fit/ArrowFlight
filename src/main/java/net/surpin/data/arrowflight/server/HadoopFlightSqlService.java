@@ -24,15 +24,16 @@ import java.io.Serializable;
 import java.io.UncheckedIOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
-import java.util.*;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
-import java.util.Objects;
-import java.util.Arrays;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -454,8 +455,9 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
             StringBuilder sb = new StringBuilder("getFlightInfoStatement schema for '").append(query).append("': [");
             List<org.apache.arrow.vector.types.pojo.Field> fields = arrowSchema.getFields();
             for (int i = 0; i < fields.size(); i++) {
-                if (i > 0)
+                if (i > 0) {
                     sb.append(", ");
+                }
                 sb.append(fields.get(i).getName()).append(':').append(fields.get(i).getType());
             }
             sb.append(']');
@@ -525,7 +527,9 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
             if (state.serverUri() != null) {
                 statementCache.remove(handle.toStringUtf8());
                 serverRegistry.compute(state.serverUri(), (k, v) -> {
-                    if (v == null) return null;
+                    if (v == null) {
+                        return null;
+                    }
                     long updated = v - state.bytes();
                     return updated <= 0 ? 0L : updated;
                 });
@@ -547,7 +551,9 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
                         break;
                     }
                 }
-                if (!hasHost) continue outer;
+                if (!hasHost) {
+                    continue outer;
+                }
             }
             return serverUri;
         }
@@ -556,7 +562,9 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
 
     static String extractTableFromPath(String path) {
         int lastSep = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
-        if (lastSep < 0) return path;
+        if (lastSep < 0) {
+            return path;
+        }
         String parent = path.substring(0, lastSep);
         return parent.replace('\\', '.').replace('/', '.');
     }

@@ -6,6 +6,7 @@ workflow:
 
 stages:
   - build
+  - lint
   - test
 
 cache:
@@ -32,6 +33,11 @@ build-client:
     paths:
       - target/classes/
 
+lint:
+  stage: lint
+  script:
+    - mvn validate spotbugs:check -Dcheckstyle.failOnViolation=true $MAVEN_CLI_OPTS
+
 test:
   stage: test
   script:
@@ -43,3 +49,16 @@ test:
         - target/surefire-reports/TEST-*.xml
     paths:
       - target/surefire-reports/
+
+integration:
+  stage: test
+  script:
+    - mvn test -DexcludedGroups="" $MAVEN_CLI_OPTS
+  artifacts:
+    when: always
+    reports:
+      junit:
+        - target/surefire-reports/TEST-*.xml
+    paths:
+      - target/surefire-reports/
+

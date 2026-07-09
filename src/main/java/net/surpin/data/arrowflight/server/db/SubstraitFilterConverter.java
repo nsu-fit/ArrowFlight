@@ -86,7 +86,9 @@ public final class SubstraitFilterConverter {
      * @param strippedCreateStatements DDL without schema prefix, e.g. {@code CREATE TABLE t(col1 INTEGER)}
      */
     public static void warmUp(List<String> strippedCreateStatements) {
-        if (strippedCreateStatements.isEmpty()) return;
+        if (strippedCreateStatements.isEmpty()) {
+            return;
+        }
         // Build a filter that references a real column so the type-coercion code path is
         // exercised (a pure literal comparison like "1 = 1" won't fully exercise it).
         String firstDdl = strippedCreateStatements.get(0);

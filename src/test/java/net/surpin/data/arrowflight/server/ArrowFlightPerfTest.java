@@ -47,7 +47,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * Results are printed to stdout. For Spark-based comparison (requires SPARK_USER env var set
  * and Hadoop 3.4+ or a real cluster), see SparkPerfTest.
  */
-@Tag("integration")
 @Tag("perf")
 class ArrowFlightPerfTest {
 
