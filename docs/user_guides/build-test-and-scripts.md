@@ -179,11 +179,13 @@ It can:
 - choose a branch
 - run `git fetch`
 - switch to the branch
-- run `git reset --hard origin/<branch>`
+- fast-forward the local branch to `origin/<branch>`
 - run `mvn compile`
 - run the selected tests
 
-Warning: `run.sh` performs a hard reset. Do not run it if the working tree contains local uncommitted changes.
+By default, `run.sh` is non-destructive. It does not discard local changes and uses `git merge --ff-only`.
+
+If you need to reset the branch exactly to `origin/<branch>`, pass `--force-reset`. When the working tree is dirty, the script prints `git status --short` and requires an explicit typed confirmation before destructive actions.
 
 Examples:
 
@@ -193,6 +195,7 @@ chmod +x run.sh
 ./run.sh -b feature/adr-0001-hybrid-query-engine -t all
 ./run.sh -b feature/adr-0001-hybrid-query-engine -t ArrowFlightPerfTest
 ./run.sh -b feature/adr-0001-hybrid-query-engine -t perf -r 500000 -n 5
+./run.sh -b main -t all --force-reset
 ```
 
 Modes:
@@ -202,3 +205,4 @@ Modes:
 - `-t <ClassName>` - a specific test class.
 - `-r ROWS` - `perf.rows`.
 - `-n RUNS` - `perf.runs`.
+- `--force-reset` - run `git reset --hard origin/<branch>` after explicit dirty-worktree confirmation.

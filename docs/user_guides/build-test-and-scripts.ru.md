@@ -179,11 +179,13 @@ export HDFS_DEFAULT_NAMENODE=hdfs://namenode:8020
 - выбрать ветку
 - сделать `git fetch`
 - переключиться на ветку
-- сделать `git reset --hard origin/<branch>`
+- fast-forward локальную ветку до `origin/<branch>`
 - выполнить `mvn compile`
 - запустить выбранные тесты
 
-Внимание: `run.sh` делает hard reset. Не запускай его, если в рабочей копии есть локальные незакоммиченные изменения.
+По умолчанию `run.sh` не destructive. Он не выкидывает локальные изменения и использует `git merge --ff-only`.
+
+Если нужно ровно сбросить ветку к `origin/<branch>`, добавь `--force-reset`. Если рабочая копия dirty, скрипт покажет `git status --short` и попросит явно ввести подтверждение перед destructive action.
 
 Примеры:
 
@@ -193,6 +195,7 @@ chmod +x run.sh
 ./run.sh -b feature/adr-0001-hybrid-query-engine -t all
 ./run.sh -b feature/adr-0001-hybrid-query-engine -t ArrowFlightPerfTest
 ./run.sh -b feature/adr-0001-hybrid-query-engine -t perf -r 500000 -n 5
+./run.sh -b main -t all --force-reset
 ```
 
 Режимы:
@@ -202,3 +205,4 @@ chmod +x run.sh
 - `-t <ClassName>` - конкретный test class.
 - `-r ROWS` - `perf.rows`.
 - `-n RUNS` - `perf.runs`.
+- `--force-reset` - выполнить `git reset --hard origin/<branch>` после явного подтверждения, если worktree dirty.

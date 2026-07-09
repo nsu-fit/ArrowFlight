@@ -14,6 +14,9 @@ Located in `src/main/shell/`:
 - **`spark_submit_client.sh`**: Submits the Spark client to query the server.
 - **`generate_data.log`**: Log output from the data generation process.
 
+Root helper:
+- **`run.sh`**: Safely fetches, fast-forwards, builds, and runs selected tests. Destructive reset requires `--force-reset` and dirty-worktree confirmation.
+
 ## Server Parameters
 
 When launching the server (via `start_server.sh` or `java -jar`), use the following arguments:

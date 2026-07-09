@@ -83,7 +83,7 @@ services:
     ports:
       - "32010:32010"
     healthcheck:
-      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/32010'"]
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/$${FLIGHT_LOCALHOST}/$${FLIGHT_PORT}'"]
       interval: 5s
       timeout: 3s
       retries: 60
@@ -102,7 +102,7 @@ services:
     ports:
       - "32011:32010"
     healthcheck:
-      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/32010'"]
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/$${FLIGHT_LOCALHOST}/$${FLIGHT_PORT}'"]
       interval: 5s
       timeout: 3s
       retries: 60
@@ -121,7 +121,7 @@ services:
     ports:
       - "32012:32010"
     healthcheck:
-      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/32010'"]
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/$${FLIGHT_LOCALHOST}/$${FLIGHT_PORT}'"]
       interval: 5s
       timeout: 3s
       retries: 60
@@ -132,10 +132,9 @@ services:
     command: ["flight-count"]
     environment:
       SPARK_MASTER_URL: spark://spark-master:7077
-      SPARK_DRIVER_HOST: spark-client
-      FLIGHT_SERVERS: flight-server-1:32010,flight-server-2:32010,flight-server-3:32010
+      FLIGHT_SERVERS: "${FLIGHT_SERVERS:-flight-server-1:32010,flight-server-2:32010,flight-server-3:32010}"
       FLIGHT_TABLE: "${TEST_SCHEMA:-test_schema}.${TEST_TABLE:-test_table}"
-      FLIGHT_QUERY: SELECT count(*) AS rows FROM flight_table
+      FLIGHT_QUERY: "${FLIGHT_QUERY:-SELECT count(*) AS rows FROM flight_table}"
     depends_on:
       flight-server-1:
         condition: service_healthy

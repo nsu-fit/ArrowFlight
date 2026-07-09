@@ -3,6 +3,8 @@ target/
 out/
 build/
 bin/
+!docker/bin/
+!docker/bin/**
 
 # Compiled Java artifacts
 *.class

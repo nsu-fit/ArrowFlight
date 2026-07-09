@@ -27,10 +27,10 @@ if not servers:
 
 spark = SparkSession.builder.appName("ArrowFlightSparkClient").getOrCreate()
 
-dataframes = []
-for host, port in servers:
+
+def load_flight_dataframe(host, port):
     endpoint = f"{host}:{port}"
-    df = (
+    return (
         spark.read.format("flight")
         .option("host", host)
         .option("port", str(port))
@@ -41,9 +41,14 @@ for host, port in servers:
         .load()
         .withColumn("_flight_server", F.lit(endpoint))
     )
-    count = df.count()
+
+
+dataframes = []
+for host, port in servers:
+    endpoint = f"{host}:{port}"
+    count = load_flight_dataframe(host, port).count()
     print(f"{endpoint}: {count} row(s)")
-    dataframes.append(df)
+    dataframes.append(load_flight_dataframe(host, port))
 
 flight_table = reduce(lambda left, right: left.unionByName(right), dataframes)
 flight_table.createOrReplaceTempView("flight_table")
