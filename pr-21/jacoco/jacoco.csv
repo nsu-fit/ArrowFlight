@@ -8,7 +8,7 @@ Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.spark.read,Fli
 Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.spark.read,FlightInputPartition.FlightEndpointInputPartition,10,0,0,0,4,0,2,0,2,0
 Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.spark.read,FlightScanBuilder,479,0,56,0,59,0,48,0,20,0
 Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client,Configuration,201,127,11,1,48,33,28,9,22,9
-Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client,Client,938,0,82,0,152,0,75,0,34,0
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client,Client,937,0,82,0,154,0,75,0,34,0
 Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.utils,HostUtils,8,40,3,5,4,10,4,4,1,3
 Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.utils,MetadataUtils,562,256,34,12,117,60,38,19,19,15
 Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.query,QueryEndpoints,23,0,0,0,8,0,4,0,4,0
