@@ -290,16 +290,16 @@ public final class Client implements AutoCloseable {
             final FlightClient client = Client.create(config, allocator);
 
             final CallHeaders callHeaders = new FlightCallHeaders();
-            if (config.getDefaultSchema() != null && config.getDefaultSchema().length() > 0) {
+            if (config.getDefaultSchema() != null && !config.getDefaultSchema().isEmpty()) {
                 callHeaders.insert("SCHEMA", config.getDefaultSchema());
             }
-            if (config.getRoutingTag() != null && config.getRoutingTag().length() > 0) {
+            if (config.getRoutingTag() != null && !config.getRoutingTag().isEmpty()) {
                 callHeaders.insert("ROUTING_TAG", config.getRoutingTag());
             }
-            if (config.getRoutingQueue() != null && config.getRoutingQueue().length() > 0) {
+            if (config.getRoutingQueue() != null && !config.getRoutingQueue().isEmpty()) {
                 callHeaders.insert("ROUTING_QUEUE", config.getRoutingQueue());
             }
-            final HeaderCallOption clientProperties = (callHeaders.keys().size() > 0) ? new HeaderCallOption(callHeaders) : null;
+            final HeaderCallOption clientProperties = (!callHeaders.keys().isEmpty()) ? new HeaderCallOption(callHeaders) : null;
 
             Client.clients.put(cs, new Client(client, authenticate(client, config.getUser(), config.getPassword(), config.getBearerToken(), clientProperties), cs, allocator, config));
         }
@@ -318,22 +318,25 @@ public final class Client implements AutoCloseable {
         } else {
             builder.location(Location.forGrpcInsecure(config.getFlightHost(), config.getFlightPort()));
         }
-        return (config.getPassword() != null && config.getPassword().length() > 0) ? builder.intercept(Client.factory).build() : builder.build();
+        return (config.getPassword() != null && !config.getPassword().isEmpty()) ? builder.intercept(Client.factory).build() : builder.build();
     }
+
     //Authenticate with user & password to obtain the credential token-ticket
-    private static CredentialCallOption authenticate(FlightClient client, String user, String password, String bearerToken, HeaderCallOption clientProperties) {
+    static CredentialCallOption authenticate(FlightClient client, String user, String password, String bearerToken, HeaderCallOption clientProperties) {
         final java.util.List<CallOption> callOptions = new java.util.ArrayList<>();
 
         LOGGER.info("Client.authenticate: clientProperties={}", clientProperties);
         if (clientProperties != null) {
             callOptions.add(clientProperties);
         }
-        boolean usePassword = (password != null && password.length() > 0);
-        callOptions.add(new CredentialCallOption(usePassword ? new BasicAuthCredentialWriter(user, password) : new BearerCredentialWriter(bearerToken)));
+        boolean usePassword = (password != null && !password.isEmpty());
+        CredentialCallOption credentialOption = new CredentialCallOption(
+                usePassword ? new BasicAuthCredentialWriter(user, password) : new BearerCredentialWriter(bearerToken));
+        callOptions.add(credentialOption);
         LOGGER.info("Client.authenticate: callOptions={}", callOptions);
         client.handshake(callOptions.toArray(new CallOption[0]));
         LOGGER.info("Client.authenticate: handshake finished");
-        return usePassword ? Client.factory.getCredentialCallOption() : (CredentialCallOption) callOptions.get(0);
+        return usePassword ? Client.factory.getCredentialCallOption() : credentialOption;
     }
 
     @FunctionalInterface
