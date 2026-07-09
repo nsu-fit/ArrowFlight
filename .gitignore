@@ -32,6 +32,7 @@ spotbugsXml.xml
 hs_err_pid*
 replay_pid*
 benchbase/results/
+benchbase/config/postgres/.tpch-*.xml
 
 # Local environment/configuration
 .env

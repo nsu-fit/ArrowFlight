@@ -44,6 +44,15 @@ bash benchbase/run-benchmark.sh tpch all
 bash benchbase/run-benchmark.sh tpch execute
 ```
 
+Запустить только часть TPC-H queries:
+
+```bash
+bash benchbase/run-benchmark.sh tpch execute q6
+bash benchbase/run-benchmark.sh tpch execute q1,q6,q14
+```
+
+Для быстрой проверки лучше `q6`: простой запрос, обычно проходит быстрее тяжелых join queries.
+
 Раздельные шаги:
 
 ```bash
@@ -82,6 +91,8 @@ BENCH_POSTGRES_PORT=15432 bash benchbase/run-benchmark.sh tpch all
 - `<terminals>1</terminals>` - число worker threads.
 - `<serial>true</serial>` - запросы идут последовательно. Для простой проверки оставь `true`.
 - `<weights>...</weights>` - веса Q1-Q22.
+
+Третий аргумент runner временно меняет `<weights>` без правки основного XML. Например `q1,q6` превращается в веса `1,0,0,0,0,1,0...`.
 
 После изменения `scalefactor` лучше пересоздать данные:
 
