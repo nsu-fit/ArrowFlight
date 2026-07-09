@@ -10,9 +10,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -167,7 +165,9 @@ public class ParquetQueryParser {
         List<String> columns = new ArrayList<>();
         List<SelectExpr> exprs = new ArrayList<>();
         for (SelectFieldOrAsterisk sfoa : select.$select()) {
-            if (!(sfoa instanceof org.jooq.Field<?>)) continue;
+            if (!(sfoa instanceof org.jooq.Field<?>)) {
+                continue;
+            }
             org.jooq.Field<?> f = (org.jooq.Field<?>) sfoa;
             columns.add(f.getName());
             String outputName = noQuoteCtx.renderInlined(f).trim();
@@ -287,7 +287,9 @@ public class ParquetQueryParser {
                 int dot = qualified.indexOf('.');
                 String schema = dot > 0 ? qualified.substring(0, dot) : null;
                 String table = dot > 0 ? qualified.substring(dot + 1) : qualified;
-                if (alias == null) alias = table;
+                if (alias == null) {
+                    alias = table;
+                }
                 tables.add(new JoinTable(schema, table, alias));
             }
         }
@@ -363,20 +365,28 @@ public class ParquetQueryParser {
         // Locate "from (" using case-insensitive search.
         java.util.regex.Matcher fromParen =
                 java.util.regex.Pattern.compile("(?i)\\bfrom\\s*\\(").matcher(q);
-        if (!fromParen.find()) return q;
+        if (!fromParen.find()) {
+            return q;
+        }
 
         int openParen = fromParen.end() - 1;           // index of the '('
         String beforeFrom = q.substring(0, fromParen.start()); // "select COLS "
 
         // Walk forward to find the matching closing ')'.
-        int depth = 1, i = openParen + 1;
+        int depth = 1;
+        int i = openParen + 1;
         while (i < q.length() && depth > 0) {
             char c = q.charAt(i);
-            if (c == '(') depth++;
-            else if (c == ')') depth--;
+            if (c == '(') {
+                depth++;
+            } else if (c == ')') {
+                depth--;
+            }
             i++;
         }
-        if (depth != 0) return q; // unbalanced — don't touch
+        if (depth != 0) {
+            return q; // unbalanced — don't touch
+        }
 
         String innerSQL  = q.substring(openParen + 1, i - 1).trim();
         String afterParen = q.substring(i).trim(); // "alias [where FILTER]"
@@ -385,17 +395,23 @@ public class ParquetQueryParser {
         java.util.regex.Matcher aliasM =
                 java.util.regex.Pattern.compile("^([a-zA-Z_][a-zA-Z0-9_]*)(.*)$",
                         java.util.regex.Pattern.DOTALL).matcher(afterParen);
-        if (!aliasM.matches()) return q; // no alias found — leave unchanged
+        if (!aliasM.matches()) {
+            return q; // no alias found — leave unchanged
+        }
         String outerRest = aliasM.group(2).trim(); // everything after alias: "[where FILTER]"
 
         // Inner query must itself be a SELECT (sanity check).
-        if (!innerSQL.trim().toLowerCase().startsWith("select")) return q;
+        if (!innerSQL.trim().toLowerCase().startsWith("select")) {
+            return q;
+        }
 
         // Find the real "schema.table" reference inside the inner SELECT using a simple regex.
         // Pattern: FROM word.word or FROM word (supports quoted and unquoted identifiers)
         java.util.regex.Matcher innerFrom =
                 java.util.regex.Pattern.compile("(?i)\\bfrom\\s+(\\S+)").matcher(innerSQL);
-        if (!innerFrom.find()) return q;
+        if (!innerFrom.find()) {
+            return q;
+        }
         String realTableRef = innerFrom.group(1).replaceAll("\\s*$", "");
 
         // Any WHERE in the inner query.
