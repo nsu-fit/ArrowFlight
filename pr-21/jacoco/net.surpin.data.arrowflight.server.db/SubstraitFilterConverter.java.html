@@ -86,22 +86,24 @@ public final class SubstraitFilterConverter {
      * @param strippedCreateStatements DDL without schema prefix, e.g. {@code CREATE TABLE t(col1 INTEGER)}
      */
     public static void warmUp(List&lt;String&gt; strippedCreateStatements) {
-<span class="nc bnc" id="L89" title="All 2 branches missed.">        if (strippedCreateStatements.isEmpty()) return;</span>
+<span class="nc bnc" id="L89" title="All 2 branches missed.">        if (strippedCreateStatements.isEmpty()) {</span>
+<span class="nc" id="L90">            return;</span>
+        }
         // Build a filter that references a real column so the type-coercion code path is
         // exercised (a pure literal comparison like &quot;1 = 1&quot; won't fully exercise it).
-<span class="nc" id="L92">        String firstDdl = strippedCreateStatements.get(0);</span>
-<span class="nc" id="L93">        String dummyFilter = &quot;1 = 1&quot;; // safe fallback</span>
-<span class="nc" id="L94">        java.util.regex.Matcher m =</span>
-<span class="nc" id="L95">                java.util.regex.Pattern.compile(&quot;\&quot;([^\&quot;]+)\&quot;&quot;).matcher(firstDdl);</span>
-<span class="nc bnc" id="L96" title="All 2 branches missed.">        if (m.find()) {</span>
-<span class="nc" id="L97">            dummyFilter = &quot;\&quot;&quot; + m.group(1) + &quot;\&quot; IS NOT NULL&quot;;</span>
+<span class="nc" id="L94">        String firstDdl = strippedCreateStatements.get(0);</span>
+<span class="nc" id="L95">        String dummyFilter = &quot;1 = 1&quot;; // safe fallback</span>
+<span class="nc" id="L96">        java.util.regex.Matcher m =</span>
+<span class="nc" id="L97">                java.util.regex.Pattern.compile(&quot;\&quot;([^\&quot;]+)\&quot;&quot;).matcher(firstDdl);</span>
+<span class="nc bnc" id="L98" title="All 2 branches missed.">        if (m.find()) {</span>
+<span class="nc" id="L99">            dummyFilter = &quot;\&quot;&quot; + m.group(1) + &quot;\&quot; IS NOT NULL&quot;;</span>
         }
         try {
-<span class="nc" id="L100">            toByteBuffer(dummyFilter, strippedCreateStatements);</span>
-<span class="nc" id="L101">        } catch (Exception ignored) {</span>
+<span class="nc" id="L102">            toByteBuffer(dummyFilter, strippedCreateStatements);</span>
+<span class="nc" id="L103">        } catch (Exception ignored) {</span>
             // Failure is fine — we only need to trigger class loading, not a valid result.
-<span class="nc" id="L103">        }</span>
-<span class="nc" id="L104">    }</span>
+<span class="nc" id="L105">        }</span>
+<span class="nc" id="L106">    }</span>
 
     /**
      * Converts {@code sqlExpression} to a Substrait {@link ByteBuffer} ready for Arrow scanning.
@@ -113,12 +115,12 @@ public final class SubstraitFilterConverter {
      */
     public static ByteBuffer toByteBuffer(String sqlExpression, List&lt;String&gt; createStatements)
             throws SqlParseException {
-<span class="fc" id="L116">        SqlExpressionToSubstrait converter = new SqlExpressionToSubstrait(CAST_AWARE_PROVIDER);</span>
-<span class="fc" id="L117">        byte[] bytes = converter.convert(sqlExpression, createStatements).toByteArray();</span>
-<span class="fc" id="L118">        ByteBuffer buffer = ByteBuffer.allocateDirect(bytes.length);</span>
-<span class="fc" id="L119">        buffer.put(bytes);</span>
-<span class="fc" id="L120">        buffer.rewind();</span>
-<span class="fc" id="L121">        return buffer;</span>
+<span class="fc" id="L118">        SqlExpressionToSubstrait converter = new SqlExpressionToSubstrait(CAST_AWARE_PROVIDER);</span>
+<span class="fc" id="L119">        byte[] bytes = converter.convert(sqlExpression, createStatements).toByteArray();</span>
+<span class="fc" id="L120">        ByteBuffer buffer = ByteBuffer.allocateDirect(bytes.length);</span>
+<span class="fc" id="L121">        buffer.put(bytes);</span>
+<span class="fc" id="L122">        buffer.rewind();</span>
+<span class="fc" id="L123">        return buffer;</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>
