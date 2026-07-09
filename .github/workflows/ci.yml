@@ -69,7 +69,7 @@ jobs:
         with:
           file: target/site/jacoco/jacoco.xml
           format: jacoco
-          base-path: .
+          base-path: /src/main/java
       - uses: peaceiris/actions-gh-pages@v4
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         with:
