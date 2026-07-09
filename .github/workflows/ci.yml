@@ -65,6 +65,10 @@ jobs:
           path: target/site/jacoco/
           if-no-files-found: warn
           retention-days: 14
+      - uses: coverallsapp/github-action@v2
+        with:
+          file: target/site/jacoco/jacoco.xml
+          format: jacoco
       - uses: peaceiris/actions-gh-pages@v4
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         with:
@@ -79,14 +83,4 @@ jobs:
           publish_dir: ./target/site
           destination_dir: pr-${{ github.event.number }}
           keep_files: true
-      - uses: madrapps/jacoco-report@v1.7.1
-        if: github.event_name == 'pull_request'
-        with:
-          paths: target/site/jacoco/jacoco.xml
-          token: ${{ secrets.GITHUB_TOKEN }}
-          min-coverage-overall: 80
-          min-coverage-changed-files: 80
-          title: |
-            Coverage report
-            ([detailed HTML](https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/pr-${{ github.event.number }}/jacoco/))
-          update-comment: true
+
