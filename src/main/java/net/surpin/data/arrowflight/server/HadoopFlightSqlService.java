@@ -193,12 +193,17 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
                     }
                     for (Map.Entry<String, Set<String>> entry : seenTables.entrySet()) {
                         String table = entry.getKey();
+                        Set<String> tablePaths = entry.getValue();
                         String perTableQuery = "SELECT * FROM " + table;
-                        Map<String, List<String>> byServer = groupFilesByServer(pathLocations, serverLoad);
+                        Map<String, FileAssignment> tableLocations = new LinkedHashMap<>();
+                        for (String path : tablePaths) {
+                            tableLocations.put(path, pathLocations.get(path));
+                        }
+                        Map<String, List<String>> byServer = groupFilesByServer(tableLocations, serverLoad);
 
                         for (Map.Entry<String, List<String>> e : byServer.entrySet()) {
                             long addedBytes = e.getValue().stream()
-                                    .mapToLong(p -> pathLocations.get(p).size())
+                                    .mapToLong(p -> tableLocations.get(p).size())
                                     .sum();
                             endpoints.add(createEndpoint(e.getKey(), e.getValue(), perTableQuery, addedBytes));
                             serverRegistry.compute(e.getKey(), (k, v) -> (v == null ? 0L : v) + addedBytes);
@@ -549,7 +554,7 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
         return null;
     }
 
-    private static String extractTableFromPath(String path) {
+    static String extractTableFromPath(String path) {
         int lastSep = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
         if (lastSep < 0) return path;
         String parent = path.substring(0, lastSep);

@@ -205,6 +205,158 @@ class SparkJoinIntegrationTest {
                 "Join id(IntegerType) = tinyint_col(ByteType) must return 1000 pairs without ClassCastException");
     }
 
+    // ── cross-type join: INT32 = INT16 ──────────────────────────────────────
+
+    @Test
+    @Order(6)
+    void crossTypeJoinIntegerToSmallintReturnsExpectedCount() {
+        // smallint_col stored as INT32+OriginalType.INT_16 → Arrow Int(16) → Spark ShortType.
+        // Same distribution as tinyint_col: pmod(id, 10) → 0-9 cycling (100 rows each).
+        // Only id ∈ {0..9} can match; 10 * 100 = 1000 pairs.
+        Dataset<Row> t1 = flightRead(flightTable);
+        Dataset<Row> t2 = flightRead(flightTable);
+
+        Dataset<Row> joined = t1.alias("t1")
+                .join(t2.alias("t2"),
+                        col("t1.id").equalTo(col("t2.smallint_col")),
+                        "inner");
+
+        assertNotNull(joined.schema(), "Schema must not be null");
+        long count = joined.count();
+        assertEquals(1000L, count,
+                "Join id(IntegerType) = smallint_col(ShortType) must return 1000 pairs without ClassCastException");
+    }
+
+    // ── cross-type join: INT32 = INT64 ──────────────────────────────────────
+
+    @Test
+    @Order(7)
+    void crossTypeJoinIntegerToBigintReturnsExpectedCount() {
+        // bigint_col = pmod(id, 10) * 10 → values 0, 10, 20, ..., 90 (100 rows each).
+        // id ∈ {0, 10, 20, ..., 90} each match 100 rows → 10 * 100 = 1000 pairs.
+        Dataset<Row> t1 = flightRead(flightTable);
+        Dataset<Row> t2 = flightRead(flightTable);
+
+        Dataset<Row> joined = t1.alias("t1")
+                .join(t2.alias("t2"),
+                        col("t1.id").equalTo(col("t2.bigint_col")),
+                        "inner");
+
+        assertNotNull(joined.schema(), "Schema must not be null");
+        long count = joined.count();
+        assertEquals(1000L, count,
+                "Join id(IntegerType) = bigint_col(LongType) must return 1000 pairs without ClassCastException");
+    }
+
+    // ── cross-type join: INT32 = FLOAT ─────────────────────────────────────
+
+    @Test
+    @Order(8)
+    void crossTypeJoinIntegerToFloatCompletesWithoutClassCastException() {
+        // float_col ∈ [0, 1) from rand(47) — comparison with integer id tests
+        // implicit Float-to-Int coercion without ClassCastException.
+        Dataset<Row> t1 = flightRead(flightTable);
+        Dataset<Row> t2 = flightRead(flightTable);
+
+        Dataset<Row> joined = t1.alias("t1")
+                .join(t2.alias("t2"),
+                        col("t1.id").equalTo(col("t2.float_col")),
+                        "inner");
+
+        assertNotNull(joined.schema(), "Schema must not be null");
+        long count = joined.count();
+        assertTrue(count >= 0,
+                "Join id(IntegerType) = float_col(FloatType) must not throw ClassCastException");
+    }
+
+    // ── cross-type join: INT32 = DOUBLE ────────────────────────────────────
+
+    @Test
+    @Order(9)
+    void crossTypeJoinIntegerToDoubleCompletesWithoutClassCastException() {
+        // double_col ∈ [0, 1) from rand(48) — comparison with integer id tests
+        // implicit Double-to-Int coercion without ClassCastException.
+        Dataset<Row> t1 = flightRead(flightTable);
+        Dataset<Row> t2 = flightRead(flightTable);
+
+        Dataset<Row> joined = t1.alias("t1")
+                .join(t2.alias("t2"),
+                        col("t1.id").equalTo(col("t2.double_col")),
+                        "inner");
+
+        assertNotNull(joined.schema(), "Schema must not be null");
+        long count = joined.count();
+        assertTrue(count >= 0,
+                "Join id(IntegerType) = double_col(DoubleType) must not throw ClassCastException");
+    }
+
+    // ── cross-type join: FLOAT = DOUBLE ────────────────────────────────────
+
+    @Test
+    @Order(10)
+    void crossTypeJoinFloatToDoubleCompletesWithoutClassCastException() {
+        // FLOAT vs DOUBLE join key — tests widening without ClassCastException.
+        Dataset<Row> t1 = flightRead(flightTable);
+        Dataset<Row> t2 = flightRead(flightTable);
+
+        Dataset<Row> joined = t1.alias("t1")
+                .join(t2.alias("t2"),
+                        col("t1.float_col").equalTo(col("t2.double_col")),
+                        "inner");
+
+        assertNotNull(joined.schema(), "Schema must not be null");
+        long count = joined.count();
+        assertTrue(count >= 0,
+                "Join float_col(FloatType) = double_col(DoubleType) must not throw ClassCastException");
+    }
+
+    // ── cross-type join: BOOL = INT8 ───────────────────────────────────────
+
+    @Test
+    @Order(11)
+    void crossTypeJoinBoolToTinyintReturnsExpectedCount() {
+        // bool_col (BOOLEAN → Spark BooleanType) = tinyint_col (INT32+INT_8 → Spark ByteType).
+        // bool_col: true for even id (500 rows), false for odd id (500 rows).
+        // tinyint_col: pmod(id, 10) → 0-9 (100 rows each).
+        // Spark casts BOOL→INT in comparison: false→0, true→1.
+        //   true=1  → 500 × 100 = 50000 pairs
+        //   false=0 → 500 × 100 = 50000 pairs
+        // → 100000 matching rows, must not throw ClassCastException.
+        Dataset<Row> t1 = flightRead(flightTable);
+        Dataset<Row> t2 = flightRead(flightTable);
+
+        Dataset<Row> joined = t1.alias("t1")
+                .join(t2.alias("t2"),
+                        col("t1.bool_col").equalTo(col("t2.tinyint_col")),
+                        "inner");
+
+        assertNotNull(joined.schema(), "Schema must not be null");
+        long count = joined.count();
+        assertEquals(100000L, count,
+                "Join bool_col(BooleanType) = tinyint_col(ByteType) must return 100000 pairs without ClassCastException");
+    }
+
+    // ── cross-type join: STRING = STRING ───────────────────────────────────
+
+    @Test
+    @Order(12)
+    void crossTypeJoinStringColumnsReturnsExpectedCount() {
+        // date_string_col ("YYYY-MM-DD") vs string_col ("str_XXXXXX") — different formats
+        // never overlap, but must not produce ClassCastException on string comparisons.
+        Dataset<Row> t1 = flightRead(flightTable);
+        Dataset<Row> t2 = flightRead(flightTable);
+
+        Dataset<Row> joined = t1.alias("t1")
+                .join(t2.alias("t2"),
+                        col("t1.date_string_col").equalTo(col("t2.string_col")),
+                        "inner");
+
+        assertNotNull(joined.schema(), "Schema must not be null");
+        long count = joined.count();
+        assertEquals(0L, count,
+                "Join date_string_col(StringType) = string_col(StringType) must return 0 rows without ClassCastException");
+    }
+
     // ── util ────────────────────────────────────────────────────────────────
 
     private static int findFreePort() throws Exception {

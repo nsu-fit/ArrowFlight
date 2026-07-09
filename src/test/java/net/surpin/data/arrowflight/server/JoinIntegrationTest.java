@@ -110,6 +110,181 @@ class JoinIntegrationTest {
                 "DuckDB SQL should not contain schema-qualified names: " + duckSql);
     }
 
+    // ── cross-type join: INT32 = INT16 ──────────────────────────────────────
+
+    @Test
+    void innerJoinIntToSmallint() throws Exception {
+        String query = "SELECT a.id, b.smallint_col "
+                + "FROM " + fullTable + " a "
+                + "JOIN " + fullTable + " b "
+                + "ON a.id = b.smallint_col";
+
+        ParquetQueryParser pq = ParquetQueryParser.parse(query);
+        assertTrue(pq.isJoin, "Should detect as join");
+
+        org.apache.arrow.vector.types.pojo.Schema schema = manager.getQuerySchema(query);
+        assertNotNull(schema);
+        assertEquals(2, schema.getFields().size(), "Should have 2 output columns");
+
+        CountingListener listener = new CountingListener();
+        try (BufferAllocator allocator = new RootAllocator(Long.MAX_VALUE)) {
+            String[] files = manager.locationsForQuery(query).keySet().toArray(new String[0]);
+            manager.readParquet(allocator, query, files, listener, true);
+        }
+        assertEquals(1000, listener.totalRows,
+                "Join id(INT32) = smallint_col(INT16) must return 1000 pairs");
+    }
+
+    // ── cross-type join: INT32 = INT64 ──────────────────────────────────────
+
+    @Test
+    void innerJoinIntToBigint() throws Exception {
+        String query = "SELECT a.id, b.bigint_col "
+                + "FROM " + fullTable + " a "
+                + "JOIN " + fullTable + " b "
+                + "ON a.id = b.bigint_col";
+
+        ParquetQueryParser pq = ParquetQueryParser.parse(query);
+        assertTrue(pq.isJoin, "Should detect as join");
+
+        org.apache.arrow.vector.types.pojo.Schema schema = manager.getQuerySchema(query);
+        assertNotNull(schema);
+        assertEquals(2, schema.getFields().size(), "Should have 2 output columns");
+
+        CountingListener listener = new CountingListener();
+        try (BufferAllocator allocator = new RootAllocator(Long.MAX_VALUE)) {
+            String[] files = manager.locationsForQuery(query).keySet().toArray(new String[0]);
+            manager.readParquet(allocator, query, files, listener, true);
+        }
+        assertEquals(1000, listener.totalRows,
+                "Join id(INT32) = bigint_col(INT64) must return 1000 pairs");
+    }
+
+    // ── cross-type join: INT32 = FLOAT ─────────────────────────────────────
+
+    @Test
+    void innerJoinIntToFloat() throws Exception {
+        String query = "SELECT a.id, b.float_col "
+                + "FROM " + fullTable + " a "
+                + "JOIN " + fullTable + " b "
+                + "ON a.id = b.float_col";
+
+        ParquetQueryParser pq = ParquetQueryParser.parse(query);
+        assertTrue(pq.isJoin, "Should detect as join");
+
+        org.apache.arrow.vector.types.pojo.Schema schema = manager.getQuerySchema(query);
+        assertNotNull(schema);
+        assertEquals(2, schema.getFields().size(), "Should have 2 output columns");
+
+        CountingListener listener = new CountingListener();
+        try (BufferAllocator allocator = new RootAllocator(Long.MAX_VALUE)) {
+            String[] files = manager.locationsForQuery(query).keySet().toArray(new String[0]);
+            manager.readParquet(allocator, query, files, listener, true);
+        }
+        assertTrue(listener.totalRows >= 0,
+                "Join id(INT32) = float_col(FLOAT) must not throw ClassCastException");
+    }
+
+    // ── cross-type join: INT32 = DOUBLE ────────────────────────────────────
+
+    @Test
+    void innerJoinIntToDouble() throws Exception {
+        String query = "SELECT a.id, b.double_col "
+                + "FROM " + fullTable + " a "
+                + "JOIN " + fullTable + " b "
+                + "ON a.id = b.double_col";
+
+        ParquetQueryParser pq = ParquetQueryParser.parse(query);
+        assertTrue(pq.isJoin, "Should detect as join");
+
+        org.apache.arrow.vector.types.pojo.Schema schema = manager.getQuerySchema(query);
+        assertNotNull(schema);
+        assertEquals(2, schema.getFields().size(), "Should have 2 output columns");
+
+        CountingListener listener = new CountingListener();
+        try (BufferAllocator allocator = new RootAllocator(Long.MAX_VALUE)) {
+            String[] files = manager.locationsForQuery(query).keySet().toArray(new String[0]);
+            manager.readParquet(allocator, query, files, listener, true);
+        }
+        assertTrue(listener.totalRows >= 0,
+                "Join id(INT32) = double_col(DOUBLE) must not throw ClassCastException");
+    }
+
+    // ── cross-type join: FLOAT = DOUBLE ────────────────────────────────────
+
+    @Test
+    void innerJoinFloatToDouble() throws Exception {
+        String query = "SELECT a.float_col, b.double_col "
+                + "FROM " + fullTable + " a "
+                + "JOIN " + fullTable + " b "
+                + "ON a.float_col = b.double_col";
+
+        ParquetQueryParser pq = ParquetQueryParser.parse(query);
+        assertTrue(pq.isJoin, "Should detect as join");
+
+        org.apache.arrow.vector.types.pojo.Schema schema = manager.getQuerySchema(query);
+        assertNotNull(schema);
+        assertEquals(2, schema.getFields().size(), "Should have 2 output columns");
+
+        CountingListener listener = new CountingListener();
+        try (BufferAllocator allocator = new RootAllocator(Long.MAX_VALUE)) {
+            String[] files = manager.locationsForQuery(query).keySet().toArray(new String[0]);
+            manager.readParquet(allocator, query, files, listener, true);
+        }
+        assertTrue(listener.totalRows >= 0,
+                "Join float_col(FLOAT) = double_col(DOUBLE) must not throw ClassCastException");
+    }
+
+    // ── cross-type join: BOOL = INT8 ───────────────────────────────────────
+
+    @Test
+    void innerJoinBoolToTinyint() throws Exception {
+        String query = "SELECT a.bool_col, b.tinyint_col "
+                + "FROM " + fullTable + " a "
+                + "JOIN " + fullTable + " b "
+                + "ON a.bool_col = b.tinyint_col";
+
+        ParquetQueryParser pq = ParquetQueryParser.parse(query);
+        assertTrue(pq.isJoin, "Should detect as join");
+
+        org.apache.arrow.vector.types.pojo.Schema schema = manager.getQuerySchema(query);
+        assertNotNull(schema);
+        assertEquals(2, schema.getFields().size(), "Should have 2 output columns");
+
+        CountingListener listener = new CountingListener();
+        try (BufferAllocator allocator = new RootAllocator(Long.MAX_VALUE)) {
+            String[] files = manager.locationsForQuery(query).keySet().toArray(new String[0]);
+            manager.readParquet(allocator, query, files, listener, true);
+        }
+        assertEquals(100000, listener.totalRows,
+                "Join bool_col(BOOL) = tinyint_col(INT8) must return 100000 pairs without ClassCastException");
+    }
+
+    // ── cross-type join: STRING = STRING ───────────────────────────────────
+
+    @Test
+    void innerJoinStringColumns() throws Exception {
+        String query = "SELECT a.date_string_col, b.string_col "
+                + "FROM " + fullTable + " a "
+                + "JOIN " + fullTable + " b "
+                + "ON a.date_string_col = b.string_col";
+
+        ParquetQueryParser pq = ParquetQueryParser.parse(query);
+        assertTrue(pq.isJoin, "Should detect as join");
+
+        org.apache.arrow.vector.types.pojo.Schema schema = manager.getQuerySchema(query);
+        assertNotNull(schema);
+        assertEquals(2, schema.getFields().size(), "Should have 2 output columns");
+
+        CountingListener listener = new CountingListener();
+        try (BufferAllocator allocator = new RootAllocator(Long.MAX_VALUE)) {
+            String[] files = manager.locationsForQuery(query).keySet().toArray(new String[0]);
+            manager.readParquet(allocator, query, files, listener, true);
+        }
+        assertEquals(0, listener.totalRows,
+                "Join date_string_col(STRING) = string_col(STRING) must return 0 rows without ClassCastException");
+    }
+
     static class CountingListener implements ServerStreamListener {
         int totalRows;
         VectorSchemaRoot root;
