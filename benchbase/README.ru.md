@@ -116,3 +116,39 @@ bash benchbase/run-benchmark.sh tpcds all
 ## Где смотреть результат
 
 Смотри `benchbase/results/`. BenchBase пишет summary, latency/throughput files и transaction stats. Для первичной оценки бери latency per query и total runtime из summary.
+
+HTML report без зависимостей:
+
+```bash
+bash benchbase/run-benchmark.sh tpch report
+```
+
+Команда напечатает путь вида:
+
+```text
+/home/.../ArrowFlight/benchbase/results/tpch_2026-07-09_07-49-48.report.html
+```
+
+Если подключаешься к серверу по SSH, открой report через port forwarding:
+
+```bash
+cd ~/ArrowFlight/benchbase/results
+python3 -m http.server 8000
+```
+
+На своей машине:
+
+```bash
+ssh -L 8000:localhost:8000 ssamokhin@sberschool2026-vm05
+```
+
+Потом открой `http://localhost:8000/` в браузере и выбери `*.report.html`.
+
+JMH здесь не нужен: JMH меряет Java-код внутри JVM. BenchBase меряет DB workload через JDBC, поэтому визуализируем BenchBase CSV/JSON.
+
+Если видишь `Permission denied` на `/benchbase/results/*.csv`, дай права output directory:
+
+```bash
+mkdir -p benchbase/results
+chmod a+rwx benchbase/results
+```

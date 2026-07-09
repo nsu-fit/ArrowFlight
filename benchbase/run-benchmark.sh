@@ -23,6 +23,7 @@ Modes:
   load     load data
   execute  run benchmark only
   clear    clear benchmark tables
+  report   build latest HTML report
   down     stop containers and remove PostgreSQL volume
   logs     follow PostgreSQL logs
 
@@ -34,6 +35,7 @@ Examples:
   bash benchbase/run-benchmark.sh tpch execute
   bash benchbase/run-benchmark.sh tpch execute q6
   bash benchbase/run-benchmark.sh tpch execute q1,q6,q14
+  bash benchbase/run-benchmark.sh tpch report
   BENCH_POSTGRES_PORT=15432 bash benchbase/run-benchmark.sh tpch all
 EOF
 }
@@ -47,6 +49,11 @@ normalize_benchmark() {
 
 compose() {
   docker compose -f "${COMPOSE_FILE}" "$@"
+}
+
+prepare_results_dir() {
+  mkdir -p "${SCRIPT_DIR}/results"
+  chmod a+rwx "${SCRIPT_DIR}/results"
 }
 
 wait_postgres() {
@@ -134,6 +141,7 @@ prepare_config() {
 }
 
 run_benchbase() {
+  prepare_results_dir
   start_postgres
   compose run --rm benchbase "$@"
 }
@@ -158,6 +166,7 @@ prepare_config
 
 case "${MODE}" in
   all)
+    prepare_results_dir
     start_postgres
     compose run --rm benchbase -b "${BENCHMARK}" -c "${CONFIG}" --create=true --load=true --execute=true -d "${RESULTS}"
     ;;
@@ -172,6 +181,9 @@ case "${MODE}" in
     ;;
   clear)
     run_benchbase -b "${BENCHMARK}" -c "${CONFIG}" --clear=true -d "${RESULTS}"
+    ;;
+  report)
+    python3 "${SCRIPT_DIR}/visualize-results.py"
     ;;
   down)
     compose down -v
