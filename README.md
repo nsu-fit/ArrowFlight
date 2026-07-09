@@ -1,6 +1,7 @@
 # Hadoop Arrow Flight SQL Server
 
 [![CI](https://github.com/nsu-fit/ArrowFlight/actions/workflows/ci.yml/badge.svg)](https://github.com/nsu-fit/ArrowFlight/actions/workflows/ci.yml)
+[![Coverage Status](https://coveralls.io/repos/github/nsu-fit/ArrowFlight/badge.svg)](https://coveralls.io/github/nsu-fit/ArrowFlight)
 
 High-performance **Arrow Flight SQL** server for analytical queries on Parquet data. Built for teams running SQL over large Parquet datasets in distributed environments (HDFS, S3, local FS).
 
