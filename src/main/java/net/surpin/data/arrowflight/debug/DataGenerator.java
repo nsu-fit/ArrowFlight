@@ -11,8 +11,8 @@ import org.apache.spark.sql.functions;
  * Генерирует большие объемы данных без shuffle операций.
  *
  * Использование:
- *   spark-submit --class server.net.surpin.data.arrowflight.DataGenerator <jar> <num_rows> <output_path> <num_partitions>
- *   Пример: spark-submit --class server.net.surpin.data.arrowflight.DataGenerator target/hadoop-arrow-flight.jar 10000000000 hdfs:///data/vsurpin/test_db/test_1tb_table 2000
+ *   spark-submit --class server.net.surpin.data.arrowflight.debug.DataGenerator <jar> <num_rows> <output_path> <num_partitions>
+ *   Пример: spark-submit --class server.net.surpin.data.arrowflight.debug.DataGenerator target/hadoop-arrow-flight.jar 10000000000 hdfs:///data/vsurpin/test_db/test_1tb_table 2000
  */
 public class DataGenerator {
 
