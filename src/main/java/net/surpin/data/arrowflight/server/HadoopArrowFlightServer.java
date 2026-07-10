@@ -8,7 +8,10 @@ import org.apache.hadoop.conf.Configuration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.Arrays;
+import java.util.Properties;
 import java.util.Set;
 
 import net.surpin.data.arrowflight.server.adapters.ConfigAdapter;
@@ -21,10 +24,38 @@ import net.surpin.data.arrowflight.server.model.AppConfig;
 public class HadoopArrowFlightServer {
 
     static {
-        RuntimeSettings.logLevel();
+        initLogLevel();
     }
 
     private static final Logger LOGGER = LoggerFactory.getLogger(HadoopArrowFlightServer.class);
+
+    private static void initLogLevel() {
+        Properties props = new Properties();
+        try (InputStream input = HadoopArrowFlightServer.class.getClassLoader()
+                .getResourceAsStream("arrowflight.properties")) {
+            if (input != null) {
+                props.load(input);
+            }
+        } catch (IOException e) {
+            throw new ExceptionInInitializerError(e);
+        }
+        for (String key : new String[]{"logLevel", "arrowflight.log.level"}) {
+            String v = System.getProperty(key);
+            if (v != null && !v.isBlank()) {
+                System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", v.trim());
+                return;
+            }
+            v = props.getProperty(key);
+            if (v != null && !v.isBlank()) {
+                System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", v.trim());
+                return;
+            }
+        }
+        String env = System.getenv("LOGGING_LEVEL");
+        if (env != null && !env.isBlank()) {
+            System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", env.trim());
+        }
+    }
 
     private FlightServer server;
     private ServerComponent component;

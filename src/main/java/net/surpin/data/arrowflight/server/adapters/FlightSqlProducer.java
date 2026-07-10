@@ -20,10 +20,10 @@ import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.arrow.vector.types.pojo.Schema;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
@@ -85,32 +85,43 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
             FlightProducer.CallContext context,
             FlightProducer.ServerStreamListener listener) {
         final ByteString handle = ticket.getStatementHandle();
+        String qid = qid(handle);
         HandleState state = clusterService.getHandle(handle.toStringUtf8());
         if (state == null) {
-            String msg = "No HandleState found for handle: " + handle;
-            LOGGER.error(msg);
-            listener.error(new IllegalStateException(msg));
+            LOGGER.error("qid={} No HandleState found", qid);
+            listener.error(new IllegalStateException("No HandleState found for qid=" + qid));
             return;
         }
 
         String query = state.query();
         String[] filePaths = state.filePaths();
         if (filePaths == null) {
-            String msg = "No file paths in handle state: " + handle;
-            LOGGER.error(msg);
-            listener.error(new IllegalStateException(msg));
+            LOGGER.error("qid={} No file paths in handle state", qid);
+            listener.error(new IllegalStateException("No file paths for qid=" + qid));
             return;
         }
 
-        LOGGER.info("Server-grouped getStream: {} file(s), query='{}'", filePaths.length, query);
+        String serverUri = state.serverUri() != null ? state.serverUri() : "local";
+        long bytes = state.bytes();
+        long started = System.currentTimeMillis();
+
+        LOGGER.info("qid={} execution=start server={} files={} bytes={} query='{}'",
+                qid, serverUri, filePaths.length, bytes, query);
+
+        MDC.put("qid", qid);
         try {
             executionService.readParquet(allocator, query, filePaths, listener, true);
             listener.completed();
+            long elapsed = System.currentTimeMillis() - started;
+            LOGGER.info("qid={} execution=completed server={} elapsedMs={} files={} query='{}'",
+                    qid, serverUri, elapsed, filePaths.length, query);
         } catch (Exception e) {
-            LOGGER.error("Failed to process server-grouped ticket, files: {}",
-                    Arrays.toString(filePaths), e);
+            long elapsed = System.currentTimeMillis() - started;
+            LOGGER.error("qid={} execution=failed server={} elapsedMs={} error='{}'",
+                    qid, serverUri, elapsed, e.getMessage(), e);
             listener.error(e);
         } finally {
+            MDC.remove("qid");
             if (state.serverUri() != null) {
                 clusterService.removeHandle(handle.toStringUtf8());
                 clusterService.addLoad(state.serverUri(), -state.bytes());
@@ -123,7 +134,8 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
             FlightProducer.CallContext context, FlightDescriptor descriptor) {
         ByteString handle = copyFrom(randomUUID().toString().getBytes(StandardCharsets.UTF_8));
         String query = command.getQuery();
-        LOGGER.info("getFlightInfoStatement, ticket {}: {}", handle, query);
+        String qid = qid(handle);
+        LOGGER.info("getFlightInfoStatement: qid={}, query='{}'", qid, query);
 
         Schema arrowSchema;
         try {
@@ -368,6 +380,11 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
 
     @Override
     public void close() throws Exception {
+    }
+
+    private static String qid(ByteString handle) {
+        String raw = handle.toStringUtf8();
+        return raw.length() >= 8 ? raw.substring(0, 8) : raw;
     }
 
     private <T extends Message> FlightInfo getFlightInfoForSchema(
