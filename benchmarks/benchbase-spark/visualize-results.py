@@ -3,6 +3,7 @@ import argparse
 import csv
 import html
 import json
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 
@@ -22,11 +23,22 @@ def parse_args():
     return parser.parse_args()
 
 
-def latest_base(results_dir):
-    summaries = sorted(results_dir.glob("*.summary.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+def latest_summary(results_dir):
+    summaries = sorted(results_dir.rglob("*.summary.json"), key=lambda p: p.stat().st_mtime, reverse=True)
     if not summaries:
         raise SystemExit(f"No *.summary.json files in {results_dir}")
-    return summaries[0].name.removesuffix(".summary.json")
+    return summaries[0]
+
+
+def find_summary(results_dir, base):
+    direct = results_dir / f"{base}.summary.json"
+    if direct.exists():
+        return direct
+
+    matches = sorted(results_dir.rglob(f"{base}.summary.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    if not matches:
+        raise SystemExit(f"No {base}.summary.json under {results_dir}")
+    return matches[0]
 
 
 def read_csv(path):
@@ -63,6 +75,71 @@ def metric_from_last(rows, column):
     if not rows:
         return "n/a"
     return fmt(rows[-1].get(column))
+
+
+def summary_latency_ms(summary, name):
+    latency = summary.get("Latency Distribution", {})
+    return fmt(number(latency.get(f"{name} Latency (microseconds)")) / 1000)
+
+
+def summary_metric(summary, name):
+    if not summary:
+        return "n/a"
+    return fmt(summary.get(name))
+
+
+def read_config(path):
+    if not path.exists():
+        return {}
+    try:
+        root = ET.parse(path).getroot()
+    except ET.ParseError:
+        return {}
+
+    def text(expr, default="n/a"):
+        value = root.findtext(expr)
+        return value.strip() if value and value.strip() else default
+
+    weights = text("./works/work/weights", "")
+    active = []
+    for idx, raw in enumerate(weights.split(","), start=1):
+        try:
+            if float(raw) > 0:
+                active.append(f"Q{idx}")
+        except ValueError:
+            pass
+
+    return {
+        "scale": text("./scalefactor"),
+        "terminals": text("./terminals"),
+        "time": text("./works/work/time", "serial"),
+        "warmup": text("./works/work/warmup", "0"),
+        "rate": text("./works/work/rate"),
+        "queries": ", ".join(active) if active else "all configured",
+    }
+
+
+def run_context(summary, config, rows):
+    elapsed = number(summary.get("Elapsed Time (nanoseconds)")) / 1_000_000_000
+    items = [
+        ("Benchmark", summary.get("Benchmark Type", "n/a")),
+        ("Scale factor", config.get("scale", summary.get("scalefactor", "n/a"))),
+        ("Queries", config.get("queries", "n/a")),
+        ("Workers", config.get("terminals", summary.get("terminals", "n/a"))),
+        ("Duration", f"{fmt(elapsed)} s" if elapsed else config.get("time", "n/a")),
+        ("Measured requests", str(summary.get("Measured Requests", "n/a"))),
+        ("Last window", f"{rows[-1].get(TIME, 'n/a')} s" if rows else "n/a"),
+    ]
+    body = "".join(
+        f"<tr><th>{html.escape(label)}</th><td>{html.escape(str(value))}</td></tr>"
+        for label, value in items
+    )
+    return f"""
+<section>
+  <h2>Run Context</h2>
+  <table class="kv"><tbody>{body}</tbody></table>
+</section>
+"""
 
 
 def svg_line_chart(rows, columns, title, unit):
@@ -120,6 +197,15 @@ def svg_line_chart(rows, columns, title, unit):
             f'<text x="{pad_left-10}" y="{y+4:.1f}" text-anchor="end">{fmt(value)}</text>'
         )
 
+    x_labels = []
+    for step in range(4):
+        value = min_x + (max_x - min_x) * step / 3
+        x = sx(value)
+        x_labels.append(
+            f'<line x1="{x:.1f}" y1="{pad_top}" x2="{x:.1f}" y2="{height-pad_bottom}" stroke="#f3f4f6"/>'
+            f'<text x="{x:.1f}" y="{height-pad_bottom+20}" text-anchor="middle">{fmt(value)}</text>'
+        )
+
     return f"""
 <section>
   <h2>{html.escape(title)}</h2>
@@ -127,6 +213,7 @@ def svg_line_chart(rows, columns, title, unit):
   <svg viewBox="0 0 {width} {height}" role="img">
     <rect x="0" y="0" width="{width}" height="{height}" fill="#fff"/>
     {''.join(y_labels)}
+    {''.join(x_labels)}
     <line x1="{pad_left}" y1="{height-pad_bottom}" x2="{width-pad_right}" y2="{height-pad_bottom}" stroke="#9ca3af"/>
     <line x1="{pad_left}" y1="{pad_top}" x2="{pad_left}" y2="{height-pad_bottom}" stroke="#9ca3af"/>
     {''.join(lines)}
@@ -211,6 +298,7 @@ def summary_block(summary):
 def build_report(results_dir, base, output):
     rows = read_csv(results_dir / f"{base}.results.csv")
     summary = read_json(results_dir / f"{base}.summary.json")
+    config = read_config(results_dir / f"{base}.config.xml")
     query_rows = per_query_rows(results_dir, base)
 
     html_text = f"""<!doctype html>
@@ -232,6 +320,9 @@ def build_report(results_dir, base, output):
     table {{ border-collapse: collapse; width: 100%; }}
     th, td {{ border-bottom: 1px solid #e5e7eb; padding: 8px 10px; text-align: right; }}
     th:first-child, td:first-child {{ text-align: left; }}
+    .kv th {{ color: #6b7280; width: 190px; font-weight: 600; }}
+    .kv td, .kv th {{ text-align: left; }}
+    .subtle {{ color: #6b7280; margin: 4px 0 0; }}
     tr.muted {{ color: #9ca3af; }}
     tr.active {{ background: #eff6ff; }}
     pre {{ overflow: auto; background: #0f172a; color: #e5e7eb; padding: 14px; border-radius: 8px; }}
@@ -246,11 +337,12 @@ def build_report(results_dir, base, output):
   <h1>BenchBase Spark Report</h1>
   <p>{html.escape(base)}</p>
   <div class="cards">
-    <div class="card"><div class="label">Throughput</div><div class="value">{metric_from_last(rows, THROUGHPUT)} req/s</div></div>
-    <div class="card"><div class="label">Average Latency</div><div class="value">{metric_from_last(rows, LAT_AVG)} ms</div></div>
-    <div class="card"><div class="label">P95 Latency</div><div class="value">{metric_from_last(rows, LAT_P95)} ms</div></div>
-    <div class="card"><div class="label">Max Latency</div><div class="value">{metric_from_last(rows, LAT_MAX)} ms</div></div>
+    <div class="card"><div class="label">Overall Throughput</div><div class="value">{summary_metric(summary, THROUGHPUT)} req/s</div><p class="subtle">last window: {metric_from_last(rows, THROUGHPUT)} req/s</p></div>
+    <div class="card"><div class="label">Overall Avg Latency</div><div class="value">{summary_latency_ms(summary, "Average")} ms</div><p class="subtle">last window: {metric_from_last(rows, LAT_AVG)} ms</p></div>
+    <div class="card"><div class="label">Overall P95 Latency</div><div class="value">{summary_latency_ms(summary, "95th Percentile")} ms</div><p class="subtle">last window: {metric_from_last(rows, LAT_P95)} ms</p></div>
+    <div class="card"><div class="label">Measured Requests</div><div class="value">{html.escape(str(summary.get("Measured Requests", "n/a")))}</div><p class="subtle">completed SQL transactions</p></div>
   </div>
+  {run_context(summary, config, rows)}
   {svg_line_chart(rows, [LAT_AVG, LAT_P95, LAT_MAX], "Latency", "ms")}
   {svg_line_chart(rows, [THROUGHPUT], "Throughput", "req/s")}
   {query_table(query_rows)}
@@ -265,9 +357,11 @@ def build_report(results_dir, base, output):
 def main():
     args = parse_args()
     results_dir = args.results.resolve()
-    base = args.base or latest_base(results_dir)
-    output = args.out or results_dir / f"{base}.report.html"
-    build_report(results_dir, base, output)
+    summary_path = find_summary(results_dir, args.base) if args.base else latest_summary(results_dir)
+    run_dir = summary_path.parent
+    base = summary_path.name.removesuffix(".summary.json")
+    output = args.out or run_dir / f"{base}.report.html"
+    build_report(run_dir, base, output)
     print(output)
 
 

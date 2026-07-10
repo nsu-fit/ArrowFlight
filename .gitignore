@@ -25,6 +25,8 @@ surefire-reports/
 failsafe-reports/
 checkstyle-result.xml
 spotbugsXml.xml
+__pycache__/
+*.py[cod]
 
 # Logs and runtime dumps
 *.log

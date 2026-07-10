@@ -523,7 +523,11 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
             listener.error(e);
         } finally {
             if (state.serverUri() != null) {
-                statementCache.remove(handle.toStringUtf8());
+                // Keep the ticket readable until TTL so Spark can retry a failed task from
+                // the beginning. Only the load accounting is cleared after the first stream.
+                statementCache.set(handle.toStringUtf8(),
+                        HandleState.forServerFiles(query, filePaths, state.serverUri(), 0L),
+                        10, TimeUnit.MINUTES);
                 serverRegistry.compute(state.serverUri(), (k, v) -> {
                     if (v == null) return null;
                     long updated = v - state.bytes();

@@ -31,6 +31,9 @@ DEFAULT_SPARK_JAVA_OPTIONS="${DEFAULT_SPARK_JAVA_OPTIONS:-\
 --add-exports=java.base/sun.security.action=ALL-UNNAMED \
 -Dio.netty.tryReflectionSetAccessible=true}"
 
+DEFAULT_HIVE_METASTORE_SHARED_PREFIXES="${SPARK_HIVE_METASTORE_SHARED_PREFIXES:-\
+net.surpin.data.arrowflight,flight,org.apache.arrow,io.grpc,io.netty,com.google.protobuf}"
+
 export SPARK_DAEMON_JAVA_OPTS="${SPARK_DAEMON_JAVA_OPTS:-${DEFAULT_SPARK_JAVA_OPTIONS}}"
 
 wait_for_tcp() {
@@ -72,6 +75,7 @@ spark_submit_common() {
     --conf "spark.driver.host=${SPARK_DRIVER_HOST:-$(hostname -f)}" \
     --conf "spark.sql.shuffle.partitions=${SPARK_SHUFFLE_PARTITIONS:-8}" \
     --conf "spark.sql.catalogImplementation=hive" \
+    --conf "spark.sql.hive.metastore.sharedPrefixes=${DEFAULT_HIVE_METASTORE_SHARED_PREFIXES}" \
     --conf "spark.sql.warehouse.dir=${SPARK_WAREHOUSE_DIR:-/spark-warehouse}" \
     --conf "spark.hadoop.javax.jdo.option.ConnectionURL=jdbc:derby:;databaseName=${SPARK_METASTORE_DB:-/spark-warehouse/metastore_db};create=true" \
     "${app_file}" \
@@ -92,6 +96,7 @@ spark_common_conf=(
   --conf "spark.driver.host=${SPARK_DRIVER_HOST:-$(hostname -f)}"
   --conf "spark.sql.shuffle.partitions=${SPARK_SHUFFLE_PARTITIONS:-8}"
   --conf "spark.sql.catalogImplementation=hive"
+  --conf "spark.sql.hive.metastore.sharedPrefixes=${DEFAULT_HIVE_METASTORE_SHARED_PREFIXES}"
   --conf "spark.sql.warehouse.dir=${SPARK_WAREHOUSE_DIR:-/spark-warehouse}"
   --conf "spark.hadoop.javax.jdo.option.ConnectionURL=jdbc:derby:;databaseName=${SPARK_METASTORE_DB:-/spark-warehouse/metastore_db};create=true"
 )

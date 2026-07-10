@@ -3,6 +3,8 @@ from pathlib import Path
 
 from pyspark.sql import SparkSession
 
+FLIGHT_SOURCE_PROVIDER = "net.surpin.data.arrowflight.client.spark.FlightSource"
+
 
 def list_exported_tables(server_roots, schema):
     tables = set()
@@ -23,7 +25,7 @@ def register_flight_tables(spark, publish_schema, tables, host, port):
         spark.sql(
             f"""
             CREATE TABLE {publish_schema}.{table}
-            USING flight
+            USING {FLIGHT_SOURCE_PROVIDER}
             OPTIONS (
               host '{host}',
               port '{port}',

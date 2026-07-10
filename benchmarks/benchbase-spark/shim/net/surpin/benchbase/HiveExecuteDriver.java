@@ -10,6 +10,7 @@ import java.sql.DriverManager;
 import java.sql.DriverPropertyInfo;
 import java.sql.SQLException;
 import java.sql.SQLFeatureNotSupportedException;
+import java.sql.Statement;
 import java.util.Properties;
 import java.util.logging.Logger;
 
@@ -79,6 +80,14 @@ public final class HiveExecuteDriver implements Driver {
                 handler);
     }
 
+    private static Statement wrapStatement(Statement statement) {
+        InvocationHandler handler = new StatementHandler(statement);
+        return (Statement) Proxy.newProxyInstance(
+                HiveExecuteDriver.class.getClassLoader(),
+                new Class<?>[] {Statement.class},
+                handler);
+    }
+
     private static final class ConnectionHandler implements InvocationHandler {
         private final Connection delegate;
 
@@ -104,13 +113,18 @@ public final class HiveExecuteDriver implements Driver {
                     return unwrap(args);
                 case "isWrapperFor":
                     return isWrapperFor(args);
+                case "createStatement":
+                    return wrapStatement((Statement) invokeDelegate(method, args));
                 default:
                     break;
             }
 
-            Object[] forwardedArgs = rewriteSqlArgumentIfNeeded(name, args);
+            return invokeDelegate(method, SqlRewrite.rewriteSqlArgumentIfNeeded(name, args));
+        }
+
+        private Object invokeDelegate(Method method, Object[] args) throws Throwable {
             try {
-                return method.invoke(delegate, forwardedArgs);
+                return method.invoke(delegate, args);
             } catch (InvocationTargetException e) {
                 throw e.getCause();
             }
@@ -128,9 +142,28 @@ public final class HiveExecuteDriver implements Driver {
             Class<?> target = (Class<?>) args[0];
             return target.isInstance(delegate) || delegate.isWrapperFor(target);
         }
+    }
 
+    private static final class StatementHandler implements InvocationHandler {
+        private final Statement delegate;
+
+        private StatementHandler(Statement delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+            try {
+                return method.invoke(delegate, SqlRewrite.rewriteSqlArgumentIfNeeded(method.getName(), args));
+            } catch (InvocationTargetException e) {
+                throw e.getCause();
+            }
+        }
+    }
+
+    private static final class SqlRewrite {
         private static Object[] rewriteSqlArgumentIfNeeded(String methodName, Object[] args) {
-            if (!methodName.startsWith("prepare") || args == null || args.length == 0 || !(args[0] instanceof String)) {
+            if (!methodUsesSql(methodName) || args == null || args.length == 0 || !(args[0] instanceof String)) {
                 return args;
             }
 
@@ -139,7 +172,21 @@ public final class HiveExecuteDriver implements Driver {
             return rewritten;
         }
 
+        private static boolean methodUsesSql(String methodName) {
+            return methodName.startsWith("prepare")
+                    || methodName.equals("execute")
+                    || methodName.equals("executeQuery")
+                    || methodName.equals("executeUpdate")
+                    || methodName.equals("executeLargeUpdate");
+        }
+
         private static String rewriteSql(String sql) {
+            String trimmed = sql.trim();
+            String withoutSemicolon = trimmed.endsWith(";") ? trimmed.substring(0, trimmed.length() - 1).trim() : trimmed;
+            if (withoutSemicolon.equalsIgnoreCase("SHOW ALL")) {
+                return "SET -v";
+            }
+
             String result = sql;
             result = result.replaceAll("(?i)\\?\\s*::\\s*date", "CAST(? AS DATE)");
             result = result.replaceAll("(?i)'(\\d{4}-\\d{2}-\\d{2})'\\s*::\\s*date", "DATE '$1'");
