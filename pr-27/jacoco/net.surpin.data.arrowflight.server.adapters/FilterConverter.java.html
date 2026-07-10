@@ -50,6 +50,9 @@ public final class FilterConverter {
         }
     };
 
+    /**
+     * Utility class, no instantiation.
+     */
     private FilterConverter() {
     }
 
@@ -60,21 +63,21 @@ public final class FilterConverter {
      * @param strippedCreateStatements DDL statements without schema prefix
      */
     public static void warmUp(List&lt;String&gt; strippedCreateStatements) {
-<span class="nc bnc" id="L63" title="All 2 branches missed.">        if (strippedCreateStatements.isEmpty()) {</span>
-<span class="nc" id="L64">            return;</span>
+<span class="nc bnc" id="L66" title="All 2 branches missed.">        if (strippedCreateStatements.isEmpty()) {</span>
+<span class="nc" id="L67">            return;</span>
         }
-<span class="nc" id="L66">        String firstDdl = strippedCreateStatements.get(0);</span>
-<span class="nc" id="L67">        String dummyFilter = &quot;1 = 1&quot;;</span>
-<span class="nc" id="L68">        java.util.regex.Matcher m =</span>
-<span class="nc" id="L69">                java.util.regex.Pattern.compile(&quot;\&quot;([^\&quot;]+)\&quot;&quot;).matcher(firstDdl);</span>
-<span class="nc bnc" id="L70" title="All 2 branches missed.">        if (m.find()) {</span>
-<span class="nc" id="L71">            dummyFilter = &quot;\&quot;&quot; + m.group(1) + &quot;\&quot; IS NOT NULL&quot;;</span>
+<span class="nc" id="L69">        String firstDdl = strippedCreateStatements.get(0);</span>
+<span class="nc" id="L70">        String dummyFilter = &quot;1 = 1&quot;;</span>
+<span class="nc" id="L71">        java.util.regex.Matcher m =</span>
+<span class="nc" id="L72">                java.util.regex.Pattern.compile(&quot;\&quot;([^\&quot;]+)\&quot;&quot;).matcher(firstDdl);</span>
+<span class="nc bnc" id="L73" title="All 2 branches missed.">        if (m.find()) {</span>
+<span class="nc" id="L74">            dummyFilter = &quot;\&quot;&quot; + m.group(1) + &quot;\&quot; IS NOT NULL&quot;;</span>
         }
         try {
-<span class="nc" id="L74">            toByteBuffer(dummyFilter, strippedCreateStatements);</span>
-<span class="nc" id="L75">        } catch (Exception ignored) {</span>
-<span class="nc" id="L76">        }</span>
-<span class="nc" id="L77">    }</span>
+<span class="nc" id="L77">            toByteBuffer(dummyFilter, strippedCreateStatements);</span>
+<span class="nc" id="L78">        } catch (Exception ignored) {</span>
+<span class="nc" id="L79">        }</span>
+<span class="nc" id="L80">    }</span>
 
     /**
      * Converts a SQL WHERE expression to a Substrait ByteBuffer for Acero filter pushdown.
@@ -86,12 +89,12 @@ public final class FilterConverter {
      */
     public static ByteBuffer toByteBuffer(String sqlExpression, List&lt;String&gt; createStatements)
             throws SqlParseException {
-<span class="fc" id="L89">        SqlExpressionToSubstrait converter = new SqlExpressionToSubstrait(CAST_AWARE_PROVIDER);</span>
-<span class="fc" id="L90">        byte[] bytes = converter.convert(sqlExpression, createStatements).toByteArray();</span>
-<span class="fc" id="L91">        ByteBuffer buffer = ByteBuffer.allocateDirect(bytes.length);</span>
-<span class="fc" id="L92">        buffer.put(bytes);</span>
-<span class="fc" id="L93">        buffer.rewind();</span>
-<span class="fc" id="L94">        return buffer;</span>
+<span class="fc" id="L92">        SqlExpressionToSubstrait converter = new SqlExpressionToSubstrait(CAST_AWARE_PROVIDER);</span>
+<span class="fc" id="L93">        byte[] bytes = converter.convert(sqlExpression, createStatements).toByteArray();</span>
+<span class="fc" id="L94">        ByteBuffer buffer = ByteBuffer.allocateDirect(bytes.length);</span>
+<span class="fc" id="L95">        buffer.put(bytes);</span>
+<span class="fc" id="L96">        buffer.rewind();</span>
+<span class="fc" id="L97">        return buffer;</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

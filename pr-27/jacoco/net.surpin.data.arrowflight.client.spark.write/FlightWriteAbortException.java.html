@@ -3,6 +3,9 @@
 import java.io.IOException;
 import java.io.Serializable;
 
+/**
+ * Exception thrown when a streaming write is aborted, carrying partition, task, and message count details.
+ */
 public class FlightWriteAbortException extends IOException implements Serializable {
     /**
      * Construct a success Flight-Writer-Commit-Message
@@ -11,8 +14,8 @@ public class FlightWriteAbortException extends IOException implements Serializab
      * @param messageCount - number of rows been written
      */
     public FlightWriteAbortException(int partitionId, long taskId, long messageCount) {
-<span class="nc" id="L14">        super(getMessage(partitionId, taskId, messageCount));</span>
-<span class="nc" id="L15">    }</span>
+<span class="nc" id="L17">        super(getMessage(partitionId, taskId, messageCount));</span>
+<span class="nc" id="L18">    }</span>
 
     /**
      * Construct a failure Flight-Writer-Commit-Message
@@ -22,17 +25,28 @@ public class FlightWriteAbortException extends IOException implements Serializab
      * @param messageCount - number of rows been written
      */
     public FlightWriteAbortException(int partitionId, long taskId, String epochId, long messageCount) {
-<span class="nc" id="L25">        super(getMessage(partitionId, taskId, epochId, messageCount));</span>
-<span class="nc" id="L26">    }</span>
+<span class="nc" id="L28">        super(getMessage(partitionId, taskId, epochId, messageCount));</span>
+<span class="nc" id="L29">    }</span>
 
-    //form the error message
+    /**
+     * @param partitionId partition id of the data frame
+     * @param taskId task id of the write operation
+     * @param messageCount number of rows written
+     * @return formatted abort message
+     */
     private static String getMessage(int partitionId, long taskId, long messageCount) {
-<span class="nc" id="L30">        return String.format(&quot;Streaming write for %d messages with partition (%d), task (%d) aborted.&quot;, messageCount, partitionId, taskId);</span>
+<span class="nc" id="L38">        return String.format(&quot;Streaming write for %d messages with partition (%d), task (%d) aborted.&quot;, messageCount, partitionId, taskId);</span>
     }
 
-    //form the error message
+    /**
+     * @param partitionId partition id of the data frame
+     * @param taskId task id of the write operation
+     * @param epochId epoch id for streaming write
+     * @param messageCount number of rows written
+     * @return formatted abort message with epoch info
+     */
     private static String getMessage(int partitionId, long taskId, String epochId, long messageCount) {
-<span class="nc" id="L35">        return String.format(&quot;Streaming write for %d messages with partition (%d), task (%d) and epoch (%s) aborted.&quot;, messageCount, partitionId, taskId, epochId);</span>
+<span class="nc" id="L49">        return String.format(&quot;Streaming write for %d messages with partition (%d), task (%d) and epoch (%s) aborted.&quot;, messageCount, partitionId, taskId, epochId);</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

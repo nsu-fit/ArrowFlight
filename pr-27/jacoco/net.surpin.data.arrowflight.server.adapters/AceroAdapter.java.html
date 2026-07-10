@@ -161,65 +161,70 @@ public final class AceroAdapter {
 <span class="nc" id="L161">        List&lt;ArrowReader&gt; readers = new ArrayList&lt;&gt;(n);</span>
 <span class="nc" id="L162">        List&lt;ArrowArrayStream&gt; cStreams = new ArrayList&lt;&gt;(n);</span>
 <span class="nc" id="L163">        List&lt;String&gt; aliases = new ArrayList&lt;&gt;(n);</span>
+<span class="nc" id="L164">        boolean success = false;</span>
 
         try {
-<span class="nc bnc" id="L166" title="All 2 branches missed.">            for (int i = 0; i &lt; n; i++) {</span>
-<span class="nc" id="L167">                FileSystemDatasetFactory factory = new FileSystemDatasetFactory(</span>
-<span class="nc" id="L168">                        allocator, NativeMemoryPool.getDefault(), FileFormat.PARQUET,</span>
-<span class="nc" id="L169">                        new String[]{fileUris.get(i)});</span>
-<span class="nc" id="L170">                factories.add(factory);</span>
-<span class="nc" id="L171">                Dataset dataset = factory.finish();</span>
-<span class="nc" id="L172">                datasets.add(dataset);</span>
+<span class="nc bnc" id="L167" title="All 2 branches missed.">            for (int i = 0; i &lt; n; i++) {</span>
+<span class="nc" id="L168">                FileSystemDatasetFactory factory = new FileSystemDatasetFactory(</span>
+<span class="nc" id="L169">                        allocator, NativeMemoryPool.getDefault(), FileFormat.PARQUET,</span>
+<span class="nc" id="L170">                        new String[]{fileUris.get(i)});</span>
+<span class="nc" id="L171">                factories.add(factory);</span>
+<span class="nc" id="L172">                Dataset dataset = factory.finish();</span>
+<span class="nc" id="L173">                datasets.add(dataset);</span>
 
-<span class="nc" id="L174">                ScanOptions.Builder optBuilder = new ScanOptions.Builder(batchSize).columns(cols);</span>
-<span class="nc bnc" id="L175" title="All 2 branches missed.">                if (filterBytes != null) {</span>
-<span class="nc" id="L176">                    ByteBuffer direct = ByteBuffer.allocateDirect(filterBytes.length);</span>
-<span class="nc" id="L177">                    direct.put(filterBytes).flip();</span>
-<span class="nc" id="L178">                    optBuilder.substraitFilter(direct);</span>
+<span class="nc" id="L175">                ScanOptions.Builder optBuilder = new ScanOptions.Builder(batchSize).columns(cols);</span>
+<span class="nc bnc" id="L176" title="All 2 branches missed.">                if (filterBytes != null) {</span>
+<span class="nc" id="L177">                    ByteBuffer direct = ByteBuffer.allocateDirect(filterBytes.length);</span>
+<span class="nc" id="L178">                    direct.put(filterBytes).flip();</span>
+<span class="nc" id="L179">                    optBuilder.substraitFilter(direct);</span>
                 }
-<span class="nc" id="L180">                Scanner scanner = dataset.newScan(optBuilder.build());</span>
-<span class="nc" id="L181">                scanners.add(scanner);</span>
-<span class="nc" id="L182">                ArrowReader reader = scanner.scanBatches();</span>
-<span class="nc" id="L183">                readers.add(reader);</span>
-<span class="nc" id="L184">                ArrowArrayStream cStream = ArrowArrayStream.allocateNew(allocator);</span>
-<span class="nc" id="L185">                cStreams.add(cStream);</span>
-<span class="nc" id="L186">                Data.exportArrayStream(allocator, reader, cStream);</span>
-<span class="nc" id="L187">                String alias = &quot;t&quot; + i;</span>
-<span class="nc" id="L188">                duckConn.registerArrowStream(alias, cStream);</span>
-<span class="nc" id="L189">                aliases.add(alias);</span>
+<span class="nc" id="L181">                Scanner scanner = dataset.newScan(optBuilder.build());</span>
+<span class="nc" id="L182">                scanners.add(scanner);</span>
+<span class="nc" id="L183">                ArrowReader reader = scanner.scanBatches();</span>
+<span class="nc" id="L184">                readers.add(reader);</span>
+<span class="nc" id="L185">                ArrowArrayStream cStream = ArrowArrayStream.allocateNew(allocator);</span>
+<span class="nc" id="L186">                cStreams.add(cStream);</span>
+<span class="nc" id="L187">                Data.exportArrayStream(allocator, reader, cStream);</span>
+<span class="nc" id="L188">                String alias = &quot;t&quot; + i;</span>
+<span class="nc" id="L189">                duckConn.registerArrowStream(alias, cStream);</span>
+<span class="nc" id="L190">                aliases.add(alias);</span>
             }
-<span class="nc" id="L191">            return aliases;</span>
+<span class="nc" id="L192">            success = true;</span>
+<span class="nc" id="L193">            return aliases;</span>
         } finally {
-            // On failure, close resources in reverse-dependency order.
-<span class="nc bnc" id="L194" title="All 2 branches missed.">            for (int i = cStreams.size() - 1; i &gt;= 0; i--) {</span>
-                try {
-<span class="nc" id="L196">                    cStreams.get(i).close();</span>
-<span class="nc" id="L197">                } catch (Exception ignored) {</span>
-<span class="nc" id="L198">                }</span>
+<span class="nc bnc" id="L195" title="All 2 branches missed.">            if (!success) {</span>
+                // On failure only, close everything.
+<span class="nc bnc" id="L197" title="All 2 branches missed.">                for (int i = cStreams.size() - 1; i &gt;= 0; i--) {</span>
+                    try {
+<span class="nc" id="L199">                        cStreams.get(i).close();</span>
+<span class="nc" id="L200">                    } catch (Exception ignored) {</span>
+<span class="nc" id="L201">                    }</span>
+                }
             }
-<span class="nc bnc" id="L200" title="All 2 branches missed.">            for (int i = readers.size() - 1; i &gt;= 0; i--) {</span>
+            // Readers, scanners, datasets, factories safe to close either way.
+<span class="nc bnc" id="L205" title="All 2 branches missed.">            for (int i = readers.size() - 1; i &gt;= 0; i--) {</span>
                 try {
-<span class="nc" id="L202">                    readers.get(i).close();</span>
-<span class="nc" id="L203">                } catch (Exception ignored) {</span>
-<span class="nc" id="L204">                }</span>
+<span class="nc" id="L207">                    readers.get(i).close();</span>
+<span class="nc" id="L208">                } catch (Exception ignored) {</span>
+<span class="nc" id="L209">                }</span>
             }
-<span class="nc bnc" id="L206" title="All 2 branches missed.">            for (int i = scanners.size() - 1; i &gt;= 0; i--) {</span>
+<span class="nc bnc" id="L211" title="All 2 branches missed.">            for (int i = scanners.size() - 1; i &gt;= 0; i--) {</span>
                 try {
-<span class="nc" id="L208">                    scanners.get(i).close();</span>
-<span class="nc" id="L209">                } catch (Exception ignored) {</span>
-<span class="nc" id="L210">                }</span>
+<span class="nc" id="L213">                    scanners.get(i).close();</span>
+<span class="nc" id="L214">                } catch (Exception ignored) {</span>
+<span class="nc" id="L215">                }</span>
             }
-<span class="nc bnc" id="L212" title="All 2 branches missed.">            for (int i = datasets.size() - 1; i &gt;= 0; i--) {</span>
+<span class="nc bnc" id="L217" title="All 2 branches missed.">            for (int i = datasets.size() - 1; i &gt;= 0; i--) {</span>
                 try {
-<span class="nc" id="L214">                    datasets.get(i).close();</span>
-<span class="nc" id="L215">                } catch (Exception ignored) {</span>
-<span class="nc" id="L216">                }</span>
+<span class="nc" id="L219">                    datasets.get(i).close();</span>
+<span class="nc" id="L220">                } catch (Exception ignored) {</span>
+<span class="nc" id="L221">                }</span>
             }
-<span class="nc bnc" id="L218" title="All 2 branches missed.">            for (int i = factories.size() - 1; i &gt;= 0; i--) {</span>
+<span class="nc bnc" id="L223" title="All 2 branches missed.">            for (int i = factories.size() - 1; i &gt;= 0; i--) {</span>
                 try {
-<span class="nc" id="L220">                    factories.get(i).close();</span>
-<span class="nc" id="L221">                } catch (Exception ignored) {</span>
-<span class="nc" id="L222">                }</span>
+<span class="nc" id="L225">                    factories.get(i).close();</span>
+<span class="nc" id="L226">                } catch (Exception ignored) {</span>
+<span class="nc" id="L227">                }</span>
             }
         }
     }
@@ -234,29 +239,29 @@ public final class AceroAdapter {
      */
     public static VectorSchemaRoot concatBatches(BufferAllocator allocator, ArrowReader reader)
             throws java.io.IOException {
-<span class="nc" id="L237">        VectorSchemaRoot src = reader.getVectorSchemaRoot();</span>
-<span class="nc" id="L238">        int numCols = src.getSchema().getFields().size();</span>
-<span class="nc" id="L239">        List&lt;FieldVector&gt; outVecs = new ArrayList&lt;&gt;(numCols);</span>
-<span class="nc bnc" id="L240" title="All 2 branches missed.">        for (Field f : src.getSchema().getFields()) {</span>
-<span class="nc" id="L241">            FieldVector v = f.createVector(allocator);</span>
-<span class="nc" id="L242">            v.allocateNew();</span>
-<span class="nc" id="L243">            outVecs.add(v);</span>
-<span class="nc" id="L244">        }</span>
-<span class="nc" id="L245">        int outRow = 0;</span>
-<span class="nc bnc" id="L246" title="All 2 branches missed.">        while (reader.loadNextBatch()) {</span>
-<span class="nc bnc" id="L247" title="All 2 branches missed.">            for (int r = 0; r &lt; src.getRowCount(); r++) {</span>
-<span class="nc bnc" id="L248" title="All 2 branches missed.">                for (int c = 0; c &lt; numCols; c++) {</span>
-<span class="nc" id="L249">                    outVecs.get(c).copyFromSafe(r, outRow, src.getVector(c));</span>
+<span class="nc" id="L242">        VectorSchemaRoot src = reader.getVectorSchemaRoot();</span>
+<span class="nc" id="L243">        int numCols = src.getSchema().getFields().size();</span>
+<span class="nc" id="L244">        List&lt;FieldVector&gt; outVecs = new ArrayList&lt;&gt;(numCols);</span>
+<span class="nc bnc" id="L245" title="All 2 branches missed.">        for (Field f : src.getSchema().getFields()) {</span>
+<span class="nc" id="L246">            FieldVector v = f.createVector(allocator);</span>
+<span class="nc" id="L247">            v.allocateNew();</span>
+<span class="nc" id="L248">            outVecs.add(v);</span>
+<span class="nc" id="L249">        }</span>
+<span class="nc" id="L250">        int outRow = 0;</span>
+<span class="nc bnc" id="L251" title="All 2 branches missed.">        while (reader.loadNextBatch()) {</span>
+<span class="nc bnc" id="L252" title="All 2 branches missed.">            for (int r = 0; r &lt; src.getRowCount(); r++) {</span>
+<span class="nc bnc" id="L253" title="All 2 branches missed.">                for (int c = 0; c &lt; numCols; c++) {</span>
+<span class="nc" id="L254">                    outVecs.get(c).copyFromSafe(r, outRow, src.getVector(c));</span>
                 }
-<span class="nc" id="L251">                outRow++;</span>
+<span class="nc" id="L256">                outRow++;</span>
             }
         }
-<span class="nc bnc" id="L254" title="All 2 branches missed.">        for (FieldVector v : outVecs) {</span>
-<span class="nc" id="L255">            v.setValueCount(outRow);</span>
-<span class="nc" id="L256">        }</span>
-<span class="nc" id="L257">        VectorSchemaRoot result = new VectorSchemaRoot(src.getSchema().getFields(), outVecs);</span>
-<span class="nc" id="L258">        result.setRowCount(outRow);</span>
-<span class="nc" id="L259">        return result;</span>
+<span class="nc bnc" id="L259" title="All 2 branches missed.">        for (FieldVector v : outVecs) {</span>
+<span class="nc" id="L260">            v.setValueCount(outRow);</span>
+<span class="nc" id="L261">        }</span>
+<span class="nc" id="L262">        VectorSchemaRoot result = new VectorSchemaRoot(src.getSchema().getFields(), outVecs);</span>
+<span class="nc" id="L263">        result.setRowCount(outRow);</span>
+<span class="nc" id="L264">        return result;</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

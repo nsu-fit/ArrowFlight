@@ -29,33 +29,36 @@ import net.surpin.data.arrowflight.server.model.AppConfig;
 
 <span class="nc" id="L30">    private static final Logger LOGGER = LoggerFactory.getLogger(HadoopArrowFlightServer.class);</span>
 
+    /**
+     * Initializes SLF4J log level from properties, system properties, or env var.
+     */
     private static void initLogLevel() {
-<span class="nc" id="L33">        Properties props = new Properties();</span>
-<span class="nc" id="L34">        try (InputStream input = HadoopArrowFlightServer.class.getClassLoader()</span>
-<span class="nc" id="L35">                .getResourceAsStream(&quot;arrowflight.properties&quot;)) {</span>
-<span class="nc bnc" id="L36" title="All 2 branches missed.">            if (input != null) {</span>
-<span class="nc" id="L37">                props.load(input);</span>
+<span class="nc" id="L36">        Properties props = new Properties();</span>
+<span class="nc" id="L37">        try (InputStream input = HadoopArrowFlightServer.class.getClassLoader()</span>
+<span class="nc" id="L38">                .getResourceAsStream(&quot;arrowflight.properties&quot;)) {</span>
+<span class="nc bnc" id="L39" title="All 2 branches missed.">            if (input != null) {</span>
+<span class="nc" id="L40">                props.load(input);</span>
             }
-<span class="nc" id="L39">        } catch (IOException e) {</span>
-<span class="nc" id="L40">            throw new ExceptionInInitializerError(e);</span>
-<span class="nc" id="L41">        }</span>
-<span class="nc bnc" id="L42" title="All 2 branches missed.">        for (String key : new String[]{&quot;logLevel&quot;, &quot;arrowflight.log.level&quot;}) {</span>
-<span class="nc" id="L43">            String v = System.getProperty(key);</span>
-<span class="nc bnc" id="L44" title="All 4 branches missed.">            if (v != null &amp;&amp; !v.isBlank()) {</span>
-<span class="nc" id="L45">                System.setProperty(&quot;org.slf4j.simpleLogger.defaultLogLevel&quot;, v.trim());</span>
-<span class="nc" id="L46">                return;</span>
+<span class="nc" id="L42">        } catch (IOException e) {</span>
+<span class="nc" id="L43">            throw new ExceptionInInitializerError(e);</span>
+<span class="nc" id="L44">        }</span>
+<span class="nc bnc" id="L45" title="All 2 branches missed.">        for (String key : new String[]{&quot;logLevel&quot;, &quot;arrowflight.log.level&quot;}) {</span>
+<span class="nc" id="L46">            String v = System.getProperty(key);</span>
+<span class="nc bnc" id="L47" title="All 4 branches missed.">            if (v != null &amp;&amp; !v.isBlank()) {</span>
+<span class="nc" id="L48">                System.setProperty(&quot;org.slf4j.simpleLogger.defaultLogLevel&quot;, v.trim());</span>
+<span class="nc" id="L49">                return;</span>
             }
-<span class="nc" id="L48">            v = props.getProperty(key);</span>
-<span class="nc bnc" id="L49" title="All 4 branches missed.">            if (v != null &amp;&amp; !v.isBlank()) {</span>
-<span class="nc" id="L50">                System.setProperty(&quot;org.slf4j.simpleLogger.defaultLogLevel&quot;, v.trim());</span>
-<span class="nc" id="L51">                return;</span>
+<span class="nc" id="L51">            v = props.getProperty(key);</span>
+<span class="nc bnc" id="L52" title="All 4 branches missed.">            if (v != null &amp;&amp; !v.isBlank()) {</span>
+<span class="nc" id="L53">                System.setProperty(&quot;org.slf4j.simpleLogger.defaultLogLevel&quot;, v.trim());</span>
+<span class="nc" id="L54">                return;</span>
             }
         }
-<span class="nc" id="L54">        String env = System.getenv(&quot;LOGGING_LEVEL&quot;);</span>
-<span class="nc bnc" id="L55" title="All 4 branches missed.">        if (env != null &amp;&amp; !env.isBlank()) {</span>
-<span class="nc" id="L56">            System.setProperty(&quot;org.slf4j.simpleLogger.defaultLogLevel&quot;, env.trim());</span>
+<span class="nc" id="L57">        String env = System.getenv(&quot;LOGGING_LEVEL&quot;);</span>
+<span class="nc bnc" id="L58" title="All 4 branches missed.">        if (env != null &amp;&amp; !env.isBlank()) {</span>
+<span class="nc" id="L59">            System.setProperty(&quot;org.slf4j.simpleLogger.defaultLogLevel&quot;, env.trim());</span>
         }
-<span class="nc" id="L58">    }</span>
+<span class="nc" id="L61">    }</span>
 
     private FlightServer server;
     private ServerComponent component;
@@ -66,128 +69,141 @@ import net.surpin.data.arrowflight.server.model.AppConfig;
      * @param args CLI arguments: --data-dir, --port, --hosts, --localhost
      */
     public void start(String... args) {
-<span class="nc" id="L69">        AppConfig config = ConfigAdapter.getConfig();</span>
-<span class="nc" id="L70">        String dataDirectory = getArgValue(args, &quot;--data-dir&quot;, config.dataDir());</span>
-<span class="nc" id="L71">        int port = Integer.parseInt(</span>
-<span class="nc" id="L72">                getArgValue(args, &quot;--port&quot;, String.valueOf(config.port())));</span>
-<span class="nc" id="L73">        String hosts = getArgValue(args, &quot;--hosts&quot;, &quot;0.0.0.0&quot;);</span>
-<span class="nc" id="L74">        String localhost = getArgValue(args, &quot;--localhost&quot;, &quot;localhost&quot;);</span>
-<span class="nc" id="L75">        int hazelcastPort = Integer.parseInt(</span>
-<span class="nc" id="L76">                getArgValue(args, &quot;--hazelcast-port&quot;, String.valueOf(config.hazelcastPort())));</span>
+<span class="nc" id="L72">        AppConfig config = ConfigAdapter.getConfig();</span>
+<span class="nc" id="L73">        String dataDirectory = getArgValue(args, &quot;--data-dir&quot;, config.dataDir());</span>
+<span class="nc" id="L74">        int port = Integer.parseInt(</span>
+<span class="nc" id="L75">                getArgValue(args, &quot;--port&quot;, String.valueOf(config.port())));</span>
+<span class="nc" id="L76">        String hosts = getArgValue(args, &quot;--hosts&quot;, &quot;0.0.0.0&quot;);</span>
+<span class="nc" id="L77">        String localhost = getArgValue(args, &quot;--localhost&quot;, &quot;localhost&quot;);</span>
+<span class="nc" id="L78">        int hazelcastPort = Integer.parseInt(</span>
+<span class="nc" id="L79">                getArgValue(args, &quot;--hazelcast-port&quot;, String.valueOf(config.hazelcastPort())));</span>
 
         // Push CLI overrides into system properties so ConfigAdapter picks them up
-<span class="nc" id="L79">        System.setProperty(&quot;dataDir&quot;, dataDirectory);</span>
-<span class="nc" id="L80">        System.setProperty(&quot;port&quot;, String.valueOf(port));</span>
-<span class="nc" id="L81">        System.setProperty(&quot;hazelcastPort&quot;, String.valueOf(hazelcastPort));</span>
+<span class="nc" id="L82">        System.setProperty(&quot;dataDir&quot;, dataDirectory);</span>
+<span class="nc" id="L83">        System.setProperty(&quot;port&quot;, String.valueOf(port));</span>
+<span class="nc" id="L84">        System.setProperty(&quot;hazelcastPort&quot;, String.valueOf(hazelcastPort));</span>
 
-<span class="nc" id="L83">        LOGGER.info(&quot;Starting Hadoop Arrow Flight SQL server...&quot;);</span>
-<span class="nc" id="L84">        LOGGER.info(&quot;Data Directory: {}&quot;, dataDirectory);</span>
-<span class="nc" id="L85">        LOGGER.info(&quot;Hosts: {}&quot;, hosts);</span>
-<span class="nc" id="L86">        LOGGER.info(&quot;Port: {}&quot;, port);</span>
+<span class="nc" id="L86">        LOGGER.info(&quot;Starting Hadoop Arrow Flight SQL server...&quot;);</span>
+<span class="nc" id="L87">        LOGGER.info(&quot;Data Directory: {}&quot;, dataDirectory);</span>
+<span class="nc" id="L88">        LOGGER.info(&quot;Hosts: {}&quot;, hosts);</span>
+<span class="nc" id="L89">        LOGGER.info(&quot;Port: {}&quot;, port);</span>
 
-<span class="nc" id="L88">        Configuration hadoopConfig = new Configuration();</span>
-<span class="nc" id="L89">        String[] hazelcastHosts = hosts.split(&quot;,&quot;);</span>
+<span class="nc" id="L91">        Configuration hadoopConfig = new Configuration();</span>
+<span class="nc" id="L92">        String[] hazelcastHosts = hosts.split(&quot;,&quot;);</span>
 
         // Create Dagger component with runtime parameters
-<span class="nc" id="L92">        component = DaggerServerComponent.builder()</span>
-<span class="nc" id="L93">                .serverModule(new ServerModule(hazelcastHosts,</span>
-<span class="nc" id="L94">                        Location.forGrpcInsecure(localhost, port).getUri().toString(),</span>
+<span class="nc" id="L95">        component = DaggerServerComponent.builder()</span>
+<span class="nc" id="L96">                .serverModule(new ServerModule(hazelcastHosts,</span>
+<span class="nc" id="L97">                        Location.forGrpcInsecure(localhost, port).getUri().toString(),</span>
                         hadoopConfig))
-<span class="nc" id="L96">                .build();</span>
+<span class="nc" id="L99">                .build();</span>
 
         // Wait for cluster nodes (single-node skip)
-<span class="nc bnc" id="L99" title="All 2 branches missed.">        if (hazelcastHosts.length &gt; 1) {</span>
-<span class="nc" id="L100">            waitForCluster(hazelcastHosts, config.hazelcastClusterJoinTimeoutSec());</span>
+<span class="nc bnc" id="L102" title="All 2 branches missed.">        if (hazelcastHosts.length &gt; 1) {</span>
+<span class="nc" id="L103">            waitForCluster(hazelcastHosts, config.hazelcastClusterJoinTimeoutSec());</span>
         }
 
         try {
-<span class="nc" id="L104">            Location location = Location.forGrpcInsecure(localhost, port);</span>
-<span class="nc" id="L105">            server = FlightServer.builder(</span>
-<span class="nc" id="L106">                    component.allocator(),</span>
+<span class="nc" id="L107">            Location location = Location.forGrpcInsecure(localhost, port);</span>
+<span class="nc" id="L108">            server = FlightServer.builder(</span>
+<span class="nc" id="L109">                    component.allocator(),</span>
                     location,
-<span class="nc" id="L108">                    component.producer())</span>
-<span class="nc" id="L109">                    .maxInboundMessageSize(config.grpcMaxInboundMessageSize())</span>
-<span class="nc" id="L110">                    .build();</span>
-<span class="nc" id="L111">            server.start();</span>
+<span class="nc" id="L111">                    component.producer())</span>
+<span class="nc" id="L112">                    .maxInboundMessageSize(config.grpcMaxInboundMessageSize())</span>
+<span class="nc" id="L113">                    .build();</span>
+<span class="nc" id="L114">            server.start();</span>
 
-<span class="nc" id="L113">            LOGGER.info(&quot;Server Arrow Flight SQL started on {}&quot;, location);</span>
+<span class="nc" id="L116">            LOGGER.info(&quot;Server Arrow Flight SQL started on {}&quot;, location);</span>
 
-<span class="nc" id="L115">            Runtime.getRuntime().addShutdownHook(new Thread(() -&gt; {</span>
-<span class="nc" id="L116">                LOGGER.info(&quot;Shutting down server...&quot;);</span>
-<span class="nc" id="L117">                stop();</span>
-<span class="nc" id="L118">            }));</span>
+<span class="nc" id="L118">            Runtime.getRuntime().addShutdownHook(new Thread(() -&gt; {</span>
+<span class="nc" id="L119">                LOGGER.info(&quot;Shutting down server...&quot;);</span>
+<span class="nc" id="L120">                stop();</span>
+<span class="nc" id="L121">            }));</span>
 
-<span class="nc" id="L120">            server.awaitTermination();</span>
-<span class="nc" id="L121">        } catch (Exception e) {</span>
-<span class="nc" id="L122">            LOGGER.error(&quot;Error starting server&quot;, e);</span>
-<span class="nc" id="L123">            System.exit(1);</span>
-<span class="nc" id="L124">        }</span>
-<span class="nc" id="L125">    }</span>
+<span class="nc" id="L123">            server.awaitTermination();</span>
+<span class="nc" id="L124">        } catch (Exception e) {</span>
+<span class="nc" id="L125">            LOGGER.error(&quot;Error starting server&quot;, e);</span>
+<span class="nc" id="L126">            System.exit(1);</span>
+<span class="nc" id="L127">        }</span>
+<span class="nc" id="L128">    }</span>
 
     /**
      * Stops the server and releases resources.
      */
     public void stop() {
-<span class="nc bnc" id="L131" title="All 2 branches missed.">        if (server != null) {</span>
-<span class="nc" id="L132">            server.shutdown();</span>
-<span class="nc" id="L133">            LOGGER.info(&quot;Flight SQL server stopped&quot;);</span>
+<span class="nc bnc" id="L134" title="All 2 branches missed.">        if (server != null) {</span>
+<span class="nc" id="L135">            server.shutdown();</span>
+<span class="nc" id="L136">            LOGGER.info(&quot;Flight SQL server stopped&quot;);</span>
         }
-<span class="nc bnc" id="L135" title="All 2 branches missed.">        if (component != null) {</span>
+<span class="nc bnc" id="L138" title="All 2 branches missed.">        if (component != null) {</span>
             try {
-<span class="nc" id="L137">                component.clusterService().close();</span>
-<span class="nc" id="L138">            } catch (Exception e) {</span>
-<span class="nc" id="L139">                LOGGER.error(&quot;Error closing cluster service&quot;, e);</span>
-<span class="nc" id="L140">            }</span>
+<span class="nc" id="L140">                component.clusterService().close();</span>
+<span class="nc" id="L141">            } catch (Exception e) {</span>
+<span class="nc" id="L142">                LOGGER.error(&quot;Error closing cluster service&quot;, e);</span>
+<span class="nc" id="L143">            }</span>
             try {
-<span class="nc" id="L142">                component.allocator().close();</span>
-<span class="nc" id="L143">            } catch (Exception e) {</span>
-<span class="nc" id="L144">                LOGGER.error(&quot;Error closing allocator&quot;, e);</span>
-<span class="nc" id="L145">            }</span>
+<span class="nc" id="L145">                component.allocator().close();</span>
+<span class="nc" id="L146">            } catch (Exception e) {</span>
+<span class="nc" id="L147">                LOGGER.error(&quot;Error closing allocator&quot;, e);</span>
+<span class="nc" id="L148">            }</span>
         }
-<span class="nc" id="L147">    }</span>
+<span class="nc" id="L150">    }</span>
 
+    /**
+     * Waits for all Hazelcast cluster nodes to connect.
+     * @param hosts expected host addresses
+     * @param timeoutSec max wait time in seconds
+     * @throws IllegalStateException if timeout reached or interrupted
+     */
     private void waitForCluster(String[] hosts, int timeoutSec) {
-<span class="nc" id="L150">        HazelcastInstance hazelcast = component.clusterService().getHazelcastInstance();</span>
-<span class="nc" id="L151">        long deadline = System.currentTimeMillis() + timeoutSec * 1000L;</span>
-<span class="nc" id="L152">        long started = System.currentTimeMillis();</span>
+<span class="nc" id="L159">        HazelcastInstance hazelcast = component.clusterService().getHazelcastInstance();</span>
+<span class="nc" id="L160">        long deadline = System.currentTimeMillis() + timeoutSec * 1000L;</span>
+<span class="nc" id="L161">        long started = System.currentTimeMillis();</span>
 
-<span class="nc" id="L154">        LOGGER.info(&quot;Waiting up to {}s for {} nodes to connect (hosts: {})&quot;,</span>
-<span class="nc" id="L155">                timeoutSec, hosts.length, Arrays.toString(hosts));</span>
+<span class="nc" id="L163">        LOGGER.info(&quot;Waiting up to {}s for {} nodes to connect (hosts: {})&quot;,</span>
+<span class="nc" id="L164">                timeoutSec, hosts.length, Arrays.toString(hosts));</span>
 
         Set&lt;Member&gt; members;
         do {
-<span class="nc" id="L159">            members = hazelcast.getCluster().getMembers();</span>
-<span class="nc" id="L160">            long elapsed = (System.currentTimeMillis() - started) / 1000;</span>
-<span class="nc" id="L161">            LOGGER.info(&quot;Connected: {} of {} nodes ({}s elapsed)&quot;,</span>
-<span class="nc" id="L162">                    members.size(), hosts.length, elapsed);</span>
+<span class="nc" id="L168">            members = hazelcast.getCluster().getMembers();</span>
+<span class="nc" id="L169">            long elapsed = (System.currentTimeMillis() - started) / 1000;</span>
+<span class="nc" id="L170">            LOGGER.info(&quot;Connected: {} of {} nodes ({}s elapsed)&quot;,</span>
+<span class="nc" id="L171">                    members.size(), hosts.length, elapsed);</span>
 
-<span class="nc bnc" id="L164" title="All 2 branches missed.">            if (System.currentTimeMillis() &gt;= deadline) {</span>
-<span class="nc" id="L165">                String msg = String.format(</span>
+<span class="nc bnc" id="L173" title="All 2 branches missed.">            if (System.currentTimeMillis() &gt;= deadline) {</span>
+<span class="nc" id="L174">                String msg = String.format(</span>
                         &quot;Cluster join timeout after %ds: only %d of %d nodes connected. &quot;
                                 + &quot;Expected hosts: %s.&quot;,
-<span class="nc" id="L168">                        timeoutSec, members.size(), hosts.length, Arrays.toString(hosts));</span>
-<span class="nc" id="L169">                LOGGER.error(msg);</span>
-<span class="nc" id="L170">                throw new IllegalStateException(msg);</span>
+<span class="nc" id="L177">                        timeoutSec, members.size(), hosts.length, Arrays.toString(hosts));</span>
+<span class="nc" id="L178">                LOGGER.error(msg);</span>
+<span class="nc" id="L179">                throw new IllegalStateException(msg);</span>
             }
             try {
-<span class="nc" id="L173">                Thread.sleep(1000);</span>
-<span class="nc" id="L174">            } catch (InterruptedException e) {</span>
-<span class="nc" id="L175">                Thread.currentThread().interrupt();</span>
-<span class="nc" id="L176">                throw new IllegalStateException(&quot;Interrupted while waiting for cluster join&quot;, e);</span>
-<span class="nc" id="L177">            }</span>
-<span class="nc bnc" id="L178" title="All 2 branches missed.">        } while (members.size() &lt; hosts.length);</span>
+<span class="nc" id="L182">                Thread.sleep(1000);</span>
+<span class="nc" id="L183">            } catch (InterruptedException e) {</span>
+<span class="nc" id="L184">                Thread.currentThread().interrupt();</span>
+<span class="nc" id="L185">                throw new IllegalStateException(&quot;Interrupted while waiting for cluster join&quot;, e);</span>
+<span class="nc" id="L186">            }</span>
+<span class="nc bnc" id="L187" title="All 2 branches missed.">        } while (members.size() &lt; hosts.length);</span>
 
-<span class="nc" id="L180">        long totalSec = (System.currentTimeMillis() - started) / 1000;</span>
-<span class="nc" id="L181">        LOGGER.info(&quot;All {} nodes connected in {}s. Initializing...&quot;, hosts.length, totalSec);</span>
-<span class="nc" id="L182">    }</span>
+<span class="nc" id="L189">        long totalSec = (System.currentTimeMillis() - started) / 1000;</span>
+<span class="nc" id="L190">        LOGGER.info(&quot;All {} nodes connected in {}s. Initializing...&quot;, hosts.length, totalSec);</span>
+<span class="nc" id="L191">    }</span>
 
+    /**
+     * Gets the value of a named CLI argument.
+     * @param args CLI arguments array
+     * @param key argument name
+     * @param defaultValue default if not found
+     * @return argument value or default
+     */
     private String getArgValue(String[] args, String key, String defaultValue) {
-<span class="nc bnc" id="L185" title="All 2 branches missed.">        for (int i = 0; i &lt; args.length; i++) {</span>
-<span class="nc bnc" id="L186" title="All 4 branches missed.">            if (args[i].equals(key) &amp;&amp; i + 1 &lt; args.length) {</span>
-<span class="nc" id="L187">                return args[i + 1];</span>
+<span class="nc bnc" id="L201" title="All 2 branches missed.">        for (int i = 0; i &lt; args.length; i++) {</span>
+<span class="nc bnc" id="L202" title="All 4 branches missed.">            if (args[i].equals(key) &amp;&amp; i + 1 &lt; args.length) {</span>
+<span class="nc" id="L203">                return args[i + 1];</span>
             }
         }
-<span class="nc" id="L190">        return defaultValue;</span>
+<span class="nc" id="L206">        return defaultValue;</span>
     }
 
     /**
@@ -197,8 +213,8 @@ import net.surpin.data.arrowflight.server.model.AppConfig;
      * @throws Exception on startup failure
      */
     public static void main(String... args) throws Exception {
-<span class="nc" id="L200">        HadoopArrowFlightServer server = new HadoopArrowFlightServer();</span>
-<span class="nc" id="L201">        server.start(args);</span>
-<span class="nc" id="L202">    }</span>
+<span class="nc" id="L216">        HadoopArrowFlightServer server = new HadoopArrowFlightServer();</span>
+<span class="nc" id="L217">        server.start(args);</span>
+<span class="nc" id="L218">    }</span>
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>
