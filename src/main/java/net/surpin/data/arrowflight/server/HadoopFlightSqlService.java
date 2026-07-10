@@ -189,14 +189,14 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
                         serverRegistry.compute(allFilesServer, (k, v) -> (v == null ? 0L : v) + addedBytes);
                         return List.of(ep);
                     }
-                    LOGGER.info("qid={} join=spark-fallback tables={} files={}",
-                            qid, seenTables.size(), pathLocations.size());
                     List<FlightEndpoint> endpoints = new ArrayList<>();
                     Map<String, Set<String>> seenTables = new LinkedHashMap<>();
                     for (String path : pathLocations.keySet()) {
                         String table = extractTableFromPath(path);
                         seenTables.computeIfAbsent(table, k -> new LinkedHashSet<>()).add(path);
                     }
+                    LOGGER.info("qid={} join=spark-fallback tables={} files={}",
+                            qid, seenTables.size(), pathLocations.size());
                     for (Map.Entry<String, Set<String>> entry : seenTables.entrySet()) {
                         String table = entry.getKey();
                         Set<String> tablePaths = entry.getValue();
