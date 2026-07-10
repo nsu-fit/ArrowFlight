@@ -18,6 +18,7 @@ import org.apache.arrow.vector.types.pojo.Schema;
 import org.apache.hadoop.fs.Path;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 
 import java.io.IOException;
 import java.io.Serializable;
@@ -145,6 +146,7 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
                 final ByteString handle = statementQuery.getStatementHandle();
                 HandleState outerState = (HandleState) statementCache.get(handle.toStringUtf8());
                 String query = outerState.query();
+                String qid = qid(handle);
                 Map<String, FileAssignment> pathLocations = parquetManager.locationsForQuery(query);
 
                 // All registered Flight servers.
@@ -179,19 +181,22 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
                 if (pq.isJoin) {
                     String allFilesServer = findServerWithAllFiles(pathLocations, allServerUris);
                     if (allFilesServer != null) {
-                        LOGGER.info("Join executes server-side on {} with {} file(s)", allFilesServer, pathLocations.size());
+                        LOGGER.info("qid={} join=server-side server={} files={} bytes={}",
+                                qid, allFilesServer, pathLocations.size(),
+                                pathLocations.values().stream().mapToLong(FileAssignment::size).sum());
                         long addedBytes = pathLocations.values().stream().mapToLong(FileAssignment::size).sum();
                         FlightEndpoint ep = createEndpoint(allFilesServer, pathLocations.keySet().stream().toList(), query, addedBytes);
                         serverRegistry.compute(allFilesServer, (k, v) -> (v == null ? 0L : v) + addedBytes);
                         return List.of(ep);
                     }
-                    LOGGER.info("Join query spans multiple servers; splitting into per-table reads for Spark-side join");
                     List<FlightEndpoint> endpoints = new ArrayList<>();
                     Map<String, Set<String>> seenTables = new LinkedHashMap<>();
                     for (String path : pathLocations.keySet()) {
                         String table = extractTableFromPath(path);
                         seenTables.computeIfAbsent(table, k -> new LinkedHashSet<>()).add(path);
                     }
+                    LOGGER.info("qid={} join=spark-fallback tables={} files={}",
+                            qid, seenTables.size(), pathLocations.size());
                     for (Map.Entry<String, Set<String>> entry : seenTables.entrySet()) {
                         String table = entry.getKey();
                         Set<String> tablePaths = entry.getValue();
@@ -236,8 +241,8 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
                     endpoints.add(createEndpoint(serverUri, serverFiles, query, addedBytes));
                     serverRegistry.compute(serverUri, (k, v) -> (v == null ? 0L : v) + addedBytes);
                 }
-                LOGGER.info("determineEndpoints: {} server(s) registered, {} endpoint(s) for {} file(s), query: {}",
-                        allServerUris.size(), endpoints.size(), pathLocations.size(), query);
+                LOGGER.info("qid={} determineEndpoints: servers={} endpoints={} files={} query='{}'",
+                        qid, allServerUris.size(), endpoints.size(), pathLocations.size(), query);
                 LOGGER.debug("determineEndpoints: servers={}, files={}", allServerUris, pathLocations.keySet());
                 return endpoints;
             } else {
@@ -434,7 +439,8 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
             FlightDescriptor descriptor) {
         ByteString handle = copyFrom(randomUUID().toString().getBytes(StandardCharsets.UTF_8));
         String query = command.getQuery();
-        LOGGER.info("getFlightInfoStatement, ticket {}: {}", handle, query);
+        String qid = qid(handle);
+        LOGGER.info("getFlightInfoStatement: qid={}, query='{}'", qid, query);
 
         Schema arrowSchema;
         try {
@@ -499,31 +505,43 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
     public void getStreamStatement(FlightSql.TicketStatementQuery ticket, CallContext context,
             ServerStreamListener listener) {
         final ByteString handle = ticket.getStatementHandle();
+        String qid = qid(handle);
         HandleState state = (HandleState) statementCache.get(handle.toStringUtf8());
         if (state == null) {
-            String msg = "No HandleState found in cache for handle: " + handle;
-            LOGGER.error(msg);
-            listener.error(new IllegalStateException(msg));
+            LOGGER.error("qid={} No HandleState found in cache", qid);
+            listener.error(new IllegalStateException("No HandleState found for qid=" + qid));
             return;
         }
 
         String query = state.query();
         String[] filePaths = state.filePaths();
         if (filePaths == null) {
-            String msg = "No file paths in handle state: " + handle;
-            LOGGER.error(msg);
-            listener.error(new IllegalStateException(msg));
+            LOGGER.error("qid={} No file paths in handle state", qid);
+            listener.error(new IllegalStateException("No file paths for qid=" + qid));
             return;
         }
 
-        LOGGER.info("Server-grouped getStream: {} file(s), query='{}'", filePaths.length, query);
+        String serverUri = state.serverUri() != null ? state.serverUri() : "local";
+        long bytes = state.bytes();
+        long started = System.currentTimeMillis();
+
+        LOGGER.info("qid={} execution=start server={} files={} bytes={} query='{}'",
+                qid, serverUri, filePaths.length, bytes, query);
+
+        MDC.put("qid", qid);
         try {
             parquetManager.readParquet(allocator, query, filePaths, listener, true);
             listener.completed();
+            long elapsed = System.currentTimeMillis() - started;
+            LOGGER.info("qid={} execution=completed server={} elapsedMs={} files={} query='{}'",
+                    qid, serverUri, elapsed, filePaths.length, query);
         } catch (Exception e) {
-            LOGGER.error("Failed to process server-grouped ticket, files: {}", Arrays.toString(filePaths), e);
+            long elapsed = System.currentTimeMillis() - started;
+            LOGGER.error("qid={} execution=failed server={} elapsedMs={} error='{}'",
+                    qid, serverUri, elapsed, e.getMessage(), e);
             listener.error(e);
         } finally {
+            MDC.remove("qid");
             if (state.serverUri() != null) {
                 statementCache.remove(handle.toStringUtf8());
                 serverRegistry.compute(state.serverUri(), (k, v) -> {
@@ -647,5 +665,10 @@ public class HadoopFlightSqlService extends BasicFlightSqlProducer implements Fl
             Schema schema) {
         final List<FlightEndpoint> endpoints = determineEndpoints(request, descriptor, schema);
         return new FlightInfo(schema, descriptor, endpoints, -1, -1);
+    }
+
+    private static String qid(ByteString handle) {
+        String raw = handle.toStringUtf8();
+        return raw.length() >= 8 ? raw.substring(0, 8) : raw;
     }
 }
