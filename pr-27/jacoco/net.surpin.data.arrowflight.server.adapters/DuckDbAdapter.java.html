@@ -1,0 +1,566 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>DuckDbAdapter.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Hadoop Arrow Flight SQL Server</a> &gt; <a href="index.source.html" class="el_package">net.surpin.data.arrowflight.server.adapters</a> &gt; <span class="el_source">DuckDbAdapter.java</span></div><h1>DuckDbAdapter.java</h1><pre class="source lang-java linenums">package net.surpin.data.arrowflight.server.adapters;
+
+import org.apache.arrow.memory.BufferAllocator;
+import org.apache.arrow.vector.FieldVector;
+import org.apache.arrow.vector.ValueVector;
+import org.apache.arrow.vector.VectorSchemaRoot;
+import org.apache.arrow.vector.ipc.ArrowReader;
+import org.apache.arrow.vector.types.pojo.Field;
+import org.apache.arrow.vector.types.pojo.Schema;
+import org.apache.arrow.vector.util.Text;
+import org.apache.calcite.adapter.arrow.ArrowFieldTypeFactory;
+import org.apache.calcite.jdbc.JavaTypeFactoryImpl;
+import org.apache.calcite.rel.type.RelDataType;
+import org.apache.calcite.rel.type.RelDataTypeSystem;
+import org.apache.parquet.hadoop.ParquetFileReader;
+import org.apache.parquet.hadoop.metadata.BlockMetaData;
+import org.apache.parquet.hadoop.metadata.ColumnChunkMetaData;
+import org.apache.parquet.hadoop.util.HadoopStreams;
+import org.apache.parquet.column.statistics.Statistics;
+import org.apache.parquet.io.InputFile;
+import org.apache.parquet.io.SeekableInputStream;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import net.surpin.data.arrowflight.server.services.ParquetQueryParser;
+import net.surpin.data.arrowflight.server.model.AppConfig;
+
+/**
+ * Manages DuckDB connection pool and SQL execution.
+ * Each Java worker thread gets its own DuckDB in-memory connection.
+ */
+public final class DuckDbAdapter {
+
+<span class="nc" id="L51">    private static final Logger LOGGER = LoggerFactory.getLogger(DuckDbAdapter.class);</span>
+
+    private final ThreadLocal&lt;Connection&gt; threadConn;
+    private final ExecutorService ioPool;
+    private final int batchSize;
+    private final int duckDbGroups;
+    private final AppConfig appConfig;
+
+    /**
+     * Creates DuckDB adapter with thread-local connection pool.
+     *
+     * @param appConfig server configuration
+     * @param ioPool    shared I/O thread pool for parallel execution
+     */
+<span class="nc" id="L65">    public DuckDbAdapter(AppConfig appConfig, ExecutorService ioPool) {</span>
+<span class="nc" id="L66">        this.appConfig = appConfig;</span>
+<span class="nc" id="L67">        this.ioPool = ioPool;</span>
+<span class="nc" id="L68">        this.batchSize = appConfig.batchSize();</span>
+<span class="nc" id="L69">        this.duckDbGroups = appConfig.duckDbGroups();</span>
+
+<span class="nc" id="L71">        this.threadConn = ThreadLocal.withInitial(() -&gt; {</span>
+            try {
+<span class="nc" id="L73">                Connection conn = DriverManager.getConnection(&quot;jdbc:duckdb:&quot;);</span>
+<span class="nc" id="L74">                configureConnection(conn);</span>
+<span class="nc" id="L75">                return conn;</span>
+<span class="nc" id="L76">            } catch (Exception e) {</span>
+<span class="nc" id="L77">                throw new RuntimeException(&quot;Failed to create thread-local DuckDB connection&quot;, e);</span>
+            }
+        });
+<span class="nc" id="L80">    }</span>
+
+    private void configureConnection(Connection conn) throws Exception {
+<span class="nc" id="L83">        try (Statement s = conn.createStatement()) {</span>
+<span class="nc" id="L84">            s.execute(&quot;SET threads = &quot; + appConfig.duckDbThreads());</span>
+<span class="nc bnc" id="L85" title="All 2 branches missed.">            if (appConfig.dataDir() != null) {</span>
+<span class="nc" id="L86">                setArrayOptionIfPresent(s, &quot;allowed_paths&quot;, appConfig.dataDir());</span>
+            }
+<span class="nc bnc" id="L88" title="All 2 branches missed.">            if (appConfig.duckDbHdfsExtension() != null) {</span>
+<span class="nc bnc" id="L89" title="All 2 branches missed.">                if (appConfig.duckDbAllowUnsignedExtensions()) {</span>
+<span class="nc" id="L90">                    s.execute(&quot;SET allow_unsigned_extensions = true&quot;);</span>
+                }
+<span class="nc" id="L92">                s.execute(&quot;LOAD &quot; + sqlStringLiteral(appConfig.duckDbHdfsExtension()));</span>
+            }
+<span class="nc" id="L94">            setOptionIfPresent(s, &quot;hdfs_default_namenode&quot;, appConfig.duckDbHdfsDefaultNamenode());</span>
+<span class="nc" id="L95">            setOptionIfPresent(s, &quot;hdfs_ha_namenodes&quot;, appConfig.duckDbHdfsHaNamenodes());</span>
+<span class="nc" id="L96">            setOptionIfPresent(s, &quot;hdfs_shortcircuit&quot;, appConfig.duckDbHdfsShortcircuit());</span>
+<span class="nc" id="L97">            setOptionIfPresent(s, &quot;hdfs_domain_socket_path&quot;, appConfig.duckDbHdfsDomainSocketPath());</span>
+        }
+<span class="nc" id="L99">    }</span>
+
+    private static void setOptionIfPresent(Statement statement, String optionName, String value)
+            throws Exception {
+<span class="nc bnc" id="L103" title="All 2 branches missed.">        if (value == null) {</span>
+<span class="nc" id="L104">            return;</span>
+        }
+<span class="nc bnc" id="L106" title="All 4 branches missed.">        if (&quot;true&quot;.equalsIgnoreCase(value) || &quot;false&quot;.equalsIgnoreCase(value)) {</span>
+<span class="nc" id="L107">            statement.execute(&quot;SET &quot; + optionName + &quot; = &quot; + value.toLowerCase());</span>
+        } else {
+<span class="nc" id="L109">            statement.execute(&quot;SET &quot; + optionName + &quot; = &quot; + sqlStringLiteral(value));</span>
+        }
+<span class="nc" id="L111">    }</span>
+
+    private static void setArrayOptionIfPresent(Statement statement, String optionName, String value)
+            throws Exception {
+<span class="nc bnc" id="L115" title="All 2 branches missed.">        if (value == null) return;</span>
+        // DuckDB expects VARCHAR[] e.g. SET allowed_paths = ['/path']
+<span class="nc" id="L117">        String escaped = sqlStringLiteral(value);</span>
+<span class="nc" id="L118">        statement.execute(&quot;SET &quot; + optionName + &quot; = &quot; + &quot;ARRAY[&quot; + escaped + &quot;]&quot;);</span>
+<span class="nc" id="L119">    }</span>
+
+    /**
+     * Returns this thread's DuckDB connection.
+     *
+     * @return JDBC connection
+     */
+    public Connection connection() {
+<span class="nc" id="L127">        return threadConn.get();</span>
+    }
+
+    /**
+     * Returns the shared I/O executor service.
+     *
+     * @return executor service
+     */
+    public ExecutorService ioPool() {
+<span class="nc" id="L136">        return ioPool;</span>
+    }
+
+    /**
+     * Returns the number of DuckDB groups for parallel aggregation.
+     *
+     * @return group count
+     */
+    public int duckDbGroups() {
+<span class="nc" id="L145">        return duckDbGroups;</span>
+    }
+
+    /**
+     * Returns the Arrow batch size for DuckDB exports.
+     *
+     * @return batch size
+     */
+    public int batchSize() {
+<span class="nc" id="L154">        return batchSize;</span>
+    }
+
+    /**
+     * Streams DuckDB SQL query results as Arrow batches to a Flight listener.
+     *
+     * @param allocator    Arrow buffer allocator
+     * @param duckSql      DuckDB SQL query
+     * @param listener     Flight stream listener
+     * @param startListener whether to call listener.start()
+     * @throws Exception on query or stream failure
+     */
+    public void streamSql(BufferAllocator allocator, String duckSql,
+            org.apache.arrow.flight.FlightProducer.ServerStreamListener listener,
+            boolean startListener) throws Exception {
+<span class="nc" id="L169">        LOGGER.info(&quot;Executing DuckDB SQL with Arrow batch size {}: {}&quot;, batchSize, duckSql);</span>
+<span class="nc" id="L170">        Connection conn = threadConn.get();</span>
+<span class="nc" id="L171">        try (Statement stmt = conn.createStatement();</span>
+<span class="nc" id="L172">                org.duckdb.DuckDBResultSet drs = (org.duckdb.DuckDBResultSet) stmt.executeQuery(duckSql);</span>
+<span class="nc" id="L173">                ArrowReader reader = (ArrowReader) drs.arrowExportStream(allocator, batchSize);</span>
+<span class="nc" id="L174">                VectorSchemaRoot flightRoot = VectorSchemaRoot.create(</span>
+<span class="nc" id="L175">                        reader.getVectorSchemaRoot().getSchema(), allocator)) {</span>
+<span class="nc" id="L176">            VectorSchemaRoot duckRoot = reader.getVectorSchemaRoot();</span>
+
+<span class="nc bnc" id="L178" title="All 2 branches missed.">            if (startListener) {</span>
+<span class="nc" id="L179">                listener.start(flightRoot);</span>
+            }
+
+<span class="nc" id="L182">            int duckBatchesRead = 0;</span>
+<span class="nc" id="L183">            int flightBatchesSent = 0;</span>
+<span class="nc" id="L184">            long rowsSent = 0;</span>
+<span class="nc" id="L185">            boolean cancelled = false;</span>
+<span class="nc bnc" id="L186" title="All 4 branches missed.">            while (!cancelled &amp;&amp; reader.loadNextBatch()) {</span>
+<span class="nc" id="L187">                duckBatchesRead++;</span>
+<span class="nc" id="L188">                int duckRows = duckRoot.getRowCount();</span>
+<span class="nc bnc" id="L189" title="All 2 branches missed.">                if (duckRows == 0) {</span>
+<span class="nc" id="L190">                    duckRoot.clear();</span>
+<span class="nc" id="L191">                    continue;</span>
+                }
+
+<span class="nc bnc" id="L194" title="All 2 branches missed.">                for (int offset = 0; offset &lt; duckRows; offset += batchSize) {</span>
+<span class="nc" id="L195">                    int rowCount = Math.min(batchSize, duckRows - offset);</span>
+<span class="nc" id="L196">                    copyRows(duckRoot, flightRoot, offset, rowCount);</span>
+
+<span class="nc bnc" id="L198" title="All 2 branches missed.">                    if (!awaitListenerReady(listener)) {</span>
+<span class="nc" id="L199">                        cancelled = true;</span>
+<span class="nc" id="L200">                        flightRoot.clear();</span>
+<span class="nc" id="L201">                        break;</span>
+                    }
+
+<span class="nc" id="L204">                    listener.putNext();</span>
+<span class="nc" id="L205">                    flightBatchesSent++;</span>
+<span class="nc" id="L206">                    rowsSent += rowCount;</span>
+<span class="nc" id="L207">                    flightRoot.clear();</span>
+                }
+<span class="nc" id="L209">                duckRoot.clear();</span>
+<span class="nc" id="L210">            }</span>
+<span class="nc" id="L211">            LOGGER.info(&quot;DuckDB sent {} Flight batch(es), {} row(s), read {} DuckDB batch(es){}&quot;,</span>
+<span class="nc" id="L212">                    flightBatchesSent, rowsSent, duckBatchesRead,</span>
+<span class="nc bnc" id="L213" title="All 2 branches missed.">                    cancelled ? &quot; before cancellation&quot; : &quot;&quot;);</span>
+        }
+<span class="nc" id="L215">    }</span>
+
+    /**
+     * Reads only the Parquet footer to get the total row count. Zero column I/O.
+     *
+     * @param fileSystem Hadoop FileSystem
+     * @param full       absolute file path
+     * @return total row count across all row groups
+     * @throws IOException on read failure
+     */
+    public static long footerRowCount(org.apache.hadoop.fs.FileSystem fileSystem,
+            org.apache.hadoop.fs.Path full) throws IOException {
+<span class="nc" id="L227">        final long fileLen = fileSystem.getFileStatus(full).getLen();</span>
+<span class="nc" id="L228">        try (ParquetFileReader pfr = ParquetFileReader.open(new InputFile() {</span>
+            @Override
+            public long getLength() {
+<span class="nc" id="L231">                return fileLen;</span>
+            }
+
+            @Override
+            public SeekableInputStream newStream() throws IOException {
+<span class="nc" id="L236">                return HadoopStreams.wrap(fileSystem.open(full));</span>
+            }
+        })) {
+<span class="nc" id="L239">            long count = 0;</span>
+<span class="nc bnc" id="L240" title="All 2 branches missed.">            for (BlockMetaData b : pfr.getFooter().getBlocks()) {</span>
+<span class="nc" id="L241">                count += b.getRowCount();</span>
+<span class="nc" id="L242">            }</span>
+<span class="nc" id="L243">            return count;</span>
+        }
+    }
+
+    /**
+     * Reads MIN/MAX/COUNT statistics from Parquet footer. Zero column I/O.
+     *
+     * @param fileSystem Hadoop FileSystem
+     * @param full       absolute file path
+     * @param pq         parsed query with select expressions
+     * @return optional array of aggregated stats values, empty if any stats are missing
+     * @throws IOException on read failure
+     */
+    public static Optional&lt;Object[]&gt; footerStats(org.apache.hadoop.fs.FileSystem fileSystem,
+            org.apache.hadoop.fs.Path full, ParquetQueryParser pq) throws IOException {
+<span class="nc" id="L258">        final long fileLen = fileSystem.getFileStatus(full).getLen();</span>
+<span class="nc" id="L259">        try (ParquetFileReader pfr = ParquetFileReader.open(new InputFile() {</span>
+            @Override
+            public long getLength() {
+<span class="nc" id="L262">                return fileLen;</span>
+            }
+
+            @Override
+            public SeekableInputStream newStream() throws IOException {
+<span class="nc" id="L267">                return HadoopStreams.wrap(fileSystem.open(full));</span>
+            }
+        })) {
+<span class="nc" id="L270">            List&lt;ParquetQueryParser.SelectExpr&gt; exprs = pq.selectExprs;</span>
+<span class="nc" id="L271">            int n = exprs.size();</span>
+<span class="nc" id="L272">            Object[] result = new Object[n];</span>
+<span class="nc" id="L273">            long totalRows = 0;</span>
+
+<span class="nc bnc" id="L275" title="All 2 branches missed.">            for (BlockMetaData block : pfr.getFooter().getBlocks()) {</span>
+<span class="nc" id="L276">                totalRows += block.getRowCount();</span>
+
+<span class="nc bnc" id="L278" title="All 2 branches missed.">                for (ColumnChunkMetaData cc : block.getColumns()) {</span>
+<span class="nc" id="L279">                    String colName = cc.getPath().toDotString();</span>
+
+<span class="nc bnc" id="L281" title="All 2 branches missed.">                    for (int i = 0; i &lt; n; i++) {</span>
+<span class="nc" id="L282">                        ParquetQueryParser.SelectExpr expr = exprs.get(i);</span>
+<span class="nc bnc" id="L283" title="All 2 branches missed.">                        if (!colName.equals(expr.inputColumn)) {</span>
+<span class="nc" id="L284">                            continue;</span>
+                        }
+
+<span class="nc" id="L287">                        Statistics&lt;?&gt; stats = cc.getStatistics();</span>
+<span class="nc bnc" id="L288" title="All 2 branches missed.">                        if (expr.func == ParquetQueryParser.SelectExpr.AggFunc.MIN) {</span>
+<span class="nc bnc" id="L289" title="All 6 branches missed.">                            if (stats == null || stats.isEmpty() || !stats.hasNonNullValue()) {</span>
+<span class="nc" id="L290">                                return Optional.empty();</span>
+                            }
+<span class="nc" id="L292">                            result[i] = minOf(result[i], stats.genericGetMin());</span>
+<span class="nc bnc" id="L293" title="All 2 branches missed.">                        } else if (expr.func == ParquetQueryParser.SelectExpr.AggFunc.MAX) {</span>
+<span class="nc bnc" id="L294" title="All 6 branches missed.">                            if (stats == null || stats.isEmpty() || !stats.hasNonNullValue()) {</span>
+<span class="nc" id="L295">                                return Optional.empty();</span>
+                            }
+<span class="nc" id="L297">                            result[i] = maxOf(result[i], stats.genericGetMax());</span>
+<span class="nc bnc" id="L298" title="All 2 branches missed.">                        } else if (expr.func == ParquetQueryParser.SelectExpr.AggFunc.COUNT) {</span>
+<span class="nc bnc" id="L299" title="All 4 branches missed.">                            if (stats == null || stats.getNumNulls() &lt; 0) {</span>
+<span class="nc" id="L300">                                return Optional.empty();</span>
+                            }
+<span class="nc" id="L302">                            long nonNulls = block.getRowCount() - stats.getNumNulls();</span>
+<span class="nc bnc" id="L303" title="All 2 branches missed.">                            result[i] = (result[i] == null ? 0L</span>
+<span class="nc" id="L304">                                    : ((Number) result[i]).longValue()) + nonNulls;</span>
+                        }
+                    }
+<span class="nc" id="L307">                }</span>
+<span class="nc" id="L308">            }</span>
+
+<span class="nc bnc" id="L310" title="All 2 branches missed.">            for (int i = 0; i &lt; n; i++) {</span>
+<span class="nc bnc" id="L311" title="All 2 branches missed.">                if (exprs.get(i).func == ParquetQueryParser.SelectExpr.AggFunc.COUNT_STAR) {</span>
+<span class="nc" id="L312">                    result[i] = totalRows;</span>
+                }
+            }
+<span class="nc" id="L315">            return Optional.of(result);</span>
+<span class="nc bnc" id="L316" title="All 6 branches missed.">        }</span>
+    }
+
+    /**
+     * Builds a DuckDB SQL SELECT query from parsed query.
+     *
+     * @param pq         parsed query
+     * @param fromClause FROM clause (e.g. read_parquet([...]) or table reference)
+     * @return DuckDB SQL string
+     */
+    public static String buildDuckSql(ParquetQueryParser pq, String fromClause) {
+<span class="nc" id="L327">        return buildDuckSqlWithFilter(pq, fromClause, false);</span>
+    }
+
+    /**
+     * Builds a DuckDB SQL SELECT query after filter has been applied upstream.
+     *
+     * @param pq              parsed query
+     * @param fromClause      FROM clause
+     * @param filterApplied   whether filter was already applied upstream
+     * @return DuckDB SQL string
+     */
+    public static String buildDuckSqlWithFilter(ParquetQueryParser pq, String fromClause,
+            boolean filterApplied) {
+<span class="nc" id="L340">        StringBuilder sql = new StringBuilder(&quot;SELECT &quot;);</span>
+<span class="nc" id="L341">        boolean first = true;</span>
+
+<span class="nc bnc" id="L343" title="All 2 branches missed.">        for (String gbCol : pq.groupByColumnNames) {</span>
+<span class="nc bnc" id="L344" title="All 2 branches missed.">            if (!first) {</span>
+<span class="nc" id="L345">                sql.append(&quot;, &quot;);</span>
+            }
+<span class="nc" id="L347">            first = false;</span>
+<span class="nc" id="L348">            sql.append('&quot;').append(gbCol).append('&quot;');</span>
+<span class="nc" id="L349">        }</span>
+
+<span class="nc" id="L351">        Set&lt;String&gt; gbSet = new LinkedHashSet&lt;&gt;(pq.groupByColumnNames);</span>
+<span class="nc bnc" id="L352" title="All 2 branches missed.">        for (ParquetQueryParser.SelectExpr expr : pq.selectExprs) {</span>
+<span class="nc bnc" id="L353" title="All 2 branches missed.">            if (expr.func == ParquetQueryParser.SelectExpr.AggFunc.COLUMN</span>
+<span class="nc bnc" id="L354" title="All 2 branches missed.">                    &amp;&amp; gbSet.contains(expr.inputColumn)) {</span>
+<span class="nc" id="L355">                continue;</span>
+            }
+<span class="nc bnc" id="L357" title="All 2 branches missed.">            if (!first) {</span>
+<span class="nc" id="L358">                sql.append(&quot;, &quot;);</span>
+            }
+<span class="nc" id="L360">            first = false;</span>
+<span class="nc bnc" id="L361" title="All 7 branches missed.">            switch (expr.func) {</span>
+<span class="nc" id="L362">                case COUNT_STAR -&gt; sql.append(&quot;count(*)&quot;);</span>
+<span class="nc" id="L363">                case COUNT -&gt; sql.append(&quot;count(\&quot;&quot;).append(expr.inputColumn).append(&quot;\&quot;)&quot;);</span>
+<span class="nc" id="L364">                case SUM -&gt; sql.append(&quot;sum(\&quot;&quot;).append(expr.inputColumn).append(&quot;\&quot;)&quot;);</span>
+<span class="nc" id="L365">                case MIN -&gt; sql.append(&quot;min(\&quot;&quot;).append(expr.inputColumn).append(&quot;\&quot;)&quot;);</span>
+<span class="nc" id="L366">                case MAX -&gt; sql.append(&quot;max(\&quot;&quot;).append(expr.inputColumn).append(&quot;\&quot;)&quot;);</span>
+<span class="nc" id="L367">                case COLUMN -&gt; sql.append('&quot;').append(expr.inputColumn).append('&quot;');</span>
+                default -&gt; { }
+            }
+<span class="nc" id="L370">        }</span>
+
+<span class="nc" id="L372">        sql.append(&quot; FROM &quot;).append(fromClause);</span>
+<span class="nc bnc" id="L373" title="All 6 branches missed.">        if (!filterApplied &amp;&amp; pq.filter != null &amp;&amp; !pq.filter.isBlank()) {</span>
+<span class="nc" id="L374">            sql.append(&quot; WHERE &quot;).append(pq.filter);</span>
+        }
+<span class="nc bnc" id="L376" title="All 2 branches missed.">        if (!pq.groupByColumnNames.isEmpty()) {</span>
+<span class="nc" id="L377">            sql.append(&quot; GROUP BY &quot;);</span>
+<span class="nc bnc" id="L378" title="All 2 branches missed.">            for (int i = 0; i &lt; pq.groupByColumnNames.size(); i++) {</span>
+<span class="nc bnc" id="L379" title="All 2 branches missed.">                if (i &gt; 0) {</span>
+<span class="nc" id="L380">                    sql.append(&quot;, &quot;);</span>
+                }
+<span class="nc" id="L382">                sql.append('&quot;').append(pq.groupByColumnNames.get(i)).append('&quot;');</span>
+            }
+        }
+<span class="nc" id="L385">        return sql.toString();</span>
+    }
+
+    /**
+     * Builds a grouped DuckDB SQL for parallel aggregation with multiple file references.
+     *
+     * @param pq                parsed query
+     * @param numFiles          number of files
+     * @param filterApplied     whether filter was already applied
+     * @return DuckDB SQL string
+     */
+    public static String buildGroupedDuckSql(ParquetQueryParser pq, int numFiles,
+            boolean filterApplied) {
+<span class="nc bnc" id="L398" title="All 2 branches missed.">        if (numFiles == 1) {</span>
+<span class="nc" id="L399">            return buildDuckSqlWithFilter(pq, &quot;\&quot;t0\&quot;&quot;, filterApplied);</span>
+        }
+<span class="nc" id="L401">        StringBuilder from = new StringBuilder(&quot;(&quot;);</span>
+<span class="nc bnc" id="L402" title="All 2 branches missed.">        for (int i = 0; i &lt; numFiles; i++) {</span>
+<span class="nc bnc" id="L403" title="All 2 branches missed.">            if (i &gt; 0) {</span>
+<span class="nc" id="L404">                from.append(&quot; UNION ALL &quot;);</span>
+            }
+<span class="nc" id="L406">            from.append(&quot;SELECT * FROM \&quot;t&quot;).append(i).append('&quot;');</span>
+        }
+<span class="nc" id="L408">        from.append(')');</span>
+<span class="nc" id="L409">        return buildDuckSqlWithFilter(pq, from.toString(), filterApplied);</span>
+    }
+
+    /**
+     * Creates a DuckDB read_parquet FROM clause from file paths.
+     *
+     * @param duckDbPaths list of file paths
+     * @return FROM clause string
+     */
+    public static String readParquetFromClause(List&lt;String&gt; duckDbPaths) {
+<span class="nc" id="L419">        StringBuilder sb = new StringBuilder(&quot;read_parquet([&quot;);</span>
+<span class="nc bnc" id="L420" title="All 2 branches missed.">        for (int i = 0; i &lt; duckDbPaths.size(); i++) {</span>
+<span class="nc bnc" id="L421" title="All 2 branches missed.">            if (i &gt; 0) {</span>
+<span class="nc" id="L422">                sb.append(&quot;, &quot;);</span>
+            }
+<span class="nc" id="L424">            sb.append(sqlStringLiteral(duckDbPaths.get(i)));</span>
+        }
+<span class="nc" id="L426">        sb.append(&quot;])&quot;);</span>
+<span class="nc" id="L427">        return sb.toString();</span>
+    }
+
+    /**
+     * Builds a DuckDB select SQL with read_parquet FROM clause.
+     *
+     * @param pq    parsed query
+     * @param from  FROM clause
+     * @return DuckDB SQL
+     */
+    public static String buildSelectSql(ParquetQueryParser pq, String from) {
+<span class="nc" id="L438">        StringBuilder sql = new StringBuilder(&quot;SELECT &quot;);</span>
+
+<span class="nc bnc" id="L440" title="All 2 branches missed.">        if (pq.selectExprs.isEmpty()) {</span>
+<span class="nc" id="L441">            sql.append('*');</span>
+        } else {
+<span class="nc" id="L443">            boolean first = true;</span>
+<span class="nc bnc" id="L444" title="All 2 branches missed.">            for (ParquetQueryParser.SelectExpr expr : pq.selectExprs) {</span>
+<span class="nc bnc" id="L445" title="All 2 branches missed.">                if (!first) sql.append(&quot;, &quot;);</span>
+<span class="nc" id="L446">                first = false;</span>
+<span class="nc" id="L447">                appendSelectExpr(sql, expr);</span>
+<span class="nc" id="L448">            }</span>
+        }
+
+<span class="nc" id="L451">        sql.append(&quot; FROM &quot;).append(from);</span>
+
+<span class="nc bnc" id="L453" title="All 4 branches missed.">        if (pq.filter != null &amp;&amp; !pq.filter.isBlank()) {</span>
+<span class="nc" id="L454">            sql.append(&quot; WHERE &quot;).append(pq.filter);</span>
+        }
+<span class="nc" id="L456">        return sql.toString();</span>
+    }
+
+    /**
+     * Appends a DuckDB select expression to SQL string builder.
+     *
+     * @param sql  SQL builder
+     * @param expr select expression
+     */
+    public static void appendSelectExpr(StringBuilder sql, ParquetQueryParser.SelectExpr expr) {
+<span class="nc bnc" id="L466" title="All 7 branches missed.">        switch (expr.func) {</span>
+<span class="nc" id="L467">            case COUNT_STAR -&gt; sql.append(&quot;count(*)&quot;);</span>
+<span class="nc" id="L468">            case COUNT -&gt; sql.append(&quot;count(&quot;).append(quoteIdentifier(expr.inputColumn)).append(&quot;)&quot;);</span>
+<span class="nc" id="L469">            case SUM -&gt; sql.append(&quot;sum(&quot;).append(quoteIdentifier(expr.inputColumn)).append(&quot;)&quot;);</span>
+<span class="nc" id="L470">            case MIN -&gt; sql.append(&quot;min(&quot;).append(quoteIdentifier(expr.inputColumn)).append(&quot;)&quot;);</span>
+<span class="nc" id="L471">            case MAX -&gt; sql.append(&quot;max(&quot;).append(quoteIdentifier(expr.inputColumn)).append(&quot;)&quot;);</span>
+<span class="nc" id="L472">            case COLUMN -&gt; sql.append(quoteIdentifier(expr.inputColumn));</span>
+            default -&gt; { }
+        }
+<span class="nc bnc" id="L475" title="All 4 branches missed.">        if (expr.outputName != null &amp;&amp; !expr.outputName.isBlank()) {</span>
+<span class="nc" id="L476">            sql.append(&quot; AS &quot;).append(quoteIdentifier(expr.outputName));</span>
+        }
+<span class="nc" id="L478">    }</span>
+
+    /**
+     * Quotes an identifier for DuckDB SQL.
+     *
+     * @param identifier identifier to quote
+     * @return quoted identifier
+     */
+    public static String quoteIdentifier(String identifier) {
+<span class="nc" id="L487">        return &quot;\&quot;&quot; + identifier.replace(&quot;\&quot;&quot;, &quot;\&quot;\&quot;&quot;) + &quot;\&quot;&quot;;</span>
+    }
+
+    /**
+     * Converts a string value to SQL string literal.
+     *
+     * @param value string value
+     * @return SQL string literal
+     */
+    public static String sqlStringLiteral(String value) {
+<span class="nc" id="L497">        return &quot;'&quot; + value.replace(&quot;'&quot;, &quot;''&quot;) + &quot;'&quot;;</span>
+    }
+
+    /**
+     * Checks whether a Flight listener is ready to receive data.
+     *
+     * @param listener Flight stream listener
+     * @return true if ready, false if cancelled
+     * @throws InterruptedException if waiting is interrupted
+     */
+    public static boolean awaitListenerReady(
+            org.apache.arrow.flight.FlightProducer.ServerStreamListener listener)
+            throws InterruptedException {
+<span class="nc" id="L510">        long timeout = 60_000;</span>
+<span class="nc" id="L511">        long deadline = System.currentTimeMillis() + timeout;</span>
+<span class="nc bnc" id="L512" title="All 4 branches missed.">        while (!listener.isReady() &amp;&amp; !listener.isCancelled()) {</span>
+<span class="nc bnc" id="L513" title="All 2 branches missed.">            if (System.currentTimeMillis() &gt;= deadline) {</span>
+<span class="nc" id="L514">                LOGGER.warn(&quot;Listener readiness timeout after {}ms&quot;, timeout);</span>
+<span class="nc" id="L515">                return false;</span>
+            }
+<span class="nc" id="L517">            Thread.sleep(5);</span>
+        }
+<span class="nc bnc" id="L519" title="All 2 branches missed.">        return !listener.isCancelled();</span>
+    }
+
+    /**
+     * Copies rows from source to target VectorSchemaRoot using copyFromSafe.
+     *
+     * @param sourceRoot  source VSR
+     * @param targetRoot  target VSR
+     * @param sourceOffset source row offset
+     * @param rowCount    number of rows to copy
+     */
+    public static void copyRows(VectorSchemaRoot sourceRoot, VectorSchemaRoot targetRoot,
+            int sourceOffset, int rowCount) {
+<span class="nc" id="L532">        targetRoot.clear();</span>
+<span class="nc bnc" id="L533" title="All 2 branches missed.">        for (int column = 0; column &lt; sourceRoot.getFieldVectors().size(); column++) {</span>
+<span class="nc" id="L534">            ValueVector sourceVector = sourceRoot.getVector(column);</span>
+<span class="nc" id="L535">            ValueVector targetVector = targetRoot.getVector(column);</span>
+<span class="nc bnc" id="L536" title="All 2 branches missed.">            for (int row = 0; row &lt; rowCount; row++) {</span>
+<span class="nc" id="L537">                targetVector.copyFromSafe(sourceOffset + row, row, sourceVector);</span>
+            }
+<span class="nc" id="L539">            targetVector.setValueCount(rowCount);</span>
+        }
+<span class="nc" id="L541">        targetRoot.setRowCount(rowCount);</span>
+<span class="nc" id="L542">    }</span>
+
+    @SuppressWarnings(&quot;unchecked&quot;)
+    private static Object minOf(Object a, Object b) {
+<span class="nc bnc" id="L546" title="All 2 branches missed.">        if (a == null) {</span>
+<span class="nc" id="L547">            return b;</span>
+        }
+<span class="nc bnc" id="L549" title="All 2 branches missed.">        if (b == null) {</span>
+<span class="nc" id="L550">            return a;</span>
+        }
+<span class="nc bnc" id="L552" title="All 2 branches missed.">        return ((Comparable&lt;Object&gt;) a).compareTo(b) &lt;= 0 ? a : b;</span>
+    }
+
+    @SuppressWarnings(&quot;unchecked&quot;)
+    private static Object maxOf(Object a, Object b) {
+<span class="nc bnc" id="L557" title="All 2 branches missed.">        if (a == null) {</span>
+<span class="nc" id="L558">            return b;</span>
+        }
+<span class="nc bnc" id="L560" title="All 2 branches missed.">        if (b == null) {</span>
+<span class="nc" id="L561">            return a;</span>
+        }
+<span class="nc bnc" id="L563" title="All 2 branches missed.">        return ((Comparable&lt;Object&gt;) a).compareTo(b) &gt;= 0 ? a : b;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>
