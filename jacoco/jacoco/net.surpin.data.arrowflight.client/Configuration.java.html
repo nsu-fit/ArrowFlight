@@ -11,8 +11,9 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.security.GeneralSecurityException;
 import java.security.KeyStore;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.security.cert.Certificate;
-import java.util.Arrays;
 import java.util.Enumeration;
 
 /**
@@ -37,20 +38,20 @@ public final class Configuration implements Serializable {
     private final String bearerToken;
 
     //information to manage work-loads
-<span class="fc" id="L40">    private String defaultSchema = &quot;&quot;;</span>
-<span class="fc" id="L41">    private String routingTag = &quot;&quot;;</span>
-<span class="fc" id="L42">    private String routingQueue = &quot;&quot;;</span>
+<span class="fc" id="L41">    private String defaultSchema = &quot;&quot;;</span>
+<span class="fc" id="L42">    private String routingTag = &quot;&quot;;</span>
+<span class="fc" id="L43">    private String routingQueue = &quot;&quot;;</span>
 
     //the binary content of the certificate
     private byte[] certBytes;
 
     //memory allocation limit (bytes, 0 = default 2GB)
-<span class="fc" id="L48">    private long allocationLimit = 0;</span>
+<span class="fc" id="L49">    private long allocationLimit = 0;</span>
 
     //retry configuration
-<span class="fc" id="L51">    private int maxRetries = 3;</span>
-<span class="fc" id="L52">    private long retryBackoffMs = 1000;</span>
-<span class="fc" id="L53">    private long connectTimeoutMs = 30000;</span>
+<span class="fc" id="L52">    private int maxRetries = 3;</span>
+<span class="fc" id="L53">    private long retryBackoffMs = 1000;</span>
+<span class="fc" id="L54">    private long connectTimeoutMs = 30000;</span>
 
     /**
      * Construct a Configuration object
@@ -61,8 +62,8 @@ public final class Configuration implements Serializable {
      * @param bearerToken - the pat or auth2 token
      */
     public Configuration(String host, int port, String user, String password, String bearerToken) {
-<span class="fc" id="L64">        this(host, port, false, false, user, password, bearerToken);</span>
-<span class="fc" id="L65">    }</span>
+<span class="fc" id="L65">        this(host, port, false, false, user, password, bearerToken);</span>
+<span class="fc" id="L66">    }</span>
 
     /**
      * Construct a Configuration object
@@ -74,20 +75,20 @@ public final class Configuration implements Serializable {
      * @param password - the password of the user account
      * @param bearerToken - the pat or auth2 token
      */
-<span class="fc" id="L77">    public Configuration(String host, int port, Boolean tlsEnabled, Boolean crtVerify, String user, String password, String bearerToken) {</span>
-<span class="fc" id="L78">        this.fsHost = host;</span>
-<span class="fc" id="L79">        this.fsPort = port;</span>
-<span class="fc" id="L80">        this.tlsEnabled = tlsEnabled;</span>
-<span class="fc" id="L81">        this.crtVerify = crtVerify;</span>
+<span class="fc" id="L78">    public Configuration(String host, int port, Boolean tlsEnabled, Boolean crtVerify, String user, String password, String bearerToken) {</span>
+<span class="fc" id="L79">        this.fsHost = host;</span>
+<span class="fc" id="L80">        this.fsPort = port;</span>
+<span class="fc" id="L81">        this.tlsEnabled = tlsEnabled;</span>
+<span class="fc" id="L82">        this.crtVerify = crtVerify;</span>
 
-<span class="fc" id="L83">        this.trustStoreJks = null;</span>
-<span class="fc" id="L84">        this.trustStorePass = null;</span>
-<span class="fc" id="L85">        this.certBytes = null;</span>
+<span class="fc" id="L84">        this.trustStoreJks = null;</span>
+<span class="fc" id="L85">        this.trustStorePass = null;</span>
+<span class="fc" id="L86">        this.certBytes = null;</span>
 
-<span class="fc" id="L87">        this.user = user;</span>
-<span class="fc" id="L88">        this.password = password;</span>
-<span class="fc" id="L89">        this.bearerToken = bearerToken;</span>
-<span class="fc" id="L90">    }</span>
+<span class="fc" id="L88">        this.user = user;</span>
+<span class="fc" id="L89">        this.password = password;</span>
+<span class="fc" id="L90">        this.bearerToken = bearerToken;</span>
+<span class="fc" id="L91">    }</span>
 
     /**
      * Construct a Configuration object
@@ -100,20 +101,20 @@ public final class Configuration implements Serializable {
      * @param bearerToken - the pat or auth2 token
      */
     public Configuration(String host, int port, String trustStoreJks, String truststorePass, String user, String password, String bearerToken) {
-<span class="nc" id="L103">        this(host, port, true, true, user, password, bearerToken);</span>
+<span class="fc" id="L104">        this(host, port, true, true, user, password, bearerToken);</span>
 
-<span class="nc" id="L105">        this.trustStoreJks = trustStoreJks;</span>
-<span class="nc" id="L106">        this.trustStorePass = truststorePass;</span>
+<span class="fc" id="L106">        this.trustStoreJks = trustStoreJks;</span>
+<span class="fc" id="L107">        this.trustStorePass = truststorePass;</span>
 
-<span class="nc" id="L108">        this.certBytes = Configuration.getCertificateBytes(this.trustStoreJks, this.trustStorePass);</span>
-<span class="nc" id="L109">    }</span>
+<span class="fc" id="L109">        this.certBytes = Configuration.getCertificateBytes(this.trustStoreJks, this.trustStorePass);</span>
+<span class="fc" id="L110">    }</span>
 
     /**
      * Get the host name of the remote flight service
      * @return - the host name
      */
     public String getFlightHost() {
-<span class="nc" id="L116">        return this.fsHost;</span>
+<span class="nc" id="L117">        return this.fsHost;</span>
     }
 
     /**
@@ -121,7 +122,7 @@ public final class Configuration implements Serializable {
      * @return - the port number
      */
     public int getFlightPort() {
-<span class="nc" id="L124">        return this.fsPort;</span>
+<span class="nc" id="L125">        return this.fsPort;</span>
     }
 
     /**
@@ -129,7 +130,7 @@ public final class Configuration implements Serializable {
      * @return - the filename
      */
     public String getTruststoreJks() {
-<span class="nc" id="L132">        return this.trustStoreJks;</span>
+<span class="nc" id="L133">        return this.trustStoreJks;</span>
     }
 
     /**
@@ -137,7 +138,7 @@ public final class Configuration implements Serializable {
      * @return - the password
      */
     public String getTruststorePass() {
-<span class="nc" id="L140">        return this.trustStorePass;</span>
+<span class="nc" id="L141">        return this.trustStorePass;</span>
     }
 
     /**
@@ -145,7 +146,7 @@ public final class Configuration implements Serializable {
      * @return - true if the remtoe flight service supports secure connections
      */
     public Boolean getTlsEnabled() {
-<span class="nc" id="L148">        return this.tlsEnabled;</span>
+<span class="nc" id="L149">        return this.tlsEnabled;</span>
     }
 
     /**
@@ -153,7 +154,7 @@ public final class Configuration implements Serializable {
      * @return - true to skip the verification
      */
     public Boolean verifyServer() {
-<span class="nc" id="L156">        return this.crtVerify;</span>
+<span class="nc" id="L157">        return this.crtVerify;</span>
     }
 
     /**
@@ -161,7 +162,7 @@ public final class Configuration implements Serializable {
      * @return - the byte content
      */
     public byte[] getCertificateBytes() {
-<span class="nc" id="L164">        return this.certBytes;</span>
+<span class="nc" id="L165">        return this.certBytes;</span>
     }
 
     /**
@@ -169,7 +170,7 @@ public final class Configuration implements Serializable {
      * @return - the user account
      */
     public String getUser() {
-<span class="nc" id="L172">        return this.user;</span>
+<span class="nc" id="L173">        return this.user;</span>
     }
 
     /**
@@ -177,54 +178,77 @@ public final class Configuration implements Serializable {
      * @return - the password of the user account
      */
     public String getPassword() {
-<span class="nc" id="L180">        return this.password;</span>
+<span class="nc" id="L181">        return this.password;</span>
     }
     /**
      * Get the access-token of the user account
      * @return - the access-token of the user account
      */
     public String getBearerToken() {
-<span class="nc" id="L187">        return this.bearerToken;</span>
+<span class="nc" id="L188">        return this.bearerToken;</span>
     }
 
     /**
-     * Retrieve the connection string for connecting to the remote flight service
-     * @return - the connection string
+     * Retrieve an opaque connection identity for client pooling.
+     * Does not contain raw secrets — the credential is replaced with a SHA-256 hash.
+     * @return - the connection identity string
      */
     public String getConnectionString() {
-<span class="nc bnc" id="L195" title="All 4 branches missed.">        String secret = (this.password != null &amp;&amp; this.password.length() &gt; 0) ? this.password : this.bearerToken;</span>
-<span class="nc bnc" id="L196" title="All 2 branches missed.">        return String.format(&quot;%s://%s:%s@%s:%d&quot;, this.tlsEnabled ? &quot;https:&quot; : &quot;http&quot;, this.user, secret, this.fsHost, this.fsPort);</span>
+<span class="pc bpc" id="L197" title="1 of 4 branches missed.">        String secret = (this.password != null &amp;&amp; !this.password.isEmpty()) ? this.password : this.bearerToken;</span>
+<span class="fc" id="L198">        return String.format(&quot;%s://%s:%s@%s:%d&quot;,</span>
+<span class="pc bpc" id="L199" title="1 of 2 branches missed.">                this.tlsEnabled ? &quot;https:&quot; : &quot;http&quot;,</span>
+                this.user,
+<span class="fc" id="L201">                hash(secret),</span>
+                this.fsHost,
+<span class="fc" id="L203">                this.fsPort);</span>
+    }
+
+    private static String hash(String value) {
+<span class="pc bpc" id="L207" title="1 of 2 branches missed.">        if (value == null) {</span>
+<span class="nc" id="L208">            return &quot;&quot;;</span>
+        }
+        try {
+<span class="fc" id="L211">            MessageDigest md = MessageDigest.getInstance(&quot;SHA-256&quot;);</span>
+<span class="fc" id="L212">            byte[] digest = md.digest(value.getBytes(StandardCharsets.UTF_8));</span>
+<span class="fc" id="L213">            StringBuilder sb = new StringBuilder();</span>
+<span class="fc bfc" id="L214" title="All 2 branches covered.">            for (byte b : digest) {</span>
+<span class="fc" id="L215">                sb.append(String.format(&quot;%02x&quot;, b));</span>
+            }
+<span class="fc" id="L217">            return sb.toString();</span>
+<span class="nc" id="L218">        } catch (NoSuchAlgorithmException e) {</span>
+<span class="nc" id="L219">            throw new RuntimeException(e);</span>
+        }
     }
 
     private static byte[] getCertificateBytes(String keyStorePath, String keyStorePassword) {
         try {
-<span class="nc" id="L201">            KeyStore keyStore = KeyStore.getInstance(KeyStore.getDefaultType());</span>
-<span class="nc" id="L202">            try (InputStream keyStoreStream = Files.newInputStream(Paths.get(keyStorePath))) {</span>
-<span class="nc" id="L203">                keyStore.load(keyStoreStream, keyStorePassword.toCharArray());</span>
+<span class="fc" id="L225">            KeyStore keyStore = KeyStore.getInstance(KeyStore.getDefaultType());</span>
+<span class="nc" id="L226">            try (InputStream keyStoreStream = Files.newInputStream(Paths.get(keyStorePath))) {</span>
+<span class="nc" id="L227">                keyStore.load(keyStoreStream, keyStorePassword.toCharArray());</span>
             }
 
-<span class="nc" id="L206">            Enumeration&lt;String&gt; aliases = keyStore.aliases();</span>
-<span class="nc bnc" id="L207" title="All 2 branches missed.">            while (aliases.hasMoreElements()) {</span>
-<span class="nc" id="L208">                String alias = aliases.nextElement();</span>
-<span class="nc bnc" id="L209" title="All 2 branches missed.">                if (keyStore.isCertificateEntry(alias)) {</span>
-<span class="nc" id="L210">                    Certificate certificates = keyStore.getCertificate(alias);</span>
-<span class="nc" id="L211">                    return toBytes(certificates);</span>
+<span class="nc" id="L230">            Enumeration&lt;String&gt; aliases = keyStore.aliases();</span>
+<span class="nc bnc" id="L231" title="All 2 branches missed.">            while (aliases.hasMoreElements()) {</span>
+<span class="nc" id="L232">                String alias = aliases.nextElement();</span>
+<span class="nc bnc" id="L233" title="All 2 branches missed.">                if (keyStore.isCertificateEntry(alias)) {</span>
+<span class="nc" id="L234">                    Certificate certificates = keyStore.getCertificate(alias);</span>
+<span class="nc" id="L235">                    return toBytes(certificates);</span>
                 }
-<span class="nc" id="L213">            }</span>
-<span class="nc" id="L214">        } catch (GeneralSecurityException | IOException e) {</span>
-<span class="nc" id="L215">            LoggerFactory.getLogger(Configuration.class).warn(&quot;Cannot load the cert - &quot; + keyStorePath);</span>
-<span class="nc" id="L216">        }</span>
-<span class="nc" id="L217">        return new byte[0];</span>
+<span class="nc" id="L237">            }</span>
+<span class="fc" id="L238">        } catch (GeneralSecurityException | IOException e) {</span>
+<span class="fc" id="L239">            LoggerFactory.getLogger(Configuration.class).warn(&quot;Cannot load the cert - &quot; + keyStorePath);</span>
+<span class="nc" id="L240">        }</span>
+<span class="fc" id="L241">        return new byte[0];</span>
     }
 
     private static byte[] toBytes(Certificate certificate) throws IOException {
         try (
-<span class="nc" id="L222">            StringWriter writer = new StringWriter();</span>
-<span class="nc" id="L223">            JcaPEMWriter pemWriter = new JcaPEMWriter(writer)</span>
+<span class="nc" id="L246">            StringWriter writer = new StringWriter();</span>
+<span class="nc" id="L247">            JcaPEMWriter pemWriter = new JcaPEMWriter(writer)</span>
         ) {
-<span class="nc" id="L225">            pemWriter.writeObject(certificate);</span>
-<span class="nc" id="L226">            pemWriter.flush();</span>
-<span class="nc" id="L227">            return writer.toString().getBytes(StandardCharsets.UTF_8);</span>
+<span class="nc" id="L249">            pemWriter.writeObject(certificate);</span>
+<span class="nc" id="L250">            pemWriter.flush();</span>
+<span class="nc" id="L251">            return writer.toString().getBytes(StandardCharsets.UTF_8);</span>
         }
     }
 
@@ -233,7 +257,7 @@ public final class Configuration implements Serializable {
      * @return - Default schema path to the dataset that the user wants to query.
      */
     public String getDefaultSchema() {
-<span class="nc" id="L236">        return defaultSchema;</span>
+<span class="nc" id="L260">        return defaultSchema;</span>
     }
 
     /**
@@ -241,15 +265,15 @@ public final class Configuration implements Serializable {
      * @param defaultSchema - Default schema path to the dataset that the user wants to query.
      */
     public void setDefaultSchema(String defaultSchema) {
-<span class="nc" id="L244">        this.defaultSchema = defaultSchema;</span>
-<span class="nc" id="L245">    }</span>
+<span class="nc" id="L268">        this.defaultSchema = defaultSchema;</span>
+<span class="nc" id="L269">    }</span>
 
     /**
      * Get the routing-tag
      * @return - Tag name associated with all queries executed within a Flight session. Used only during authentication.
      */
     public String getRoutingTag() {
-<span class="nc" id="L252">        return this.routingTag;</span>
+<span class="nc" id="L276">        return this.routingTag;</span>
     }
 
     /**
@@ -257,15 +281,15 @@ public final class Configuration implements Serializable {
      * @param routingTag - Tag name associated with all queries executed within a Flight session. Used only during authentication.
      */
     public void setRoutingTag(String routingTag) {
-<span class="nc" id="L260">        this.routingTag = routingTag;</span>
-<span class="nc" id="L261">    }</span>
+<span class="nc" id="L284">        this.routingTag = routingTag;</span>
+<span class="nc" id="L285">    }</span>
 
     /**
      * Get the routing-queue
      * @return - Name of the workload management queue. Used only during authentication.
      */
     public String getRoutingQueue() {
-<span class="nc" id="L268">        return this.routingQueue;</span>
+<span class="nc" id="L292">        return this.routingQueue;</span>
     }
 
     /**
@@ -273,63 +297,63 @@ public final class Configuration implements Serializable {
      * @param routingQueue - Name of the workload management queue. Used only during authentication.
      */
     public void setRoutingQueue(String routingQueue) {
-<span class="nc" id="L276">        this.routingQueue = routingQueue;</span>
-<span class="nc" id="L277">    }</span>
+<span class="nc" id="L300">        this.routingQueue = routingQueue;</span>
+<span class="nc" id="L301">    }</span>
 
     /**
      * Get the Arrow memory allocation limit in bytes (0 = default 2GB).
      */
     public long getAllocationLimit() {
-<span class="nc" id="L283">        return this.allocationLimit;</span>
+<span class="nc" id="L307">        return this.allocationLimit;</span>
     }
 
     /**
      * Set the Arrow memory allocation limit in bytes (0 = default 2GB).
      */
     public void setAllocationLimit(long limit) {
-<span class="nc" id="L290">        this.allocationLimit = limit;</span>
-<span class="nc" id="L291">    }</span>
+<span class="nc" id="L314">        this.allocationLimit = limit;</span>
+<span class="nc" id="L315">    }</span>
 
     public int getMaxRetries() {
-<span class="fc" id="L294">        return this.maxRetries;</span>
+<span class="fc" id="L318">        return this.maxRetries;</span>
     }
 
     public void setMaxRetries(int maxRetries) {
-<span class="fc" id="L298">        this.maxRetries = maxRetries;</span>
-<span class="fc" id="L299">    }</span>
+<span class="fc" id="L322">        this.maxRetries = maxRetries;</span>
+<span class="fc" id="L323">    }</span>
 
     public long getRetryBackoffMs() {
-<span class="fc" id="L302">        return this.retryBackoffMs;</span>
+<span class="fc" id="L326">        return this.retryBackoffMs;</span>
     }
 
     public void setRetryBackoffMs(long retryBackoffMs) {
-<span class="fc" id="L306">        this.retryBackoffMs = retryBackoffMs;</span>
-<span class="fc" id="L307">    }</span>
+<span class="fc" id="L330">        this.retryBackoffMs = retryBackoffMs;</span>
+<span class="fc" id="L331">    }</span>
 
     public long getConnectTimeoutMs() {
-<span class="fc" id="L310">        return this.connectTimeoutMs;</span>
+<span class="fc" id="L334">        return this.connectTimeoutMs;</span>
     }
 
     public void setConnectTimeoutMs(long connectTimeoutMs) {
-<span class="fc" id="L314">        this.connectTimeoutMs = connectTimeoutMs;</span>
-<span class="fc" id="L315">    }</span>
+<span class="fc" id="L338">        this.connectTimeoutMs = connectTimeoutMs;</span>
+<span class="fc" id="L339">    }</span>
 
     @Override
     public String toString() {
-<span class="fc" id="L319">        return &quot;Configuration{&quot; +</span>
+<span class="fc" id="L343">        return &quot;Configuration{&quot; +</span>
                 &quot;fsHost='&quot; + fsHost + '\'' +
                 &quot;, fsPort=&quot; + fsPort +
                 &quot;, tlsEnabled=&quot; + tlsEnabled +
                 &quot;, crtVerify=&quot; + crtVerify +
                 &quot;, trustStoreJks='&quot; + trustStoreJks + '\'' +
-                &quot;, trustStorePass='&quot; + trustStorePass + '\'' +
+<span class="fc bfc" id="L349" title="All 2 branches covered.">                &quot;, trustStorePass='&quot; + (trustStorePass != null ? &quot;[hidden]&quot; : &quot;[not set]&quot;) + '\'' +</span>
                 &quot;, user='&quot; + user + '\'' +
-<span class="pc bpc" id="L327" title="1 of 2 branches missed.">                &quot;, password='&quot; + (password != null ? &quot;[hidden]&quot; : &quot;[not set]&quot;) + '\'' +</span>
-                &quot;, bearerToken='&quot; + bearerToken + '\'' +
+<span class="fc bfc" id="L351" title="All 2 branches covered.">                &quot;, password='&quot; + (password != null ? &quot;[hidden]&quot; : &quot;[not set]&quot;) + '\'' +</span>
+<span class="fc bfc" id="L352" title="All 2 branches covered.">                &quot;, bearerToken='&quot; + (bearerToken != null ? &quot;[hidden]&quot; : &quot;[not set]&quot;) + '\'' +</span>
                 &quot;, defaultSchema='&quot; + defaultSchema + '\'' +
                 &quot;, routingTag='&quot; + routingTag + '\'' +
                 &quot;, routingQueue='&quot; + routingQueue + '\'' +
-<span class="fc" id="L332">                &quot;, certBytes=&quot; + Arrays.toString(certBytes) +</span>
+<span class="fc bfc" id="L356" title="All 2 branches covered.">                &quot;, certBytes='&quot; + (certBytes != null ? &quot;[hidden, &quot; + certBytes.length + &quot; bytes]&quot; : &quot;[not set]&quot;) + '\'' +</span>
                 &quot;, allocationLimit=&quot; + allocationLimit +
                 &quot;, maxRetries=&quot; + maxRetries +
                 &quot;, retryBackoffMs=&quot; + retryBackoffMs +
