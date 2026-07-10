@@ -48,13 +48,20 @@ wait_for_tcp() {
   return 1
 }
 
+expose_app_jar_to_spark_driver() {
+  export SPARK_CLASSPATH="${APP_JAR}${SPARK_CLASSPATH:+:${SPARK_CLASSPATH}}"
+  export SPARK_DIST_CLASSPATH="${APP_JAR}${SPARK_DIST_CLASSPATH:+:${SPARK_DIST_CLASSPATH}}"
+}
+
 spark_submit_common() {
   local app_file="$1"
   shift
   wait_for_tcp "${SPARK_MASTER_HOST:-spark-master}" "${SPARK_MASTER_PORT:-7077}" 120
+  expose_app_jar_to_spark_driver
   exec "${SPARK_HOME}/bin/spark-submit" \
     --master "${SPARK_MASTER_URL:-spark://spark-master:7077}" \
     --jars "${APP_JAR}" \
+    --driver-class-path "${APP_JAR}" \
     --driver-java-options "${SPARK_DRIVER_EXTRA_JAVA_OPTIONS:-${DEFAULT_SPARK_JAVA_OPTIONS}}" \
     --conf "spark.executor.extraJavaOptions=${SPARK_EXECUTOR_EXTRA_JAVA_OPTIONS:-${DEFAULT_SPARK_JAVA_OPTIONS}}" \
     --conf "spark.driver.extraClassPath=${APP_JAR}" \
@@ -64,6 +71,9 @@ spark_submit_common() {
     --conf "spark.driver.bindAddress=0.0.0.0" \
     --conf "spark.driver.host=${SPARK_DRIVER_HOST:-$(hostname -f)}" \
     --conf "spark.sql.shuffle.partitions=${SPARK_SHUFFLE_PARTITIONS:-8}" \
+    --conf "spark.sql.catalogImplementation=hive" \
+    --conf "spark.sql.warehouse.dir=${SPARK_WAREHOUSE_DIR:-/spark-warehouse}" \
+    --conf "spark.hadoop.javax.jdo.option.ConnectionURL=jdbc:derby:;databaseName=${SPARK_METASTORE_DB:-/spark-warehouse/metastore_db};create=true" \
     "${app_file}" \
     "$@"
 }
@@ -71,6 +81,7 @@ spark_submit_common() {
 spark_common_conf=(
   --master "${SPARK_MASTER_URL:-spark://spark-master:7077}"
   --jars "${APP_JAR}"
+  --driver-class-path "${APP_JAR}"
   --driver-java-options "${SPARK_DRIVER_EXTRA_JAVA_OPTIONS:-${DEFAULT_SPARK_JAVA_OPTIONS}}"
   --conf "spark.executor.extraJavaOptions=${SPARK_EXECUTOR_EXTRA_JAVA_OPTIONS:-${DEFAULT_SPARK_JAVA_OPTIONS}}"
   --conf "spark.driver.extraClassPath=${APP_JAR}"
@@ -121,11 +132,9 @@ case "${mode}" in
   publish-benchmark-data)
     spark_submit_common "${APP_HOME}/spark/publish_benchbase_tables.py" "$@"
     ;;
-  create-benchmark-tables)
-    spark_submit_common "${APP_HOME}/spark/create_benchbase_tables.py" "$@"
-    ;;
   spark-thrift-server)
     wait_for_tcp "${SPARK_MASTER_HOST:-spark-master}" "${SPARK_MASTER_PORT:-7077}" 120
+    expose_app_jar_to_spark_driver
     exec "${SPARK_HOME}/bin/spark-submit" \
       "${spark_common_conf[@]}" \
       --class org.apache.spark.sql.hive.thriftserver.HiveThriftServer2 \

@@ -29,7 +29,7 @@ services:
     depends_on:
       - spark-master
     volumes:
-      - generated-data:/generated
+      - spark-warehouse:/spark-warehouse
     ports:
       - "8081:8081"
 
@@ -43,7 +43,7 @@ services:
     depends_on:
       - spark-master
     volumes:
-      - generated-data:/generated
+      - spark-warehouse:/spark-warehouse
     ports:
       - "8082:8082"
 
@@ -55,36 +55,33 @@ services:
       SPARK_MASTER_URL: spark://spark-master:7077
       SPARK_DRIVER_HOST: spark-benchmark-publisher
       BENCHMARK_DATASET: "${BENCHMARK_DATASET:-tpch}"
-      BENCHMARK_LOAD_SCHEMA: "${BENCHMARK_LOAD_SCHEMA:-default}"
       BENCHMARK_SCHEMA: "${BENCHMARK_SCHEMA:-tpch}"
-      PUBLISH_ACTION: "${PUBLISH_ACTION:-all}"
       FLIGHT_SOURCE_HOST: "${FLIGHT_SOURCE_HOST:-flight-server-1}"
       FLIGHT_SOURCE_PORT: "${FLIGHT_SOURCE_PORT:-32010}"
       FLIGHT_SERVER_DATA_DIRS: "${FLIGHT_SERVER_DATA_DIRS:-/server-data/flight-server-1,/server-data/flight-server-2,/server-data/flight-server-3}"
-      TEST_PARTITIONS: "${TEST_PARTITIONS:-24}"
       SPARK_WAREHOUSE_DIR: /spark-warehouse
       SPARK_METASTORE_DB: /spark-warehouse/metastore_db
     volumes:
-      - generated-data:/generated
       - flight-server-1-data:/server-data/flight-server-1
       - flight-server-2-data:/server-data/flight-server-2
       - flight-server-3-data:/server-data/flight-server-3
       - spark-warehouse:/spark-warehouse
     restart: "no"
 
-  spark-benchmark-creator:
-    <<: *arrowflight-image
+  duckdb-benchmark-generator:
+    build:
+      context: ./benchmarks/benchbase-spark
+      dockerfile: duckdb-generator.Dockerfile
     profiles: ["benchbase"]
-    command: ["create-benchmark-tables"]
     environment:
-      SPARK_MASTER_URL: spark://spark-master:7077
-      SPARK_DRIVER_HOST: spark-benchmark-creator
       BENCHMARK_DATASET: "${BENCHMARK_DATASET:-tpch}"
-      BENCHMARK_LOAD_SCHEMA: "${BENCHMARK_LOAD_SCHEMA:-default}"
-      SPARK_WAREHOUSE_DIR: /spark-warehouse
-      SPARK_METASTORE_DB: /spark-warehouse/metastore_db
+      BENCHMARK_SCHEMA: "${BENCHMARK_SCHEMA:-tpch}"
+      BENCHMARK_SCALE_FACTOR: "${BENCHMARK_SCALE_FACTOR:-0.01}"
+      FLIGHT_SERVER_DATA_DIRS: "${FLIGHT_SERVER_DATA_DIRS:-/server-data/flight-server-1,/server-data/flight-server-2,/server-data/flight-server-3}"
     volumes:
-      - spark-warehouse:/spark-warehouse
+      - flight-server-1-data:/server-data/flight-server-1
+      - flight-server-2-data:/server-data/flight-server-2
+      - flight-server-3-data:/server-data/flight-server-3
     restart: "no"
 
   spark-thrift-server:
@@ -173,7 +170,6 @@ services:
       retries: 60
 
 volumes:
-  generated-data:
   flight-server-1-data:
   flight-server-2-data:
   flight-server-3-data:

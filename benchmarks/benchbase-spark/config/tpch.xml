@@ -1,11 +1,11 @@
 <?xml version="1.0"?>
 <parameters>
   <type>POSTGRES</type>
-  <driver>org.apache.hive.jdbc.HiveDriver</driver>
-  <url>jdbc:hive2://spark-thrift-server:10000/tpch</url>
+  <driver>net.surpin.benchbase.HiveExecuteDriver</driver>
+  <url>jdbc:hiveexec:hive2://spark-thrift-server:10000/tpch</url>
   <username>benchbase</username>
   <password>benchbase</password>
-  <reconnectOnConnectionFailure>true</reconnectOnConnectionFailure>
+  <reconnectOnConnectionFailure>false</reconnectOnConnectionFailure>
   <isolation>TRANSACTION_NONE</isolation>
   <batchsize>1024</batchsize>
 

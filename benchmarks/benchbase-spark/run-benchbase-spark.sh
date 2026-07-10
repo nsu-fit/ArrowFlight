@@ -11,7 +11,6 @@ CONFIG_DIR="${SCRIPT_DIR}/config"
 RESULTS_IN_CONTAINER="/benchbase/results"
 GENERATED_CONFIG_LOCAL=""
 EXEC_CONFIG_IN_CONTAINER="/benchbase/config/custom/${BENCHMARK}.xml"
-LOAD_CONFIG_IN_CONTAINER="/benchbase/config/custom/${BENCHMARK}-load.xml"
 FLIGHT_SERVER_SERVICES=()
 
 usage() {
@@ -23,9 +22,9 @@ Benchmarks:
   tpcds
 
 Modes:
-  smoke    reset volumes, BenchBase create/load, publish to Flight, execute small query set
-  fresh    reset volumes, BenchBase create/load, publish to Flight, execute benchmark
-  prepare  reset volumes, BenchBase create/load, publish to Flight, start Spark Thrift
+  smoke    reset volumes, DuckDB generate Parquet, register Flight, execute small query set
+  fresh    reset volumes, DuckDB generate Parquet, register Flight, execute benchmark
+  prepare  reset volumes, DuckDB generate Parquet, register Flight, start Spark Thrift
   run      execute BenchBase against already prepared Spark Flight tables
   report   build latest HTML report
   down     stop stack and remove Docker volumes
@@ -88,9 +87,8 @@ configure_cluster() {
   export FLIGHT_SOURCE_HOST="flight-server-1"
   export FLIGHT_SOURCE_PORT="32010"
   export BENCHMARK_DATASET="${BENCHMARK}"
-  export BENCHMARK_LOAD_SCHEMA="default"
   export BENCHMARK_SCHEMA="${BENCHMARK}"
-  export TEST_PARTITIONS="${TEST_PARTITIONS:-24}"
+  export BENCHMARK_SCALE_FACTOR="${BENCHMARK_SCALE_FACTOR:-0.01}"
 
   FLIGHT_HOSTS="$(join_by_comma "${hosts[@]}")"
   FLIGHT_SERVERS="$(join_by_comma "${servers[@]}")"
@@ -207,7 +205,7 @@ wait_flight_servers() {
   for service in "${FLIGHT_SERVER_SERVICES[@]}"; do
     local ready=0
     for _ in $(seq 1 90); do
-      if compose exec -T "${service}" bash -c "</dev/tcp/127.0.0.1/32010" >/dev/null 2>&1; then
+      if compose exec -T "${service}" bash -c "</dev/tcp/${service}/32010" >/dev/null 2>&1; then
         echo "${service} ready"
         ready=1
         break
@@ -221,28 +219,20 @@ wait_flight_servers() {
   done
 }
 
-run_publisher() {
-  local action="$1"
-  PUBLISH_ACTION="${action}" compose --profile benchbase run --rm spark-benchmark-publisher
+register_flight_tables() {
+  compose --profile benchbase run --rm --entrypoint bash spark-benchmark-publisher \
+    -c "rm -rf /spark-warehouse/metastore_db && echo 'Cleaned stale Derby metastore'"
+  compose --profile benchbase run --rm spark-benchmark-publisher
 }
 
-benchbase_load() {
-  prepare_results_dir
-  compose --profile benchbase run --rm benchbase-spark \
-    -b "${BENCHMARK}" \
-    -c "${LOAD_CONFIG_IN_CONTAINER}" \
-    --create=false \
-    --load=true \
-    --execute=false \
-    -d "${RESULTS_IN_CONTAINER}"
-}
-
-create_spark_tables() {
-  compose --profile benchbase run --rm spark-benchmark-creator
+generate_parquet_data() {
+  compose --profile benchbase build duckdb-benchmark-generator
+  compose --profile benchbase run --rm duckdb-benchmark-generator
 }
 
 benchbase_execute() {
   prepare_results_dir
+  compose --profile benchbase build benchbase-spark
   compose --profile benchbase run --rm benchbase-spark \
     -b "${BENCHMARK}" \
     -c "${EXEC_CONFIG_IN_CONTAINER}" \
@@ -253,15 +243,11 @@ benchbase_execute() {
 }
 
 prepare_stack() {
-  start_spark
-  start_thrift
-  create_spark_tables
-  benchbase_load
-  stop_thrift
-  run_publisher export
+  generate_parquet_data
   start_flight_servers
   wait_flight_servers
-  run_publisher register
+  start_spark
+  register_flight_tables
   start_thrift
 }
 
@@ -278,7 +264,6 @@ fi
 
 configure_cluster
 prepare_execute_config
-LOAD_CONFIG_IN_CONTAINER="/benchbase/config/custom/${BENCHMARK}-load.xml"
 
 case "${MODE}" in
   smoke|fresh)
