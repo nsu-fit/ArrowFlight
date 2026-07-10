@@ -64,6 +64,8 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
 
     /**
      * Construct a streaming partition reader
+     * @param configuration - the configuration of remote flight service
+     * @param inputPartition - the input partition to read
      */
     public FlightPartitionReader(Configuration configuration, InputPartition inputPartition) {
         this.configuration = configuration;
@@ -155,6 +157,11 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
         closeStream();
     }
 
+    /**
+     * Open the appropriate stream based on input partition type
+     * @return - true if stream opened successfully with data available
+     * @throws Exception - if stream opening fails
+     */
     private boolean openStream() throws Exception {
         if (this.inputPartition instanceof FlightInputPartition.FlightEndpointInputPartition) {
             return openEndpointStreamWithRetry((FlightInputPartition.FlightEndpointInputPartition) this.inputPartition);
@@ -166,6 +173,12 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
         }
     }
 
+    /**
+     * Open endpoint stream with exponential backoff retry
+     * @param dePartition - the endpoint input partition
+     * @return - true if stream opened successfully
+     * @throws Exception - if all retries fail
+     */
     private boolean openEndpointStreamWithRetry(FlightInputPartition.FlightEndpointInputPartition dePartition) throws Exception {
         int maxRetries = this.configuration.getMaxRetries();
         long backoffMs = this.configuration.getRetryBackoffMs();
@@ -187,6 +200,12 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
         return false;
     }
 
+    /**
+     * Open query stream with endpoint fallback and retry logic
+     * @param dqPartition - the query input partition
+     * @return - true if stream opened successfully
+     * @throws Exception - if all retries and endpoints fail
+     */
     private boolean openQueryStreamWithRetry(FlightInputPartition.FlightQueryInputPartition dqPartition) throws Exception {
         int maxRetries = this.configuration.getMaxRetries();
         long backoffMs = this.configuration.getRetryBackoffMs();
@@ -233,6 +252,13 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
         return false;
     }
 
+    /**
+     * Open a single Flight endpoint and populate the stream
+     * @param endpoint - the endpoint to connect to
+     * @param schema - the expected schema
+     * @return - true if data is available from the endpoint
+     * @throws Exception - if connection fails
+     */
     private boolean openSingleEndpoint(Endpoint endpoint, Schema schema) throws Exception {
         org.apache.arrow.flight.FlightEndpoint fep = new org.apache.arrow.flight.FlightEndpoint(
                 new org.apache.arrow.flight.Ticket(endpoint.getTicket()),
@@ -282,6 +308,12 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
         }
     }
 
+    /**
+     * Open a stream for a direct endpoint partition
+     * @param dePartition - the endpoint input partition
+     * @return - true if stream opened successfully
+     * @throws Exception - if stream opening fails
+     */
     private boolean openEndpointStream(FlightInputPartition.FlightEndpointInputPartition dePartition) throws Exception {
         LOGGER.info("FlightPartitionReader.openEndpointStream(): partition: {}", dePartition);
 
@@ -314,6 +346,9 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
         return true;
     }
 
+    /**
+     * Close the current stream and reset reader state
+     */
     private void closeStream() {
         try {
             if (stream != null) {
@@ -335,6 +370,10 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
     /**
      * Extract a single value from a FieldVector at the given row index,
      * converting it to a Spark-compatible object.
+     * @param vector - the field vector to read from
+     * @param rowIndex - the row index to extract
+     * @param field - the expected field metadata for type coercion
+     * @return - the Spark-compatible value, or null if the field is null
      */
     private static Object getValue(org.apache.arrow.vector.FieldVector vector, int rowIndex, Field field) {
         if (vector.isNull(rowIndex)) {

@@ -1,28 +1,15 @@
 package net.surpin.data.arrowflight.server;
 
-import com.hazelcast.config.Config;
-import com.hazelcast.core.Hazelcast;
-import com.hazelcast.core.HazelcastInstance;
-import net.surpin.data.arrowflight.server.db.ParquetManager;
-import org.apache.arrow.flight.*;
+import org.apache.arrow.flight.FlightEndpoint;
+import org.apache.arrow.flight.FlightInfo;
+import org.apache.arrow.flight.FlightStream;
 import org.apache.arrow.flight.sql.FlightSqlClient;
-import org.apache.arrow.memory.BufferAllocator;
-import org.apache.arrow.memory.DefaultAllocationManagerOption;
-import org.apache.arrow.memory.RootAllocator;
 import org.apache.arrow.vector.VectorSchemaRoot;
-import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.LocalFileSystem;
 import org.junit.jupiter.api.*;
 
-import java.io.IOException;
-import java.net.ServerSocket;
-import java.net.URI;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 
-import static org.apache.arrow.memory.DefaultAllocationManagerOption.ALLOCATION_MANAGER_TYPE_PROPERTY_NAME;
 import static org.junit.jupiter.api.Assertions.*;
 
 @Tag("integration")
@@ -30,75 +17,38 @@ import static org.junit.jupiter.api.Assertions.*;
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class FlightServerIntegrationTest {
 
-    private static FlightServer server;
-    private static BufferAllocator allocator;
-    private static HazelcastInstance hazelcast;
-    private static FlightClient flightClient;
-    private static FlightSqlClient sqlClient;
-    private static Location serverLocation;
+    private static TestFlightServerHelper helper;
 
     @BeforeAll
     static void startServer() throws Exception {
-        System.setProperty(ALLOCATION_MANAGER_TYPE_PROPERTY_NAME,
-                DefaultAllocationManagerOption.AllocationManagerType.Netty.name());
-        allocator = new RootAllocator(Long.MAX_VALUE);
-
-        // Embedded Hazelcast with networking disabled (standalone mode)
-        Config hz = new Config();
-        hz.setClusterName("test-" + UUID.randomUUID());
-        hz.getNetworkConfig().setPort(findFreePort());
-        hz.getNetworkConfig().setPortAutoIncrement(false);
-        hz.getNetworkConfig().getJoin().getMulticastConfig().setEnabled(false);
-        hz.getNetworkConfig().getJoin().getTcpIpConfig().setEnabled(false);
-        hazelcast = Hazelcast.newHazelcastInstance(hz);
-        String dataDir = Paths.get("src/test/resources/test_db").toAbsolutePath().toString();
-        LocalFileSystem localFs = new LocalFileSystem();
-        localFs.initialize(URI.create("file:///"), new Configuration());
-        ParquetManager parquetManager = new ParquetManager(localFs, dataDir, "localhost");
-
-        int port = findFreePort();
-        serverLocation = Location.forGrpcInsecure("localhost", port);
-
-        HadoopFlightSqlService sqlService =
-                new HadoopFlightSqlService(serverLocation, parquetManager, allocator, hazelcast);
-        server = FlightServer.builder(allocator, serverLocation, sqlService).build();
-        server.start();
-
-        flightClient = FlightClient.builder(allocator, serverLocation).build();
-        sqlClient = new FlightSqlClient(flightClient);
+        helper = TestFlightServerHelper.builder().start();
     }
 
     @AfterAll
     static void stopServer() throws Exception {
-        if (sqlClient != null) sqlClient.close();
-        if (server != null) server.shutdown();
-        if (hazelcast != null) hazelcast.shutdown();
-        if (allocator != null) allocator.close();
+        if (helper != null) helper.close();
     }
 
     @Test
     @Order(1)
     void serverIsReachable() {
-        assertNotNull(server);
-        assertTrue(server.getPort() > 0);
+        assertNotNull(helper.server);
+        assertTrue(helper.server.getPort() > 0);
     }
 
     @Test
     @Order(2)
     void getCatalogsReturnsOneRow() throws Exception {
-        FlightInfo info = sqlClient.getCatalogs();
+        FlightInfo info = helper.sqlClient().getCatalogs();
         List<Integer> rowCounts = collectRowCounts(info);
         int total = rowCounts.stream().mapToInt(Integer::intValue).sum();
-        assertEquals(1, total, "Expected exactly one catalog");
+        assertEquals(1, total);
     }
 
     @Test
     @Order(3)
     void getSchemasReturnsTestSchema() throws Exception {
-        FlightInfo info = sqlClient.getSchemas(null, null);
-        List<String> schemaNames = collectFirstColumnStrings(info);
-        // catalog_name is the first column; db_schema_name is the second
-        // Check using second column (schema names)
+        FlightInfo info = helper.sqlClient().getSchemas(null, null);
         List<String> allStrings = collectAllStrings(info);
         assertTrue(allStrings.contains("test_schema"),
                 "Schema list should contain 'test_schema', got: " + allStrings);
@@ -107,15 +57,15 @@ class FlightServerIntegrationTest {
     @Test
     @Order(4)
     void getTableTypesReturnsTABLE() throws Exception {
-        FlightInfo info = sqlClient.getTableTypes();
+        FlightInfo info = helper.sqlClient().getTableTypes();
         List<String> types = collectFirstColumnStrings(info);
-        assertTrue(types.contains("TABLE"), "Table types should include TABLE");
+        assertTrue(types.contains("TABLE"));
     }
 
     @Test
     @Order(5)
     void getTablesReturnsTestTable() throws Exception {
-        FlightInfo info = sqlClient.getTables(null, null, null, null, false);
+        FlightInfo info = helper.sqlClient().getTables(null, null, null, null, false);
         List<String> allStrings = collectAllStrings(info);
         assertTrue(allStrings.contains("test_table"),
                 "Tables list should contain 'test_table', got: " + allStrings);
@@ -124,29 +74,30 @@ class FlightServerIntegrationTest {
     @Test
     @Order(6)
     void executeSelectStarReturnsAllRows() throws Exception {
-        FlightInfo info = sqlClient.execute("SELECT * FROM test_schema.test_table");
-        assertNotNull(info.getSchema(), "FlightInfo should have a schema");
-        assertFalse(info.getSchema().getFields().isEmpty(), "Schema should have fields");
+        FlightInfo info = helper.sqlClient().execute("SELECT * FROM test_schema.test_table");
+        assertNotNull(info.getSchema());
+        assertFalse(info.getSchema().getFields().isEmpty());
 
         int totalRows = 0;
         for (FlightEndpoint endpoint : info.getEndpoints()) {
-            try (FlightStream stream = flightClient.getStream(endpoint.getTicket())) {
+            try (FlightStream stream = helper.flightClient().getStream(endpoint.getTicket())) {
                 while (stream.next()) {
                     totalRows += stream.getRoot().getRowCount();
                 }
             }
         }
-        assertTrue(totalRows > 0, "Query should return at least one row");
+        assertTrue(totalRows > 0);
     }
 
     @Test
     @Order(7)
     void executeWithFilterReducesRowCount() throws Exception {
-        int allRows = countRows(sqlClient.execute("SELECT * FROM test_schema.test_table"));
-        int filtered = countRows(sqlClient.execute(
+        int allRows = countRows(helper.sqlClient().execute(
+                "SELECT * FROM test_schema.test_table"));
+        int filtered = countRows(helper.sqlClient().execute(
                 "SELECT * FROM test_schema.test_table WHERE tinyint_col = 0"));
 
-        assertTrue(filtered > 0, "Filtered result should be non-empty");
+        assertTrue(filtered > 0);
         assertTrue(filtered < allRows,
                 "Filtered result (" + filtered + ") should be less than full scan (" + allRows + ")");
     }
@@ -154,17 +105,15 @@ class FlightServerIntegrationTest {
     @Test
     @Order(8)
     void executeWithColumnProjection() throws Exception {
-        FlightInfo info = sqlClient.execute("SELECT id, bool_col FROM test_schema.test_table");
-        assertEquals(2, info.getSchema().getFields().size(),
-                "Projected query should return exactly 2 columns");
+        FlightInfo info = helper.sqlClient().execute(
+                "SELECT id, bool_col FROM test_schema.test_table");
+        assertEquals(2, info.getSchema().getFields().size());
     }
-
-    // ─── helpers ──────────────────────────────────────────────────────────
 
     private int countRows(FlightInfo info) throws Exception {
         int total = 0;
         for (FlightEndpoint endpoint : info.getEndpoints()) {
-            try (FlightStream stream = flightClient.getStream(endpoint.getTicket())) {
+            try (FlightStream stream = helper.flightClient().getStream(endpoint.getTicket())) {
                 while (stream.next()) {
                     total += stream.getRoot().getRowCount();
                 }
@@ -176,7 +125,7 @@ class FlightServerIntegrationTest {
     private List<Integer> collectRowCounts(FlightInfo info) throws Exception {
         List<Integer> counts = new ArrayList<>();
         for (FlightEndpoint endpoint : info.getEndpoints()) {
-            try (FlightStream stream = flightClient.getStream(endpoint.getTicket())) {
+            try (FlightStream stream = helper.flightClient().getStream(endpoint.getTicket())) {
                 while (stream.next()) {
                     counts.add(stream.getRoot().getRowCount());
                 }
@@ -188,7 +137,7 @@ class FlightServerIntegrationTest {
     private List<String> collectFirstColumnStrings(FlightInfo info) throws Exception {
         List<String> values = new ArrayList<>();
         for (FlightEndpoint endpoint : info.getEndpoints()) {
-            try (FlightStream stream = flightClient.getStream(endpoint.getTicket())) {
+            try (FlightStream stream = helper.flightClient().getStream(endpoint.getTicket())) {
                 while (stream.next()) {
                     VectorSchemaRoot root = stream.getRoot();
                     if (root.getSchema().getFields().isEmpty()) continue;
@@ -206,7 +155,7 @@ class FlightServerIntegrationTest {
     private List<String> collectAllStrings(FlightInfo info) throws Exception {
         List<String> values = new ArrayList<>();
         for (FlightEndpoint endpoint : info.getEndpoints()) {
-            try (FlightStream stream = flightClient.getStream(endpoint.getTicket())) {
+            try (FlightStream stream = helper.flightClient().getStream(endpoint.getTicket())) {
                 while (stream.next()) {
                     VectorSchemaRoot root = stream.getRoot();
                     for (int col = 0; col < root.getSchema().getFields().size(); col++) {
@@ -220,11 +169,5 @@ class FlightServerIntegrationTest {
             }
         }
         return values;
-    }
-
-    private static int findFreePort() throws IOException {
-        try (ServerSocket s = new ServerSocket(0)) {
-            return s.getLocalPort();
-        }
     }
 }

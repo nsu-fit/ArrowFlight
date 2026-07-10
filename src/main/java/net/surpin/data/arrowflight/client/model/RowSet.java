@@ -15,14 +15,25 @@ public class RowSet implements Serializable {
     public static class Row implements Serializable {
         private final ArrayList<Object> data;
 
+        /**
+         * Construct empty Row
+         */
         public Row() {
             this.data = new ArrayList<>();
         }
 
+        /**
+         * Add value to Row
+         * @param o value to add
+         */
         public void add(Object o) {
             this.data.add(o);
         }
 
+        /**
+         * Get all values in Row
+         * @return array of values
+         */
         public Object[] getData() {
             return this.data.toArray(new Object[0]);
         }

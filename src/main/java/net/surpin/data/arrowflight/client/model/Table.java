@@ -135,7 +135,15 @@ public final class Table implements Serializable {
         }
     }
 
-    //Prepare the query for submitting to remote flight service
+    /**
+     * Builds or updates the query statement and partition queries.
+     *
+     * @param aggregation        optional aggregation
+     * @param fields             projected fields
+     * @param filter             filter clause
+     * @param partitionBehavior  partitioning config
+     * @return true if query changed
+     */
     private boolean prepareQueryStatement(PushAggregation aggregation, StructField[] fields, String filter, PartitionBehavior partitionBehavior) {
         //aggregation mode: 0 -> no aggregation; 1 -> aggregation without group-by; 2 -> aggregation with group-by
         int aggMode = 0;
@@ -185,7 +193,12 @@ public final class Table implements Serializable {
         return changed;
     }
 
-    //translate a filter to where clause
+    /**
+     * Translates a Spark Filter to a SQL WHERE clause.
+     *
+     * @param filter Spark filter
+     * @return SQL WHERE clause string
+     */
     public String toWhereClause(Filter filter) {
         StringBuilder sb = new StringBuilder();
         if (filter instanceof EqualTo) {

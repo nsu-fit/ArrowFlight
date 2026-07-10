@@ -1,6 +1,7 @@
 package net.surpin.data.arrowflight.server;
 
 import net.surpin.data.arrowflight.server.model.FileAssignment;
+import net.surpin.data.arrowflight.server.services.QueryPlanner;
 import org.junit.jupiter.api.Test;
 
 import java.util.*;
@@ -14,29 +15,29 @@ class HadoopFlightSqlServiceTest {
     @Test
     void extractTableFromUnixPath() {
         String p = "/data/schema_a/table_x/file.parquet";
-        assertEquals(".data.schema_a.table_x", HadoopFlightSqlService.extractTableFromPath(p));
+        assertEquals(".data.schema_a.table_x", QueryPlanner.extractTableFromPath(p));
     }
 
     @Test
     void extractTableFromWindowsPath() {
         String p = "C:\\data\\schema_a\\table_x\\file.parquet";
-        assertEquals("C:.data.schema_a.table_x", HadoopFlightSqlService.extractTableFromPath(p));
+        assertEquals("C:.data.schema_a.table_x", QueryPlanner.extractTableFromPath(p));
     }
 
     @Test
     void extractTableReturnsSameForSameSchemaTable() {
         String p1 = "/data/schema_a/table_x/file1.parquet";
         String p2 = "/data/schema_a/table_x/file2.parquet";
-        assertEquals(HadoopFlightSqlService.extractTableFromPath(p1),
-                HadoopFlightSqlService.extractTableFromPath(p2));
+        assertEquals(QueryPlanner.extractTableFromPath(p1),
+                QueryPlanner.extractTableFromPath(p2));
     }
 
     @Test
     void extractTableReturnsDifferentForDifferentTables() {
         String p1 = "/data/schema_a/table_x/file.parquet";
         String p2 = "/data/schema_b/table_y/file.parquet";
-        assertNotEquals(HadoopFlightSqlService.extractTableFromPath(p1),
-                HadoopFlightSqlService.extractTableFromPath(p2));
+        assertNotEquals(QueryPlanner.extractTableFromPath(p1),
+                QueryPlanner.extractTableFromPath(p2));
     }
 
     // ── join-fallback: per-table file filtering ─────────────────────────────
@@ -57,7 +58,7 @@ class HadoopFlightSqlServiceTest {
         // Group by table (same logic as in determineEndpoints)
         Map<String, Set<String>> seenTables = new LinkedHashMap<>();
         for (String path : pathLocations.keySet()) {
-            String table = HadoopFlightSqlService.extractTableFromPath(path);
+            String table = QueryPlanner.extractTableFromPath(path);
             seenTables.computeIfAbsent(table, k -> new LinkedHashSet<>()).add(path);
         }
 
@@ -75,7 +76,7 @@ class HadoopFlightSqlServiceTest {
 
             // Verify: every path in tableLocations belongs to this table
             for (String path : tableLocations.keySet()) {
-                assertEquals(expectedTable, HadoopFlightSqlService.extractTableFromPath(path),
+                assertEquals(expectedTable, QueryPlanner.extractTableFromPath(path),
                         "Path " + path + " must belong to table " + expectedTable);
             }
 
@@ -101,13 +102,13 @@ class HadoopFlightSqlServiceTest {
         // Group by table
         Map<String, Set<String>> seenTables = new LinkedHashMap<>();
         for (String path : pathLocations.keySet()) {
-            String table = HadoopFlightSqlService.extractTableFromPath(path);
+            String table = QueryPlanner.extractTableFromPath(path);
             seenTables.computeIfAbsent(table, k -> new LinkedHashSet<>()).add(path);
         }
 
-        String tableX = HadoopFlightSqlService.extractTableFromPath(
+        String tableX = QueryPlanner.extractTableFromPath(
                 "/data/schema_a/table_x/file1.parquet");
-        String tableY = HadoopFlightSqlService.extractTableFromPath(
+        String tableY = QueryPlanner.extractTableFromPath(
                 "/data/schema_b/table_y/file3.parquet");
 
         Set<String> xPaths = seenTables.get(tableX);

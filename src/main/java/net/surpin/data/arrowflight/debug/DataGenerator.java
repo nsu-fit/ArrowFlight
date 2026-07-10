@@ -16,6 +16,10 @@ import org.apache.spark.sql.functions;
  */
 public class DataGenerator {
 
+    /**
+     * Generates Parquet test data with various column types without shuffle.
+     * @param args CLI arguments: num_rows output_path num_partitions
+     */
     public static void main(String[] args) {
         if (args.length < 3) {
             System.err.println("Usage: DataGenerator <num_rows> <output_path> <num_partitions>");

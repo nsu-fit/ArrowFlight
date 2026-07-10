@@ -19,29 +19,57 @@ import java.util.stream.IntStream;
  */
 public class PartitionBehavior implements Serializable {
     /**
-     * The internal Bound for organizing predicates
+     * Internal bound for organizing predicates
      */
     private static class Bound implements Serializable {
         private final double lower;
         private final double upper;
 
+        /**
+         * Construct Bound with lower and upper values
+         * @param lower lower bound
+         * @param upper upper bound
+         */
         Bound(double lower, double upper) {
             this.lower = lower;
             this.upper = upper;
         }
 
+        /**
+         * Build predicate with long bounds
+         * @param name column name
+         * @return predicate string
+         */
         public String toLongPredicate(String name) {
             return toPredicate(name, Long.toString((long) this.lower), Long.toString((long) this.upper));
         }
 
+        /**
+         * Build predicate with double bounds
+         * @param name column name
+         * @return predicate string
+         */
         public String toDoublePredicate(String name) {
             return toPredicate(name, Double.toString(this.lower), Double.toString(this.upper));
         }
 
+        /**
+         * Build predicate with datetime bounds
+         * @param name column name
+         * @param dtFormat datetime formatter
+         * @return predicate string
+         */
         public String toDateTimePredicate(String name, DateTimeFormatter dtFormat) {
             return toPredicate(name, String.format("'%s'", dtFormat.print(new DateTime((long) this.lower))), String.format("'%s'", dtFormat.print(new DateTime((long) this.upper))));
         }
 
+        /**
+         * Build predicate string from bounds
+         * @param name column name
+         * @param lower lower bound string
+         * @param upper upper bound string
+         * @return predicate string
+         */
         private String toPredicate(String name, String lower, String upper) {
             return !lower.equalsIgnoreCase(upper) ? String.format("%s <= %s and %s < %s", lower, name, name, upper) : String.format("%s = %s", name, lower);
         }
@@ -124,7 +152,10 @@ public class PartitionBehavior implements Serializable {
         return predicates;
     }
 
-    //probe Long predicates
+    /**
+     * Probe predicates using long bounds
+     * @return optional array of predicates
+     */
     private Optional<String[]> probeLongPredicates() {
         try {
             long lower = Long.parseLong(this.lowerBound.replace(",", ""));
@@ -135,7 +166,10 @@ public class PartitionBehavior implements Serializable {
             return Optional.empty();
         }
     }
-    //probe Double predicates
+    /**
+     * Probe predicates using double bounds
+     * @return optional array of predicates
+     */
     private Optional<String[]> probeDoublePredicates() {
         try {
             double lower = Double.parseDouble(this.lowerBound.replace(",", ""));
@@ -146,7 +180,10 @@ public class PartitionBehavior implements Serializable {
             return Optional.empty();
         }
     }
-    //probe DateTime predicates
+    /**
+     * Probe predicates using datetime bounds with multiple format attempts
+     * @return optional array of predicates
+     */
     private Optional<String[]> probeDateTimePredicates() {
         String[] dtFormats = new String[] {
             "yyyy-MM-dd HH:mm:ss", "yyyy/MM/dd HH:mm:ss", "MM/dd/yyyy HH:mm:ss", "dd/MM/yyyy HH:mm:ss",
@@ -159,6 +196,11 @@ public class PartitionBehavior implements Serializable {
         }
         return predicates;
     }
+    /**
+     * Try building predicates with given datetime format
+     * @param dtFormat datetime formatter
+     * @return optional array of predicates
+     */
     private Optional<String[]> tryDateTimePredicates(DateTimeFormatter dtFormat) {
         try {
             long lower = DateTime.parse(this.lowerBound, dtFormat).getMillis();

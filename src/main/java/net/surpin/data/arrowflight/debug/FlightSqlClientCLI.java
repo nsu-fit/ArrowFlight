@@ -23,11 +23,17 @@ import org.apache.commons.cli.Option;
 import org.apache.commons.cli.Options;
 import org.apache.commons.cli.ParseException;
 
+/**
+ * Command-line client for testing Flight SQL server operations.
+ */
 public class FlightSqlClientCLI implements AutoCloseable {
     public final List<CallOption> callOptions = new ArrayList<>();
     public final BufferAllocator allocator;
     private FlightSqlClient flightSqlClient;
 
+    /**
+     * @param bufferAllocator Arrow buffer allocator
+     */
     public FlightSqlClientCLI(BufferAllocator bufferAllocator) {
         this.allocator = bufferAllocator;
     }
@@ -71,10 +77,17 @@ public class FlightSqlClientCLI implements AutoCloseable {
         }
     }
 
+    /**
+     * @return call options as an array
+     */
     public CallOption[] getCallOptions() {
         return (CallOption[]) this.callOptions.toArray(new CallOption[0]);
     }
 
+    /**
+     * @param cmd parsed command-line arguments
+     * @throws Exception if execution or connection fails
+     */
     public void executeApp(CommandLine cmd) throws Exception {
         String host = cmd.getOptionValue("host").trim();
         int port = Integer.parseInt(cmd.getOptionValue("port").trim());
@@ -82,6 +95,10 @@ public class FlightSqlClientCLI implements AutoCloseable {
         this.executeCommand(cmd);
     }
 
+    /**
+     * @param cmd parsed command-line arguments
+     * @throws Exception if command dispatch or execution fails
+     */
     public void executeCommand(CommandLine cmd) throws Exception {
         switch (cmd.getOptionValue("command").trim()) {
             case "Execute":
@@ -117,49 +134,99 @@ public class FlightSqlClientCLI implements AutoCloseable {
 
     }
 
+    /**
+     * @param host server hostname
+     * @param port server port
+     */
     public void createFlightSqlClient(String host, int port) {
         Location clientLocation = Location.forGrpcInsecure(host, port);
         this.flightSqlClient = new FlightSqlClient(FlightClient.builder(this.allocator, clientLocation).build());
     }
 
+    /**
+     * @param query SQL query string
+     * @throws Exception if query execution fails
+     */
     private void exampleExecute(String query) throws Exception {
         this.printFlightInfoResults(this.flightSqlClient.execute(query, this.getCallOptions()));
     }
 
+    /**
+     * @param query SQL update statement
+     */
     private void exampleExecuteUpdate(String query) {
         PrintStream var10000 = System.out;
         long var10001 = this.flightSqlClient.executeUpdate(query, this.getCallOptions());
         var10000.println("Updated: " + var10001 + "rows.");
     }
 
+    /**
+     * @throws Exception if catalog retrieval fails
+     */
     private void exampleGetCatalogs() throws Exception {
         this.printFlightInfoResults(this.flightSqlClient.getCatalogs(this.getCallOptions()));
     }
 
+    /**
+     * @param catalog catalog filter
+     * @param schema schema filter pattern
+     * @throws Exception if schema retrieval fails
+     */
     private void exampleGetSchemas(String catalog, String schema) throws Exception {
         this.printFlightInfoResults(this.flightSqlClient.getSchemas(catalog, schema, this.getCallOptions()));
     }
 
+    /**
+     * @throws Exception if table type retrieval fails
+     */
     private void exampleGetTableTypes() throws Exception {
         this.printFlightInfoResults(this.flightSqlClient.getTableTypes(this.getCallOptions()));
     }
 
+    /**
+     * @param catalog catalog filter
+     * @param schema schema filter pattern
+     * @param table table name filter
+     * @throws Exception if table retrieval fails
+     */
     private void exampleGetTables(String catalog, String schema, String table) throws Exception {
         this.printFlightInfoResults(this.flightSqlClient.getTables(catalog, schema, table, (List) null, false, this.getCallOptions()));
     }
 
+    /**
+     * @param catalog catalog name
+     * @param schema schema name
+     * @param table table name
+     * @throws Exception if key retrieval fails
+     */
     private void exampleGetExportedKeys(String catalog, String schema, String table) throws Exception {
         this.printFlightInfoResults(this.flightSqlClient.getExportedKeys(TableRef.of(catalog, schema, table), this.getCallOptions()));
     }
 
+    /**
+     * @param catalog catalog name
+     * @param schema schema name
+     * @param table table name
+     * @throws Exception if key retrieval fails
+     */
     private void exampleGetImportedKeys(String catalog, String schema, String table) throws Exception {
         this.printFlightInfoResults(this.flightSqlClient.getImportedKeys(TableRef.of(catalog, schema, table), this.getCallOptions()));
     }
 
+    /**
+     * @param catalog catalog name
+     * @param schema schema name
+     * @param table table name
+     * @throws Exception if key retrieval fails
+     */
     private void exampleGetPrimaryKeys(String catalog, String schema, String table) throws Exception {
         this.printFlightInfoResults(this.flightSqlClient.getPrimaryKeys(TableRef.of(catalog, schema, table), this.getCallOptions()));
     }
 
+    /**
+     * @param flightInfo flight info to stream and print
+     * @throws Exception if streaming fails
+     */
     private void printFlightInfoResults(FlightInfo flightInfo) throws Exception {
         FlightStream stream = this.flightSqlClient.getStream(((FlightEndpoint) flightInfo.getEndpoints().get(0)).getTicket(), this.getCallOptions());
 

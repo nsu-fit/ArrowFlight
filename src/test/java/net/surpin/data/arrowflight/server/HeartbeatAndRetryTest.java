@@ -1,86 +1,52 @@
 package net.surpin.data.arrowflight.server;
 
-import com.hazelcast.config.Config;
-import com.hazelcast.core.Hazelcast;
-import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.map.IMap;
-import net.surpin.data.arrowflight.server.db.ParquetManager;
-import org.apache.arrow.flight.Location;
-import org.apache.arrow.memory.BufferAllocator;
-import org.apache.arrow.memory.DefaultAllocationManagerOption;
-import org.apache.arrow.memory.RootAllocator;
-import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.LocalFileSystem;
 import org.junit.jupiter.api.*;
 
-import java.net.URI;
-import java.nio.file.Paths;
 import java.util.LinkedHashSet;
 import java.util.Set;
-import java.util.UUID;
 
-import static org.apache.arrow.memory.DefaultAllocationManagerOption.ALLOCATION_MANAGER_TYPE_PROPERTY_NAME;
 import static org.junit.jupiter.api.Assertions.*;
 
 @Tag("integration")
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class HeartbeatAndRetryTest {
 
-    private static BufferAllocator allocator;
-    private static HazelcastInstance hazelcast;
-    private static HadoopFlightSqlService sqlService;
+    private TestFlightServerHelper helper;
     private IMap<String, Long> heartbeats;
     private IMap<String, Long> registry;
+    private String selfUri;
 
     @BeforeAll
-    static void setUp() throws Exception {
-        System.setProperty(ALLOCATION_MANAGER_TYPE_PROPERTY_NAME,
-                DefaultAllocationManagerOption.AllocationManagerType.Netty.name());
-        allocator = new RootAllocator(Long.MAX_VALUE);
-
-        Config hz = new Config();
-        hz.setClusterName("test-hb-" + UUID.randomUUID());
-        hz.getNetworkConfig().setPort(5701);
-        hz.getNetworkConfig().setPortAutoIncrement(true);
-        hz.getNetworkConfig().getJoin().getMulticastConfig().setEnabled(false);
-        hz.getNetworkConfig().getJoin().getTcpIpConfig().setEnabled(false);
-        hazelcast = Hazelcast.newHazelcastInstance(hz);
-
-        String dataDir = Paths.get("src/test/resources/test_db").toAbsolutePath().toString();
-        LocalFileSystem localFs = new LocalFileSystem();
-        localFs.initialize(URI.create("file:///"), new Configuration());
-        ParquetManager parquetManager = new ParquetManager(localFs, dataDir, "localhost");
-
-        Location loc = Location.forGrpcInsecure("localhost", 32011);
-        sqlService = new HadoopFlightSqlService(loc, parquetManager, allocator, hazelcast);
+    void setUp() throws Exception {
+        helper = TestFlightServerHelper.builder().start();
+        selfUri = helper.location.getUri().toString();
     }
 
     @AfterAll
-    static void tearDown() throws Exception {
-        if (sqlService != null) sqlService.close();
-        if (hazelcast != null) hazelcast.shutdown();
-        if (allocator != null) allocator.close();
+    void tearDown() throws Exception {
+        if (helper != null) helper.close();
     }
 
     @BeforeEach
     void initMaps() {
-        heartbeats = hazelcast.getMap("server-heartbeats");
-        registry = hazelcast.getMap("server-registry");
+        heartbeats = helper.hazelcastAdapter.serverHeartbeats();
+        registry = helper.hazelcastAdapter.serverRegistry();
         // Re-register self — may have been cleared by a previous test
-        registry.put("grpc+tcp://localhost:32011", 0L);
-        heartbeats.put("grpc+tcp://localhost:32011", System.currentTimeMillis());
+        registry.put(selfUri, 0L);
+        heartbeats.put(selfUri, System.currentTimeMillis());
     }
 
     @AfterEach
     void clearTestEntries() {
-        String self = "grpc+tcp://localhost:32011";
         // Remove all entries except self-registration
         for (String key : registry.keySet().toArray(new String[0])) {
-            if (!self.equals(key)) {
+            if (!selfUri.equals(key)) {
                 registry.remove(key);
             }
         }
         for (String key : heartbeats.keySet().toArray(new String[0])) {
-            if (!self.equals(key)) {
+            if (!selfUri.equals(key)) {
                 heartbeats.remove(key);
             }
         }
@@ -89,7 +55,7 @@ class HeartbeatAndRetryTest {
     @Test
     void selfRegisteredAndHasHeartbeat() {
         assertTrue(registry.size() >= 1, "At least self should be registered");
-        Long hb = heartbeats.get("grpc+tcp://localhost:32011");
+        Long hb = heartbeats.get(selfUri);
         assertNotNull(hb, "Self should have heartbeat");
         assertTrue(hb > 0, "Heartbeat timestamp should be positive");
     }
@@ -101,7 +67,7 @@ class HeartbeatAndRetryTest {
         heartbeats.put(liveUri, System.currentTimeMillis());
 
         Set<String> input = Set.of(liveUri);
-        Set<String> result = sqlService.filterLiveServers(input);
+        Set<String> result = helper.clusterService.filterLiveServers(input);
 
         assertEquals(1, result.size());
         assertTrue(result.contains(liveUri));
@@ -115,7 +81,7 @@ class HeartbeatAndRetryTest {
         heartbeats.put(staleUri, System.currentTimeMillis() - 120_000);
 
         Set<String> input = Set.of(staleUri);
-        Set<String> result = sqlService.filterLiveServers(input);
+        Set<String> result = helper.clusterService.filterLiveServers(input);
 
         assertTrue(result.isEmpty(), "Stale server should be filtered out");
         assertNull(registry.get(staleUri), "Stale server should be removed from registry");
@@ -129,7 +95,7 @@ class HeartbeatAndRetryTest {
         // No heartbeat at all — just registered, should be treated as live
 
         Set<String> input = Set.of(newUri);
-        Set<String> result = sqlService.filterLiveServers(input);
+        Set<String> result = helper.clusterService.filterLiveServers(input);
 
         assertEquals(1, result.size());
         assertTrue(result.contains(newUri));
@@ -158,7 +124,7 @@ class HeartbeatAndRetryTest {
         input.add(live2);
         input.add(dead2);
 
-        Set<String> result = sqlService.filterLiveServers(input);
+        Set<String> result = helper.clusterService.filterLiveServers(input);
 
         assertEquals(2, result.size());
         assertTrue(result.contains(live1));
@@ -172,20 +138,19 @@ class HeartbeatAndRetryTest {
 
     @Test
     void emptyInputReturnsEmpty() {
-        Set<String> result = sqlService.filterLiveServers(Set.of());
+        Set<String> result = helper.clusterService.filterLiveServers(Set.of());
         assertTrue(result.isEmpty());
     }
 
     @Test
     void heartbeatUpdatesPeriodically() throws Exception {
-        String testUri = "grpc+tcp://localhost:32011";
-        Long firstHb = heartbeats.get(testUri);
+        Long firstHb = heartbeats.get(selfUri);
         assertNotNull(firstHb);
 
         // Wait for one heartbeat cycle (15s interval)
         Thread.sleep(16_000);
 
-        Long secondHb = heartbeats.get(testUri);
+        Long secondHb = heartbeats.get(selfUri);
         assertNotNull(secondHb);
         assertTrue(secondHb > firstHb,
                 "Heartbeat should have been updated. First: " + firstHb + ", Second: " + secondHb);

@@ -203,6 +203,11 @@ public final class Configuration implements Serializable {
                 this.fsPort);
     }
 
+    /**
+     * Computes SHA-256 hex digest of a value.
+     * @param value input string (may be null)
+     * @return hex-encoded hash or empty string if null
+     */
     private static String hash(String value) {
         if (value == null) {
             return "";
@@ -220,6 +225,12 @@ public final class Configuration implements Serializable {
         }
     }
 
+    /**
+     * Loads certificate bytes from a JKS truststore.
+     * @param keyStorePath path to JKS file
+     * @param keyStorePassword truststore password
+     * @return certificate bytes or empty array on failure
+     */
     private static byte[] getCertificateBytes(String keyStorePath, String keyStorePassword) {
         try {
             KeyStore keyStore = KeyStore.getInstance(KeyStore.getDefaultType());
@@ -241,6 +252,12 @@ public final class Configuration implements Serializable {
         return new byte[0];
     }
 
+    /**
+     * Serializes an X.509 certificate to PEM-encoded bytes.
+     * @param certificate the certificate
+     * @return PEM bytes
+     * @throws IOException on write error
+     */
     private static byte[] toBytes(Certificate certificate) throws IOException {
         try (
             StringWriter writer = new StringWriter();
@@ -314,26 +331,50 @@ public final class Configuration implements Serializable {
         this.allocationLimit = limit;
     }
 
+    /**
+     * Gets the maximum number of retry attempts.
+     * @return max retries
+     */
     public int getMaxRetries() {
         return this.maxRetries;
     }
 
+    /**
+     * Sets the maximum number of retry attempts.
+     * @param maxRetries max retries
+     */
     public void setMaxRetries(int maxRetries) {
         this.maxRetries = maxRetries;
     }
 
+    /**
+     * Gets the retry backoff interval in milliseconds.
+     * @return backoff in ms
+     */
     public long getRetryBackoffMs() {
         return this.retryBackoffMs;
     }
 
+    /**
+     * Sets the retry backoff interval in milliseconds.
+     * @param retryBackoffMs backoff in ms
+     */
     public void setRetryBackoffMs(long retryBackoffMs) {
         this.retryBackoffMs = retryBackoffMs;
     }
 
+    /**
+     * Gets the connection timeout in milliseconds.
+     * @return timeout in ms
+     */
     public long getConnectTimeoutMs() {
         return this.connectTimeoutMs;
     }
 
+    /**
+     * Sets the connection timeout in milliseconds.
+     * @param connectTimeoutMs timeout in ms
+     */
     public void setConnectTimeoutMs(long connectTimeoutMs) {
         this.connectTimeoutMs = connectTimeoutMs;
     }
