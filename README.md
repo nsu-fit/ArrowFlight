@@ -114,7 +114,7 @@ Supports exponential backoff retry, connection pooling, TLS, BasicAuth and Beare
 
 ---
 
-## Configuration
+## Execution Flow
 
 1. **Client** sends SQL via `GetFlightInfo`.
 2. **Flight Adapter** parses the query, extracts the schema, saves it to Hazelcast, and calls `determineEndpoints` to distribute files considering locality.
@@ -126,20 +126,27 @@ Supports exponential backoff retry, connection pooling, TLS, BasicAuth and Beare
 
 ---
 
-## CI / CD Quality Gates
+## CI / CD
 
 PR checks (`.github/workflows/ci.yml`) enforce on every pull request:
 - `build-server` / `build-client` — compilation via `mvn compile -P server` / `-P client`
 - `lint` — Checkstyle violations and SpotBugs errors via `mvn validate spotbugs:check`
-- `test` — unit tests via `mvn test` (excludes integration tests)
-- `integration` — integration tests via `mvn test -DexcludedGroups=""`
+- `test` — unit tests via `mvn test` (excludes `integration` and `perf` tags)
+- `integration` — integration tests via `mvn test -P integration`
+- `smoke` — smoke tests via `mvn test -P smoke`
 - `coverage` — JaCoCo coverage with per-file table in PR comments and detailed HTML report on GitHub Pages
 
-### Integration Tests
+**Run locally**:
+```bash
+mvn test                  # unit (default)
+mvn test -P smoke         # smoke tests
+mvn test -P integration   # integration tests
+mvn test -P perf          # performance benchmarks
+```
 
-Tagged `@Tag("integration")`. Excluded from default unit test run via `<excludedGroups>integration</excludedGroups>`. Run in CI via `-DexcludedGroups=""`.
+### GitLab CI
 
-**Run locally**: `mvn test -DexcludedGroups=""`
+Two-stage pipeline (`.gitlab-ci.yml`): build server/client separately → test with JUnit report upload.
 
 ---
 
@@ -164,19 +171,30 @@ Key properties (see `RuntimeSettings.java` for the full list):
 
 | Feature | Status |
 | :--- | :--- |
-| `SELECT` with projection and `WHERE` filtering | GA |
-| Aggregations: `COUNT`, `SUM`, `MIN`, `MAX`, `GROUP BY` | GA |
-| `INNER JOIN` (server-side via DuckDB or Spark-side fallback) | GA |
-| Cross-type join conditions (INT32/INT64, FLOAT/DOUBLE, BOOL/INT8) | Experimental |
-| Info commands (schemas, tables, types, server properties) | GA |
-| Distributed processing with data locality | GA |
-| Fast-path (Parquet footer read), Substrait C++ filtering, DuckDB execution | GA |
+| `SELECT` with projection | Supported |
+| `WHERE` filtering (server-side via Substrait C++) | Supported |
+| `COUNT`, `SUM`, `MIN`, `MAX` | Supported |
+| `COUNT(DISTINCT col)` | Supported |
+| `GROUP BY` | Supported (requires client-side merge) |
+| `INNER JOIN` | Supported (DuckDB server-side + Spark fallback) |
+| Cross-type join coercion (INT32/INT64, FLOAT/DOUBLE, BOOL/INT8) | Experimental |
+| `ORDER BY` | Not supported (server); Supported (Spark client-side) |
+| `LIMIT` / `OFFSET` | Not supported (server); Supported (Spark client-side) |
+| Subqueries | Not supported |
+| Window functions | Not supported |
+| Write (`INSERT` / `TRUNCATE`) | Experimental (Spark-side only) |
+| Info commands (schemas, tables, types) | Supported |
+| Distributed processing with data locality | Supported |
 
 ## Limitations
 
-- `SELECT` only (read-only).
+**Server-side (Flight SQL):**
 - No `ORDER BY`, `LIMIT`, `OFFSET`, subqueries, or window functions.
 - `GROUP BY` results require client-side merging across nodes.
+
+**Spark-side (DataSource V2 connector):**
+- `ORDER BY` and `LIMIT` work — Spark applies them after reading from Flight.
+- Write support (`INSERT`, `TRUNCATE`) is experimental, limited to Spark DataSource V2 writer path.
 
 ---
 
@@ -203,10 +221,3 @@ Key properties (see `RuntimeSettings.java` for the full list):
 | **[Architecture — Parquet Storage](docs/architecture/hadoop-parquet-storage.md)** | Storage model, Hadoop FS abstraction, block locality, file discovery |
 | **[ADR](docs/adr/)** | Architecture Decision Records (query engine selection, file distribution scheduler) |
 | **[User Guide — Build & Test](docs/user_guides/build-test-and-scripts.md)** | Build profiles, unit/integration/perf test commands, `run.sh` usage, DuckDB HDFS extension setup |
-
-### CI / CD
-
-| Pipeline | Trigger | Description |
-| :--- | :--- | :--- |
-| **GitHub Actions `ci.yml`** | PR to `main` | Builds server/client, lint, unit/integration tests, JaCoCo coverage (table in PR + detailed HTML) |
-| **GitLab CI** | MR to `main` | Two-stage: build → test, JUnit report upload |
