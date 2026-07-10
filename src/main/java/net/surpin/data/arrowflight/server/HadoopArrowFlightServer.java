@@ -32,6 +32,10 @@ import static org.apache.arrow.memory.DefaultAllocationManagerOption.ALLOCATION_
  */
 public class HadoopArrowFlightServer {
 
+    static {
+        RuntimeSettings.logLevel();
+    }
+
     private static final Logger LOGGER = LoggerFactory.getLogger(HadoopArrowFlightServer.class);
 
     private FlightServer server;

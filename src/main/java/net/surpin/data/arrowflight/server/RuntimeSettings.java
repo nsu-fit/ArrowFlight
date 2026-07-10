@@ -122,6 +122,11 @@ public final class RuntimeSettings {
                 "arrowflight.hazelcast.clusterJoinTimeoutSec", 60);
     }
 
+    public static String logLevel() {
+        String level = getString("logLevel", "arrowflight.log.level", "LOGGING_LEVEL", null);
+        return level != null ? level.toUpperCase() : "INFO";
+    }
+
     public static int ioFileBufferSize() {
         return getInt("ioFileBufferSize", 131072);
     }
@@ -227,6 +232,11 @@ public final class RuntimeSettings {
             }
         } catch (IOException e) {
             throw new ExceptionInInitializerError(e);
+        }
+        String level = properties.getProperty("logLevel");
+        if (level != null && !level.isBlank()
+                && System.getProperty("org.slf4j.simpleLogger.defaultLogLevel") == null) {
+            System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", level.trim());
         }
         return properties;
     }
