@@ -20,6 +20,10 @@ import net.surpin.data.arrowflight.server.model.AppConfig;
  */
 public class HadoopArrowFlightServer {
 
+    static {
+        RuntimeSettings.logLevel();
+    }
+
     private static final Logger LOGGER = LoggerFactory.getLogger(HadoopArrowFlightServer.class);
 
     private FlightServer server;

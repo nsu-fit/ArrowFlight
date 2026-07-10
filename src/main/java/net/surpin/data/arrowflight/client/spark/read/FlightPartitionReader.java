@@ -73,7 +73,7 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
 
     @Override
     public boolean next() throws IOException {
-        LOGGER.info("FlightPartitionReader.next()");
+        LOGGER.debug("FlightPartitionReader.next()");
         try {
             if (stream == null) {
                 if (!openStream()) {
@@ -83,7 +83,7 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
                 nextRetryCount = 0;
             }
 
-            LOGGER.info("FlightPartitionReader.next(): rowIdx = {}, batchRowCount = {}", rowIdx, batchRowCount);
+            LOGGER.debug("FlightPartitionReader.next(): rowIdx = {}, batchRowCount = {}", rowIdx, batchRowCount);
             // move to next row in current batch
             rowIdx++;
             if (rowIdx < batchRowCount) {
@@ -132,7 +132,7 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
 
     @Override
     public InternalRow get() {
-        LOGGER.info("FlightPartitionReader.get():");
+        LOGGER.debug("FlightPartitionReader.get():");
 
         if (!hasCurrent || root == null) {
             throw new IllegalStateException("No current row. Call next() first.");

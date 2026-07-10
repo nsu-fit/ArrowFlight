@@ -13,6 +13,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 @Tag("integration")
+@Tag("smoke")
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class FlightServerIntegrationTest {
 

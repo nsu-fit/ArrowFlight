@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 @Tag("integration")
 @Tag("spark")
+@Tag("smoke")
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class SparkFlightSmokeTest {
 
