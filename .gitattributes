@@ -1,0 +1,17 @@
+# Auto-detect text files, normalize to LF
+* text=auto eol=lf
+
+# Shell scripts must always be LF (broken with CRLF in Docker/Linux)
+*.sh text eol=lf
+
+# Windows batch files must be CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary files — never diff or convert line endings
+*.parquet binary
+*.jar binary
+*.jpg binary
+*.png binary
+*.snappy binary
+*.zip binary
