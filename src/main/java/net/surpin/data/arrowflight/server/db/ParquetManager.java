@@ -575,7 +575,7 @@ public final class ParquetManager {
             LOGGER.info("Acero scan loop started: query={}, files={}, batchSize={}",
                     query, parquetUris.size(), ARROW_BATCH_SIZE);
             while (true) {
-                LOGGER.info("Acero waiting for batch {}: sent={}, query={}", read + 1, sent, query);
+                LOGGER.debug("Acero waiting for batch {}: sent={}, query={}", read + 1, sent, query);
                 if (!reader.loadNextBatch()) {
                     LOGGER.info("Acero reader reached EOF after {} batch(es), sent {} batch(es): query={}",
                             read, sent, query);
@@ -583,24 +583,24 @@ public final class ParquetManager {
                 }
                 read++;
                 int rowCount = vsr.getRowCount();
-                LOGGER.info("Acero loaded batch {} with {} row(s): query={}", read, rowCount, query);
+                LOGGER.debug("Acero loaded batch {} with {} row(s): query={}", read, rowCount, query);
                 if (rowCount == 0) {
-                    LOGGER.info("Acero skipping empty batch {}: query={}", read, query);
+                    LOGGER.debug("Acero skipping empty batch {}: query={}", read, query);
                     vsr.clear();
                     continue;
                 }
-                LOGGER.info("Flight waiting for listener readiness before batch {}: rows={}, query={}",
+                LOGGER.debug("Flight waiting for listener readiness before batch {}: rows={}, query={}",
                         read, rowCount, query);
                 if (!awaitListenerReady(listener)) {
                     LOGGER.warn("Flight listener cancelled before batch {}: sent={}, query={}", read, sent, query);
                     vsr.clear();
                     break;
                 }
-                LOGGER.info("Flight listener ready for batch {}, sending {} row(s): query={}",
+                LOGGER.debug("Flight listener ready for batch {}, sending {} row(s): query={}",
                         read, rowCount, query);
                 listener.putNext();
                 sent++;
-                LOGGER.info("Flight sent batch {}: sent={}, rows={}, query={}", read, sent, rowCount, query);
+                LOGGER.debug("Flight sent batch {}: sent={}, rows={}, query={}", read, sent, rowCount, query);
                 vsr.clear();
             }
             LOGGER.info("Acero sent {} batch(es), read {} batch(es)", sent, read);
