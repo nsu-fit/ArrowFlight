@@ -72,6 +72,21 @@ services:
       - spark-warehouse:/spark-warehouse
     restart: "no"
 
+  spark-benchmark-creator:
+    <<: *arrowflight-image
+    profiles: ["benchbase"]
+    command: ["create-benchmark-tables"]
+    environment:
+      SPARK_MASTER_URL: spark://spark-master:7077
+      SPARK_DRIVER_HOST: spark-benchmark-creator
+      BENCHMARK_DATASET: "${BENCHMARK_DATASET:-tpch}"
+      BENCHMARK_LOAD_SCHEMA: "${BENCHMARK_LOAD_SCHEMA:-default}"
+      SPARK_WAREHOUSE_DIR: /spark-warehouse
+      SPARK_METASTORE_DB: /spark-warehouse/metastore_db
+    volumes:
+      - spark-warehouse:/spark-warehouse
+    restart: "no"
+
   spark-thrift-server:
     <<: *arrowflight-image
     profiles: ["benchbase"]

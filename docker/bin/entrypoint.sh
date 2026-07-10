@@ -121,6 +121,9 @@ case "${mode}" in
   publish-benchmark-data)
     spark_submit_common "${APP_HOME}/spark/publish_benchbase_tables.py" "$@"
     ;;
+  create-benchmark-tables)
+    spark_submit_common "${APP_HOME}/spark/create_benchbase_tables.py" "$@"
+    ;;
   spark-thrift-server)
     wait_for_tcp "${SPARK_MASTER_HOST:-spark-master}" "${SPARK_MASTER_PORT:-7077}" 120
     exec "${SPARK_HOME}/bin/spark-submit" \

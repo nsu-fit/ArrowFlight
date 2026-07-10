@@ -231,10 +231,14 @@ benchbase_load() {
   compose --profile benchbase run --rm benchbase-spark \
     -b "${BENCHMARK}" \
     -c "${LOAD_CONFIG_IN_CONTAINER}" \
-    --create=true \
+    --create=false \
     --load=true \
     --execute=false \
     -d "${RESULTS_IN_CONTAINER}"
+}
+
+create_spark_tables() {
+  compose --profile benchbase run --rm spark-benchmark-creator
 }
 
 benchbase_execute() {
@@ -251,6 +255,7 @@ benchbase_execute() {
 prepare_stack() {
   start_spark
   start_thrift
+  create_spark_tables
   benchbase_load
   stop_thrift
   run_publisher export
