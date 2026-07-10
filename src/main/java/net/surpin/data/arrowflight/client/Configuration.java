@@ -11,8 +11,9 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.security.GeneralSecurityException;
 import java.security.KeyStore;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.security.cert.Certificate;
-import java.util.Arrays;
 import java.util.Enumeration;
 
 /**
@@ -188,12 +189,31 @@ public final class Configuration implements Serializable {
     }
 
     /**
-     * Retrieve the connection string for connecting to the remote flight service
-     * @return - the connection string
+     * Retrieve an opaque connection identity for client pooling.
+     * Does not contain raw secrets — the credential is replaced with a SHA-256 hash.
+     * @return - the connection identity string
      */
     public String getConnectionString() {
-        String secret = (this.password != null && this.password.length() > 0) ? this.password : this.bearerToken;
-        return String.format("%s://%s:%s@%s:%d", this.tlsEnabled ? "https:" : "http", this.user, secret, this.fsHost, this.fsPort);
+        String secret = (this.password != null && !this.password.isEmpty()) ? this.password : this.bearerToken;
+        return String.format("%s://%s:%s@%s:%d",
+                this.tlsEnabled ? "https:" : "http",
+                this.user,
+                hash(secret),
+                this.fsHost,
+                this.fsPort);
+    }
+
+    private static String hash(String value) {
+        if (value == null) return "";
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] digest = md.digest(value.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            for (byte b : digest) sb.append(String.format("%02x", b));
+            return sb.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     private static byte[] getCertificateBytes(String keyStorePath, String keyStorePassword) {
@@ -322,14 +342,14 @@ public final class Configuration implements Serializable {
                 ", tlsEnabled=" + tlsEnabled +
                 ", crtVerify=" + crtVerify +
                 ", trustStoreJks='" + trustStoreJks + '\'' +
-                ", trustStorePass='" + trustStorePass + '\'' +
+                ", trustStorePass='" + (trustStorePass != null ? "[hidden]" : "[not set]") + '\'' +
                 ", user='" + user + '\'' +
                 ", password='" + (password != null ? "[hidden]" : "[not set]") + '\'' +
-                ", bearerToken='" + bearerToken + '\'' +
+                ", bearerToken='" + (bearerToken != null ? "[hidden]" : "[not set]") + '\'' +
                 ", defaultSchema='" + defaultSchema + '\'' +
                 ", routingTag='" + routingTag + '\'' +
                 ", routingQueue='" + routingQueue + '\'' +
-                ", certBytes=" + Arrays.toString(certBytes) +
+                ", certBytes='" + (certBytes != null ? "[hidden, " + certBytes.length + " bytes]" : "[not set]") + '\'' +
                 ", allocationLimit=" + allocationLimit +
                 ", maxRetries=" + maxRetries +
                 ", retryBackoffMs=" + retryBackoffMs +
