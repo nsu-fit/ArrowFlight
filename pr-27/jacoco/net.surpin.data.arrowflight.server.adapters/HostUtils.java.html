@@ -31,20 +31,26 @@ public final class HostUtils {
 <span class="nc" id="L31">            return input;</span>
         }
 
-<span class="nc" id="L34">        return CACHE.computeIfAbsent(input, key -&gt; {</span>
-            try {
-<span class="nc" id="L36">                String host = key;</span>
+        // Short-circuit for known loopback addresses
+<span class="nc bnc" id="L35" title="All 2 branches missed.">        String hostOnly = input.contains(&quot;://&quot;) ? URI.create(input).getHost() : input;</span>
+<span class="nc bnc" id="L36" title="All 4 branches missed.">        if (hostOnly != null &amp;&amp; LOOPBACK_HOSTS.contains(hostOnly)) {</span>
+<span class="nc" id="L37">            return &quot;127.0.0.1&quot;;</span>
+        }
 
-<span class="nc bnc" id="L38" title="All 2 branches missed.">                if (key.contains(&quot;://&quot;)) {</span>
-<span class="nc" id="L39">                    URI uri = URI.create(key);</span>
-<span class="nc bnc" id="L40" title="All 2 branches missed.">                    if (uri.getHost() != null) {</span>
-<span class="nc" id="L41">                        host = uri.getHost();</span>
+<span class="nc" id="L40">        return CACHE.computeIfAbsent(input, key -&gt; {</span>
+            try {
+<span class="nc" id="L42">                String host = key;</span>
+
+<span class="nc bnc" id="L44" title="All 2 branches missed.">                if (key.contains(&quot;://&quot;)) {</span>
+<span class="nc" id="L45">                    URI uri = URI.create(key);</span>
+<span class="nc bnc" id="L46" title="All 2 branches missed.">                    if (uri.getHost() != null) {</span>
+<span class="nc" id="L47">                        host = uri.getHost();</span>
                     }
                 }
 
-<span class="nc" id="L45">                return InetAddress.getByName(host).getHostAddress();</span>
-<span class="nc" id="L46">            } catch (Exception e) {</span>
-<span class="nc" id="L47">                return key;</span>
+<span class="nc" id="L51">                return InetAddress.getByName(host).getHostAddress();</span>
+<span class="nc" id="L52">            } catch (Exception e) {</span>
+<span class="nc" id="L53">                return key;</span>
             }
         });
     }
