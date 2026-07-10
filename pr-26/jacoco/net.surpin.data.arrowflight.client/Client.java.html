@@ -1,0 +1,406 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>Client.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Hadoop Arrow Flight SQL Server</a> &gt; <a href="index.source.html" class="el_package">net.surpin.data.arrowflight.client</a> &gt; <span class="el_source">Client.java</span></div><h1>Client.java</h1><pre class="source lang-java linenums">package net.surpin.data.arrowflight.client;
+
+import net.surpin.data.arrowflight.client.model.Field;
+import net.surpin.data.arrowflight.client.model.FieldVector;
+import net.surpin.data.arrowflight.client.model.RowSet;
+import net.surpin.data.arrowflight.client.query.Endpoint;
+import net.surpin.data.arrowflight.client.query.QueryEndpoints;
+import com.google.protobuf.Any;
+import org.apache.arrow.flight.*;
+import org.apache.arrow.flight.auth2.BasicAuthCredentialWriter;
+import org.apache.arrow.flight.auth2.BearerCredentialWriter;
+import org.apache.arrow.flight.auth2.ClientBearerHeaderHandler;
+import org.apache.arrow.flight.auth2.ClientIncomingAuthHeaderMiddleware;
+import org.apache.arrow.flight.grpc.CredentialCallOption;
+import org.apache.arrow.flight.sql.FlightSqlClient;
+import org.apache.arrow.flight.sql.impl.FlightSql;
+import org.apache.arrow.memory.BufferAllocator;
+import org.apache.arrow.memory.RootAllocator;
+import org.apache.arrow.util.AutoCloseables;
+import org.apache.arrow.vector.*;
+import org.apache.arrow.vector.types.pojo.Schema;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.ByteArrayInputStream;
+import java.net.URI;
+import java.util.Arrays;
+import java.util.concurrent.TimeUnit;
+
+/**
+ * Describes the data-structure of Client for communicating with remote flight service
+ */
+public final class Client implements AutoCloseable {
+<span class="nc" id="L34">    private static final Logger LOGGER = LoggerFactory.getLogger(Client.class);</span>
+
+    //the factory
+<span class="nc" id="L37">    private static final ClientIncomingAuthHeaderMiddleware.Factory factory = new ClientIncomingAuthHeaderMiddleware.Factory(new ClientBearerHeaderHandler());</span>
+    //the existing objects of client
+<span class="nc" id="L39">    private static final java.util.Map&lt;String, Client&gt; clients = new java.util.HashMap&lt;&gt;();</span>
+
+    //the flight client
+    private final FlightClient client;
+    //the flight-sql client
+    private final FlightSqlClient sqlClient;
+    //the token for calls
+    private final CredentialCallOption bearerToken;
+
+    //the configuration for retry/timeout
+    private final Configuration config;
+
+    //timeout call option (null if no timeout configured)
+    private final CallOption timeoutOption;
+
+    /**
+     * Get the underlying FlightClient (for streaming reads)
+     */
+    public FlightClient getFlightClient() {
+<span class="nc" id="L58">        return this.client;</span>
+    }
+
+    /**
+     * Get the bearer token credential (for streaming reads)
+     */
+    public CredentialCallOption getBearerToken() {
+<span class="nc" id="L65">        return this.bearerToken;</span>
+    }
+
+    /**
+     * Get the combined call options (bearer token + timeout).
+     */
+    public CallOption[] callOptions() {
+<span class="nc bnc" id="L72" title="All 2 branches missed.">        if (timeoutOption != null) {</span>
+<span class="nc" id="L73">            return new CallOption[] { this.bearerToken, timeoutOption };</span>
+        }
+<span class="nc" id="L75">        return new CallOption[] { this.bearerToken };</span>
+    }
+
+    //the buffer
+    private final BufferAllocator allocator;
+    //the connection string to identify the client
+    private final String connectionString;
+
+    /**
+     * Construct a Client object
+     * @param client - the client object of the flight service
+     * @param bearerToken - the credential token
+     * @param connectionString - the connection string to identify the client
+     * @param allocator - the buffer allocator
+     * @param config - the client configuration
+     */
+<span class="nc" id="L91">    private Client(FlightClient client, CredentialCallOption bearerToken, String connectionString, BufferAllocator allocator, Configuration config) {</span>
+<span class="nc" id="L92">        this.client = client;</span>
+<span class="nc" id="L93">        this.sqlClient = new FlightSqlClient(this.client);</span>
+<span class="nc" id="L94">        this.bearerToken = bearerToken;</span>
+<span class="nc" id="L95">        this.config = config;</span>
+
+<span class="nc" id="L97">        this.connectionString = connectionString;</span>
+<span class="nc" id="L98">        this.allocator = allocator;</span>
+
+<span class="nc" id="L100">        long timeoutMs = config.getConnectTimeoutMs();</span>
+<span class="nc bnc" id="L101" title="All 2 branches missed.">        this.timeoutOption = timeoutMs &gt; 0 ? CallOptions.timeout(timeoutMs, TimeUnit.MILLISECONDS) : null;</span>
+<span class="nc" id="L102">    }</span>
+
+    /**
+     * Fetch meta-data of all related end-points by a query
+     * @param query - the query submitted to remote flight-service
+     * @return - the schema and end-points for the query
+     */
+    public QueryEndpoints getQueryEndpoints(String query) {
+<span class="nc" id="L110">        return retryWithBackoff(() -&gt; {</span>
+<span class="nc" id="L111">            final FlightSql.CommandStatementQuery.Builder builder = FlightSql.CommandStatementQuery.newBuilder().setQuery(query);</span>
+<span class="nc" id="L112">            final FlightDescriptor descriptor = FlightDescriptor.command(Any.pack(builder.build()).toByteArray());</span>
+
+<span class="nc" id="L114">            FlightInfo fi = this.client.getInfo(descriptor, callOptions());</span>
+<span class="nc" id="L115">            LOGGER.info(&quot;Client.getQueryEndpoints('{}'): got endpoints \n{}&quot;, query, fi.getEndpoints());</span>
+<span class="nc" id="L116">            Endpoint[] endpoints = fi.getEndpoints().stream().map(ep -&gt; new Endpoint(ep.getLocations().stream().map(Location::getUri).toArray(URI[]::new), ep.getTicket().getBytes())).toArray(Endpoint[]::new);</span>
+<span class="nc" id="L117">            LOGGER.info(&quot;Client.getQueryEndpoints('{}'): return endpoints \n{}&quot;, query, Arrays.asList(endpoints));</span>
+<span class="nc" id="L118">            return new QueryEndpoints(fi.getSchema(), endpoints);</span>
+        }, &quot;getQueryEndpoints&quot;);
+    }
+
+    /**
+     * Fetch rows from the end-point
+     * @param ep - the end-point
+     * @param schema - the schema of rows from the end-point
+     * @return - row set from the end-point
+     */
+    public RowSet fetch(Endpoint ep, Schema schema) {
+<span class="nc" id="L129">        return retryWithBackoff(() -&gt; {</span>
+<span class="nc" id="L130">            RowSet rs = new RowSet(schema);</span>
+<span class="nc" id="L131">            Field[] fields = Field.from(schema);</span>
+<span class="nc" id="L132">            FlightEndpoint fep = new FlightEndpoint(new Ticket(ep.getTicket()), Arrays.stream(ep.getURIs()).map(Location::new).toArray(Location[]::new));</span>
+<span class="nc" id="L133">            try (FlightStream stream = this.client.getStream(fep.getTicket(), callOptions())) {</span>
+<span class="nc" id="L134">                VectorSchemaRoot root = stream.getRoot();</span>
+<span class="nc bnc" id="L135" title="All 2 branches missed.">                while (stream.next()) {</span>
+<span class="nc" id="L136">                    FieldVector[] fs = root.getFieldVectors().stream().map(fv -&gt; FieldVector.fromArrow(fv, Field.find(fields, fv.getName()), root.getRowCount())).toArray(FieldVector[]::new);</span>
+<span class="nc bnc" id="L137" title="All 2 branches missed.">                    for (int i = 0; i &lt; root.getRowCount(); i++) {</span>
+<span class="nc" id="L138">                        RowSet.Row row = new RowSet.Row();</span>
+<span class="nc bnc" id="L139" title="All 2 branches missed.">                        for (FieldVector f : fs) {</span>
+<span class="nc" id="L140">                            row.add((f.getValues())[i]);</span>
+                        }
+<span class="nc" id="L142">                        rs.add(row);</span>
+                    }
+<span class="nc" id="L144">                }</span>
+            }
+<span class="nc" id="L146">            return rs;</span>
+        }, &quot;fetch&quot;);
+    }
+
+    /**
+     * Fetch rows from all end-points
+     * @param qEndpoints - the query end-points
+     * @return - all rows from the end-points
+     */
+    public RowSet fetch(QueryEndpoints qEndpoints) {
+<span class="nc" id="L156">        RowSet rs = new RowSet(qEndpoints.getSchema());</span>
+<span class="nc" id="L157">        Arrays.stream(qEndpoints.getEndpoints()).forEach(ep -&gt; rs.add(fetch(ep, qEndpoints.getSchema())));</span>
+<span class="nc" id="L158">        return rs;</span>
+    }
+
+    /**
+     * Fetch rows from the end-point in a streaming fashion.
+     * Each batch from the Flight stream is passed to the callback immediately,
+     * without accumulating all rows in memory.
+     */
+    public void fetchStreaming(Endpoint ep, Schema schema, BatchCallback callback) {
+<span class="nc" id="L167">        retryWithBackoff(() -&gt; {</span>
+<span class="nc" id="L168">            Field[] fields = Field.from(schema);</span>
+<span class="nc" id="L169">            FlightEndpoint fep = new FlightEndpoint(new Ticket(ep.getTicket()), Arrays.stream(ep.getURIs()).map(Location::new).toArray(Location[]::new));</span>
+<span class="nc" id="L170">            try (FlightStream stream = this.client.getStream(fep.getTicket(), callOptions())) {</span>
+<span class="nc" id="L171">                VectorSchemaRoot root = stream.getRoot();</span>
+<span class="nc bnc" id="L172" title="All 2 branches missed.">                while (stream.next()) {</span>
+<span class="nc" id="L173">                    boolean shouldContinue = callback.onBatch(root, fields);</span>
+<span class="nc bnc" id="L174" title="All 2 branches missed.">                    if (!shouldContinue) {</span>
+<span class="nc" id="L175">                        break;</span>
+                    }
+<span class="nc" id="L177">                }</span>
+            }
+<span class="nc" id="L179">            return null;</span>
+        }, &quot;fetchStreaming&quot;);
+<span class="nc" id="L181">    }</span>
+
+    /**
+     * Fetch rows from all end-points in a streaming fashion.
+     */
+    public void fetchStreaming(QueryEndpoints qEndpoints, BatchCallback callback) {
+<span class="nc bnc" id="L187" title="All 2 branches missed.">        for (Endpoint ep : qEndpoints.getEndpoints()) {</span>
+<span class="nc" id="L188">            fetchStreaming(ep, qEndpoints.getSchema(), callback);</span>
+        }
+<span class="nc" id="L190">    }</span>
+
+    /**
+     * Callback interface for streaming batch processing.
+     */
+    @FunctionalInterface
+    public interface BatchCallback {
+        /**
+         * Process a single batch of data.
+         * @param root the current VectorSchemaRoot with data
+         * @param fields the field definitions for the schema
+         * @return true to continue, false to stop streaming
+         */
+        boolean onBatch(VectorSchemaRoot root, Field[] fields);
+    }
+
+    /**
+     * Execute a literal SQL statement
+     * @param stmt - the literal sql-statement
+     */
+    public long execute(String stmt) {
+<span class="nc" id="L211">        return retryWithBackoff(() -&gt; {</span>
+<span class="nc" id="L212">            FlightInfo fi = this.sqlClient.execute(stmt, callOptions());</span>
+<span class="nc" id="L213">            LOGGER.info(&quot;Client.execute('{}'): got endpoints \n{}&quot;, stmt, fi.getEndpoints());</span>
+<span class="nc" id="L214">            long count = 0;</span>
+<span class="nc bnc" id="L215" title="All 2 branches missed.">            for (FlightEndpoint endpoint: fi.getEndpoints()) {</span>
+<span class="nc" id="L216">                try (FlightStream stream = this.client.getStream(endpoint.getTicket(), callOptions())) {</span>
+<span class="nc bnc" id="L217" title="All 2 branches missed.">                    while (stream.next()) {</span>
+<span class="nc" id="L218">                        VectorSchemaRoot root = stream.getRoot();</span>
+<span class="nc" id="L219">                        count += root.getRowCount();</span>
+<span class="nc" id="L220">                    }</span>
+                }
+<span class="nc" id="L222">            }</span>
+<span class="nc" id="L223">            return count;</span>
+        }, &quot;execute&quot;);
+    }
+
+    /**
+     * Truncate the target table
+     * @param table - the name of the table
+     */
+    public void truncate(String table) {
+<span class="nc" id="L232">        this.execute(String.format(&quot;truncate table %s&quot;, table));</span>
+<span class="nc" id="L233">    }</span>
+
+    /**
+     * Get a prepared-statement for a query
+     * @param query - the query being used for update
+     * @return - the prepared sql-statement for down-stream operations
+     */
+    public FlightSqlClient.PreparedStatement getPreparedStatement(String query) {
+<span class="nc" id="L241">        return this.sqlClient.prepare(query, this.bearerToken);</span>
+    }
+
+    /**
+     * Execute a prepared-statement
+     * @param preparedStmt - the prepared-statement being executed.
+     * @return - the number of rows affected.
+     */
+    public long executeUpdate(FlightSqlClient.PreparedStatement preparedStmt) {
+<span class="nc" id="L250">        return preparedStmt.executeUpdate(this.bearerToken);</span>
+    }
+
+    /**
+     * Close the connection
+     */
+    @Override
+    public void close() {
+        try {
+<span class="nc" id="L259">            synchronized (Client.clients) {</span>
+<span class="nc" id="L260">                Client.clients.remove(this.connectionString);</span>
+<span class="nc" id="L261">            }</span>
+<span class="nc" id="L262">            this.client.close();</span>
+
+<span class="nc" id="L264">            this.allocator.getChildAllocators().forEach(BufferAllocator::close);</span>
+<span class="nc" id="L265">            AutoCloseables.close(this.allocator);</span>
+<span class="nc" id="L266">        } catch (Exception ex) {</span>
+<span class="nc" id="L267">            LoggerFactory.getLogger(this.getClass()).warn(ex.getMessage() + Arrays.toString(ex.getStackTrace()));</span>
+<span class="nc" id="L268">        }</span>
+<span class="nc" id="L269">    }</span>
+
+    /**
+     * Get a client object
+     * @param config - the connection configuration for establishing connections to remote flight service
+     * @return - the client object
+     */
+    /**
+     * Default max allocation per client: 2GB.
+     * Can be overridden via {@link Configuration}.
+     */
+    private static final long DEFAULT_MAX_ALLOCATION = 2L * 1024 * 1024 * 1024; // 2GB
+
+    public static synchronized Client getOrCreate(Configuration config) {
+<span class="nc" id="L283">        String cs = config.getConnectionString();</span>
+<span class="nc bnc" id="L284" title="All 2 branches missed.">        if (!Client.clients.containsKey(cs)) {</span>
+<span class="nc bnc" id="L285" title="All 2 branches missed.">            long maxAllocation = config.getAllocationLimit() &gt; 0</span>
+<span class="nc" id="L286">                    ? config.getAllocationLimit()</span>
+<span class="nc" id="L287">                    : DEFAULT_MAX_ALLOCATION;</span>
+
+<span class="nc" id="L289">            final BufferAllocator allocator = new RootAllocator(maxAllocation);</span>
+<span class="nc" id="L290">            final FlightClient client = Client.create(config, allocator);</span>
+
+<span class="nc" id="L292">            final CallHeaders callHeaders = new FlightCallHeaders();</span>
+<span class="nc bnc" id="L293" title="All 4 branches missed.">            if (config.getDefaultSchema() != null &amp;&amp; !config.getDefaultSchema().isEmpty()) {</span>
+<span class="nc" id="L294">                callHeaders.insert(&quot;SCHEMA&quot;, config.getDefaultSchema());</span>
+            }
+<span class="nc bnc" id="L296" title="All 4 branches missed.">            if (config.getRoutingTag() != null &amp;&amp; !config.getRoutingTag().isEmpty()) {</span>
+<span class="nc" id="L297">                callHeaders.insert(&quot;ROUTING_TAG&quot;, config.getRoutingTag());</span>
+            }
+<span class="nc bnc" id="L299" title="All 4 branches missed.">            if (config.getRoutingQueue() != null &amp;&amp; !config.getRoutingQueue().isEmpty()) {</span>
+<span class="nc" id="L300">                callHeaders.insert(&quot;ROUTING_QUEUE&quot;, config.getRoutingQueue());</span>
+            }
+<span class="nc bnc" id="L302" title="All 2 branches missed.">            final HeaderCallOption clientProperties = (!callHeaders.keys().isEmpty()) ? new HeaderCallOption(callHeaders) : null;</span>
+
+<span class="nc" id="L304">            Client.clients.put(cs, new Client(client, authenticate(client, config.getUser(), config.getPassword(), config.getBearerToken(), clientProperties), cs, allocator, config));</span>
+        }
+<span class="nc" id="L306">        return Client.clients.get(cs);</span>
+    }
+
+    //Create a client object with the service configuration
+    private static FlightClient create(Configuration config, BufferAllocator allocator) {
+<span class="nc" id="L311">        FlightClient.Builder builder = FlightClient.builder().allocator(allocator);</span>
+<span class="nc bnc" id="L312" title="All 2 branches missed.">        if (config.getTlsEnabled()) {</span>
+<span class="nc bnc" id="L313" title="All 4 branches missed.">            if (config.getTruststoreJks() == null || config.getTruststoreJks().isEmpty()) {</span>
+<span class="nc" id="L314">                builder.location(Location.forGrpcTls(config.getFlightHost(), config.getFlightPort())).useTls().verifyServer(config.verifyServer());</span>
+            } else {
+<span class="nc" id="L316">                builder.location(Location.forGrpcTls(config.getFlightHost(), config.getFlightPort())).useTls().trustedCertificates(new ByteArrayInputStream(config.getCertificateBytes()));</span>
+            }
+        } else {
+<span class="nc" id="L319">            builder.location(Location.forGrpcInsecure(config.getFlightHost(), config.getFlightPort()));</span>
+        }
+<span class="nc bnc" id="L321" title="All 4 branches missed.">        return (config.getPassword() != null &amp;&amp; !config.getPassword().isEmpty()) ? builder.intercept(Client.factory).build() : builder.build();</span>
+    }
+
+    //Authenticate with user &amp; password to obtain the credential token-ticket
+    static CredentialCallOption authenticate(FlightClient client, String user, String password, String bearerToken, HeaderCallOption clientProperties) {
+<span class="nc" id="L326">        final java.util.List&lt;CallOption&gt; callOptions = new java.util.ArrayList&lt;&gt;();</span>
+
+<span class="nc" id="L328">        LOGGER.info(&quot;Client.authenticate: clientProperties={}&quot;, clientProperties);</span>
+<span class="nc bnc" id="L329" title="All 2 branches missed.">        if (clientProperties != null) {</span>
+<span class="nc" id="L330">            callOptions.add(clientProperties);</span>
+        }
+<span class="nc bnc" id="L332" title="All 4 branches missed.">        boolean usePassword = (password != null &amp;&amp; !password.isEmpty());</span>
+<span class="nc" id="L333">        CredentialCallOption credentialOption = new CredentialCallOption(</span>
+<span class="nc bnc" id="L334" title="All 2 branches missed.">                usePassword ? new BasicAuthCredentialWriter(user, password) : new BearerCredentialWriter(bearerToken));</span>
+<span class="nc" id="L335">        callOptions.add(credentialOption);</span>
+<span class="nc" id="L336">        LOGGER.info(&quot;Client.authenticate: callOptions={}&quot;, callOptions);</span>
+<span class="nc" id="L337">        client.handshake(callOptions.toArray(new CallOption[0]));</span>
+<span class="nc" id="L338">        LOGGER.info(&quot;Client.authenticate: handshake finished&quot;);</span>
+<span class="nc bnc" id="L339" title="All 2 branches missed.">        return usePassword ? Client.factory.getCredentialCallOption() : credentialOption;</span>
+    }
+
+    @FunctionalInterface
+    interface RetryableCall&lt;T&gt; {
+        T call() throws Exception;
+    }
+
+    &lt;T&gt; T retryWithBackoff(RetryableCall&lt;T&gt; callable, String operation) {
+<span class="nc" id="L348">        int maxRetries = config.getMaxRetries();</span>
+<span class="nc" id="L349">        long backoffMs = config.getRetryBackoffMs();</span>
+<span class="nc" id="L350">        Exception lastException = null;</span>
+
+<span class="nc bnc" id="L352" title="All 2 branches missed.">        for (int attempt = 0; attempt &lt;= maxRetries; attempt++) {</span>
+            try {
+<span class="nc bnc" id="L354" title="All 2 branches missed.">                if (attempt &gt; 0) {</span>
+<span class="nc" id="L355">                    long delay = backoffMs * (1L &lt;&lt; (attempt - 1));</span>
+<span class="nc" id="L356">                    LOGGER.info(&quot;Retry attempt {} for '{}', waiting {}ms&quot;, attempt, operation, delay);</span>
+<span class="nc" id="L357">                    Thread.sleep(delay);</span>
+                }
+<span class="nc" id="L359">                return callable.call();</span>
+<span class="nc" id="L360">            } catch (InterruptedException e) {</span>
+<span class="nc" id="L361">                Thread.currentThread().interrupt();</span>
+<span class="nc" id="L362">                throw new RuntimeException(&quot;Interrupted during retry of &quot; + operation, e);</span>
+<span class="nc" id="L363">            } catch (FlightRuntimeException e) {</span>
+<span class="nc" id="L364">                lastException = e;</span>
+<span class="nc" id="L365">                LOGGER.warn(&quot;Flight error in '{}' (attempt {} of {}): {}&quot;, operation, attempt, maxRetries + 1, e.getMessage());</span>
+<span class="nc bnc" id="L366" title="All 4 branches missed.">                if (isInternalError(e) &amp;&amp; attempt &lt; maxRetries) {</span>
+<span class="nc" id="L367">                    continue;</span>
+                }
+<span class="nc" id="L369">                break;</span>
+<span class="nc" id="L370">            } catch (Exception e) {</span>
+<span class="nc" id="L371">                lastException = e;</span>
+<span class="nc" id="L372">                LOGGER.warn(&quot;Error in '{}' (attempt {} of {}): {}&quot;, operation, attempt, maxRetries + 1, e.getMessage());</span>
+<span class="nc bnc" id="L373" title="All 2 branches missed.">                if (attempt &lt; maxRetries) {</span>
+<span class="nc" id="L374">                    continue;</span>
+                }
+            }
+        }
+
+<span class="nc bnc" id="L379" title="All 2 branches missed.">        if (lastException instanceof RuntimeException) {</span>
+<span class="nc" id="L380">            throw (RuntimeException) lastException;</span>
+        }
+<span class="nc" id="L382">        throw new RuntimeException(&quot;Failed &quot; + operation + &quot; after &quot; + (maxRetries + 1) + &quot; attempts&quot;, lastException);</span>
+    }
+
+    private static boolean isInternalError(FlightRuntimeException e) {
+<span class="nc" id="L386">        Throwable cause = e.getCause();</span>
+<span class="nc bnc" id="L387" title="All 2 branches missed.">        if (cause instanceof io.grpc.StatusRuntimeException) {</span>
+<span class="nc" id="L388">            io.grpc.Status.Code code = ((io.grpc.StatusRuntimeException) cause).getStatus().getCode();</span>
+<span class="nc bnc" id="L389" title="All 10 branches missed.">            return code == io.grpc.Status.Code.INTERNAL</span>
+                    || code == io.grpc.Status.Code.UNAVAILABLE
+                    || code == io.grpc.Status.Code.RESOURCE_EXHAUSTED
+                    || code == io.grpc.Status.Code.DEADLINE_EXCEEDED
+                    || code == io.grpc.Status.Code.ABORTED;
+        }
+<span class="nc" id="L395">        return false;</span>
+    }
+
+    public FlightStream openStream(FlightEndpoint fep) throws Exception {
+<span class="nc" id="L399">        return this.client.getStream(fep.getTicket(), callOptions());</span>
+    }
+
+    public Configuration getConfig() {
+<span class="nc" id="L403">        return this.config;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>
