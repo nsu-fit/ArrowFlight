@@ -575,7 +575,7 @@ public final class ParquetManager {
 <span class="nc" id="L575">            LOGGER.info(&quot;Acero scan loop started: query={}, files={}, batchSize={}&quot;,</span>
 <span class="nc" id="L576">                    query, parquetUris.size(), ARROW_BATCH_SIZE);</span>
             while (true) {
-<span class="nc" id="L578">                LOGGER.info(&quot;Acero waiting for batch {}: sent={}, query={}&quot;, read + 1, sent, query);</span>
+<span class="nc" id="L578">                LOGGER.debug(&quot;Acero waiting for batch {}: sent={}, query={}&quot;, read + 1, sent, query);</span>
 <span class="nc bnc" id="L579" title="All 2 branches missed.">                if (!reader.loadNextBatch()) {</span>
 <span class="nc" id="L580">                    LOGGER.info(&quot;Acero reader reached EOF after {} batch(es), sent {} batch(es): query={}&quot;,</span>
 <span class="nc" id="L581">                            read, sent, query);</span>
@@ -583,24 +583,24 @@ public final class ParquetManager {
                 }
 <span class="nc" id="L584">                read++;</span>
 <span class="nc" id="L585">                int rowCount = vsr.getRowCount();</span>
-<span class="nc" id="L586">                LOGGER.info(&quot;Acero loaded batch {} with {} row(s): query={}&quot;, read, rowCount, query);</span>
+<span class="nc" id="L586">                LOGGER.debug(&quot;Acero loaded batch {} with {} row(s): query={}&quot;, read, rowCount, query);</span>
 <span class="nc bnc" id="L587" title="All 2 branches missed.">                if (rowCount == 0) {</span>
-<span class="nc" id="L588">                    LOGGER.info(&quot;Acero skipping empty batch {}: query={}&quot;, read, query);</span>
+<span class="nc" id="L588">                    LOGGER.debug(&quot;Acero skipping empty batch {}: query={}&quot;, read, query);</span>
 <span class="nc" id="L589">                    vsr.clear();</span>
 <span class="nc" id="L590">                    continue;</span>
                 }
-<span class="nc" id="L592">                LOGGER.info(&quot;Flight waiting for listener readiness before batch {}: rows={}, query={}&quot;,</span>
+<span class="nc" id="L592">                LOGGER.debug(&quot;Flight waiting for listener readiness before batch {}: rows={}, query={}&quot;,</span>
 <span class="nc" id="L593">                        read, rowCount, query);</span>
 <span class="nc bnc" id="L594" title="All 2 branches missed.">                if (!awaitListenerReady(listener)) {</span>
 <span class="nc" id="L595">                    LOGGER.warn(&quot;Flight listener cancelled before batch {}: sent={}, query={}&quot;, read, sent, query);</span>
 <span class="nc" id="L596">                    vsr.clear();</span>
 <span class="nc" id="L597">                    break;</span>
                 }
-<span class="nc" id="L599">                LOGGER.info(&quot;Flight listener ready for batch {}, sending {} row(s): query={}&quot;,</span>
+<span class="nc" id="L599">                LOGGER.debug(&quot;Flight listener ready for batch {}, sending {} row(s): query={}&quot;,</span>
 <span class="nc" id="L600">                        read, rowCount, query);</span>
 <span class="nc" id="L601">                listener.putNext();</span>
 <span class="nc" id="L602">                sent++;</span>
-<span class="nc" id="L603">                LOGGER.info(&quot;Flight sent batch {}: sent={}, rows={}, query={}&quot;, read, sent, rowCount, query);</span>
+<span class="nc" id="L603">                LOGGER.debug(&quot;Flight sent batch {}: sent={}, rows={}, query={}&quot;, read, sent, rowCount, query);</span>
 <span class="nc" id="L604">                vsr.clear();</span>
 <span class="nc" id="L605">            }</span>
 <span class="nc" id="L606">            LOGGER.info(&quot;Acero sent {} batch(es), read {} batch(es)&quot;, sent, read);</span>

@@ -73,7 +73,7 @@ public class FlightPartitionReader implements PartitionReader&lt;InternalRow&gt;
 
     @Override
     public boolean next() throws IOException {
-<span class="nc" id="L76">        LOGGER.info(&quot;FlightPartitionReader.next()&quot;);</span>
+<span class="nc" id="L76">        LOGGER.debug(&quot;FlightPartitionReader.next()&quot;);</span>
         try {
 <span class="nc bnc" id="L78" title="All 2 branches missed.">            if (stream == null) {</span>
 <span class="nc bnc" id="L79" title="All 2 branches missed.">                if (!openStream()) {</span>
@@ -83,7 +83,7 @@ public class FlightPartitionReader implements PartitionReader&lt;InternalRow&gt;
 <span class="nc" id="L83">                nextRetryCount = 0;</span>
             }
 
-<span class="nc" id="L86">            LOGGER.info(&quot;FlightPartitionReader.next(): rowIdx = {}, batchRowCount = {}&quot;, rowIdx, batchRowCount);</span>
+<span class="nc" id="L86">            LOGGER.debug(&quot;FlightPartitionReader.next(): rowIdx = {}, batchRowCount = {}&quot;, rowIdx, batchRowCount);</span>
             // move to next row in current batch
 <span class="nc" id="L88">            rowIdx++;</span>
 <span class="nc bnc" id="L89" title="All 2 branches missed.">            if (rowIdx &lt; batchRowCount) {</span>
@@ -132,7 +132,7 @@ public class FlightPartitionReader implements PartitionReader&lt;InternalRow&gt;
 
     @Override
     public InternalRow get() {
-<span class="nc" id="L135">        LOGGER.info(&quot;FlightPartitionReader.get():&quot;);</span>
+<span class="nc" id="L135">        LOGGER.debug(&quot;FlightPartitionReader.get():&quot;);</span>
 
 <span class="nc bnc" id="L137" title="All 4 branches missed.">        if (!hasCurrent || root == null) {</span>
 <span class="nc" id="L138">            throw new IllegalStateException(&quot;No current row. Call next() first.&quot;);</span>
