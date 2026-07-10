@@ -1,17 +1,9 @@
 package net.surpin.data.arrowflight.server.adapters;
 
 import org.apache.arrow.memory.BufferAllocator;
-import org.apache.arrow.vector.FieldVector;
 import org.apache.arrow.vector.ValueVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.arrow.vector.ipc.ArrowReader;
-import org.apache.arrow.vector.types.pojo.Field;
-import org.apache.arrow.vector.types.pojo.Schema;
-import org.apache.arrow.vector.util.Text;
-import org.apache.calcite.adapter.arrow.ArrowFieldTypeFactory;
-import org.apache.calcite.jdbc.JavaTypeFactoryImpl;
-import org.apache.calcite.rel.type.RelDataType;
-import org.apache.calcite.rel.type.RelDataTypeSystem;
 import org.apache.parquet.hadoop.ParquetFileReader;
 import org.apache.parquet.hadoop.metadata.BlockMetaData;
 import org.apache.parquet.hadoop.metadata.ColumnChunkMetaData;
@@ -26,18 +18,11 @@ import java.io.IOException;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.Statement;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import net.surpin.data.arrowflight.server.services.ParquetQueryParser;
 import net.surpin.data.arrowflight.server.model.AppConfig;
@@ -112,7 +97,9 @@ public final class DuckDbAdapter {
 
     private static void setArrayOptionIfPresent(Statement statement, String optionName, String value)
             throws Exception {
-        if (value == null) return;
+        if (value == null) {
+            return;
+        }
         // DuckDB expects VARCHAR[] e.g. SET allowed_paths = ['/path']
         String escaped = sqlStringLiteral(value);
         statement.execute("SET " + optionName + " = " + "ARRAY[" + escaped + "]");
@@ -442,7 +429,9 @@ public final class DuckDbAdapter {
         } else {
             boolean first = true;
             for (ParquetQueryParser.SelectExpr expr : pq.selectExprs) {
-                if (!first) sql.append(", ");
+                if (!first) {
+                    sql.append(", ");
+                }
                 first = false;
                 appendSelectExpr(sql, expr);
             }

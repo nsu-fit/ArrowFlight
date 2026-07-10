@@ -2,7 +2,6 @@ package net.surpin.data.arrowflight.server.adapters;
 
 import org.apache.arrow.vector.types.pojo.ArrowType;
 import org.apache.arrow.vector.types.pojo.Field;
-import org.apache.arrow.vector.types.pojo.FieldType;
 import org.apache.arrow.vector.types.pojo.Schema;
 import org.apache.calcite.adapter.arrow.ArrowFieldTypeFactory;
 import org.apache.calcite.jdbc.JavaTypeFactoryImpl;
@@ -22,7 +21,6 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
@@ -37,6 +35,7 @@ import java.util.stream.Stream;
 import net.surpin.data.arrowflight.server.model.AppConfig;
 import net.surpin.data.arrowflight.server.model.FileAssignment;
 import net.surpin.data.arrowflight.server.services.ParquetQueryParser;
+import static net.surpin.data.arrowflight.server.adapters.HostUtils.LOOPBACK_HOSTS;
 
 /**
  * Reads Parquet metadata and file listings from HDFS.
@@ -309,7 +308,7 @@ public class ParquetAdapter {
                 .flatMap(bl -> {
                     try {
                         return Stream.of(bl.getHosts())
-                                .map(host -> "localhost".equals(host) ? localhost : host);
+                                .map(host -> LOOPBACK_HOSTS.contains(host) ? localhost : host);
                     } catch (IOException e) {
                         throw new UncheckedIOException(e);
                     }

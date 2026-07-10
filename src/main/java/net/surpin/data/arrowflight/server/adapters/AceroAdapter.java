@@ -20,13 +20,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.ByteBuffer;
-import java.sql.Connection;
-import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 import net.surpin.data.arrowflight.server.services.ParquetQueryParser;
@@ -196,19 +192,34 @@ public final class AceroAdapter {
         } finally {
             // On failure, close resources in reverse-dependency order.
             for (int i = cStreams.size() - 1; i >= 0; i--) {
-                try { cStreams.get(i).close(); } catch (Exception ignored) { }
+                try {
+                    cStreams.get(i).close();
+                } catch (Exception ignored) {
+                }
             }
             for (int i = readers.size() - 1; i >= 0; i--) {
-                try { readers.get(i).close(); } catch (Exception ignored) { }
+                try {
+                    readers.get(i).close();
+                } catch (Exception ignored) {
+                }
             }
             for (int i = scanners.size() - 1; i >= 0; i--) {
-                try { scanners.get(i).close(); } catch (Exception ignored) { }
+                try {
+                    scanners.get(i).close();
+                } catch (Exception ignored) {
+                }
             }
             for (int i = datasets.size() - 1; i >= 0; i--) {
-                try { datasets.get(i).close(); } catch (Exception ignored) { }
+                try {
+                    datasets.get(i).close();
+                } catch (Exception ignored) {
+                }
             }
             for (int i = factories.size() - 1; i >= 0; i--) {
-                try { factories.get(i).close(); } catch (Exception ignored) { }
+                try {
+                    factories.get(i).close();
+                } catch (Exception ignored) {
+                }
             }
         }
     }

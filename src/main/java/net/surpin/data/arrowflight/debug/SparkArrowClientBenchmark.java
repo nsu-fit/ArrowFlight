@@ -45,7 +45,6 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.function.Function;
 
@@ -292,7 +291,9 @@ public class SparkArrowClientBenchmark {
                         parquetAdapter.tableDdlCache();
                 String ddl = ddlCache.getOrDefault(parsedQuery.schema,
                         java.util.Collections.emptyMap()).get(parsedQuery.table);
-                if (ddl == null) return null;
+                if (ddl == null) {
+                    return null;
+                }
                 String cleanDdl = ddl.replace(parsedQuery.schema + ".", "");
                 ByteBuffer buf = FilterConverter.toByteBuffer(
                         parsedQuery.filter,

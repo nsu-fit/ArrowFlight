@@ -381,7 +381,9 @@ public final class ExecutionService {
                 int colon = u.indexOf(':');
                 // file:///path → /path,  file:/path → /path
                 String stripped = u.substring(colon + 1);
-                while (stripped.startsWith("/")) stripped = stripped.substring(1);
+                while (stripped.startsWith("/")) {
+                    stripped = stripped.substring(1);
+                }
                 return "/" + stripped;
             }
             return u;

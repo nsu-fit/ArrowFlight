@@ -31,6 +31,12 @@ public final class HostUtils {
             return input;
         }
 
+        // Short-circuit for known loopback addresses
+        String hostOnly = input.contains("://") ? URI.create(input).getHost() : input;
+        if (hostOnly != null && LOOPBACK_HOSTS.contains(hostOnly)) {
+            return "127.0.0.1";
+        }
+
         return CACHE.computeIfAbsent(input, key -> {
             try {
                 String host = key;
