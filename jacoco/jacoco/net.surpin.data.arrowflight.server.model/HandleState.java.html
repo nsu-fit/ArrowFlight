@@ -2,14 +2,14 @@
 
 import java.io.Serializable;
 
-<span class="fc" id="L5">public record HandleState(String query, String[] filePaths, String serverUri, long bytes) implements Serializable {</span>
+<span class="nc" id="L5">public record HandleState(String query, String[] filePaths, String serverUri, long bytes) implements Serializable {</span>
 
     public static HandleState forQuery(String query) {
-<span class="fc" id="L8">        return new HandleState(query, null, null, 0L);</span>
+<span class="nc" id="L8">        return new HandleState(query, null, null, 0L);</span>
     }
 
     public static HandleState forServerFiles(String query, String[] filePaths, String serverUri, long bytes) {
-<span class="fc" id="L12">        return new HandleState(query, filePaths, serverUri, bytes);</span>
+<span class="nc" id="L12">        return new HandleState(query, filePaths, serverUri, bytes);</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>
