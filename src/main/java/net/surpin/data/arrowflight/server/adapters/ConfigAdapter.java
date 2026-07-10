@@ -1,0 +1,176 @@
+package net.surpin.data.arrowflight.server.adapters;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.Properties;
+
+import net.surpin.data.arrowflight.server.model.AppConfig;
+
+/**
+ * Loads configuration from arrowflight.properties, system properties, and environment variables.
+ * Produces an immutable AppConfig record.
+ */
+public class ConfigAdapter {
+
+    private static final String CONFIG_RESOURCE = "arrowflight.properties";
+
+    private ConfigAdapter() {
+    }
+
+    /**
+     * Loads and returns the complete server configuration.
+     *
+     * @return resolved AppConfig
+     */
+    public static AppConfig getConfig() {
+        Properties props = loadProperties();
+        int ioParallelism = computeIoParallelism(props);
+        int batchSize = getInt("batchSize", "arrowflight.duckdb.batchSize", 4096, props);
+        int ioFileBufferSize = getInt("ioFileBufferSize", null, 131072, props);
+        int duckDbWarmConnections = getInt("duckDbWarmConnections",
+                "arrowflight.duckdb.warmConnections", Math.min(8, ioParallelism), props);
+        int duckDbGroups = getInt("duckDbGroups",
+                "arrowflight.duckdb.groups", Math.min(8, ioParallelism), props);
+        int duckDbThreads = getInt("duckDbThreads", "arrowflight.duckdb.threads", 1, props);
+        String duckDbHdfsExtension = getStringWithEnv("duckDbHdfsExtension",
+                "arrowflight.duckdb.hdfs.extension", "DUCKDB_HDFS_EXTENSION", null, props);
+        boolean duckDbAllowUnsignedExtensions = getBooleanWithEnv("duckDbAllowUnsignedExtensions",
+                "arrowflight.duckdb.allowUnsignedExtensions", "DUCKDB_ALLOW_UNSIGNED_EXTENSIONS",
+                duckDbHdfsExtension != null, props);
+        String duckDbHdfsDefaultNamenode = getStringWithEnv("duckDbHdfsDefaultNamenode",
+                "arrowflight.duckdb.hdfs.defaultNamenode", "HDFS_DEFAULT_NAMENODE", null, props);
+        String duckDbHdfsHaNamenodes = getStringWithEnv("duckDbHdfsHaNamenodes",
+                "arrowflight.duckdb.hdfs.haNamenodes", "HDFS_HA_NAMENODES", null, props);
+        String duckDbHdfsShortcircuit = getStringWithEnv("duckDbHdfsShortcircuit",
+                "arrowflight.duckdb.hdfs.shortcircuit", "HDFS_SHORTCIRCUIT", null, props);
+        String duckDbHdfsDomainSocketPath = getStringWithEnv("duckDbHdfsDomainSocketPath",
+                "arrowflight.duckdb.hdfs.domainSocketPath", "HDFS_DOMAIN_SOCKET_PATH", null, props);
+        int grpcMaxInboundMessageSize = getInt("grpcMaxInboundMessageSize",
+                "arrowflight.grpc.maxInboundMessageSize", Integer.MAX_VALUE, props);
+        long flightListenerReadyTimeoutMillis = getLong("flightListenerReadyTimeoutMs",
+                "arrowflight.flight.listenerReadyTimeoutMs", 60_000L, props);
+        String dataDir = getString("dataDir", null, "/data/parquet", props);
+        int port = getInt("port", null, 32010, props);
+        int hazelcastPort = getInt("hazelcastPort", null, 5701, props);
+        int hazelcastClusterJoinTimeoutSec = getInt("hazelcastClusterJoinTimeoutSec",
+                "arrowflight.hazelcast.clusterJoinTimeoutSec", 60, props);
+        int clientMaxRetries = getInt("client.maxRetries", null, 3, props);
+        int clientRetryBackoffMs = getInt("client.retryBackoffMs", null, 1000, props);
+        int clientConnectTimeoutMs = getInt("client.connectTimeoutMs", null, 30000, props);
+
+        return new AppConfig(
+                batchSize, ioParallelism, ioFileBufferSize,
+                duckDbWarmConnections, duckDbGroups, duckDbThreads,
+                duckDbHdfsExtension, duckDbAllowUnsignedExtensions,
+                duckDbHdfsDefaultNamenode, duckDbHdfsHaNamenodes,
+                duckDbHdfsShortcircuit, duckDbHdfsDomainSocketPath,
+                grpcMaxInboundMessageSize, flightListenerReadyTimeoutMillis,
+                dataDir, port, hazelcastPort, hazelcastClusterJoinTimeoutSec,
+                clientMaxRetries, clientRetryBackoffMs, clientConnectTimeoutMs);
+    }
+
+    private static int computeIoParallelism(Properties props) {
+        Integer explicit = getOptionalInt("ioParallelism", "arrowflight.io.parallelism", props);
+        if (explicit != null && explicit > 0) {
+            return explicit;
+        }
+        int availableCores = Runtime.getRuntime().availableProcessors();
+        int maxCores = getInt("ioParallelismMaxCores", "arrowflight.io.maxCores", 0, props);
+        int effectiveCores = maxCores > 0 ? Math.min(availableCores, maxCores) : availableCores;
+        int multiplier = getInt("ioParallelismMultiplier", "arrowflight.io.parallelismMultiplier", 8, props);
+        int minThreads = getInt("ioParallelismMinThreads", "arrowflight.io.minParallelism", 32, props);
+        return Math.max(minThreads, effectiveCores * multiplier);
+    }
+
+    private static String getString(String key, String sysAlias, String fallback, Properties props) {
+        String value = System.getProperty(key);
+        if (value == null || value.isBlank()) {
+            value = props.getProperty(key);
+        }
+        if ((value == null || value.isBlank()) && sysAlias != null) {
+            value = System.getProperty(sysAlias);
+        }
+        if ((value == null || value.isBlank()) && sysAlias != null) {
+            value = props.getProperty(sysAlias);
+        }
+        return value == null || value.isBlank() ? fallback : value.trim();
+    }
+
+    private static String getStringWithEnv(String key, String sysAlias, String envName,
+            String fallback, Properties props) {
+        String value = System.getProperty(key);
+        if (value == null || value.isBlank()) {
+            value = props.getProperty(key);
+        }
+        if (value == null || value.isBlank()) {
+            value = System.getProperty(sysAlias);
+        }
+        if (value == null || value.isBlank()) {
+            value = props.getProperty(sysAlias);
+        }
+        if (value == null || value.isBlank()) {
+            String env = System.getenv(envName);
+            if (env != null && !env.isBlank()) {
+                value = env;
+            }
+        }
+        return value == null || value.isBlank() ? fallback : value.trim();
+    }
+
+    private static int getInt(String key, String sysAlias, int fallback, Properties props) {
+        String raw = getString(key, sysAlias, String.valueOf(fallback), props);
+        try {
+            return Integer.parseInt(raw);
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("Invalid integer for " + key + ": " + raw, e);
+        }
+    }
+
+    private static Integer getOptionalInt(String key, String sysAlias, Properties props) {
+        String value = System.getProperty(key);
+        if (value == null || value.isBlank()) {
+            value = props.getProperty(key);
+        }
+        if ((value == null || value.isBlank()) && sysAlias != null) {
+            value = System.getProperty(sysAlias);
+        }
+        if ((value == null || value.isBlank()) && sysAlias != null) {
+            value = props.getProperty(sysAlias);
+        }
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return Integer.parseInt(value.trim());
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("Invalid integer for " + key + ": " + value, e);
+        }
+    }
+
+    private static boolean getBooleanWithEnv(String key, String sysAlias, String envName,
+            boolean fallback, Properties props) {
+        String value = getStringWithEnv(key, sysAlias, envName, null, props);
+        return value == null ? fallback : Boolean.parseBoolean(value);
+    }
+
+    private static long getLong(String key, String sysAlias, long fallback, Properties props) {
+        String raw = getString(key, sysAlias, String.valueOf(fallback), props);
+        try {
+            return Long.parseLong(raw);
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("Invalid long for " + key + ": " + raw, e);
+        }
+    }
+
+    private static Properties loadProperties() {
+        Properties properties = new Properties();
+        try (InputStream input = ConfigAdapter.class.getClassLoader().getResourceAsStream(CONFIG_RESOURCE)) {
+            if (input != null) {
+                properties.load(input);
+            }
+        } catch (IOException e) {
+            throw new ExceptionInInitializerError(e);
+        }
+        return properties;
+    }
+}

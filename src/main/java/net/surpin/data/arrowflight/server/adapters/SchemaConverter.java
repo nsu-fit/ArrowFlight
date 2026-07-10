@@ -1,4 +1,4 @@
-package net.surpin.data.arrowflight.server.db;
+package net.surpin.data.arrowflight.server.adapters;
 
 import org.apache.arrow.vector.types.DateUnit;
 import org.apache.arrow.vector.types.FloatingPointPrecision;
@@ -9,7 +9,12 @@ import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.arrow.vector.types.pojo.FieldType;
 import org.apache.arrow.vector.types.pojo.Schema;
 import org.apache.parquet.column.ColumnDescriptor;
-import org.apache.parquet.schema.*;
+import org.apache.parquet.schema.GroupType;
+import org.apache.parquet.schema.LogicalTypeAnnotation;
+import org.apache.parquet.schema.MessageType;
+import org.apache.parquet.schema.OriginalType;
+import org.apache.parquet.schema.PrimitiveType;
+import org.apache.parquet.schema.Type;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -23,22 +28,36 @@ import java.util.Map;
 import java.util.function.Predicate;
 
 /**
- * Конвертер схемы Parquet в Arrow Schema.
+ * Converts Parquet schemas to Arrow schemas.
+ * Handles all logical types (Decimal, Timestamp, Date, etc.) and primitive types.
  */
-public class ParquetSchemaConverter {
-    private static final Logger LOGGER = LoggerFactory.getLogger(ParquetSchemaConverter.class);
+public final class SchemaConverter {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(SchemaConverter.class);
+
+    private SchemaConverter() {
+    }
 
     /**
-     * Конвертация типа Parquet в поле Arrow.
+     * Converts a Parquet column descriptor to an Arrow field.
      *
+     * @param columnDesc parquet column descriptor
+     * @return Arrow field
      */
     public static Field convert(ColumnDescriptor columnDesc) {
         String name = String.join(".", columnDesc.getPath());
         Type parquetType = columnDesc.getPrimitiveType();
-
         return convert(name, parquetType);
     }
 
+    /**
+     * Converts a named Parquet type to an Arrow field.
+     * Handles structs, maps, lists, and all scalar types.
+     *
+     * @param path  field name
+     * @param type  parquet type
+     * @return Arrow field
+     */
     public static Field convert(String path, Type type) {
         boolean nullable = type.getRepetition() != Type.Repetition.REQUIRED;
 
@@ -67,15 +86,12 @@ public class ParquetSchemaConverter {
         } else if (logicalType instanceof LogicalTypeAnnotation.DecimalLogicalTypeAnnotation decimal) {
             return new Field(path, fieldType(nullable, new ArrowType.Decimal(decimal.getPrecision(), decimal.getScale())), null);
         } else if (logicalType instanceof LogicalTypeAnnotation.DateLogicalTypeAnnotation) {
-            // Parquet DATE is days since Unix epoch (INT32) → Arrow Date32 (DAY)
             return new Field(path, fieldType(nullable, new ArrowType.Date(DateUnit.DAY)), null);
         } else if (logicalType instanceof LogicalTypeAnnotation.TimeLogicalTypeAnnotation time) {
-            // Honour the annotation's actual unit; MILLIS fits in 32 bits, MICROS/NANOS need 64
             TimeUnit unit = toArrowTimeUnit(time.getUnit());
             int bitWidth = (time.getUnit() == LogicalTypeAnnotation.TimeUnit.MILLIS) ? 32 : 64;
             return new Field(path, fieldType(nullable, new ArrowType.Time(unit, bitWidth)), null);
         } else if (logicalType instanceof LogicalTypeAnnotation.TimestampLogicalTypeAnnotation ts) {
-            // Honour the annotation's actual unit and UTC-adjustment flag
             TimeUnit unit = toArrowTimeUnit(ts.getUnit());
             String timezone = ts.isAdjustedToUTC() ? "UTC" : null;
             return new Field(path, fieldType(nullable, new ArrowType.Timestamp(unit, timezone)), null);
@@ -102,28 +118,11 @@ public class ParquetSchemaConverter {
         return switch (unit) {
             case MILLIS -> TimeUnit.MILLISECOND;
             case MICROS -> TimeUnit.MICROSECOND;
-            case NANOS  -> TimeUnit.NANOSECOND;
+            case NANOS -> TimeUnit.NANOSECOND;
         };
     }
 
-    /**
-     * Конвертация primitive типа Parquet.
-     *
-     *      * INT64
-     *      * INT32
-     *      * BOOLEAN
-     *      * BINARY
-     *      * FLOAT
-     *      * DOUBLE
-     *      * INT96
-     *      * FIXED_LEN_BYTE_ARRAY
-     */
     private static Field convertPrimitive(String path, PrimitiveType parquetType, boolean nullable) {
-        // When a column has an old-style Parquet annotation (OriginalType / ConvertedType) but
-        // the caller already consumed getLogicalTypeAnnotation() and got null (parquet-java may
-        // not populate logicalTypeAnnotation for legacy OriginalType metadata), fall back here
-        // so INT_8/INT_16/UINT_8/UINT_16/DATE/DECIMAL etc. are mapped correctly — matching what
-        // Acero's C++ Parquet reader returns for the same column.
         OriginalType origType = parquetType.getOriginalType();
         if (origType != null) {
             switch (parquetType.getPrimitiveTypeName()) {
@@ -180,7 +179,6 @@ public class ParquetSchemaConverter {
             case DOUBLE:
                 return new Field(path, fieldType(nullable, new ArrowType.FloatingPoint(FloatingPointPrecision.DOUBLE)), null);
             case INT96:
-                // Legacy Hive/Impala timestamp: 12-byte INT96 = nanoseconds since epoch, not UTC-adjusted
                 return new Field(path, fieldType(nullable, new ArrowType.Timestamp(TimeUnit.NANOSECOND, null)), null);
             case FIXED_LEN_BYTE_ARRAY:
                 return new Field(path, fieldType(nullable, new ArrowType.FixedSizeBinary(parquetType.getTypeLength())), null);
@@ -189,10 +187,23 @@ public class ParquetSchemaConverter {
         }
     }
 
+    /**
+     * Converts a full Parquet message type to an Arrow schema.
+     *
+     * @param parquetSchema parquet schema
+     * @return Arrow schema
+     */
     public static Schema convert(MessageType parquetSchema) {
         return convert(parquetSchema, null);
     }
 
+    /**
+     * Converts a Parquet message type to an Arrow schema, optionally filtering columns.
+     *
+     * @param parquetSchema  parquet schema
+     * @param includeColumn  predicate to select columns, null for all
+     * @return Arrow schema
+     */
     public static Schema convert(MessageType parquetSchema, Predicate<ColumnDescriptor> includeColumn) {
         List<Field> fields = new ArrayList<>();
         for (ColumnDescriptor columnDescriptor : parquetSchema.getColumns()) {
@@ -200,12 +211,13 @@ public class ParquetSchemaConverter {
                 fields.add(convert(columnDescriptor));
             }
         }
-
         return new Schema(fields, null);
     }
 
     /**
-     *  from https://github.com/Alipsa/JParq/blob/main/src/main/java/se/alipsa/jparq/JParqDatabaseMetaData.java
+     * Builds type info list for Flight SQL GetXdbcTypeInfo.
+     *
+     * @return list of type info entries
      */
     public static List<TypeInfo> buildTypeInfo() {
         List<TypeInfo> types = new ArrayList<>();
@@ -228,12 +240,20 @@ public class ParquetSchemaConverter {
         return List.copyOf(types);
     }
 
+    /**
+     * Type metadata entry for Flight SQL GetXdbcTypeInfo responses.
+     */
     public record TypeInfo(String typeName, int dataType, Integer precision, String literalPrefix, String literalSuffix,
                             String createParams, int nullable, boolean caseSensitive, int searchable, boolean unsignedAttribute,
                             boolean fixedPrecScale, boolean autoIncrement, String localTypeName, Integer minimumScale, Integer maximumScale,
                             Integer sqlDataType, Integer sqlDatetimeSub, Integer numPrecRadix) {
 
-        Object[] toRow() {
+        /**
+         * Converts this entry to an array suitable for Arrow vector population.
+         *
+         * @return row values
+         */
+        public Object[] toRow() {
             return new Object[]{
                     typeName, dataType, precision, literalPrefix, literalSuffix, createParams, nullable, caseSensitive,
                     searchable, unsignedAttribute, fixedPrecScale, autoIncrement, localTypeName, minimumScale, maximumScale,
@@ -241,6 +261,11 @@ public class ParquetSchemaConverter {
             };
         }
 
+        /**
+         * Returns this entry as a map for serialization.
+         *
+         * @return map of column names to values
+         */
         public Map<String, ?> toMap() {
             Map<String, Object> result = new HashMap<>();
             result.put("TYPE_NAME", this.typeName());
@@ -261,7 +286,6 @@ public class ParquetSchemaConverter {
             result.put("SQL_DATA_TYPE", this.sqlDataType());
             result.put("SQL_DATETIME_SUB", this.sqlDatetimeSub());
             result.put("NUM_PREC_RADIX", this.numPrecRadix());
-
             return result;
         }
     }

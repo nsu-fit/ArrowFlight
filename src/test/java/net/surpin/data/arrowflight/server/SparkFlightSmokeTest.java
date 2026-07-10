@@ -1,43 +1,27 @@
 package net.surpin.data.arrowflight.server;
 
-import com.hazelcast.config.Config;
-import com.hazelcast.core.Hazelcast;
-import com.hazelcast.core.HazelcastInstance;
-import net.surpin.data.arrowflight.server.db.ParquetManager;
-import org.apache.arrow.flight.FlightServer;
-import org.apache.arrow.flight.Location;
-import org.apache.arrow.memory.DefaultAllocationManagerOption;
-import org.apache.arrow.memory.RootAllocator;
-import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.LocalFileSystem;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SparkSession;
 import org.junit.jupiter.api.*;
 
 import java.lang.reflect.Field;
-import java.net.ServerSocket;
-import java.net.URI;
-import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import java.util.stream.Collectors;
 
-import static org.apache.arrow.memory.DefaultAllocationManagerOption.ALLOCATION_MANAGER_TYPE_PROPERTY_NAME;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Smoke test for the Spark DataSource V2 "flight" connector.
  */
 @Tag("integration")
+@Tag("spark")
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class SparkFlightSmokeTest {
 
-    private static FlightServer flightServer;
-    private static HazelcastInstance hz;
-    private static RootAllocator allocator;
+    private static TestFlightServerHelper helper;
     private static SparkSession spark;
     private static String host;
     private static int port;
@@ -45,35 +29,14 @@ class SparkFlightSmokeTest {
 
     @BeforeAll
     static void startServerAndSpark() throws Exception {
-        // Java 21+ UGI workaround — inject SPARK_USER before Spark initialises (same as the other
-        // Spark integration tests in this module).
+        // Java 21+ UGI workaround — inject SPARK_USER before Spark initialises
         injectSparkUser(System.getProperty("user.name", "root"));
 
-        System.setProperty(ALLOCATION_MANAGER_TYPE_PROPERTY_NAME,
-                DefaultAllocationManagerOption.AllocationManagerType.Netty.name());
-
-        allocator = new RootAllocator(Long.MAX_VALUE);
-
-        Config hzCfg = new Config();
-        hzCfg.setClusterName("spark-smoke-" + UUID.randomUUID());
-        hzCfg.getNetworkConfig().setPort(findFreePort());
-        hzCfg.getNetworkConfig().setPortAutoIncrement(false);
-        hzCfg.getNetworkConfig().getJoin().getMulticastConfig().setEnabled(false);
-        hzCfg.getNetworkConfig().getJoin().getTcpIpConfig().setEnabled(false);
-        hz = Hazelcast.newHazelcastInstance(hzCfg);
-
-        String dataDir = Paths.get("src/test/resources/test_db").toAbsolutePath().toString();
-        LocalFileSystem localFs = new LocalFileSystem();
-        localFs.initialize(URI.create("file:///"), new Configuration());
-        ParquetManager parquetManager = new ParquetManager(localFs, dataDir, "localhost");
+        helper = TestFlightServerHelper.builder().start();
 
         host = "localhost";
-        port = findFreePort();
-        Location location = Location.forGrpcInsecure(host, port);
-        HadoopFlightSqlService sqlService =
-                new HadoopFlightSqlService(location, parquetManager, allocator, hz);
-        flightServer = FlightServer.builder(allocator, location, sqlService).build();
-        flightServer.start();
+        port = helper.location.getUri().getPort();
+        flightTable = "test_schema.test_table";
 
         spark = SparkSession.builder()
                 .appName("SparkFlightSmokeTest")
@@ -82,21 +45,16 @@ class SparkFlightSmokeTest {
                 .config("spark.driver.bindAddress", "127.0.0.1")
                 .getOrCreate();
         spark.sparkContext().setLogLevel("WARN");
-
-        flightTable = "test_schema.test_table";
     }
 
     @AfterAll
-    static void stopAll() {
+    static void stopAll() throws Exception {
         if (spark != null) spark.stop();
-        if (flightServer != null) flightServer.shutdown();
-        if (hz != null) hz.shutdown();
-        if (allocator != null) allocator.close();
+        if (helper != null) helper.close();
     }
 
     // ── helpers ────────────────────────────────────────────────────────────
 
-    /** Mirrors the minimal Spark script from the task: format/host/port/user/password/table. */
     private Dataset<Row> flightRead() {
         return spark.read()
                 .format("flight")
@@ -110,12 +68,6 @@ class SparkFlightSmokeTest {
 
     private static String physicalPlan(Dataset<Row> df) {
         return df.queryExecution().executedPlan().toString();
-    }
-
-    private static int findFreePort() throws Exception {
-        try (ServerSocket s = new ServerSocket(0)) {
-            return s.getLocalPort();
-        }
     }
 
     // ── 1. minimal read ───────────────────────────────────────────────────
@@ -144,8 +96,6 @@ class SparkFlightSmokeTest {
         String plan = physicalPlan(projected);
         System.out.println("[projection] physical plan:\n" + plan);
 
-        // The connector's Scan#description() == Table.getQueryStatement(), which Spark embeds
-        // into the physical plan node -> this *is* the SQL sent to the Flight server.
         assertTrue(plan.toLowerCase().contains("select id,string_col from " + flightTable.toLowerCase())
                         || plan.toLowerCase().contains("select id, string_col from " + flightTable.toLowerCase()),
                 "expected a projected 'select id,string_col from " + flightTable + "' statement in the plan, got:\n" + plan);
@@ -174,7 +124,6 @@ class SparkFlightSmokeTest {
         assertTrue(lower.contains("id > 100") || lower.contains("id>100"),
                 "expected 'id > 100' pushed into the scan, got:\n" + plan);
 
-        // ids are 0..999 -> id > 100 selects ids 101..999 inclusive = 899 rows
         assertEquals(899L, filtered.count());
 
         long minId = filtered.selectExpr("min(id)").first().getInt(0);
@@ -186,8 +135,6 @@ class SparkFlightSmokeTest {
     @Test
     @Order(4)
     void aggregationPushdown_groupByTinyintColSendsGroupByCountSql() {
-        // tinyint_col = id % 10 -> 10 groups of 100 rows each; used as the "category" analogue
-        // since this schema has no textual low-cardinality column.
         Dataset<Row> grouped = flightRead().groupBy("tinyint_col").count();
 
         String plan = physicalPlan(grouped);
@@ -211,8 +158,6 @@ class SparkFlightSmokeTest {
     @Test
     @Order(5)
     void missingCredentials_isBlockedByMandatoryUserPasswordCheck() {
-        // Same as flightRead() but without user/password/bearerToken -> documents the blocker:
-        // there is no "auth=none" mode, the client refuses to even open a connection.
         RuntimeException ex = assertThrows(RuntimeException.class, () ->
                 spark.read()
                         .format("flight")
@@ -227,7 +172,7 @@ class SparkFlightSmokeTest {
                 "FlightSource.probeOptions() should fail fast complaining that host/user/password are mandatory");
     }
 
-    // ── util (copied from the sibling Spark integration tests in this module) ─
+    // ── util ──────────────────────────────────────────────────────────────
 
     @SuppressWarnings("unchecked")
     private static void injectSparkUser(String user) {

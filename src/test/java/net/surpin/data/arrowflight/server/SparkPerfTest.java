@@ -1,22 +1,13 @@
 package net.surpin.data.arrowflight.server;
 
-import com.hazelcast.config.Config;
-import com.hazelcast.core.Hazelcast;
-import com.hazelcast.core.HazelcastInstance;
-import net.surpin.data.arrowflight.server.db.ParquetManager;
-import org.apache.arrow.flight.FlightServer;
-import org.apache.arrow.flight.Location;
 import org.apache.arrow.memory.DefaultAllocationManagerOption;
 import org.apache.arrow.memory.RootAllocator;
-import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.LocalFileSystem;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SparkSession;
 
 import java.lang.reflect.Field;
 import java.net.ServerSocket;
-import java.net.URI;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
@@ -59,34 +50,20 @@ public class SparkPerfTest {
         System.out.println("Table          : " + schema + "." + table);
         System.out.println();
 
-        // ── Java 21+ workaround: Subject.getSubject(AccessControlContext) was removed.
-        //    Spark reads SPARK_USER env var first; inject it via ProcessEnvironment reflection
-        //    so UGI is never called. Requires --add-opens=java.base/java.lang=ALL-UNNAMED.
+        // Java 21+ workaround
         injectSparkUser(System.getProperty("user.name", "root"));
 
-        // ── start embedded Arrow Flight server ──────────────────────────
+        // ── start embedded Arrow Flight server via helper ────────────────
         System.setProperty(ALLOCATION_MANAGER_TYPE_PROPERTY_NAME,
                 DefaultAllocationManagerOption.AllocationManagerType.Netty.name());
 
         RootAllocator allocator = new RootAllocator(Long.MAX_VALUE);
 
-        Config hzCfg = new Config();
-        hzCfg.setClusterName("perf-" + UUID.randomUUID());
-        hzCfg.getNetworkConfig().setPort(findFreePort());
-        hzCfg.getNetworkConfig().setPortAutoIncrement(false);
-        hzCfg.getNetworkConfig().getJoin().getMulticastConfig().setEnabled(false);
-        hzCfg.getNetworkConfig().getJoin().getTcpIpConfig().setEnabled(false);
-        HazelcastInstance hz = Hazelcast.newHazelcastInstance(hzCfg);
-        LocalFileSystem localFs = new LocalFileSystem();
-        localFs.initialize(URI.create("file:///"), new Configuration());
-        ParquetManager parquetManager = new ParquetManager(localFs, dataDir, "localhost");
-
-        int port = findFreePort();
-        Location location = Location.forGrpcInsecure("localhost", port);
-        HadoopFlightSqlService sqlService =
-                new HadoopFlightSqlService(location, parquetManager, allocator, hz);
-        FlightServer flightServer = FlightServer.builder(allocator, location, sqlService).build();
-        flightServer.start();
+        TestFlightServerHelper helper = TestFlightServerHelper.builder()
+                .dataDir(dataDir)
+                .allocator(allocator)
+                .start();
+        int port = helper.location.getUri().getPort();
         System.out.println("Arrow Flight server started on port " + port);
 
         // ── start Spark ─────────────────────────────────────────────────
@@ -184,9 +161,7 @@ public class SparkPerfTest {
 
         // ── cleanup ──────────────────────────────────────────────────────
         spark.stop();
-        flightServer.shutdown();
-        hz.shutdown();
-        allocator.close();
+        helper.close();
     }
 
     private static Dataset<Row> flightRead(SparkSession spark, String host, int port, String query) {
@@ -203,34 +178,16 @@ public class SparkPerfTest {
         return times[times.length / 2];
     }
 
-    private static int findFreePort() throws Exception {
-        try (ServerSocket s = new ServerSocket(0)) {
-            return s.getLocalPort();
-        }
-    }
-
     /**
-     * Injects SPARK_USER into the live process environment via reflection so that
-     * Spark's Utils.getCurrentUserName() reads it instead of calling UGI, which
-     * fails on Java 21+ (Subject.getSubject was removed).
-     *
-     * On Linux the backing map uses typed Variable/Value keys (not plain String), so we
-     * must go through theUnmodifiableEnvironment → UnmodifiableMap.m → StringEnvironment,
-     * whose put(String,String) converts to Variable/Value automatically.
-     *
-     * Requires --add-opens=java.base/java.lang=ALL-UNNAMED.
+     * Injects SPARK_USER into the live process environment via reflection.
      */
     @SuppressWarnings("unchecked")
     private static void injectSparkUser(String user) {
         try {
             Class<?> pe = Class.forName("java.lang.ProcessEnvironment");
-
-            // theUnmodifiableEnvironment = Collections.unmodifiableMap(new StringEnvironment(theEnvironment))
             Field theUnmod = pe.getDeclaredField("theUnmodifiableEnvironment");
             theUnmod.setAccessible(true);
             Map<String, String> unmodEnv = (Map<String, String>) theUnmod.get(null);
-
-            // Collections$UnmodifiableMap.m → StringEnvironment (which accepts put(String,String))
             Field m = unmodEnv.getClass().getDeclaredField("m");
             m.setAccessible(true);
             Map<String, String> strEnv = (Map<String, String>) m.get(unmodEnv);

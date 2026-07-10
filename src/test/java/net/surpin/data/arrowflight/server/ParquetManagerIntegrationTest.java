@@ -1,8 +1,16 @@
 package net.surpin.data.arrowflight.server;
 
-import net.surpin.data.arrowflight.server.db.ParquetManager;
+import net.surpin.data.arrowflight.server.adapters.ConfigAdapter;
+import net.surpin.data.arrowflight.server.adapters.DuckDbAdapter;
+import net.surpin.data.arrowflight.server.adapters.FilterConverter;
+import net.surpin.data.arrowflight.server.adapters.ParquetAdapter;
+import net.surpin.data.arrowflight.server.model.AppConfig;
 import net.surpin.data.arrowflight.server.model.FileAssignment;
-import org.apache.arrow.flight.FlightProducer.ServerStreamListener;
+import net.surpin.data.arrowflight.server.services.ExecutionService;
+import net.surpin.data.arrowflight.server.services.MetadataService;
+import net.surpin.data.arrowflight.server.services.ParquetQueryParser;
+import net.surpin.data.arrowflight.server.adapters.AceroAdapter;
+import org.apache.arrow.flight.FlightProducer;
 import org.apache.arrow.memory.ArrowBuf;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.RootAllocator;
@@ -16,37 +24,83 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
-import java.io.IOException;
-import java.net.URI;
+import java.nio.ByteBuffer;
 import java.nio.file.Paths;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Executors;
+import java.util.function.Function;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 @Tag("integration")
 class ParquetManagerIntegrationTest {
 
-    private static ParquetManager manager;
+    private static ParquetAdapter parquetAdapter;
+    private static MetadataService metadataService;
+    private static ExecutionService executionService;
+    private static BufferAllocator allocator;
 
     @BeforeAll
-    static void setUp() throws IOException {
+    static void setUp() throws Exception {
         String dataDir = Paths.get("src/test/resources/test_db").toAbsolutePath().toString();
+        System.setProperty("dataDir", dataDir);
+        System.setProperty("duckDbWarmConnections", "1");
+        System.setProperty("duckDbGroups", "1");
+        System.setProperty("duckDbThreads", "1");
+        System.setProperty("ioParallelism", "2");
+        AppConfig appConfig = ConfigAdapter.getConfig();
+
         LocalFileSystem localFs = new LocalFileSystem();
-        localFs.initialize(URI.create("file:///"), new Configuration());
-        manager = new ParquetManager(localFs, dataDir, "localhost");
+        localFs.initialize(new java.net.URI("file:///"), new Configuration());
+
+        allocator = new RootAllocator(Long.MAX_VALUE);
+        parquetAdapter = new ParquetAdapter(appConfig, localFs, "localhost");
+        metadataService = new MetadataService(parquetAdapter);
+        DuckDbAdapter duckDbAdapter = new DuckDbAdapter(appConfig,
+                Executors.newCachedThreadPool());
+        AceroAdapter aceroAdapter = new AceroAdapter(appConfig);
+
+        Function<ParquetQueryParser, byte[]> filterBuilder = (parsedQuery) -> {
+            if (parsedQuery.filter == null || parsedQuery.filter.isEmpty()
+                    || parsedQuery.filter.equals("true") || parsedQuery.filter.equals("1 = 1")) {
+                return null;
+            }
+            try {
+                java.util.Map<String, java.util.Map<String, String>> ddlCache =
+                        parquetAdapter.tableDdlCache();
+                String ddl = ddlCache.getOrDefault(parsedQuery.schema,
+                        java.util.Collections.emptyMap()).get(parsedQuery.table);
+                if (ddl == null) {
+                    return null;
+                }
+                String cleanDdl = ddl.replace(parsedQuery.schema + ".", "");
+                ByteBuffer buf = FilterConverter.toByteBuffer(
+                        parsedQuery.filter,
+                        java.util.Collections.singletonList(cleanDdl));
+                byte[] bytes = new byte[buf.remaining()];
+                buf.get(bytes);
+                return bytes;
+            } catch (Exception e) {
+                return null;
+            }
+        };
+
+        executionService = new ExecutionService(parquetAdapter, duckDbAdapter,
+                aceroAdapter, metadataService, appConfig,
+                Executors.newCachedThreadPool(), filterBuilder);
     }
 
     @Test
     void getTableSchemaReturnsNonEmptySchema() {
-        Schema schema = manager.getTableSchema("test_schema", "test_table");
+        Schema schema = parquetAdapter.getTableSchema("test_schema", "test_table");
         assertNotNull(schema);
-        assertFalse(schema.getFields().isEmpty(), "Schema should have at least one field");
+        assertFalse(schema.getFields().isEmpty());
     }
 
     @Test
     void getTableSchemaColumnNamesArePresent() {
-        Schema schema = manager.getTableSchema("test_schema", "test_table");
+        Schema schema = parquetAdapter.getTableSchema("test_schema", "test_table");
         List<String> names = schema.getFields().stream().map(f -> f.getName()).toList();
         assertTrue(names.contains("id"));
         assertTrue(names.contains("bool_col"));
@@ -56,7 +110,7 @@ class ParquetManagerIntegrationTest {
     @Test
     void getTableSchemaWithColumnFilterReturnsSubset() {
         List<String> requested = List.of("id", "bool_col");
-        Schema schema = manager.getTableSchema("test_schema", "test_table", requested);
+        Schema schema = parquetAdapter.getTableSchema("test_schema", "test_table", requested);
         assertEquals(2, schema.getFields().size());
         List<String> names = schema.getFields().stream().map(f -> f.getName()).toList();
         assertTrue(names.contains("id") && names.contains("bool_col"));
@@ -64,49 +118,49 @@ class ParquetManagerIntegrationTest {
 
     @Test
     void getTableSchemaEmptyColumnListReturnsAll() {
-        Schema full = manager.getTableSchema("test_schema", "test_table");
-        Schema withEmpty = manager.getTableSchema("test_schema", "test_table", List.of());
+        Schema full = parquetAdapter.getTableSchema("test_schema", "test_table");
+        Schema withEmpty = parquetAdapter.getTableSchema(
+                "test_schema", "test_table", List.of());
         assertEquals(full.getFields().size(), withEmpty.getFields().size());
     }
 
     @Test
     void getQuerySchemaSelectStarReturnsAllColumns() {
-        Schema full = manager.getTableSchema("test_schema", "test_table");
-        Schema fromQuery = manager.getQuerySchema("SELECT * FROM test_schema.test_table");
+        Schema full = parquetAdapter.getTableSchema("test_schema", "test_table");
+        Schema fromQuery = metadataService.getQuerySchema(
+                "SELECT * FROM test_schema.test_table");
         assertEquals(full.getFields().size(), fromQuery.getFields().size());
     }
 
     @Test
     void getQuerySchemaWithProjection() {
-        Schema schema = manager.getQuerySchema(
+        Schema schema = metadataService.getQuerySchema(
                 "SELECT id, bool_col FROM test_schema.test_table");
         assertEquals(2, schema.getFields().size());
     }
 
     @Test
-    void locationsForQueryReturnsRelativePaths() throws IOException {
-        Map<String, FileAssignment> locations = manager.locationsForQuery(
+    void locationsForQueryReturnsRelativePaths() throws Exception {
+        Map<String, FileAssignment> locations = parquetAdapter.locationsForQuery(
                 "SELECT * FROM test_schema.test_table");
-        assertFalse(locations.isEmpty(), "Should find at least one parquet file");
+        assertFalse(locations.isEmpty());
         for (String path : locations.keySet()) {
             assertFalse(path.startsWith("/"), "Paths should be relative: " + path);
         }
     }
 
     @Test
-    void getSchemasReturnsTestSchema() throws IOException {
-        Map<String, ?> schemas = manager.getSchemas(null);
+    void getSchemasReturnsTestSchema() throws Exception {
+        Map<String, ?> schemas = parquetAdapter.getSchemas(null);
         assertTrue(schemas.containsKey("test_schema"));
     }
 
     @Test
     void readParquetFullScanReturnsRows() throws Exception {
         CountingListener listener = new CountingListener();
-        try (BufferAllocator allocator = new RootAllocator()) {
-            manager.readParquet(allocator,
-                    "SELECT * FROM test_schema.test_table", null, listener, true);
-        }
-        assertTrue(listener.totalRows > 0, "Should have read at least one row");
+        executionService.readParquet(allocator,
+                "SELECT * FROM test_schema.test_table", null, listener, true);
+        assertTrue(listener.totalRows > 0);
     }
 
     @Test
@@ -114,24 +168,18 @@ class ParquetManagerIntegrationTest {
         CountingListener all = new CountingListener();
         CountingListener filtered = new CountingListener();
 
-        try (BufferAllocator allocator = new RootAllocator()) {
-            manager.readParquet(allocator,
-                    "SELECT * FROM test_schema.test_table", null, all, true);
-        }
-        try (BufferAllocator allocator = new RootAllocator()) {
-            manager.readParquet(allocator,
-                    "SELECT * FROM test_schema.test_table WHERE \"tinyint_col\" = 0",
-                    null, filtered, true);
-        }
+        executionService.readParquet(allocator,
+                "SELECT * FROM test_schema.test_table", null, all, true);
+        executionService.readParquet(allocator,
+                "SELECT * FROM test_schema.test_table WHERE \"tinyint_col\" = 0",
+                null, filtered, true);
 
-        assertTrue(filtered.totalRows > 0, "Filtered result should be non-empty");
+        assertTrue(filtered.totalRows > 0);
         assertTrue(filtered.totalRows < all.totalRows,
                 "Filtered should return fewer rows than full scan");
     }
 
-    // ─── minimal ServerStreamListener stub ────────────────────────────────
-
-    static class CountingListener implements ServerStreamListener {
+    static class CountingListener implements FlightProducer.ServerStreamListener {
         int totalRows;
         VectorSchemaRoot root;
 
@@ -160,8 +208,7 @@ class ParquetManagerIntegrationTest {
         public boolean isCancelled() { return false; }
 
         @Override
-        public void setOnReadyHandler(Runnable handler) {
-        }
+        public void setOnReadyHandler(Runnable handler) {}
 
         @Override
         public void setOnCancelHandler(Runnable handler) {}

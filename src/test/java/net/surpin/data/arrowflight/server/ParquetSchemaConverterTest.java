@@ -1,6 +1,6 @@
 package net.surpin.data.arrowflight.server;
 
-import net.surpin.data.arrowflight.server.db.ParquetSchemaConverter;
+import net.surpin.data.arrowflight.server.adapters.SchemaConverter;
 import org.apache.arrow.vector.types.DateUnit;
 import org.apache.arrow.vector.types.TimeUnit;
 import org.apache.arrow.vector.types.pojo.ArrowType;
@@ -13,7 +13,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-class ParquetSchemaConverterTest {
+class SchemaConverterTest {
 
     // ─── Primitive types (no logical annotation) ──────────────────────────
 
@@ -197,7 +197,7 @@ class ParquetSchemaConverterTest {
                         .as(LogicalTypeAnnotation.stringType()).named("name"),
                 Types.optional(PrimitiveType.PrimitiveTypeName.INT96).named("ts")
         );
-        Schema arrowSchema = ParquetSchemaConverter.convert(parquetSchema);
+        Schema arrowSchema = SchemaConverter.convert(parquetSchema);
         assertEquals(3, arrowSchema.getFields().size());
     }
 
@@ -209,7 +209,7 @@ class ParquetSchemaConverterTest {
                         .as(LogicalTypeAnnotation.stringType()).named("name"),
                 Types.optional(PrimitiveType.PrimitiveTypeName.DOUBLE).named("score")
         );
-        Schema arrowSchema = ParquetSchemaConverter.convert(parquetSchema,
+        Schema arrowSchema = SchemaConverter.convert(parquetSchema,
                 col -> col.getPath()[0].equals("id") || col.getPath()[0].equals("score"));
         assertEquals(2, arrowSchema.getFields().size());
         List<String> names = arrowSchema.getFields().stream().map(Field::getName).toList();
@@ -223,7 +223,7 @@ class ParquetSchemaConverterTest {
                 Types.required(PrimitiveType.PrimitiveTypeName.INT32).named("a"),
                 Types.optional(PrimitiveType.PrimitiveTypeName.INT64).named("b")
         );
-        Schema arrowSchema = ParquetSchemaConverter.convert(parquetSchema, null);
+        Schema arrowSchema = SchemaConverter.convert(parquetSchema, null);
         assertEquals(2, arrowSchema.getFields().size());
     }
 
@@ -352,7 +352,7 @@ class ParquetSchemaConverterTest {
                 Types.optional(PrimitiveType.PrimitiveTypeName.INT32)
                         .as(OriginalType.INT_8).named("tinyint_col")
         );
-        Schema arrowSchema = ParquetSchemaConverter.convert(parquetSchema);
+        Schema arrowSchema = SchemaConverter.convert(parquetSchema);
 
         Field id = arrowSchema.findField("id");
         Field tinyint = arrowSchema.findField("tinyint_col");
@@ -372,6 +372,6 @@ class ParquetSchemaConverterTest {
 
 
     private static Field convert(org.apache.parquet.schema.Type type) {
-        return ParquetSchemaConverter.convert(type.getName(), type);
+        return SchemaConverter.convert(type.getName(), type);
     }
 }
