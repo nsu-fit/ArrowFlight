@@ -306,37 +306,52 @@ public final class Client implements AutoCloseable {
 <span class="nc" id="L306">        return Client.clients.get(cs);</span>
     }
 
-    //Create a client object with the service configuration
+    /**
+     * Creates a FlightClient with optional TLS and interceptors.
+     *
+     * @param config    client configuration
+     * @param allocator buffer allocator
+     * @return FlightClient
+     */
     private static FlightClient create(Configuration config, BufferAllocator allocator) {
-<span class="nc" id="L311">        FlightClient.Builder builder = FlightClient.builder().allocator(allocator);</span>
-<span class="nc bnc" id="L312" title="All 2 branches missed.">        if (config.getTlsEnabled()) {</span>
-<span class="nc bnc" id="L313" title="All 4 branches missed.">            if (config.getTruststoreJks() == null || config.getTruststoreJks().isEmpty()) {</span>
-<span class="nc" id="L314">                builder.location(Location.forGrpcTls(config.getFlightHost(), config.getFlightPort())).useTls().verifyServer(config.verifyServer());</span>
+<span class="nc" id="L317">        FlightClient.Builder builder = FlightClient.builder().allocator(allocator);</span>
+<span class="nc bnc" id="L318" title="All 2 branches missed.">        if (config.getTlsEnabled()) {</span>
+<span class="nc bnc" id="L319" title="All 4 branches missed.">            if (config.getTruststoreJks() == null || config.getTruststoreJks().isEmpty()) {</span>
+<span class="nc" id="L320">                builder.location(Location.forGrpcTls(config.getFlightHost(), config.getFlightPort())).useTls().verifyServer(config.verifyServer());</span>
             } else {
-<span class="nc" id="L316">                builder.location(Location.forGrpcTls(config.getFlightHost(), config.getFlightPort())).useTls().trustedCertificates(new ByteArrayInputStream(config.getCertificateBytes()));</span>
+<span class="nc" id="L322">                builder.location(Location.forGrpcTls(config.getFlightHost(), config.getFlightPort())).useTls().trustedCertificates(new ByteArrayInputStream(config.getCertificateBytes()));</span>
             }
         } else {
-<span class="nc" id="L319">            builder.location(Location.forGrpcInsecure(config.getFlightHost(), config.getFlightPort()));</span>
+<span class="nc" id="L325">            builder.location(Location.forGrpcInsecure(config.getFlightHost(), config.getFlightPort()));</span>
         }
-<span class="nc bnc" id="L321" title="All 4 branches missed.">        return (config.getPassword() != null &amp;&amp; !config.getPassword().isEmpty()) ? builder.intercept(Client.factory).build() : builder.build();</span>
+<span class="nc bnc" id="L327" title="All 4 branches missed.">        return (config.getPassword() != null &amp;&amp; !config.getPassword().isEmpty()) ? builder.intercept(Client.factory).build() : builder.build();</span>
     }
 
-    //Authenticate with user &amp; password to obtain the credential token-ticket
+    /**
+     * Authenticates with the Flight server using password or bearer token.
+     *
+     * @param client           FlightClient
+     * @param user             username
+     * @param password         password (null for bearer-only)
+     * @param bearerToken      bearer token (null for password-only)
+     * @param clientProperties optional client properties
+     * @return credential call option
+     */
     static CredentialCallOption authenticate(FlightClient client, String user, String password, String bearerToken, HeaderCallOption clientProperties) {
-<span class="nc" id="L326">        final java.util.List&lt;CallOption&gt; callOptions = new java.util.ArrayList&lt;&gt;();</span>
+<span class="nc" id="L341">        final java.util.List&lt;CallOption&gt; callOptions = new java.util.ArrayList&lt;&gt;();</span>
 
-<span class="nc" id="L328">        LOGGER.info(&quot;Client.authenticate: clientProperties={}&quot;, clientProperties);</span>
-<span class="nc bnc" id="L329" title="All 2 branches missed.">        if (clientProperties != null) {</span>
-<span class="nc" id="L330">            callOptions.add(clientProperties);</span>
+<span class="nc" id="L343">        LOGGER.info(&quot;Client.authenticate: clientProperties={}&quot;, clientProperties);</span>
+<span class="nc bnc" id="L344" title="All 2 branches missed.">        if (clientProperties != null) {</span>
+<span class="nc" id="L345">            callOptions.add(clientProperties);</span>
         }
-<span class="nc bnc" id="L332" title="All 4 branches missed.">        boolean usePassword = (password != null &amp;&amp; !password.isEmpty());</span>
-<span class="nc" id="L333">        CredentialCallOption credentialOption = new CredentialCallOption(</span>
-<span class="nc bnc" id="L334" title="All 2 branches missed.">                usePassword ? new BasicAuthCredentialWriter(user, password) : new BearerCredentialWriter(bearerToken));</span>
-<span class="nc" id="L335">        callOptions.add(credentialOption);</span>
-<span class="nc" id="L336">        LOGGER.info(&quot;Client.authenticate: callOptions={}&quot;, callOptions);</span>
-<span class="nc" id="L337">        client.handshake(callOptions.toArray(new CallOption[0]));</span>
-<span class="nc" id="L338">        LOGGER.info(&quot;Client.authenticate: handshake finished&quot;);</span>
-<span class="nc bnc" id="L339" title="All 2 branches missed.">        return usePassword ? Client.factory.getCredentialCallOption() : credentialOption;</span>
+<span class="nc bnc" id="L347" title="All 4 branches missed.">        boolean usePassword = (password != null &amp;&amp; !password.isEmpty());</span>
+<span class="nc" id="L348">        CredentialCallOption credentialOption = new CredentialCallOption(</span>
+<span class="nc bnc" id="L349" title="All 2 branches missed.">                usePassword ? new BasicAuthCredentialWriter(user, password) : new BearerCredentialWriter(bearerToken));</span>
+<span class="nc" id="L350">        callOptions.add(credentialOption);</span>
+<span class="nc" id="L351">        LOGGER.info(&quot;Client.authenticate: callOptions={}&quot;, callOptions);</span>
+<span class="nc" id="L352">        client.handshake(callOptions.toArray(new CallOption[0]));</span>
+<span class="nc" id="L353">        LOGGER.info(&quot;Client.authenticate: handshake finished&quot;);</span>
+<span class="nc bnc" id="L354" title="All 2 branches missed.">        return usePassword ? Client.factory.getCredentialCallOption() : credentialOption;</span>
     }
 
     @FunctionalInterface
@@ -344,63 +359,88 @@ public final class Client implements AutoCloseable {
         T call() throws Exception;
     }
 
+    /**
+     * Executes a call with exponential backoff retry on recoverable errors.
+     *
+     * @param callable  the call to execute
+     * @param operation operation name for logging
+     * @return result
+     */
     &lt;T&gt; T retryWithBackoff(RetryableCall&lt;T&gt; callable, String operation) {
-<span class="nc" id="L348">        int maxRetries = config.getMaxRetries();</span>
-<span class="nc" id="L349">        long backoffMs = config.getRetryBackoffMs();</span>
-<span class="nc" id="L350">        Exception lastException = null;</span>
+<span class="nc" id="L370">        int maxRetries = config.getMaxRetries();</span>
+<span class="nc" id="L371">        long backoffMs = config.getRetryBackoffMs();</span>
+<span class="nc" id="L372">        Exception lastException = null;</span>
 
-<span class="nc bnc" id="L352" title="All 2 branches missed.">        for (int attempt = 0; attempt &lt;= maxRetries; attempt++) {</span>
+<span class="nc bnc" id="L374" title="All 2 branches missed.">        for (int attempt = 0; attempt &lt;= maxRetries; attempt++) {</span>
             try {
-<span class="nc bnc" id="L354" title="All 2 branches missed.">                if (attempt &gt; 0) {</span>
-<span class="nc" id="L355">                    long delay = backoffMs * (1L &lt;&lt; (attempt - 1));</span>
-<span class="nc" id="L356">                    LOGGER.info(&quot;Retry attempt {} for '{}', waiting {}ms&quot;, attempt, operation, delay);</span>
-<span class="nc" id="L357">                    Thread.sleep(delay);</span>
+<span class="nc bnc" id="L376" title="All 2 branches missed.">                if (attempt &gt; 0) {</span>
+<span class="nc" id="L377">                    long delay = backoffMs * (1L &lt;&lt; (attempt - 1));</span>
+<span class="nc" id="L378">                    LOGGER.info(&quot;Retry attempt {} for '{}', waiting {}ms&quot;, attempt, operation, delay);</span>
+<span class="nc" id="L379">                    Thread.sleep(delay);</span>
                 }
-<span class="nc" id="L359">                return callable.call();</span>
-<span class="nc" id="L360">            } catch (InterruptedException e) {</span>
-<span class="nc" id="L361">                Thread.currentThread().interrupt();</span>
-<span class="nc" id="L362">                throw new RuntimeException(&quot;Interrupted during retry of &quot; + operation, e);</span>
-<span class="nc" id="L363">            } catch (FlightRuntimeException e) {</span>
-<span class="nc" id="L364">                lastException = e;</span>
-<span class="nc" id="L365">                LOGGER.warn(&quot;Flight error in '{}' (attempt {} of {}): {}&quot;, operation, attempt, maxRetries + 1, e.getMessage());</span>
-<span class="nc bnc" id="L366" title="All 4 branches missed.">                if (isInternalError(e) &amp;&amp; attempt &lt; maxRetries) {</span>
-<span class="nc" id="L367">                    continue;</span>
+<span class="nc" id="L381">                return callable.call();</span>
+<span class="nc" id="L382">            } catch (InterruptedException e) {</span>
+<span class="nc" id="L383">                Thread.currentThread().interrupt();</span>
+<span class="nc" id="L384">                throw new RuntimeException(&quot;Interrupted during retry of &quot; + operation, e);</span>
+<span class="nc" id="L385">            } catch (FlightRuntimeException e) {</span>
+<span class="nc" id="L386">                lastException = e;</span>
+<span class="nc" id="L387">                LOGGER.warn(&quot;Flight error in '{}' (attempt {} of {}): {}&quot;, operation, attempt, maxRetries + 1, e.getMessage());</span>
+<span class="nc bnc" id="L388" title="All 4 branches missed.">                if (isInternalError(e) &amp;&amp; attempt &lt; maxRetries) {</span>
+<span class="nc" id="L389">                    continue;</span>
                 }
-<span class="nc" id="L369">                break;</span>
-<span class="nc" id="L370">            } catch (Exception e) {</span>
-<span class="nc" id="L371">                lastException = e;</span>
-<span class="nc" id="L372">                LOGGER.warn(&quot;Error in '{}' (attempt {} of {}): {}&quot;, operation, attempt, maxRetries + 1, e.getMessage());</span>
-<span class="nc bnc" id="L373" title="All 2 branches missed.">                if (attempt &lt; maxRetries) {</span>
-<span class="nc" id="L374">                    continue;</span>
+<span class="nc" id="L391">                break;</span>
+<span class="nc" id="L392">            } catch (Exception e) {</span>
+<span class="nc" id="L393">                lastException = e;</span>
+<span class="nc" id="L394">                LOGGER.warn(&quot;Error in '{}' (attempt {} of {}): {}&quot;, operation, attempt, maxRetries + 1, e.getMessage());</span>
+<span class="nc bnc" id="L395" title="All 2 branches missed.">                if (attempt &lt; maxRetries) {</span>
+<span class="nc" id="L396">                    continue;</span>
                 }
             }
         }
 
-<span class="nc bnc" id="L379" title="All 2 branches missed.">        if (lastException instanceof RuntimeException) {</span>
-<span class="nc" id="L380">            throw (RuntimeException) lastException;</span>
+<span class="nc bnc" id="L401" title="All 2 branches missed.">        if (lastException instanceof RuntimeException) {</span>
+<span class="nc" id="L402">            throw (RuntimeException) lastException;</span>
         }
-<span class="nc" id="L382">        throw new RuntimeException(&quot;Failed &quot; + operation + &quot; after &quot; + (maxRetries + 1) + &quot; attempts&quot;, lastException);</span>
+<span class="nc" id="L404">        throw new RuntimeException(&quot;Failed &quot; + operation + &quot; after &quot; + (maxRetries + 1) + &quot; attempts&quot;, lastException);</span>
     }
 
+    /**
+     * Checks if a FlightRuntimeException is recoverable via retry.
+     *
+     * @param e flight exception
+     * @return true if retryable
+     */
     private static boolean isInternalError(FlightRuntimeException e) {
-<span class="nc" id="L386">        Throwable cause = e.getCause();</span>
-<span class="nc bnc" id="L387" title="All 2 branches missed.">        if (cause instanceof io.grpc.StatusRuntimeException) {</span>
-<span class="nc" id="L388">            io.grpc.Status.Code code = ((io.grpc.StatusRuntimeException) cause).getStatus().getCode();</span>
-<span class="nc bnc" id="L389" title="All 10 branches missed.">            return code == io.grpc.Status.Code.INTERNAL</span>
+<span class="nc" id="L414">        Throwable cause = e.getCause();</span>
+<span class="nc bnc" id="L415" title="All 2 branches missed.">        if (cause instanceof io.grpc.StatusRuntimeException) {</span>
+<span class="nc" id="L416">            io.grpc.Status.Code code = ((io.grpc.StatusRuntimeException) cause).getStatus().getCode();</span>
+<span class="nc bnc" id="L417" title="All 10 branches missed.">            return code == io.grpc.Status.Code.INTERNAL</span>
                     || code == io.grpc.Status.Code.UNAVAILABLE
                     || code == io.grpc.Status.Code.RESOURCE_EXHAUSTED
                     || code == io.grpc.Status.Code.DEADLINE_EXCEEDED
                     || code == io.grpc.Status.Code.ABORTED;
         }
-<span class="nc" id="L395">        return false;</span>
+<span class="nc" id="L423">        return false;</span>
     }
 
+    /**
+     * Opens a FlightStream for the given endpoint.
+     *
+     * @param fep flight endpoint with ticket
+     * @return FlightStream
+     * @throws Exception on stream open failure
+     */
     public FlightStream openStream(FlightEndpoint fep) throws Exception {
-<span class="nc" id="L399">        return this.client.getStream(fep.getTicket(), callOptions());</span>
+<span class="nc" id="L434">        return this.client.getStream(fep.getTicket(), callOptions());</span>
     }
 
+    /**
+     * Returns the client configuration.
+     *
+     * @return configuration
+     */
     public Configuration getConfig() {
-<span class="nc" id="L403">        return this.config;</span>
+<span class="nc" id="L443">        return this.config;</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

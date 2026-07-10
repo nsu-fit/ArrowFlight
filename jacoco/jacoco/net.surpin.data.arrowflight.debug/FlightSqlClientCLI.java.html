@@ -23,158 +23,225 @@ import org.apache.commons.cli.Option;
 import org.apache.commons.cli.Options;
 import org.apache.commons.cli.ParseException;
 
+/**
+ * Command-line client for testing Flight SQL server operations.
+ */
 public class FlightSqlClientCLI implements AutoCloseable {
-<span class="nc" id="L27">    public final List&lt;CallOption&gt; callOptions = new ArrayList&lt;&gt;();</span>
+<span class="nc" id="L30">    public final List&lt;CallOption&gt; callOptions = new ArrayList&lt;&gt;();</span>
     public final BufferAllocator allocator;
     private FlightSqlClient flightSqlClient;
 
-<span class="nc" id="L31">    public FlightSqlClientCLI(BufferAllocator bufferAllocator) {</span>
-<span class="nc" id="L32">        this.allocator = bufferAllocator;</span>
-<span class="nc" id="L33">    }</span>
+    /**
+     * @param bufferAllocator Arrow buffer allocator
+     */
+<span class="nc" id="L37">    public FlightSqlClientCLI(BufferAllocator bufferAllocator) {</span>
+<span class="nc" id="L38">        this.allocator = bufferAllocator;</span>
+<span class="nc" id="L39">    }</span>
 
     public static void main(String... args) throws Exception {
-<span class="nc" id="L36">        args = new String[] {&quot;--host&quot;, &quot;localhost&quot;, &quot;--port&quot;, &quot;32010&quot;, &quot;--command&quot;, &quot;Execute&quot;, &quot;--query&quot;, &quot;select * from test_schema.test_table&quot;, &quot;--catalog&quot;, &quot;PARQUET_ARROW_FLIGHT_CATALOG&quot;, &quot;--schema&quot;, &quot;test_schema&quot;};</span>
+<span class="nc" id="L42">        args = new String[] {&quot;--host&quot;, &quot;localhost&quot;, &quot;--port&quot;, &quot;32010&quot;, &quot;--command&quot;, &quot;Execute&quot;, &quot;--query&quot;, &quot;select * from test_schema.test_table&quot;, &quot;--catalog&quot;, &quot;PARQUET_ARROW_FLIGHT_CATALOG&quot;, &quot;--schema&quot;, &quot;test_schema&quot;};</span>
 
-<span class="nc" id="L38">        Options options = new Options();</span>
+<span class="nc" id="L44">        Options options = new Options();</span>
 
-<span class="nc" id="L40">        Option hostOption = new Option(&quot;host&quot;, &quot;host&quot;, true, &quot;Host to connect to&quot;);</span>
-<span class="nc" id="L41">        hostOption.setRequired(true);</span>
-<span class="nc" id="L42">        options.addOption(hostOption);</span>
+<span class="nc" id="L46">        Option hostOption = new Option(&quot;host&quot;, &quot;host&quot;, true, &quot;Host to connect to&quot;);</span>
+<span class="nc" id="L47">        hostOption.setRequired(true);</span>
+<span class="nc" id="L48">        options.addOption(hostOption);</span>
 
-<span class="nc" id="L44">        Option portOption = new Option(&quot;port&quot;, &quot;port&quot;, true, &quot;Port to connect to&quot;);</span>
-<span class="nc" id="L45">        portOption.setRequired(true);</span>
-<span class="nc" id="L46">        options.addOption(portOption);</span>
+<span class="nc" id="L50">        Option portOption = new Option(&quot;port&quot;, &quot;port&quot;, true, &quot;Port to connect to&quot;);</span>
+<span class="nc" id="L51">        portOption.setRequired(true);</span>
+<span class="nc" id="L52">        options.addOption(portOption);</span>
 
-<span class="nc" id="L48">        Option commandOption = new Option(&quot;command&quot;, &quot;command&quot;, true, &quot;Method to run&quot;);</span>
-<span class="nc" id="L49">        commandOption.setRequired(true);</span>
-<span class="nc" id="L50">        options.addOption(commandOption);</span>
+<span class="nc" id="L54">        Option commandOption = new Option(&quot;command&quot;, &quot;command&quot;, true, &quot;Method to run&quot;);</span>
+<span class="nc" id="L55">        commandOption.setRequired(true);</span>
+<span class="nc" id="L56">        options.addOption(commandOption);</span>
 
-<span class="nc" id="L52">        options.addOption(&quot;query&quot;, &quot;query&quot;, true, &quot;Query&quot;);</span>
-<span class="nc" id="L53">        options.addOption(&quot;catalog&quot;, &quot;catalog&quot;, true, &quot;Catalog&quot;);</span>
-<span class="nc" id="L54">        options.addOption(&quot;schema&quot;, &quot;schema&quot;, true, &quot;Schema&quot;);</span>
-<span class="nc" id="L55">        options.addOption(&quot;table&quot;, &quot;table&quot;, true, &quot;Table&quot;);</span>
+<span class="nc" id="L58">        options.addOption(&quot;query&quot;, &quot;query&quot;, true, &quot;Query&quot;);</span>
+<span class="nc" id="L59">        options.addOption(&quot;catalog&quot;, &quot;catalog&quot;, true, &quot;Catalog&quot;);</span>
+<span class="nc" id="L60">        options.addOption(&quot;schema&quot;, &quot;schema&quot;, true, &quot;Schema&quot;);</span>
+<span class="nc" id="L61">        options.addOption(&quot;table&quot;, &quot;table&quot;, true, &quot;Table&quot;);</span>
 
-<span class="nc" id="L57">        CommandLineParser parser = new BasicParser();</span>
-<span class="nc" id="L58">        HelpFormatter formatter = new HelpFormatter();</span>
+<span class="nc" id="L63">        CommandLineParser parser = new BasicParser();</span>
+<span class="nc" id="L64">        HelpFormatter formatter = new HelpFormatter();</span>
 
         try {
-<span class="nc" id="L61">            CommandLine cmd = parser.parse(options, args);</span>
+<span class="nc" id="L67">            CommandLine cmd = parser.parse(options, args);</span>
 
-<span class="nc" id="L63">            try (org.apache.arrow.flight.sql.example.FlightSqlClientDemoApp thisApp = new org.apache.arrow.flight.sql.example.FlightSqlClientDemoApp(new RootAllocator(2147483647L))) {</span>
-<span class="nc" id="L64">                thisApp.executeApp(cmd);</span>
+<span class="nc" id="L69">            try (org.apache.arrow.flight.sql.example.FlightSqlClientDemoApp thisApp = new org.apache.arrow.flight.sql.example.FlightSqlClientDemoApp(new RootAllocator(2147483647L))) {</span>
+<span class="nc" id="L70">                thisApp.executeApp(cmd);</span>
             }
 
-<span class="nc" id="L67">        } catch (ParseException e) {</span>
-<span class="nc" id="L68">            System.out.println(e.getMessage());</span>
-<span class="nc" id="L69">            formatter.printHelp(&quot;FlightSqlClientDemoApp -host localhost -port 32010 ...&quot;, options);</span>
-<span class="nc" id="L70">            throw e;</span>
-<span class="nc" id="L71">        }</span>
-<span class="nc" id="L72">    }</span>
+<span class="nc" id="L73">        } catch (ParseException e) {</span>
+<span class="nc" id="L74">            System.out.println(e.getMessage());</span>
+<span class="nc" id="L75">            formatter.printHelp(&quot;FlightSqlClientDemoApp -host localhost -port 32010 ...&quot;, options);</span>
+<span class="nc" id="L76">            throw e;</span>
+<span class="nc" id="L77">        }</span>
+<span class="nc" id="L78">    }</span>
 
+    /**
+     * @return call options as an array
+     */
     public CallOption[] getCallOptions() {
-<span class="nc" id="L75">        return (CallOption[]) this.callOptions.toArray(new CallOption[0]);</span>
+<span class="nc" id="L84">        return (CallOption[]) this.callOptions.toArray(new CallOption[0]);</span>
     }
 
+    /**
+     * @param cmd parsed command-line arguments
+     * @throws Exception if execution or connection fails
+     */
     public void executeApp(CommandLine cmd) throws Exception {
-<span class="nc" id="L79">        String host = cmd.getOptionValue(&quot;host&quot;).trim();</span>
-<span class="nc" id="L80">        int port = Integer.parseInt(cmd.getOptionValue(&quot;port&quot;).trim());</span>
-<span class="nc" id="L81">        this.createFlightSqlClient(host, port);</span>
-<span class="nc" id="L82">        this.executeCommand(cmd);</span>
-<span class="nc" id="L83">    }</span>
+<span class="nc" id="L92">        String host = cmd.getOptionValue(&quot;host&quot;).trim();</span>
+<span class="nc" id="L93">        int port = Integer.parseInt(cmd.getOptionValue(&quot;port&quot;).trim());</span>
+<span class="nc" id="L94">        this.createFlightSqlClient(host, port);</span>
+<span class="nc" id="L95">        this.executeCommand(cmd);</span>
+<span class="nc" id="L96">    }</span>
 
+    /**
+     * @param cmd parsed command-line arguments
+     * @throws Exception if command dispatch or execution fails
+     */
     public void executeCommand(CommandLine cmd) throws Exception {
-<span class="nc bnc" id="L86" title="All 10 branches missed.">        switch (cmd.getOptionValue(&quot;command&quot;).trim()) {</span>
+<span class="nc bnc" id="L103" title="All 10 branches missed.">        switch (cmd.getOptionValue(&quot;command&quot;).trim()) {</span>
             case &quot;Execute&quot;:
-<span class="nc" id="L88">                this.exampleExecute(cmd.getOptionValue(&quot;query&quot;));</span>
-<span class="nc" id="L89">                break;</span>
+<span class="nc" id="L105">                this.exampleExecute(cmd.getOptionValue(&quot;query&quot;));</span>
+<span class="nc" id="L106">                break;</span>
             case &quot;ExecuteUpdate&quot;:
-<span class="nc" id="L91">                this.exampleExecuteUpdate(cmd.getOptionValue(&quot;query&quot;));</span>
-<span class="nc" id="L92">                break;</span>
+<span class="nc" id="L108">                this.exampleExecuteUpdate(cmd.getOptionValue(&quot;query&quot;));</span>
+<span class="nc" id="L109">                break;</span>
             case &quot;GetCatalogs&quot;:
-<span class="nc" id="L94">                this.exampleGetCatalogs();</span>
-<span class="nc" id="L95">                break;</span>
+<span class="nc" id="L111">                this.exampleGetCatalogs();</span>
+<span class="nc" id="L112">                break;</span>
             case &quot;GetSchemas&quot;:
-<span class="nc" id="L97">                this.exampleGetSchemas(cmd.getOptionValue(&quot;catalog&quot;), cmd.getOptionValue(&quot;schema&quot;));</span>
-<span class="nc" id="L98">                break;</span>
+<span class="nc" id="L114">                this.exampleGetSchemas(cmd.getOptionValue(&quot;catalog&quot;), cmd.getOptionValue(&quot;schema&quot;));</span>
+<span class="nc" id="L115">                break;</span>
             case &quot;GetTableTypes&quot;:
-<span class="nc" id="L100">                this.exampleGetTableTypes();</span>
-<span class="nc" id="L101">                break;</span>
+<span class="nc" id="L117">                this.exampleGetTableTypes();</span>
+<span class="nc" id="L118">                break;</span>
             case &quot;GetTables&quot;:
-<span class="nc" id="L103">                this.exampleGetTables(cmd.getOptionValue(&quot;catalog&quot;), cmd.getOptionValue(&quot;schema&quot;), cmd.getOptionValue(&quot;table&quot;));</span>
-<span class="nc" id="L104">                break;</span>
+<span class="nc" id="L120">                this.exampleGetTables(cmd.getOptionValue(&quot;catalog&quot;), cmd.getOptionValue(&quot;schema&quot;), cmd.getOptionValue(&quot;table&quot;));</span>
+<span class="nc" id="L121">                break;</span>
             case &quot;GetExportedKeys&quot;:
-<span class="nc" id="L106">                this.exampleGetExportedKeys(cmd.getOptionValue(&quot;catalog&quot;), cmd.getOptionValue(&quot;schema&quot;), cmd.getOptionValue(&quot;table&quot;));</span>
-<span class="nc" id="L107">                break;</span>
+<span class="nc" id="L123">                this.exampleGetExportedKeys(cmd.getOptionValue(&quot;catalog&quot;), cmd.getOptionValue(&quot;schema&quot;), cmd.getOptionValue(&quot;table&quot;));</span>
+<span class="nc" id="L124">                break;</span>
             case &quot;GetImportedKeys&quot;:
-<span class="nc" id="L109">                this.exampleGetImportedKeys(cmd.getOptionValue(&quot;catalog&quot;), cmd.getOptionValue(&quot;schema&quot;), cmd.getOptionValue(&quot;table&quot;));</span>
-<span class="nc" id="L110">                break;</span>
+<span class="nc" id="L126">                this.exampleGetImportedKeys(cmd.getOptionValue(&quot;catalog&quot;), cmd.getOptionValue(&quot;schema&quot;), cmd.getOptionValue(&quot;table&quot;));</span>
+<span class="nc" id="L127">                break;</span>
             case &quot;GetPrimaryKeys&quot;:
-<span class="nc" id="L112">                this.exampleGetPrimaryKeys(cmd.getOptionValue(&quot;catalog&quot;), cmd.getOptionValue(&quot;schema&quot;), cmd.getOptionValue(&quot;table&quot;));</span>
-<span class="nc" id="L113">                break;</span>
+<span class="nc" id="L129">                this.exampleGetPrimaryKeys(cmd.getOptionValue(&quot;catalog&quot;), cmd.getOptionValue(&quot;schema&quot;), cmd.getOptionValue(&quot;table&quot;));</span>
+<span class="nc" id="L130">                break;</span>
             default:
-<span class="nc" id="L115">                System.out.println(&quot;Command used is not valid! Please use one of: \n[\&quot;ExecuteUpdate\&quot;,\n\&quot;Execute\&quot;,\n\&quot;GetCatalogs\&quot;,\n\&quot;GetSchemas\&quot;,\n\&quot;GetTableTypes\&quot;,\n\&quot;GetTables\&quot;,\n\&quot;GetExportedKeys\&quot;,\n\&quot;GetImportedKeys\&quot;,\n\&quot;GetPrimaryKeys\&quot;]&quot;);</span>
+<span class="nc" id="L132">                System.out.println(&quot;Command used is not valid! Please use one of: \n[\&quot;ExecuteUpdate\&quot;,\n\&quot;Execute\&quot;,\n\&quot;GetCatalogs\&quot;,\n\&quot;GetSchemas\&quot;,\n\&quot;GetTableTypes\&quot;,\n\&quot;GetTables\&quot;,\n\&quot;GetExportedKeys\&quot;,\n\&quot;GetImportedKeys\&quot;,\n\&quot;GetPrimaryKeys\&quot;]&quot;);</span>
         }
 
-<span class="nc" id="L118">    }</span>
+<span class="nc" id="L135">    }</span>
 
+    /**
+     * @param host server hostname
+     * @param port server port
+     */
     public void createFlightSqlClient(String host, int port) {
-<span class="nc" id="L121">        Location clientLocation = Location.forGrpcInsecure(host, port);</span>
-<span class="nc" id="L122">        this.flightSqlClient = new FlightSqlClient(FlightClient.builder(this.allocator, clientLocation).build());</span>
-<span class="nc" id="L123">    }</span>
+<span class="nc" id="L142">        Location clientLocation = Location.forGrpcInsecure(host, port);</span>
+<span class="nc" id="L143">        this.flightSqlClient = new FlightSqlClient(FlightClient.builder(this.allocator, clientLocation).build());</span>
+<span class="nc" id="L144">    }</span>
 
+    /**
+     * @param query SQL query string
+     * @throws Exception if query execution fails
+     */
     private void exampleExecute(String query) throws Exception {
-<span class="nc" id="L126">        this.printFlightInfoResults(this.flightSqlClient.execute(query, this.getCallOptions()));</span>
-<span class="nc" id="L127">    }</span>
+<span class="nc" id="L151">        this.printFlightInfoResults(this.flightSqlClient.execute(query, this.getCallOptions()));</span>
+<span class="nc" id="L152">    }</span>
 
+    /**
+     * @param query SQL update statement
+     */
     private void exampleExecuteUpdate(String query) {
-<span class="nc" id="L130">        PrintStream var10000 = System.out;</span>
-<span class="nc" id="L131">        long var10001 = this.flightSqlClient.executeUpdate(query, this.getCallOptions());</span>
-<span class="nc" id="L132">        var10000.println(&quot;Updated: &quot; + var10001 + &quot;rows.&quot;);</span>
-<span class="nc" id="L133">    }</span>
-
-    private void exampleGetCatalogs() throws Exception {
-<span class="nc" id="L136">        this.printFlightInfoResults(this.flightSqlClient.getCatalogs(this.getCallOptions()));</span>
-<span class="nc" id="L137">    }</span>
-
-    private void exampleGetSchemas(String catalog, String schema) throws Exception {
-<span class="nc" id="L140">        this.printFlightInfoResults(this.flightSqlClient.getSchemas(catalog, schema, this.getCallOptions()));</span>
-<span class="nc" id="L141">    }</span>
-
-    private void exampleGetTableTypes() throws Exception {
-<span class="nc" id="L144">        this.printFlightInfoResults(this.flightSqlClient.getTableTypes(this.getCallOptions()));</span>
-<span class="nc" id="L145">    }</span>
-
-    private void exampleGetTables(String catalog, String schema, String table) throws Exception {
-<span class="nc" id="L148">        this.printFlightInfoResults(this.flightSqlClient.getTables(catalog, schema, table, (List) null, false, this.getCallOptions()));</span>
-<span class="nc" id="L149">    }</span>
-
-    private void exampleGetExportedKeys(String catalog, String schema, String table) throws Exception {
-<span class="nc" id="L152">        this.printFlightInfoResults(this.flightSqlClient.getExportedKeys(TableRef.of(catalog, schema, table), this.getCallOptions()));</span>
-<span class="nc" id="L153">    }</span>
-
-    private void exampleGetImportedKeys(String catalog, String schema, String table) throws Exception {
-<span class="nc" id="L156">        this.printFlightInfoResults(this.flightSqlClient.getImportedKeys(TableRef.of(catalog, schema, table), this.getCallOptions()));</span>
-<span class="nc" id="L157">    }</span>
-
-    private void exampleGetPrimaryKeys(String catalog, String schema, String table) throws Exception {
-<span class="nc" id="L160">        this.printFlightInfoResults(this.flightSqlClient.getPrimaryKeys(TableRef.of(catalog, schema, table), this.getCallOptions()));</span>
+<span class="nc" id="L158">        PrintStream var10000 = System.out;</span>
+<span class="nc" id="L159">        long var10001 = this.flightSqlClient.executeUpdate(query, this.getCallOptions());</span>
+<span class="nc" id="L160">        var10000.println(&quot;Updated: &quot; + var10001 + &quot;rows.&quot;);</span>
 <span class="nc" id="L161">    }</span>
 
-    private void printFlightInfoResults(FlightInfo flightInfo) throws Exception {
-<span class="nc" id="L164">        FlightStream stream = this.flightSqlClient.getStream(((FlightEndpoint) flightInfo.getEndpoints().get(0)).getTicket(), this.getCallOptions());</span>
+    /**
+     * @throws Exception if catalog retrieval fails
+     */
+    private void exampleGetCatalogs() throws Exception {
+<span class="nc" id="L167">        this.printFlightInfoResults(this.flightSqlClient.getCatalogs(this.getCallOptions()));</span>
+<span class="nc" id="L168">    }</span>
 
-<span class="nc bnc" id="L166" title="All 2 branches missed.">        while (stream.next()) {</span>
-<span class="nc" id="L167">            try (VectorSchemaRoot root = stream.getRoot()) {</span>
-<span class="nc" id="L168">                System.out.println(root.contentToTSVString());</span>
+    /**
+     * @param catalog catalog filter
+     * @param schema schema filter pattern
+     * @throws Exception if schema retrieval fails
+     */
+    private void exampleGetSchemas(String catalog, String schema) throws Exception {
+<span class="nc" id="L176">        this.printFlightInfoResults(this.flightSqlClient.getSchemas(catalog, schema, this.getCallOptions()));</span>
+<span class="nc" id="L177">    }</span>
+
+    /**
+     * @throws Exception if table type retrieval fails
+     */
+    private void exampleGetTableTypes() throws Exception {
+<span class="nc" id="L183">        this.printFlightInfoResults(this.flightSqlClient.getTableTypes(this.getCallOptions()));</span>
+<span class="nc" id="L184">    }</span>
+
+    /**
+     * @param catalog catalog filter
+     * @param schema schema filter pattern
+     * @param table table name filter
+     * @throws Exception if table retrieval fails
+     */
+    private void exampleGetTables(String catalog, String schema, String table) throws Exception {
+<span class="nc" id="L193">        this.printFlightInfoResults(this.flightSqlClient.getTables(catalog, schema, table, (List) null, false, this.getCallOptions()));</span>
+<span class="nc" id="L194">    }</span>
+
+    /**
+     * @param catalog catalog name
+     * @param schema schema name
+     * @param table table name
+     * @throws Exception if key retrieval fails
+     */
+    private void exampleGetExportedKeys(String catalog, String schema, String table) throws Exception {
+<span class="nc" id="L203">        this.printFlightInfoResults(this.flightSqlClient.getExportedKeys(TableRef.of(catalog, schema, table), this.getCallOptions()));</span>
+<span class="nc" id="L204">    }</span>
+
+    /**
+     * @param catalog catalog name
+     * @param schema schema name
+     * @param table table name
+     * @throws Exception if key retrieval fails
+     */
+    private void exampleGetImportedKeys(String catalog, String schema, String table) throws Exception {
+<span class="nc" id="L213">        this.printFlightInfoResults(this.flightSqlClient.getImportedKeys(TableRef.of(catalog, schema, table), this.getCallOptions()));</span>
+<span class="nc" id="L214">    }</span>
+
+    /**
+     * @param catalog catalog name
+     * @param schema schema name
+     * @param table table name
+     * @throws Exception if key retrieval fails
+     */
+    private void exampleGetPrimaryKeys(String catalog, String schema, String table) throws Exception {
+<span class="nc" id="L223">        this.printFlightInfoResults(this.flightSqlClient.getPrimaryKeys(TableRef.of(catalog, schema, table), this.getCallOptions()));</span>
+<span class="nc" id="L224">    }</span>
+
+    /**
+     * @param flightInfo flight info to stream and print
+     * @throws Exception if streaming fails
+     */
+    private void printFlightInfoResults(FlightInfo flightInfo) throws Exception {
+<span class="nc" id="L231">        FlightStream stream = this.flightSqlClient.getStream(((FlightEndpoint) flightInfo.getEndpoints().get(0)).getTicket(), this.getCallOptions());</span>
+
+<span class="nc bnc" id="L233" title="All 2 branches missed.">        while (stream.next()) {</span>
+<span class="nc" id="L234">            try (VectorSchemaRoot root = stream.getRoot()) {</span>
+<span class="nc" id="L235">                System.out.println(root.contentToTSVString());</span>
             }
         }
 
-<span class="nc" id="L172">        stream.close();</span>
-<span class="nc" id="L173">    }</span>
+<span class="nc" id="L239">        stream.close();</span>
+<span class="nc" id="L240">    }</span>
 
     public void close() throws Exception {
-<span class="nc" id="L176">        this.flightSqlClient.close();</span>
-<span class="nc" id="L177">        this.allocator.close();</span>
-<span class="nc" id="L178">    }</span>
+<span class="nc" id="L243">        this.flightSqlClient.close();</span>
+<span class="nc" id="L244">        this.allocator.close();</span>
+<span class="nc" id="L245">    }</span>
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

@@ -15,16 +15,27 @@ public class RowSet implements Serializable {
     public static class Row implements Serializable {
         private final ArrayList&lt;Object&gt; data;
 
-<span class="nc" id="L18">        public Row() {</span>
-<span class="nc" id="L19">            this.data = new ArrayList&lt;&gt;();</span>
-<span class="nc" id="L20">        }</span>
+        /**
+         * Construct empty Row
+         */
+<span class="nc" id="L21">        public Row() {</span>
+<span class="nc" id="L22">            this.data = new ArrayList&lt;&gt;();</span>
+<span class="nc" id="L23">        }</span>
 
+        /**
+         * Add value to Row
+         * @param o value to add
+         */
         public void add(Object o) {
-<span class="nc" id="L23">            this.data.add(o);</span>
-<span class="nc" id="L24">        }</span>
+<span class="nc" id="L30">            this.data.add(o);</span>
+<span class="nc" id="L31">        }</span>
 
+        /**
+         * Get all values in Row
+         * @return array of values
+         */
         public Object[] getData() {
-<span class="nc" id="L27">            return this.data.toArray(new Object[0]);</span>
+<span class="nc" id="L38">            return this.data.toArray(new Object[0]);</span>
         }
     }
 
@@ -37,17 +48,17 @@ public class RowSet implements Serializable {
      * Construct a RowSet
      * @param schema - the schema of each row in the collection
      */
-<span class="nc" id="L40">    public RowSet(Schema schema) {</span>
-<span class="nc" id="L41">        this.schema = schema;</span>
-<span class="nc" id="L42">        this.data = new ArrayList&lt;&gt;();</span>
-<span class="nc" id="L43">    }</span>
+<span class="nc" id="L51">    public RowSet(Schema schema) {</span>
+<span class="nc" id="L52">        this.schema = schema;</span>
+<span class="nc" id="L53">        this.data = new ArrayList&lt;&gt;();</span>
+<span class="nc" id="L54">    }</span>
 
     /**
      * Get the schema of the RowSet
      * @return - the schema
      */
     public Schema getSchema() {
-<span class="nc" id="L50">        return this.schema;</span>
+<span class="nc" id="L61">        return this.schema;</span>
     }
 
     /**
@@ -55,26 +66,26 @@ public class RowSet implements Serializable {
      * @param row - the row to be added
      */
     public void add(Row row) {
-<span class="nc" id="L58">        this.data.add(row);</span>
-<span class="nc" id="L59">    }</span>
+<span class="nc" id="L69">        this.data.add(row);</span>
+<span class="nc" id="L70">    }</span>
 
     /**
      * Add all rows from another RowSet
      * @param rs - the input RowSet
      */
     public void add(RowSet rs) {
-<span class="nc bnc" id="L66" title="All 2 branches missed.">        if (rs.schema != this.schema) {</span>
-<span class="nc" id="L67">            throw new RuntimeException(&quot;The schema doesn't match. Cannot add the RowSet.&quot;);</span>
+<span class="nc bnc" id="L77" title="All 2 branches missed.">        if (rs.schema != this.schema) {</span>
+<span class="nc" id="L78">            throw new RuntimeException(&quot;The schema doesn't match. Cannot add the RowSet.&quot;);</span>
         }
-<span class="nc" id="L69">        this.data.addAll(rs.data);</span>
-<span class="nc" id="L70">    }</span>
+<span class="nc" id="L80">        this.data.addAll(rs.data);</span>
+<span class="nc" id="L81">    }</span>
 
     /**
      * Get all Rows
      * @return - all rows in the RowSet
      */
     public Row[] getData() {
-<span class="nc" id="L77">        return this.data.toArray(new Row[] {});</span>
+<span class="nc" id="L88">        return this.data.toArray(new Row[] {});</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>
