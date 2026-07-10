@@ -204,12 +204,16 @@ public final class Configuration implements Serializable {
     }
 
     private static String hash(String value) {
-        if (value == null) return "";
+        if (value == null) {
+            return "";
+        }
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
             byte[] digest = md.digest(value.getBytes(StandardCharsets.UTF_8));
             StringBuilder sb = new StringBuilder();
-            for (byte b : digest) sb.append(String.format("%02x", b));
+            for (byte b : digest) {
+                sb.append(String.format("%02x", b));
+            }
             return sb.toString();
         } catch (NoSuchAlgorithmException e) {
             throw new RuntimeException(e);
