@@ -29,6 +29,9 @@ public class HadoopArrowFlightServer {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(HadoopArrowFlightServer.class);
 
+    /**
+     * Initializes SLF4J log level from properties, system properties, or env var.
+     */
     private static void initLogLevel() {
         Properties props = new Properties();
         try (InputStream input = HadoopArrowFlightServer.class.getClassLoader()
@@ -146,6 +149,12 @@ public class HadoopArrowFlightServer {
         }
     }
 
+    /**
+     * Waits for all Hazelcast cluster nodes to connect.
+     * @param hosts expected host addresses
+     * @param timeoutSec max wait time in seconds
+     * @throws IllegalStateException if timeout reached or interrupted
+     */
     private void waitForCluster(String[] hosts, int timeoutSec) {
         HazelcastInstance hazelcast = component.clusterService().getHazelcastInstance();
         long deadline = System.currentTimeMillis() + timeoutSec * 1000L;
@@ -181,6 +190,13 @@ public class HadoopArrowFlightServer {
         LOGGER.info("All {} nodes connected in {}s. Initializing...", hosts.length, totalSec);
     }
 
+    /**
+     * Gets the value of a named CLI argument.
+     * @param args CLI arguments array
+     * @param key argument name
+     * @param defaultValue default if not found
+     * @return argument value or default
+     */
     private String getArgValue(String[] args, String key, String defaultValue) {
         for (int i = 0; i < args.length; i++) {
             if (args[i].equals(key) && i + 1 < args.length) {

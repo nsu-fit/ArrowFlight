@@ -132,6 +132,17 @@ public final class ExecutionService {
                 resolvedUris, listener, startListener);
     }
 
+    /**
+     * Executes aggregation queries via DuckDB or footer-stats fast paths.
+     *
+     * @param allocator     Arrow buffer allocator
+     * @param pq            parsed query
+     * @param parquetFiles  resolved Parquet file paths
+     * @param resolvedUris  resolved file URIs
+     * @param listener      Flight stream listener
+     * @param startListener whether to call listener.start()
+     * @throws Exception on execution failure
+     */
     private void executeAggregation(BufferAllocator allocator, ParquetQueryParser pq,
             List<Path> parquetFiles, List<String> resolvedUris,
             FlightProducer.ServerStreamListener listener,
@@ -215,6 +226,16 @@ public final class ExecutionService {
 
     // ── DuckDB join execution ────────────────────────────────────────────
 
+    /**
+     * Executes JOIN queries by registering temp views in DuckDB and streaming the result.
+     *
+     * @param allocator     Arrow buffer allocator
+     * @param pq            parsed query with join tables
+     * @param fileUris      relative file paths
+     * @param listener      Flight stream listener
+     * @param startListener whether to call listener.start()
+     * @throws Exception on execution failure
+     */
     private void executeJoin(BufferAllocator allocator, ParquetQueryParser pq,
             String[] fileUris, FlightProducer.ServerStreamListener listener,
             boolean startListener) throws Exception {
@@ -331,6 +352,8 @@ public final class ExecutionService {
                     }
                 } catch (Exception e) {
                     throw new RuntimeException(e);
+                } finally {
+                    child.close();
                 }
             }));
         }
@@ -356,6 +379,14 @@ public final class ExecutionService {
 
     // ── private helpers ──────────────────────────────────────────────────
 
+    /**
+     * Resolves relative file URIs to absolute Parquet paths.
+     *
+     * @param pq       parsed query
+     * @param fileUris relative file paths
+     * @return resolved Parquet paths
+     * @throws IOException on HDFS read failure
+     */
     private List<Path> resolveParquetFiles(ParquetQueryParser pq, String[] fileUris)
             throws IOException {
         List<Path> files = new ArrayList<>();
@@ -365,6 +396,13 @@ public final class ExecutionService {
         return files;
     }
 
+    /**
+     * Resolves relative file URIs to fully-qualified HDFS URIs.
+     *
+     * @param fileUris relative file paths
+     * @return resolved URIs
+     * @throws IOException on HDFS read failure
+     */
     private List<String> resolveUris(String[] fileUris) throws IOException {
         List<String> uris = new ArrayList<>(fileUris.length);
         for (String rel : fileUris) {
@@ -375,6 +413,12 @@ public final class ExecutionService {
         return uris;
     }
 
+    /**
+     * Strips file: scheme from URIs for DuckDB consumption.
+     *
+     * @param uris fully-qualified URIs
+     * @return DuckDB-compatible paths
+     */
     private static List<String> ducksDbPaths(List<String> uris) {
         return uris.stream().map(u -> {
             if (u.startsWith("file:")) {
@@ -390,6 +434,13 @@ public final class ExecutionService {
         }).toList();
     }
 
+    /**
+     * Recursively lists Parquet files for a schema.table key.
+     *
+     * @param key schema.table or table name
+     * @return DuckDB-compatible file paths
+     * @throws IOException on HDFS read failure
+     */
     private List<String> resolveTableFiles(String key) throws IOException {
         int dot = key.indexOf('.');
         String schema = dot > 0 ? key.substring(0, dot) : null;
@@ -409,6 +460,12 @@ public final class ExecutionService {
         return uris;
     }
 
+    /**
+     * Converts Hadoop path to DuckDB-quoted path string.
+     *
+     * @param p Hadoop path
+     * @return quoted DuckDB path
+     */
     private static String duckDbPath(org.apache.hadoop.fs.Path p) {
         java.net.URI uri = p.toUri();
         String path = "file".equals(uri.getScheme())
@@ -417,6 +474,12 @@ public final class ExecutionService {
         return "'" + path.replace("'", "''") + "'";
     }
 
+    /**
+     * Converts Hadoop path to unquoted DuckDB path string.
+     *
+     * @param p Hadoop path
+     * @return unquoted DuckDB path
+     */
     private static String plainDuckDbPath(org.apache.hadoop.fs.Path p) {
         java.net.URI uri = p.toUri();
         return "file".equals(uri.getScheme())
@@ -424,6 +487,12 @@ public final class ExecutionService {
                 : uri.toString();
     }
 
+    /**
+     * Builds column projection array from parsed query, including filter columns.
+     *
+     * @param pq parsed query
+     * @return projected column names, empty if none needed
+     */
     private Optional<String[]> buildProjection(ParquetQueryParser pq) {
         java.util.Set<String> scanCols = new java.util.LinkedHashSet<>(pq.groupByColumnNames);
         for (ParquetQueryParser.SelectExpr e : pq.selectExprs) {
@@ -451,12 +520,28 @@ public final class ExecutionService {
                 : Optional.of(scanCols.toArray(new String[0]));
     }
 
+    /**
+     * Builds Substrait filter bytes from parsed query.
+     *
+     * @param pq parsed query
+     * @return filter bytes, may be null
+     */
     private byte[] buildFilterBytes(ParquetQueryParser pq) {
         return filterBuilder.apply(pq);
     }
 
     // ── emit ─────────────────────────────────────────────────────────────
 
+    /**
+     * Emits aggregation result rows as Arrow batches through the listener.
+     *
+     * @param allocator     Arrow buffer allocator
+     * @param pq            parsed query
+     * @param rows          result rows
+     * @param listener      Flight stream listener
+     * @param startListener whether to call listener.start()
+     * @throws InterruptedException if interrupted during send
+     */
     private void emitRowsAsArrow(BufferAllocator allocator, ParquetQueryParser pq,
             List<Object[]> rows, FlightProducer.ServerStreamListener listener,
             boolean startListener) throws InterruptedException {
@@ -506,22 +591,39 @@ public final class ExecutionService {
         }
     }
 
+    /**
+     * Builds a SELECT * query for schema inference.
+     *
+     * @param pq parsed query
+     * @return SELECT * query string
+     */
     private String buildSelectExprQuery(ParquetQueryParser pq) {
         if (pq.schema != null && pq.table != null) {
             return "SELECT * FROM " + pq.schema + "." + pq.table;
         }
-        return "SELECT * FROM t";
+        throw new IllegalArgumentException("Cannot build schema query: missing schema/table");
     }
 
+    /**
+     * Merges partial aggregation results from parallel file groups.
+     *
+     * @param allocator Arrow buffer allocator
+     * @param pq        parsed query
+     * @param partials  partial VSRs from each group
+     * @return merged VectorSchemaRoot
+     */
     private VectorSchemaRoot mergeVsrPartials(BufferAllocator allocator,
             ParquetQueryParser pq, List<VectorSchemaRoot> partials) {
         int numGbCols = pq.groupByColumnNames.size();
         List<ParquetQueryParser.SelectExpr> exprs = pq.selectExprs;
 
         if (numGbCols == 0) {
-            long[] longAccum = new long[exprs.size()];
-            double[] dblAccum = new double[exprs.size()];
+                    Long[] longAccum = new Long[exprs.size()];
+            Double[] dblAccum = new Double[exprs.size()];
             Object[] objAccum = new Object[exprs.size()];
+            for (int i = 0; i < exprs.size(); i++) {
+                longAccum[i] = 0L;
+            }
             boolean any = false;
 
             for (VectorSchemaRoot partial : partials) {
@@ -534,8 +636,8 @@ public final class ExecutionService {
                     FieldVector vec = partial.getVector(col);
                     if (!vec.isNull(0)) {
                         switch (expr.func) {
-                            case COUNT_STAR, COUNT -> longAccum[col] += toLong(vec, 0);
-                            case SUM -> dblAccum[col] += toDouble(vec, 0);
+                            case COUNT_STAR, COUNT -> longAccum[col] = (Long) addLongs(longAccum[col], toLong(vec, 0));
+                            case SUM -> dblAccum[col] = (Double) addDoubles(dblAccum[col], toDouble(vec, 0));
                             case MIN -> objAccum[col] = objAccum[col] == null
                                     ? vec.getObject(0) : minOf(objAccum[col], vec.getObject(0));
                             case MAX -> objAccum[col] = objAccum[col] == null
@@ -565,8 +667,16 @@ public final class ExecutionService {
                 for (ParquetQueryParser.SelectExpr expr : exprs) {
                     FieldVector v = outVecs.get(col);
                     switch (expr.func) {
-                        case COUNT_STAR, COUNT -> ((BigIntVector) v).setSafe(0, longAccum[col]);
-                        case SUM -> ((Float8Vector) v).setSafe(0, dblAccum[col]);
+                        case COUNT_STAR, COUNT -> {
+                            if (longAccum[col] != null) {
+                                ((BigIntVector) v).setSafe(0, longAccum[col]);
+                            }
+                        }
+                        case SUM -> {
+                            if (dblAccum[col] != null) {
+                                ((Float8Vector) v).setSafe(0, dblAccum[col]);
+                            }
+                        }
                         case MIN, MAX -> setVectorValue(v, 0, objAccum[col]);
                         default -> { }
                     }
@@ -584,11 +694,22 @@ public final class ExecutionService {
         Map<List<Object>, Object[]> byKey = new LinkedHashMap<>();
 
         for (VectorSchemaRoot partial : partials) {
+            Schema partialSchema = partial.getSchema();
+            List<Field> partialFields = partialSchema.getFields();
+
+            // Build name→index map for defensive column lookup
+            Map<String, Integer> colIndexByName = new LinkedHashMap<>();
+            for (int i = 0; i < partialFields.size(); i++) {
+                colIndexByName.put(partialFields.get(i).getName().toLowerCase(java.util.Locale.ROOT), i);
+            }
+
             int rowCount = partial.getRowCount();
             for (int r = 0; r < rowCount; r++) {
                 List<Object> key = new ArrayList<>(numGbCols);
                 for (int c = 0; c < numGbCols; c++) {
-                    key.add(partial.getVector(c).getObject(r));
+                    FieldVector gv = numGbCols > c && c < partialFields.size()
+                            ? partial.getVector(c) : null;
+                    key.add(gv != null ? gv.getObject(r) : null);
                 }
                 Object[] accum = byKey.computeIfAbsent(key, k -> new Object[numAggExprs]);
                 int ai = 0;
@@ -596,8 +717,16 @@ public final class ExecutionService {
                     if (expr.func == ParquetQueryParser.SelectExpr.AggFunc.COLUMN) {
                         continue;
                     }
-                    FieldVector vec = partial.getVector(numGbCols + ai);
-                    if (!vec.isNull(r)) {
+                    int colPos = numGbCols + ai;
+                    String expectedName = expr.outputName != null ? expr.outputName
+                            : expr.inputColumn;
+                    Integer namedIdx = expectedName != null
+                            ? colIndexByName.get(expectedName.toLowerCase(java.util.Locale.ROOT))
+                            : null;
+                    FieldVector vec = namedIdx != null
+                            ? partial.getVector(namedIdx)
+                            : (colPos < partialFields.size() ? partial.getVector(colPos) : null);
+                    if (vec != null && !vec.isNull(r)) {
                         Object val = vec.getObject(r);
                         switch (expr.func) {
                             case COUNT_STAR, COUNT -> accum[ai] = addLongs(accum[ai], val);
@@ -651,6 +780,15 @@ public final class ExecutionService {
         return result;
     }
 
+    /**
+     * Merges partial aggregation rows from parallel file scans.
+     *
+     * @param exprs            select expressions
+     * @param groupByColumnNames group-by columns
+     * @param futures          partial row futures
+     * @return merged rows
+     * @throws Exception on future resolution or merge failure
+     */
     private static List<Object[]> mergePartialRows(
             List<ParquetQueryParser.SelectExpr> exprs,
             List<String> groupByColumnNames,
@@ -689,6 +827,14 @@ public final class ExecutionService {
         return new ArrayList<>(byKey.values());
     }
 
+    /**
+     * Merges aggregation columns from one row into another.
+     *
+     * @param exprs     select expressions
+     * @param into      target accumulators
+     * @param from      source row
+     * @param numGbCols number of group-by columns
+     */
     private static void mergeAggCols(List<ParquetQueryParser.SelectExpr> exprs,
             Object[] into, Object[] from, int numGbCols) {
         int aggIdx = 0;
@@ -707,6 +853,13 @@ public final class ExecutionService {
         }
     }
 
+    /**
+     * Extracts a long value from a FieldVector at the given index.
+     *
+     * @param vec   field vector
+     * @param index row index
+     * @return long value
+     */
     private static long toLong(FieldVector vec, int index) {
         if (vec instanceof BigIntVector v) {
             return v.get(index);
@@ -723,6 +876,13 @@ public final class ExecutionService {
         return ((Number) vec.getObject(index)).longValue();
     }
 
+    /**
+     * Extracts a double value from a FieldVector at the given index.
+     *
+     * @param vec   field vector
+     * @param index row index
+     * @return double value
+     */
     private static double toDouble(FieldVector vec, int index) {
         if (vec instanceof Float8Vector v) {
             return v.get(index);
@@ -733,6 +893,13 @@ public final class ExecutionService {
         return ((Number) vec.getObject(index)).doubleValue();
     }
 
+    /**
+     * Returns the minimum of two comparable values, null-safe.
+     *
+     * @param a first value
+     * @param b second value
+     * @return minimum value
+     */
     @SuppressWarnings("unchecked")
     private static Object minOf(Object a, Object b) {
         if (a == null) {
@@ -744,6 +911,13 @@ public final class ExecutionService {
         return ((Comparable<Object>) a).compareTo(b) <= 0 ? a : b;
     }
 
+    /**
+     * Returns the maximum of two comparable values, null-safe.
+     *
+     * @param a first value
+     * @param b second value
+     * @return maximum value
+     */
     @SuppressWarnings("unchecked")
     private static Object maxOf(Object a, Object b) {
         if (a == null) {
@@ -755,6 +929,13 @@ public final class ExecutionService {
         return ((Comparable<Object>) a).compareTo(b) >= 0 ? a : b;
     }
 
+    /**
+     * Adds two long accumulators, null-safe.
+     *
+     * @param a first accumulator
+     * @param b second accumulator
+     * @return sum as Long
+     */
     private static Object addLongs(Object a, Object b) {
         if (a == null) {
             return b == null ? 0L : ((Number) b).longValue();
@@ -765,6 +946,13 @@ public final class ExecutionService {
         return ((Number) a).longValue() + ((Number) b).longValue();
     }
 
+    /**
+     * Adds two double accumulators, null-safe.
+     *
+     * @param a first accumulator
+     * @param b second accumulator
+     * @return sum as Double
+     */
     private static Object addDoubles(Object a, Object b) {
         if (a == null) {
             return b == null ? 0.0 : ((Number) b).doubleValue();
@@ -775,6 +963,13 @@ public final class ExecutionService {
         return ((Number) a).doubleValue() + ((Number) b).doubleValue();
     }
 
+    /**
+     * Sets a value in a FieldVector at the given index, handling all supported types.
+     *
+     * @param vec   field vector
+     * @param index row index
+     * @param value value to set
+     */
     @SuppressWarnings("unchecked")
     private static void setVectorValue(FieldVector vec, int index, Object value) {
         if (value == null) {
@@ -803,6 +998,13 @@ public final class ExecutionService {
         }
     }
 
+    /**
+     * Partitions items into numGroups using round-robin distribution.
+     *
+     * @param items     items to partition
+     * @param numGroups number of groups
+     * @return partitioned lists
+     */
     private static <T> List<List<T>> partitionIntoGroups(List<T> items, int numGroups) {
         List<List<T>> groups = new ArrayList<>(numGroups);
         for (int i = 0; i < numGroups; i++) {

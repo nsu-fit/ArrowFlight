@@ -50,6 +50,9 @@ public final class FilterConverter {
         }
     };
 
+    /**
+     * Utility class, no instantiation.
+     */
     private FilterConverter() {
     }
 

@@ -14,6 +14,9 @@ public class ConfigAdapter {
 
     private static final String CONFIG_RESOURCE = "arrowflight.properties";
 
+    /**
+     * Utility class, no instantiation.
+     */
     private ConfigAdapter() {
     }
 
@@ -36,7 +39,7 @@ public class ConfigAdapter {
                 "arrowflight.duckdb.hdfs.extension", "DUCKDB_HDFS_EXTENSION", null, props);
         boolean duckDbAllowUnsignedExtensions = getBooleanWithEnv("duckDbAllowUnsignedExtensions",
                 "arrowflight.duckdb.allowUnsignedExtensions", "DUCKDB_ALLOW_UNSIGNED_EXTENSIONS",
-                duckDbHdfsExtension != null, props);
+                false, props);
         String duckDbHdfsDefaultNamenode = getStringWithEnv("duckDbHdfsDefaultNamenode",
                 "arrowflight.duckdb.hdfs.defaultNamenode", "HDFS_DEFAULT_NAMENODE", null, props);
         String duckDbHdfsHaNamenodes = getStringWithEnv("duckDbHdfsHaNamenodes",
@@ -69,19 +72,34 @@ public class ConfigAdapter {
                 clientMaxRetries, clientRetryBackoffMs, clientConnectTimeoutMs);
     }
 
+    /**
+     * Computes I/O thread pool parallelism from config, cores, and constraints.
+     *
+     * @param props loaded properties
+     * @return thread count (clamped to 64)
+     */
     private static int computeIoParallelism(Properties props) {
         Integer explicit = getOptionalInt("ioParallelism", "arrowflight.io.parallelism", props);
         if (explicit != null && explicit > 0) {
-            return explicit;
+            return Math.min(explicit, 64);
         }
         int availableCores = Runtime.getRuntime().availableProcessors();
-        int maxCores = getInt("ioParallelismMaxCores", "arrowflight.io.maxCores", 0, props);
+        int maxCores = getInt("ioParallelismMaxCores", "arrowflight.io.maxCores", 8, props);
         int effectiveCores = maxCores > 0 ? Math.min(availableCores, maxCores) : availableCores;
         int multiplier = getInt("ioParallelismMultiplier", "arrowflight.io.parallelismMultiplier", 8, props);
         int minThreads = getInt("ioParallelismMinThreads", "arrowflight.io.minParallelism", 32, props);
-        return Math.max(minThreads, effectiveCores * multiplier);
+        return Math.min(64, Math.max(minThreads, effectiveCores * multiplier));
     }
 
+    /**
+     * Reads a string config from system property or properties file.
+     *
+     * @param key      primary config key
+     * @param sysAlias secondary system property key
+     * @param fallback default value
+     * @param props    loaded properties
+     * @return resolved value
+     */
     private static String getString(String key, String sysAlias, String fallback, Properties props) {
         String value = System.getProperty(key);
         if (value == null || value.isBlank()) {
@@ -96,6 +114,16 @@ public class ConfigAdapter {
         return value == null || value.isBlank() ? fallback : value.trim();
     }
 
+    /**
+     * Reads a string config with environment variable fallback.
+     *
+     * @param key      primary config key
+     * @param sysAlias secondary system property key
+     * @param envName  environment variable name
+     * @param fallback default value
+     * @param props    loaded properties
+     * @return resolved value
+     */
     private static String getStringWithEnv(String key, String sysAlias, String envName,
             String fallback, Properties props) {
         String value = System.getProperty(key);
@@ -117,6 +145,15 @@ public class ConfigAdapter {
         return value == null || value.isBlank() ? fallback : value.trim();
     }
 
+    /**
+     * Reads an integer config with fallback.
+     *
+     * @param key      primary config key
+     * @param sysAlias secondary system property key
+     * @param fallback default value
+     * @param props    loaded properties
+     * @return resolved value
+     */
     private static int getInt(String key, String sysAlias, int fallback, Properties props) {
         String raw = getString(key, sysAlias, String.valueOf(fallback), props);
         try {
@@ -126,6 +163,14 @@ public class ConfigAdapter {
         }
     }
 
+    /**
+     * Reads an optional integer config, returns null if not set.
+     *
+     * @param key      primary config key
+     * @param sysAlias secondary system property key
+     * @param props    loaded properties
+     * @return integer value or null
+     */
     private static Integer getOptionalInt(String key, String sysAlias, Properties props) {
         String value = System.getProperty(key);
         if (value == null || value.isBlank()) {
@@ -147,12 +192,31 @@ public class ConfigAdapter {
         }
     }
 
+    /**
+     * Reads a boolean config with environment variable fallback.
+     *
+     * @param key      primary config key
+     * @param sysAlias secondary system property key
+     * @param envName  environment variable name
+     * @param fallback default value
+     * @param props    loaded properties
+     * @return resolved value
+     */
     private static boolean getBooleanWithEnv(String key, String sysAlias, String envName,
             boolean fallback, Properties props) {
         String value = getStringWithEnv(key, sysAlias, envName, null, props);
         return value == null ? fallback : Boolean.parseBoolean(value);
     }
 
+    /**
+     * Reads a long config with fallback.
+     *
+     * @param key      primary config key
+     * @param sysAlias secondary system property key
+     * @param fallback default value
+     * @param props    loaded properties
+     * @return resolved value
+     */
     private static long getLong(String key, String sysAlias, long fallback, Properties props) {
         String raw = getString(key, sysAlias, String.valueOf(fallback), props);
         try {
@@ -162,6 +226,11 @@ public class ConfigAdapter {
         }
     }
 
+    /**
+     * Loads properties from classpath resource.
+     *
+     * @return loaded Properties
+     */
     private static Properties loadProperties() {
         Properties properties = new Properties();
         try (InputStream input = ConfigAdapter.class.getClassLoader().getResourceAsStream(CONFIG_RESOURCE)) {

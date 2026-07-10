@@ -49,15 +49,28 @@ public class FieldType implements Serializable {
         private final int precision;
         private final int scale;
 
+        /**
+         * Constructs a DecimalType with given precision and scale.
+         * @param precision decimal precision
+         * @param scale decimal scale
+         */
         public DecimalType(int precision, int scale) {
             super(IDs.DECIMAL);
             this.precision = precision;
             this.scale = scale;
         }
 
+        /**
+         * Gets the decimal precision.
+         * @return precision
+         */
         public int getPrecision() {
             return this.precision;
         }
+        /**
+         * Gets the decimal scale.
+         * @return scale
+         */
         public int getScale() {
             return this.scale;
         }
@@ -69,11 +82,19 @@ public class FieldType implements Serializable {
     public static class BinaryType extends FieldType {
         private final int byteWidth;
 
+        /**
+         * Constructs a BinaryType with fixed byte width.
+         * @param byteWidth byte width (-1 for variable)
+         */
         public BinaryType(int byteWidth) {
             super(IDs.BYTES);
             this.byteWidth = byteWidth;
         }
 
+        /**
+         * Gets the byte width of the binary type.
+         * @return byte width
+         */
         public int getByteWidth() {
             return this.byteWidth;
         }
@@ -86,19 +107,36 @@ public class FieldType implements Serializable {
         private final int length;
         private final FieldType childType;
 
+        /**
+         * Constructs a fixed-size ListType.
+         * @param length fixed length (-1 for dynamic)
+         * @param childType element type
+         */
         public ListType(int length, FieldType childType) {
             super(IDs.LIST);
             this.length = length;
             this.childType = childType;
         }
+        /**
+         * Constructs a dynamic-size ListType.
+         * @param childType element type
+         */
         public ListType(FieldType childType) {
             //dynamic size of list
             this(-1, childType);
         }
 
+        /**
+         * Gets the fixed length of the list.
+         * @return length (-1 if dynamic)
+         */
         public int getLength() {
             return this.length;
         }
+        /**
+         * Gets the element type of the list.
+         * @return child field type
+         */
         public FieldType getChildType() {
             return this.childType;
         }
@@ -111,15 +149,28 @@ public class FieldType implements Serializable {
         private final FieldType keyType;
         private final FieldType valueType;
 
+        /**
+         * Constructs a MapType with key and value types.
+         * @param keyType key field type
+         * @param valueType value field type
+         */
         public MapType(FieldType keyType, FieldType valueType) {
             super(IDs.MAP);
             this.keyType = keyType;
             this.valueType = valueType;
         }
 
+        /**
+         * Gets the key type of the map.
+         * @return key field type
+         */
         public FieldType getKeyType() {
             return this.keyType;
         }
+        /**
+         * Gets the value type of the map.
+         * @return value field type
+         */
         public FieldType getValueType() {
             return this.valueType;
         }
@@ -131,11 +182,19 @@ public class FieldType implements Serializable {
     public static class StructType extends FieldType {
         private final Map<String, FieldType> childrenType;
 
+        /**
+         * Constructs a StructType with child fields.
+         * @param childrenType map of field name to field type
+         */
         public StructType(Map<String, FieldType> childrenType) {
             super(IDs.STRUCT);
             this.childrenType = childrenType;
         }
 
+        /**
+         * Gets the child field types.
+         * @return map of field name to field type
+         */
         public Map<String, FieldType> getChildrenType() {
             return this.childrenType;
         }
@@ -145,6 +204,10 @@ public class FieldType implements Serializable {
      * Union Type
      */
     public static class UnionType extends StructType {
+        /**
+         * Constructs a UnionType with child fields.
+         * @param childrenType map of field name to field type
+         */
         public UnionType(Map<String, FieldType> childrenType) {
             super(childrenType);
         }
@@ -299,6 +362,11 @@ public class FieldType implements Serializable {
     //convert to Spark MapType
     private static final Function<MapType, org.apache.spark.sql.types.MapType> toMapType = t -> org.apache.spark.sql.types.MapType.apply(FieldType.toSpark(t.getKeyType()), FieldType.toSpark(t.getValueType()));
 
+    /**
+     * Converts a FieldType to a Spark DataType.
+     * @param ft the field type to convert
+     * @return corresponding Spark DataType
+     */
     public static org.apache.spark.sql.types.DataType toSpark(FieldType ft) {
         switch (ft.getTypeID()) {
             case INT:

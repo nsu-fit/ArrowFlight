@@ -36,6 +36,9 @@ import net.surpin.data.arrowflight.server.services.QueryPlanner;
 import static com.google.protobuf.ByteString.copyFrom;
 import static java.util.UUID.randomUUID;
 
+/**
+ * Flight SQL producer that handles metadata and query execution requests.
+ */
 public final class FlightSqlProducer extends BasicFlightSqlProducer implements AutoCloseable {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(FlightSqlProducer.class);
@@ -48,6 +51,14 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
     private final ClusterService clusterService;
     private final SqlInfoBuilder sqlInfoBuilder;
 
+    /**
+     * @param location server location for endpoint registration
+     * @param allocator Arrow buffer allocator
+     * @param metadataService metadata lookup service
+     * @param queryPlanner query planning and endpoint determination
+     * @param executionService query execution service
+     * @param clusterService cluster state management
+     */
     public FlightSqlProducer(Location location, BufferAllocator allocator,
             MetadataService metadataService, QueryPlanner queryPlanner,
             ExecutionService executionService, ClusterService clusterService) {
@@ -141,16 +152,16 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
         try {
             arrowSchema = metadataService.getQuerySchema(query);
         } catch (Exception e) {
-            LOGGER.error("Error getting Arrow schema for query: " + query, e);
+            LOGGER.error("Error getting Arrow schema for query: {}", query, e);
             throw CallStatus.INTERNAL
-                    .withDescription("Error getting Arrow schema for query: " + query)
+                    .withDescription("Error getting Arrow schema for query")
                     .withCause(e).toRuntimeException();
         }
 
         if (arrowSchema == null) {
-            LOGGER.error("Error getting Arrow schema for query: " + query);
+            LOGGER.error("Arrow schema not found for query: {}", query);
             throw CallStatus.NOT_FOUND
-                    .withDescription("Could not get Arrow schema for query: " + query)
+                    .withDescription("Could not find Arrow schema for query")
                     .toRuntimeException();
         }
 
@@ -171,15 +182,15 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
         try {
             arrowSchema = metadataService.getQuerySchema(query);
         } catch (Exception e) {
-            LOGGER.error("Error getting Arrow schema for query: " + query, e);
+            LOGGER.error("Error getting Arrow schema for query: {}", query, e);
             throw CallStatus.INTERNAL
-                    .withDescription("Error getting Arrow schema for query: " + query)
+                    .withDescription("Error getting Arrow schema for query")
                     .withCause(e).toRuntimeException();
         }
 
         if (arrowSchema == null) {
             throw CallStatus.NOT_FOUND
-                    .withDescription("Could not get Arrow schema for query: " + query)
+                    .withDescription("Could not find Arrow schema for query")
                     .toRuntimeException();
         }
 
@@ -193,6 +204,11 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
             if (request instanceof FlightSql.TicketStatementQuery ticketQuery) {
                 final ByteString handle = ticketQuery.getStatementHandle();
                 HandleState state = clusterService.getHandle(handle.toStringUtf8());
+                if (state == null) {
+                    throw CallStatus.NOT_FOUND
+                            .withDescription("No handle state found")
+                            .toRuntimeException();
+                }
                 String query = state.query();
                 return queryPlanner.determineEndpoints(query);
             } else {
@@ -233,7 +249,6 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
         try (VectorSchemaRoot root = metadataService.getCatalogsRoot(allocator)) {
             listener.start(root);
             listener.putNext();
-        } finally {
             listener.completed();
         }
     }
@@ -252,6 +267,7 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
         final String catalog = command.hasCatalog() ? command.getCatalog() : null;
         final String schemaFilterPattern = command.hasDbSchemaFilterPattern()
                 ? command.getDbSchemaFilterPattern() : null;
+        boolean errored = false;
 
         try {
             Map<String, org.apache.hadoop.fs.Path> schemas =
@@ -264,8 +280,11 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
         } catch (IOException e) {
             LOGGER.error("Failed to getStreamSchemas", e);
             listener.error(e);
+            errored = true;
         } finally {
-            listener.completed();
+            if (!errored) {
+                listener.completed();
+            }
         }
     }
 
@@ -282,7 +301,6 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
         try (VectorSchemaRoot root = metadataService.getTableTypesRoot(allocator)) {
             listener.start(root);
             listener.putNext();
-        } finally {
             listener.completed();
         }
     }
@@ -347,6 +365,7 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
             return;
         }
 
+        boolean errored = false;
         try (VectorSchemaRoot root = metadataService.getTablesRoot(
                 tables, allocator, command.getIncludeSchema(),
                 schemaFilterPattern, tableFilterPattern)) {
@@ -355,8 +374,11 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
         } catch (Exception e) {
             LOGGER.error("Failed to getStreamTables", e);
             listener.error(e);
+            errored = true;
         } finally {
-            listener.completed();
+            if (!errored) {
+                listener.completed();
+            }
         }
     }
 
@@ -382,11 +404,21 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
     public void close() throws Exception {
     }
 
+    /**
+     * @param handle ticket handle as ByteString
+     * @return truncated 8-character query identifier
+     */
     private static String qid(ByteString handle) {
         String raw = handle.toStringUtf8();
         return raw.length() >= 8 ? raw.substring(0, 8) : raw;
     }
 
+    /**
+     * @param request protobuf request message
+     * @param descriptor flight descriptor
+     * @param schema Arrow schema for the response
+     * @return FlightInfo with determined endpoints
+     */
     private <T extends Message> FlightInfo getFlightInfoForSchema(
             T request, FlightDescriptor descriptor, Schema schema) {
         final List<FlightEndpoint> endpoints = determineEndpoints(request, descriptor, schema);

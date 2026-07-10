@@ -64,16 +64,24 @@ public final class DuckDbAdapter {
         });
     }
 
+    /**
+     * Configure DuckDB connection settings
+     * @param conn JDBC connection
+     * @throws Exception on configuration failure
+     */
     private void configureConnection(Connection conn) throws Exception {
         try (Statement s = conn.createStatement()) {
             s.execute("SET threads = " + appConfig.duckDbThreads());
-            if (appConfig.dataDir() != null) {
-                setArrayOptionIfPresent(s, "allowed_paths", appConfig.dataDir());
+            String dataDir = appConfig.dataDir();
+            if (dataDir != null) {
+                setArrayOptionIfPresent(s, "allowed_paths", dataDir);
+            } else {
+                s.execute("SET allowed_paths = ARRAY[]");
+            }
+            if (appConfig.duckDbAllowUnsignedExtensions()) {
+                s.execute("SET allow_unsigned_extensions = true");
             }
             if (appConfig.duckDbHdfsExtension() != null) {
-                if (appConfig.duckDbAllowUnsignedExtensions()) {
-                    s.execute("SET allow_unsigned_extensions = true");
-                }
                 s.execute("LOAD " + sqlStringLiteral(appConfig.duckDbHdfsExtension()));
             }
             setOptionIfPresent(s, "hdfs_default_namenode", appConfig.duckDbHdfsDefaultNamenode());
@@ -83,6 +91,13 @@ public final class DuckDbAdapter {
         }
     }
 
+    /**
+     * Set DuckDB option if value is non-null
+     * @param statement JDBC statement
+     * @param optionName option name
+     * @param value option value
+     * @throws Exception on SQL failure
+     */
     private static void setOptionIfPresent(Statement statement, String optionName, String value)
             throws Exception {
         if (value == null) {
@@ -95,6 +110,13 @@ public final class DuckDbAdapter {
         }
     }
 
+    /**
+     * Set DuckDB array option if value is non-null
+     * @param statement JDBC statement
+     * @param optionName option name
+     * @param value option value
+     * @throws Exception on SQL failure
+     */
     private static void setArrayOptionIfPresent(Statement statement, String optionName, String value)
             throws Exception {
         if (value == null) {
@@ -530,6 +552,12 @@ public final class DuckDbAdapter {
         targetRoot.setRowCount(rowCount);
     }
 
+    /**
+     * Return minimum of two comparable values
+     * @param a first value
+     * @param b second value
+     * @return minimum value
+     */
     @SuppressWarnings("unchecked")
     private static Object minOf(Object a, Object b) {
         if (a == null) {
@@ -541,6 +569,12 @@ public final class DuckDbAdapter {
         return ((Comparable<Object>) a).compareTo(b) <= 0 ? a : b;
     }
 
+    /**
+     * Return maximum of two comparable values
+     * @param a first value
+     * @param b second value
+     * @return maximum value
+     */
     @SuppressWarnings("unchecked")
     private static Object maxOf(Object a, Object b) {
         if (a == null) {

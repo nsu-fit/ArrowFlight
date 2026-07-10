@@ -342,6 +342,12 @@ public final class MetadataService {
 
     // ── private helpers ───────────────────────────────────────────────────
 
+    /**
+     * Builds Arrow schema for a JOIN query result.
+     *
+     * @param pq parsed join query
+     * @return Arrow schema
+     */
     private Schema buildJoinSchema(ParquetQueryParser pq) {
         Map<String, Schema> aliasSchemas = new LinkedHashMap<>();
         for (ParquetQueryParser.JoinTable jt : pq.joinTables) {
@@ -384,6 +390,12 @@ public final class MetadataService {
         return new org.apache.arrow.vector.types.pojo.Schema(resultFields);
     }
 
+    /**
+     * Builds Arrow schema for an aggregation query result.
+     *
+     * @param pq parsed aggregation query
+     * @return Arrow schema
+     */
     public Schema buildAggregationSchema(ParquetQueryParser pq) {
         org.apache.arrow.vector.types.pojo.Schema tableSchema =
                 parquetAdapter.getTableSchema(pq.schema, pq.table);
@@ -416,6 +428,13 @@ public final class MetadataService {
         return new org.apache.arrow.vector.types.pojo.Schema(resultFields);
     }
 
+    /**
+     * Resolves a column field by name with case-insensitive fallback.
+     *
+     * @param colFieldMap  column name to field map
+     * @param inputColumn  column name
+     * @return resolved Arrow field
+     */
     private static Field resolveColumn(Map<String, Field> colFieldMap, String inputColumn) {
         Field src = colFieldMap.get(inputColumn);
         if (src != null) {
@@ -432,6 +451,15 @@ public final class MetadataService {
 
     // ── vector helpers ────────────────────────────────────────────────────
 
+    /**
+     * Creates a single-column VectorSchemaRoot from data.
+     *
+     * @param data            row data
+     * @param allocator       Arrow allocator
+     * @param fieldVectorName vector name
+     * @param columnName      map key for data extraction
+     * @return populated VSR
+     */
     private static VectorSchemaRoot getRoot(
             List<? extends Map<String, ?>> data, BufferAllocator allocator,
             String fieldVectorName, String columnName) {
@@ -442,12 +470,26 @@ public final class MetadataService {
         return new VectorSchemaRoot(singletonList(dataVector));
     }
 
+    /**
+     * Writes data to vectors with no row filtering.
+     *
+     * @param vectorToColumnName vector to column name mapping
+     * @param data               row data
+     */
     private static <T extends FieldVector> void saveToVectors(
             final Map<T, String> vectorToColumnName,
             List<? extends Map<String, ?>> data) {
         saveToVectors(vectorToColumnName, data, none -> true);
     }
 
+    /**
+     * Writes data to vectors with optional row filtering.
+     *
+     * @param vectorToColumnName vector to column name mapping
+     * @param data               row data
+     * @param rowPredicate       filter for rows to include
+     * @return number of rows written
+     */
     @SuppressWarnings("StringSplitter")
     private static <T extends FieldVector> int saveToVectors(
             Map<T, String> vectorToColumnName,
@@ -507,18 +549,39 @@ public final class MetadataService {
         return rows;
     }
 
+    /**
+     * Writes a Byte to a UInt1Vector at the given index.
+     *
+     * @param data   value
+     * @param vector target vector
+     * @param index  row index
+     */
     private static void saveToVector(Byte data, UInt1Vector vector, int index) {
         vectorConsumer(data, vector,
                 fv -> fv.setNull(index),
                 (theData, fv) -> fv.setSafe(index, theData));
     }
 
+    /**
+     * Writes a Byte to a BitVector at the given index.
+     *
+     * @param data   value
+     * @param vector target vector
+     * @param index  row index
+     */
     private static void saveToVector(Byte data, org.apache.arrow.vector.BitVector vector, int index) {
         vectorConsumer(data, vector,
                 fv -> fv.setNull(index),
                 (theData, fv) -> fv.setSafe(index, theData));
     }
 
+    /**
+     * Writes a String to a VarCharVector at the given index.
+     *
+     * @param data   value
+     * @param vector target vector
+     * @param index  row index
+     */
     private static void saveToVector(String data, VarCharVector vector, int index) {
         preconditionCheckSaveToVector(vector, index);
         vectorConsumer(data, vector,
@@ -526,6 +589,13 @@ public final class MetadataService {
                 (theData, fv) -> fv.setSafe(index, new Text(theData)));
     }
 
+    /**
+     * Writes an Integer to an IntVector at the given index.
+     *
+     * @param data   value
+     * @param vector target vector
+     * @param index  row index
+     */
     private static void saveToVector(Integer data, IntVector vector, int index) {
         preconditionCheckSaveToVector(vector, index);
         vectorConsumer(data, vector,
@@ -533,6 +603,13 @@ public final class MetadataService {
                 (theData, fv) -> fv.setSafe(index, theData));
     }
 
+    /**
+     * Writes a byte array to a VarBinaryVector at the given index.
+     *
+     * @param data   value
+     * @param vector target vector
+     * @param index  row index
+     */
     private static void saveToVector(byte[] data, VarBinaryVector vector, int index) {
         preconditionCheckSaveToVector(vector, index);
         vectorConsumer(data, vector,
@@ -540,11 +617,25 @@ public final class MetadataService {
                 (theData, fv) -> fv.setSafe(index, theData));
     }
 
+    /**
+     * Validates vector and index preconditions.
+     *
+     * @param vector field vector
+     * @param index  row index
+     */
     private static void preconditionCheckSaveToVector(FieldVector vector, int index) {
         Objects.requireNonNull(vector, "vector cannot be null.");
         com.google.common.base.Preconditions.checkState(index >= 0, "Index must be a positive number!");
     }
 
+    /**
+     * Applies null-safe vector write using the appropriate consumer.
+     *
+     * @param data               value
+     * @param vector             target vector
+     * @param consumerIfNullable null handler
+     * @param defaultConsumer    non-null handler
+     */
     private static <T, V extends FieldVector> void vectorConsumer(
             T data, V vector,
             Consumer<V> consumerIfNullable,

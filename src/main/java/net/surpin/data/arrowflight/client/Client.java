@@ -306,7 +306,13 @@ public final class Client implements AutoCloseable {
         return Client.clients.get(cs);
     }
 
-    //Create a client object with the service configuration
+    /**
+     * Creates a FlightClient with optional TLS and interceptors.
+     *
+     * @param config    client configuration
+     * @param allocator buffer allocator
+     * @return FlightClient
+     */
     private static FlightClient create(Configuration config, BufferAllocator allocator) {
         FlightClient.Builder builder = FlightClient.builder().allocator(allocator);
         if (config.getTlsEnabled()) {
@@ -321,7 +327,16 @@ public final class Client implements AutoCloseable {
         return (config.getPassword() != null && !config.getPassword().isEmpty()) ? builder.intercept(Client.factory).build() : builder.build();
     }
 
-    //Authenticate with user & password to obtain the credential token-ticket
+    /**
+     * Authenticates with the Flight server using password or bearer token.
+     *
+     * @param client           FlightClient
+     * @param user             username
+     * @param password         password (null for bearer-only)
+     * @param bearerToken      bearer token (null for password-only)
+     * @param clientProperties optional client properties
+     * @return credential call option
+     */
     static CredentialCallOption authenticate(FlightClient client, String user, String password, String bearerToken, HeaderCallOption clientProperties) {
         final java.util.List<CallOption> callOptions = new java.util.ArrayList<>();
 
@@ -344,6 +359,13 @@ public final class Client implements AutoCloseable {
         T call() throws Exception;
     }
 
+    /**
+     * Executes a call with exponential backoff retry on recoverable errors.
+     *
+     * @param callable  the call to execute
+     * @param operation operation name for logging
+     * @return result
+     */
     <T> T retryWithBackoff(RetryableCall<T> callable, String operation) {
         int maxRetries = config.getMaxRetries();
         long backoffMs = config.getRetryBackoffMs();
@@ -382,6 +404,12 @@ public final class Client implements AutoCloseable {
         throw new RuntimeException("Failed " + operation + " after " + (maxRetries + 1) + " attempts", lastException);
     }
 
+    /**
+     * Checks if a FlightRuntimeException is recoverable via retry.
+     *
+     * @param e flight exception
+     * @return true if retryable
+     */
     private static boolean isInternalError(FlightRuntimeException e) {
         Throwable cause = e.getCause();
         if (cause instanceof io.grpc.StatusRuntimeException) {
@@ -395,10 +423,22 @@ public final class Client implements AutoCloseable {
         return false;
     }
 
+    /**
+     * Opens a FlightStream for the given endpoint.
+     *
+     * @param fep flight endpoint with ticket
+     * @return FlightStream
+     * @throws Exception on stream open failure
+     */
     public FlightStream openStream(FlightEndpoint fep) throws Exception {
         return this.client.getStream(fep.getTicket(), callOptions());
     }
 
+    /**
+     * Returns the client configuration.
+     *
+     * @return configuration
+     */
     public Configuration getConfig() {
         return this.config;
     }

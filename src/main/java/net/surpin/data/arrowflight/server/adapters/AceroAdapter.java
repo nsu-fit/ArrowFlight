@@ -161,6 +161,7 @@ public final class AceroAdapter {
         List<ArrowReader> readers = new ArrayList<>(n);
         List<ArrowArrayStream> cStreams = new ArrayList<>(n);
         List<String> aliases = new ArrayList<>(n);
+        boolean success = false;
 
         try {
             for (int i = 0; i < n; i++) {
@@ -188,15 +189,19 @@ public final class AceroAdapter {
                 duckConn.registerArrowStream(alias, cStream);
                 aliases.add(alias);
             }
+            success = true;
             return aliases;
         } finally {
-            // On failure, close resources in reverse-dependency order.
-            for (int i = cStreams.size() - 1; i >= 0; i--) {
-                try {
-                    cStreams.get(i).close();
-                } catch (Exception ignored) {
+            if (!success) {
+                // On failure only, close everything.
+                for (int i = cStreams.size() - 1; i >= 0; i--) {
+                    try {
+                        cStreams.get(i).close();
+                    } catch (Exception ignored) {
+                    }
                 }
             }
+            // Readers, scanners, datasets, factories safe to close either way.
             for (int i = readers.size() - 1; i >= 0; i--) {
                 try {
                     readers.get(i).close();

@@ -35,6 +35,9 @@ public final class SchemaConverter {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(SchemaConverter.class);
 
+    /**
+     * Utility class, no instantiation.
+     */
     private SchemaConverter() {
     }
 
@@ -74,9 +77,9 @@ public final class SchemaConverter {
         if (logicalType == null) {
             return convertPrimitive(path, type.asPrimitiveType(), nullable);
         } else if (logicalType instanceof LogicalTypeAnnotation.MapLogicalTypeAnnotation) {
-            return new Field(path, fieldType(nullable, new ArrowType.Map(false)), null);
+            return new Field(path, fieldType(nullable, new ArrowType.Map(false)), List.of());
         } else if (logicalType instanceof LogicalTypeAnnotation.ListLogicalTypeAnnotation) {
-            return new Field(path, fieldType(nullable, new ArrowType.List()), null);
+            return new Field(path, fieldType(nullable, new ArrowType.List()), List.of());
         } else if (logicalType instanceof LogicalTypeAnnotation.StringLogicalTypeAnnotation) {
             return new Field(path, fieldType(nullable, new ArrowType.Utf8()), null);
         } else if (logicalType instanceof LogicalTypeAnnotation.MapKeyValueTypeAnnotation) {
@@ -110,10 +113,23 @@ public final class SchemaConverter {
         }
     }
 
+    /**
+     * Creates nullable or non-nullable FieldType.
+     *
+     * @param nullable  whether field is nullable
+     * @param arrowType Arrow type
+     * @return FieldType
+     */
     private static FieldType fieldType(boolean nullable, ArrowType arrowType) {
         return nullable ? FieldType.nullable(arrowType) : FieldType.notNullable(arrowType);
     }
 
+    /**
+     * Converts Parquet TimeUnit to Arrow TimeUnit.
+     *
+     * @param unit Parquet time unit
+     * @return Arrow time unit
+     */
     private static TimeUnit toArrowTimeUnit(LogicalTypeAnnotation.TimeUnit unit) {
         return switch (unit) {
             case MILLIS -> TimeUnit.MILLISECOND;
@@ -122,6 +138,14 @@ public final class SchemaConverter {
         };
     }
 
+    /**
+     * Converts a primitive Parquet type to an Arrow field.
+     *
+     * @param path        field name
+     * @param parquetType Parquet primitive type
+     * @param nullable    whether field is nullable
+     * @return Arrow field
+     */
     private static Field convertPrimitive(String path, PrimitiveType parquetType, boolean nullable) {
         OriginalType origType = parquetType.getOriginalType();
         if (origType != null) {
@@ -275,7 +299,7 @@ public final class SchemaConverter {
             result.put("LITERAL_SUFFIX", this.literalSuffix());
             result.put("CREATE_PARAMS", this.createParams());
             result.put("NONULLS", this.nullable());
-            result.put("CASE_SENSATIVE", this.caseSensitive());
+            result.put("CASE_SENSITIVE", this.caseSensitive());
             result.put("SEARCHABLE", this.searchable());
             result.put("UNSIGNED_ATTRIBUTE", this.unsignedAttribute());
             result.put("FIXED_PREC_SCALE", this.fixedPrecScale());

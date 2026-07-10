@@ -43,7 +43,13 @@ public final class ArrowConversion implements Serializable {
     private interface ConvertTo<A, B, C, D> {
         void apply(A a, B b, C c, D d);
     }
-    //the cast method
+    /**
+     * Casts a FieldVector to a specific vector subtype.
+     * @param fv the field vector to cast
+     * @param <V> target vector type
+     * @return casted vector
+     * @throws RuntimeException if cast fails
+     */
     @SuppressWarnings("unchecked")
     private static <V extends org.apache.arrow.vector.FieldVector> V cast(org.apache.arrow.vector.FieldVector fv) {
         try {
@@ -97,7 +103,13 @@ public final class ArrowConversion implements Serializable {
         }
         this.toConverters.get(key).apply(vector, rows, idxColumn, type);
     }
-    //populate the value object into the vector
+    /**
+     * Populates a single value into an arrow vector at the given index.
+     * @param vector target vector
+     * @param index row index
+     * @param value value to set
+     * @param type Spark data type of the value
+     */
     private void populateObject(org.apache.arrow.vector.FieldVector vector, int index, Object value, DataType type) {
         String key = vector.getClass().getTypeName();
         if (!this.toObjectConverters.containsKey(key)) {
@@ -1066,6 +1078,10 @@ public final class ArrowConversion implements Serializable {
         return ArrowConversion.inst;
     }
 
+    /**
+     * Returns the singleton instance on deserialization.
+     * @return singleton ArrowConversion instance
+     */
     private Object readResolve() {
         return getOrCreate();
     }

@@ -28,12 +28,16 @@ import java.time.format.DateTimeFormatter;
  * The write statement for writing data to remote flight service
  */
 public class WriteStatement implements Serializable {
-    //the execute interface
+    /**
+     * Execute function with three arguments
+     */
     @FunctionalInterface
     private interface Execute<X, Y, Z, R> {
         R apply(X x, Y y, Z z);
     }
-    //the convert interface
+    /**
+     * Convert function with four arguments
+     */
     @FunctionalInterface
     private interface Convert<A, B, C, D, R> {
         R apply(A a, B b, C c, D d);
@@ -53,6 +57,12 @@ public class WriteStatement implements Serializable {
     //the statement in the format of either merge into or insert into sql statement
     private String stmt;
 
+    /**
+     * Deserialize and reinitialize transient converters
+     * @param in object input stream
+     * @throws IOException on deserialization failure
+     * @throws ClassNotFoundException on missing class
+     */
     private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
         in.defaultReadObject();
         this.converters = new java.util.HashMap<>();
@@ -115,7 +125,12 @@ public class WriteStatement implements Serializable {
         this.stmt = String.format("merge into %s t using (%s) s(%s) on %s when matched then update set %s when not matched then insert (%s) values(%s)", tableName, WriteStatement.varValues, varInsert, matchOn, setUpdate, varInsert, valInsert);
     }
 
-    //initialize properties
+    /**
+     * Initialize properties with type mapping
+     * @param dataSchema the Spark data schema
+     * @param arrowSchema the Arrow schema
+     * @param typeMapping mapping from Arrow types to target SQL types
+     */
     private WriteStatement(StructType dataSchema, Schema arrowSchema, Map<String, String> typeMapping) {
         this.dataSchema = dataSchema;
         this.arrowSchema = arrowSchema.toJson();
@@ -188,7 +203,14 @@ public class WriteStatement implements Serializable {
         return this.stmt.replace(WriteStatement.varValues, String.format("values%s", String.join(",", values)));
     }
 
-    //convert the values of a specific column
+    /**
+     * Convert values of one column to SQL strings
+     * @param rows source rows
+     * @param idxColumn column index
+     * @param dataType Spark data type
+     * @param arrowField Arrow field definition
+     * @return array of SQL string values
+     */
     private String[] fillColumns(InternalRow[] rows, int idxColumn, DataType dataType, Field arrowField) {
         String key = String.format("%s-%s", dataType.getClass().getTypeName().replaceAll("\\$$", ""), Types.getMinorTypeForArrowType(arrowField.getType()).getClass().getTypeName());
         if (!this.converters.containsKey(key)) {
@@ -197,7 +219,9 @@ public class WriteStatement implements Serializable {
         return Arrays.stream(rows).map(row -> this.converters.get(key).apply(row.get(idxColumn, dataType), arrowField, dataType)).toArray(String[]::new);
     }
 
-    //initialize all converters
+    /**
+     * Initialize all type converter mappings
+     */
     private void initialize() {
         this.converters.put(String.format("%s-%s", TimestampType.class.getTypeName(), Types.MinorType.DATEDAY.getClass().getTypeName()), (o, f, t) -> WriteStatement.timestampToDateDay.apply(o, f, t, this.mapDate));
         this.converters.put(String.format("%s-%s", DateType.class.getTypeName(), Types.MinorType.DATEDAY.getClass().getTypeName()), (o, f, t) -> WriteStatement.dateToDateDay.apply(o, f, t, this.mapDate));

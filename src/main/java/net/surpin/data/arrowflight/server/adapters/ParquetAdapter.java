@@ -52,7 +52,7 @@ public class ParquetAdapter {
 
     private Map<String, Path> tableSchemaCache;
     private Map<String, Map<String, Path>> tableCache;
-    private Map<String, Map<String, String>> tableDdlCache = new HashMap<>();
+    private final Map<String, Map<String, String>> tableDdlCache = new HashMap<>();
 
     /**
      * Creates a ParquetAdapter for the given Hadoop filesystem and data directory.
@@ -144,6 +144,8 @@ public class ParquetAdapter {
      * @return Arrow schema
      */
     public Schema getTableSchema(String schema, String table, List<String> columns) {
+        validateName(schema);
+        validateName(table);
         try {
             Path tableDirectoryPath = new Path(dataDirectory, schema + "/" + table);
             RemoteIterator<LocatedFileStatus> it = fileSystem.listFiles(tableDirectoryPath, true);
@@ -269,6 +271,8 @@ public class ParquetAdapter {
 
         if (parsedQuery.isJoin) {
             for (ParquetQueryParser.JoinTable jt : parsedQuery.joinTables) {
+                validateName(jt.schema());
+                validateName(jt.table());
                 Path parquetPath = new Path(dataDirectory, jt.schema() + "/" + jt.table());
                 RemoteIterator<LocatedFileStatus> filesIter = fileSystem.listFiles(parquetPath, true);
                 while (filesIter.hasNext()) {
@@ -283,6 +287,8 @@ public class ParquetAdapter {
             return result;
         }
 
+        validateName(parsedQuery.schema);
+        validateName(parsedQuery.table);
         Path parquetPath = new Path(dataDirectory, parsedQuery.schema + "/" + parsedQuery.table);
         RemoteIterator<LocatedFileStatus> filesIter = fileSystem.listFiles(parquetPath, true);
         while (filesIter.hasNext()) {
@@ -330,6 +336,21 @@ public class ParquetAdapter {
     }
 
     /**
+     * Validates that a schema or table name contains only safe characters.
+     * Prevents path traversal via names like ".." or "./etc".
+     */
+    public static String validateName(String name) {
+        if (name == null) {
+            return null;
+        }
+        if (!name.matches("^[a-zA-Z_][a-zA-Z0-9_]*$")) {
+            throw new IllegalArgumentException("Invalid name: '" + name
+                    + "'. Must match [a-zA-Z_][a-zA-Z0-9_]*");
+        }
+        return name;
+    }
+
+    /**
      * Returns the Hadoop filesystem instance.
      *
      * @return FileSystem
@@ -338,6 +359,11 @@ public class ParquetAdapter {
         return fileSystem;
     }
 
+    /**
+     * Scans data directory for schema directories and caches them.
+     *
+     * @throws IOException on HDFS read failure
+     */
     private void initSchemaCache() throws IOException {
         LOGGER.info("Initializing schema cache for data directory: {}", dataDirectory);
         Path dirPath = new Path(dataDirectory);
@@ -348,15 +374,18 @@ public class ParquetAdapter {
             return;
         }
 
-        if (tableSchemaCache == null) {
-            tableSchemaCache = Arrays.stream(fileSystem.listStatus(dirPath))
-                    .filter(FileStatus::isDirectory)
-                    .collect(Collectors.toMap(status -> status.getPath().getName(), FileStatus::getPath));
-        }
+        tableSchemaCache = Arrays.stream(fileSystem.listStatus(dirPath))
+                .filter(FileStatus::isDirectory)
+                .collect(Collectors.toMap(status -> status.getPath().getName(), FileStatus::getPath));
 
         LOGGER.info("Collected schemas: {}", tableSchemaCache);
     }
 
+    /**
+     * Scans each schema directory for table directories and caches them.
+     *
+     * @throws IOException on HDFS read failure
+     */
     private void initTableCache() throws IOException {
         LOGGER.info("Initializing table cache for data directory: {}", dataDirectory);
         Path schemaPath = new Path(dataDirectory);
@@ -367,24 +396,28 @@ public class ParquetAdapter {
             return;
         }
 
-        if (tableCache == null) {
-            tableCache = new HashMap<>();
-            getSchemas(null).forEach((key, value) -> {
-                LOGGER.info("Collecting tables for schema: {} at path {}", key, value);
-                try {
-                    Map<String, Path> tables = Arrays.stream(fileSystem.listStatus(value))
-                            .filter(FileStatus::isDirectory)
-                            .collect(Collectors.toMap(status -> status.getPath().getName(), FileStatus::getPath));
-                    tableCache.put(key, tables);
-                } catch (IOException e) {
-                    throw new UncheckedIOException(e);
-                }
-            });
-        }
+        tableCache = new HashMap<>();
+        getSchemas(null).forEach((key, value) -> {
+            LOGGER.info("Collecting tables for schema: {} at path {}", key, value);
+            try {
+                Map<String, Path> tables = Arrays.stream(fileSystem.listStatus(value))
+                        .filter(FileStatus::isDirectory)
+                        .collect(Collectors.toMap(status -> status.getPath().getName(), FileStatus::getPath));
+                tableCache.put(key, tables);
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+        });
 
         LOGGER.info("Collected tables: {}", tableCache);
     }
 
+    /**
+     * Creates a predicate from a SQL LIKE pattern.
+     *
+     * @param pattern SQL LIKE pattern
+     * @return predicate
+     */
     private static java.util.function.Predicate<String> createLikePredicate(String pattern) {
         if (pattern == null || pattern.isEmpty() || pattern.equals("%")) {
             return s -> true;

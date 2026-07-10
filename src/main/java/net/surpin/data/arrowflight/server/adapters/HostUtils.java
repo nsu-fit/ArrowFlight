@@ -31,27 +31,38 @@ public final class HostUtils {
             return input;
         }
 
+        String cached = CACHE.get(input);
+        if (cached != null) {
+            return cached;
+        }
+
         // Short-circuit for known loopback addresses
         String hostOnly = input.contains("://") ? URI.create(input).getHost() : input;
         if (hostOnly != null && LOOPBACK_HOSTS.contains(hostOnly)) {
+            CACHE.put(input, "127.0.0.1");
             return "127.0.0.1";
         }
 
-        return CACHE.computeIfAbsent(input, key -> {
-            try {
-                String host = key;
+        String resolved;
+        try {
+            String host = input;
 
-                if (key.contains("://")) {
-                    URI uri = URI.create(key);
-                    if (uri.getHost() != null) {
-                        host = uri.getHost();
-                    }
+            if (input.contains("://")) {
+                URI uri = URI.create(input);
+                if (uri.getHost() != null) {
+                    host = uri.getHost();
                 }
-
-                return InetAddress.getByName(host).getHostAddress();
-            } catch (Exception e) {
-                return key;
             }
-        });
+
+            resolved = InetAddress.getByName(host).getHostAddress();
+        } catch (Exception e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            resolved = input;
+        }
+
+        CACHE.put(input, resolved);
+        return resolved;
     }
 }

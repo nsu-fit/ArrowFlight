@@ -56,7 +56,10 @@ public class FlightSource implements TableProvider, DataSourceRegister {
         return this.table.getSparkSchema();
     }
 
-    //extract all related options
+    /**
+     * Extract and validate connection options from the provided options map
+     * @param options - the case-insensitive options map
+     */
     private void probeOptions(CaseInsensitiveStringMap options) {
         //host & port
         String host = options.getOrDefault(FlightSource.HOST, "");

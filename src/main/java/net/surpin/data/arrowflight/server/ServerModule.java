@@ -58,6 +58,10 @@ public final class ServerModule {
         this.hadoopConfig = hadoopConfig;
     }
 
+    /**
+     * Provide AppConfig singleton
+     * @return application configuration
+     */
     @Provides
     @Singleton
     AppConfig config() {
@@ -67,18 +71,34 @@ public final class ServerModule {
         return ConfigAdapter.getConfig();
     }
 
+    /**
+     * Provide HazelcastAdapter singleton
+     * @param config application configuration
+     * @return Hazelcast adapter
+     */
     @Provides
     @Singleton
     HazelcastAdapter hazelcast(AppConfig config) {
         return new HazelcastAdapter(config, hazelcastHosts);
     }
 
+    /**
+     * Provide ClusterService singleton
+     * @param hazelcast Hazelcast adapter
+     * @param config application configuration
+     * @return cluster service
+     */
     @Provides
     @Singleton
     ClusterService cluster(HazelcastAdapter hazelcast, AppConfig config) {
         return new ClusterService(hazelcast, config, serverUri);
     }
 
+    /**
+     * Provide I/O thread pool singleton
+     * @param config application configuration
+     * @return executor service
+     */
     @Provides
     @Singleton
     ExecutorService ioPool(AppConfig config) {
@@ -89,6 +109,11 @@ public final class ServerModule {
         });
     }
 
+    /**
+     * Provide Hadoop FileSystem singleton
+     * @param config application configuration
+     * @return Hadoop file system
+     */
     @Provides
     @Singleton
     FileSystem fileSystem(AppConfig config) {
@@ -103,36 +128,69 @@ public final class ServerModule {
         }
     }
 
+    /**
+     * Provide ParquetAdapter singleton
+     * @param config application configuration
+     * @param fs Hadoop file system
+     * @return parquet adapter
+     */
     @Provides
     @Singleton
     ParquetAdapter parquetAdapter(AppConfig config, FileSystem fs) {
         return new ParquetAdapter(config, fs);
     }
 
+    /**
+     * Provide DuckDbAdapter singleton
+     * @param config application configuration
+     * @param ioPool I/O thread pool
+     * @return DuckDB adapter
+     */
     @Provides
     @Singleton
     DuckDbAdapter duckDb(AppConfig config, ExecutorService ioPool) {
         return new DuckDbAdapter(config, ioPool);
     }
 
+    /**
+     * Provide MetadataService singleton
+     * @param parquetAdapter parquet adapter
+     * @return metadata service
+     */
     @Provides
     @Singleton
     MetadataService metadata(ParquetAdapter parquetAdapter) {
         return new MetadataService(parquetAdapter);
     }
 
+    /**
+     * Provide QueryPlanner singleton
+     * @param parquetAdapter parquet adapter
+     * @param clusterService cluster service
+     * @return query planner
+     */
     @Provides
     @Singleton
     QueryPlanner queryPlanner(ParquetAdapter parquetAdapter, ClusterService clusterService) {
         return new QueryPlanner(parquetAdapter, clusterService);
     }
 
+    /**
+     * Provide AceroAdapter singleton
+     * @param config application configuration
+     * @return Acero adapter
+     */
     @Provides
     @Singleton
     AceroAdapter acero(AppConfig config) {
         return new AceroAdapter(config);
     }
 
+    /**
+     * Provide filter builder singleton
+     * @param parquetAdapter parquet adapter
+     * @return filter builder function
+     */
     @Provides
     @Singleton
     Function<ParquetQueryParser, byte[]> filterBuilder(ParquetAdapter parquetAdapter) {
@@ -159,12 +217,26 @@ public final class ServerModule {
         };
     }
 
+    /**
+     * Provide BufferAllocator singleton
+     * @return buffer allocator
+     */
     @Provides
     @Singleton
     BufferAllocator allocator() {
         return new RootAllocator(Long.MAX_VALUE);
     }
 
+    /**
+     * Provide FlightSqlProducer singleton
+     * @param config application configuration
+     * @param allocator buffer allocator
+     * @param metadataService metadata service
+     * @param queryPlanner query planner
+     * @param executionService execution service
+     * @param clusterService cluster service
+     * @return Flight SQL producer
+     */
     @Provides
     @Singleton
     FlightSqlProducer producer(AppConfig config, BufferAllocator allocator,
@@ -177,6 +249,17 @@ public final class ServerModule {
                 queryPlanner, executionService, clusterService);
     }
 
+    /**
+     * Provide ExecutionService singleton
+     * @param parquetAdapter parquet adapter
+     * @param duckDbAdapter DuckDB adapter
+     * @param aceroAdapter Acero adapter
+     * @param metadataService metadata service
+     * @param appConfig application configuration
+     * @param ioPool I/O thread pool
+     * @param filterBuilder filter builder function
+     * @return execution service
+     */
     @Provides
     @Singleton
     ExecutionService execution(ParquetAdapter parquetAdapter, DuckDbAdapter duckDbAdapter,

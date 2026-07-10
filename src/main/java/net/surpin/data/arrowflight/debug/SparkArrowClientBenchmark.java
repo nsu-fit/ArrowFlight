@@ -69,6 +69,11 @@ public class SparkArrowClientBenchmark {
 
     // ── entry point ───────────────────────────────────────────────────────────
 
+    /**
+     * Entry point. Runs local or cluster benchmark based on flags.
+     * @param args CLI arguments
+     * @throws Exception on failure
+     */
     public static void main(String[] args) throws Exception {
         System.setProperty(ALLOCATION_MANAGER_TYPE_PROPERTY_NAME,
                 DefaultAllocationManagerOption.AllocationManagerType.Netty.name());
@@ -90,6 +95,11 @@ public class SparkArrowClientBenchmark {
 
     // ── local benchmark ───────────────────────────────────────────────────────
 
+    /**
+     * Runs full benchmark: generate data, start server JVM, execute queries, print results.
+     * @param numRows number of rows to generate
+     * @throws Exception on failure
+     */
     private static void runLocalBenchmark(int numRows) throws Exception {
         Path dataDir = Files.createTempDirectory("arrow-perf-");
         Process serverProc = null;
@@ -263,6 +273,12 @@ public class SparkArrowClientBenchmark {
 
     // ── server-only mode (used as subprocess by runLocalBenchmark) ────────────
 
+    /**
+     * Starts a standalone Flight server (used as subprocess by runLocalBenchmark).
+     * @param dataDir path to Parquet data directory
+     * @param port server port
+     * @throws Exception on failure
+     */
     private static void runServerOnly(String dataDir, int port) throws Exception {
         LocalFileSystem fs = newLocalFs();
         BufferAllocator allocator = new RootAllocator(Long.MAX_VALUE);
@@ -323,6 +339,10 @@ public class SparkArrowClientBenchmark {
 
     // ── cluster benchmark (original behaviour) ────────────────────────────────
 
+    /**
+     * Runs benchmark against a remote Flight server.
+     * @param args CLI arguments containing --server and --port
+     */
     private static void runClusterBenchmark(String[] args) {
         String server = arg(args, "--server", "127.0.0.1");
         int    port   = Integer.parseInt(arg(args, "--port", "32010"));
@@ -370,6 +390,12 @@ public class SparkArrowClientBenchmark {
 
     // ── data generation ───────────────────────────────────────────────────────
 
+    /**
+     * Generates Parquet test data with various column types.
+     * @param spark SparkSession
+     * @param numRows number of rows to generate
+     * @param dataDir output directory
+     */
     private static void generateData(SparkSession spark, int numRows, Path dataDir) {
         Path tableDir = dataDir.resolve(SCHEMA + "/" + TABLE);
         spark.range(0, numRows, 1, 8)
@@ -392,6 +418,11 @@ public class SparkArrowClientBenchmark {
                 .parquet(tableDir.toAbsolutePath().toString());
     }
 
+    /**
+     * Prints total disk size of generated data.
+     * @param dataDir data directory
+     * @throws IOException on filesystem error
+     */
     private static void printDataSize(Path dataDir) throws IOException {
         long[] size = {0};
         Files.walkFileTree(dataDir, new SimpleFileVisitor<>() {
@@ -406,6 +437,14 @@ public class SparkArrowClientBenchmark {
 
     // ── timing helpers ────────────────────────────────────────────────────────
 
+    /**
+     * Times query execution via Arrow Flight SQL.
+     * @param sql FlightSqlClient
+     * @param client FlightClient
+     * @param query SQL query string
+     * @return elapsed time in milliseconds
+     * @throws Exception on failure
+     */
     private static long timeArrow(FlightSqlClient sql, FlightClient client, String query) throws Exception {
         long start = System.nanoTime();
         long resultRows = runArrow(sql, client, query);
@@ -414,6 +453,12 @@ public class SparkArrowClientBenchmark {
         return ms;
     }
 
+    /**
+     * Times query execution via clickhouse-local CLI.
+     * @param sql ClickHouse SQL query
+     * @return elapsed time in milliseconds
+     * @throws Exception on failure
+     */
     private static long timeClickHouseDirect(String sql) throws Exception {
         long start = System.nanoTime();
         Process proc = new ProcessBuilder("clickhouse", "local",
@@ -432,6 +477,12 @@ public class SparkArrowClientBenchmark {
         return ms;
     }
 
+    /**
+     * Times query execution via Spark SQL on Parquet.
+     * @param spark SparkSession
+     * @param query SQL query string
+     * @return elapsed time in milliseconds
+     */
     private static long timeSpark(SparkSession spark, String query) {
         long start = System.nanoTime();
         List<Row> rows = spark.sql(query).collectAsList();
@@ -457,6 +508,11 @@ public class SparkArrowClientBenchmark {
 
     // ── original cluster-mode helper ──────────────────────────────────────────
 
+    /**
+     * Times a Runnable task and returns formatted duration.
+     * @param task task to run
+     * @return formatted duration string
+     */
     private static String timeOf(Runnable task) {
         long start = System.nanoTime();
         task.run();
@@ -465,6 +521,11 @@ public class SparkArrowClientBenchmark {
 
     // ── formatting / infra ────────────────────────────────────────────────────
 
+    /**
+     * Formats milliseconds into human-readable duration string.
+     * @param ms duration in milliseconds
+     * @return formatted string (ms, s, or m s)
+     */
     private static String formatDuration(long ms) {
         if (ms < 1_000) {
             return ms + " ms";
@@ -477,18 +538,33 @@ public class SparkArrowClientBenchmark {
         return String.format("%d m %.2f s", min, sec);
     }
 
+    /**
+     * Creates a local Hadoop filesystem instance.
+     * @return LocalFileSystem
+     * @throws IOException on failure
+     */
     private static LocalFileSystem newLocalFs() throws IOException {
         LocalFileSystem fs = new LocalFileSystem();
         fs.initialize(URI.create("file:///"), new Configuration());
         return fs;
     }
 
+    /**
+     * Finds a free TCP port on localhost.
+     * @return available port number
+     * @throws IOException on socket error
+     */
     private static int freePort() throws IOException {
         try (ServerSocket s = new ServerSocket(0)) {
             return s.getLocalPort();
         }
     }
 
+    /**
+     * Recursively deletes a directory tree.
+     * @param dir directory to delete
+     * @throws IOException on filesystem error
+     */
     private static void deleteTree(Path dir) throws IOException {
         if (!Files.exists(dir)) {
             return;
@@ -503,6 +579,13 @@ public class SparkArrowClientBenchmark {
                 });
     }
 
+    /**
+     * Gets the value of a named CLI argument.
+     * @param args CLI arguments array
+     * @param key argument name (e.g. --port)
+     * @param def default value if not found
+     * @return argument value or default
+     */
     private static String arg(String[] args, String key, String def) {
         for (int i = 0; i < args.length - 1; i++) {
             if (args[i].equals(key)) {
@@ -512,6 +595,12 @@ public class SparkArrowClientBenchmark {
         return def;
     }
 
+    /**
+     * Checks if a boolean flag is present in CLI arguments.
+     * @param args CLI arguments array
+     * @param key flag name (e.g. --local)
+     * @return true if flag is present
+     */
     private static boolean flag(String[] args, String key) {
         for (String a : args) {
             if (a.equals(key)) {
@@ -521,6 +610,12 @@ public class SparkArrowClientBenchmark {
         return false;
     }
 
+    /**
+     * Checks if a key is present anywhere in CLI arguments.
+     * @param args CLI arguments array
+     * @param key key to search for
+     * @return true if key is found
+     */
     private static boolean has(String[] args, String key) {
         for (String a : args) {
             if (a.equals(key)) {
