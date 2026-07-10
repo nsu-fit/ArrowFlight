@@ -1,24 +1,22 @@
 <?xml version="1.0"?>
 <parameters>
   <type>POSTGRES</type>
-  <driver>org.postgresql.Driver</driver>
-  <url>jdbc:postgresql://postgres:5432/benchbase?sslmode=disable&amp;ApplicationName=tpch&amp;reWriteBatchedInserts=true</url>
-  <username>admin</username>
-  <password>password</password>
+  <driver>org.apache.hive.jdbc.HiveDriver</driver>
+  <url>jdbc:hive2://spark-thrift-server:10000/tpch</url>
+  <username>benchbase</username>
+  <password>benchbase</password>
   <reconnectOnConnectionFailure>true</reconnectOnConnectionFailure>
-  <isolation>TRANSACTION_SERIALIZABLE</isolation>
+  <isolation>TRANSACTION_NONE</isolation>
   <batchsize>1024</batchsize>
 
-  <!-- 0.1 is small and quick. Use 1 for about 1 GB TPC-H data. -->
-  <scalefactor>0.1</scalefactor>
-
+  <scalefactor>0.01</scalefactor>
   <terminals>1</terminals>
 
   <works>
     <work>
       <serial>true</serial>
       <rate>unlimited</rate>
-      <weights>1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1</weights>
+      <weights>5,5,5,5,5,5,5,5,5,5,5,5,4,4,4,4,4,4,4,4,4,4</weights>
     </work>
   </works>
 

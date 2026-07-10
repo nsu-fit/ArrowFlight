@@ -68,6 +68,23 @@ spark_submit_common() {
     "$@"
 }
 
+spark_common_conf=(
+  --master "${SPARK_MASTER_URL:-spark://spark-master:7077}"
+  --jars "${APP_JAR}"
+  --driver-java-options "${SPARK_DRIVER_EXTRA_JAVA_OPTIONS:-${DEFAULT_SPARK_JAVA_OPTIONS}}"
+  --conf "spark.executor.extraJavaOptions=${SPARK_EXECUTOR_EXTRA_JAVA_OPTIONS:-${DEFAULT_SPARK_JAVA_OPTIONS}}"
+  --conf "spark.driver.extraClassPath=${APP_JAR}"
+  --conf "spark.executor.extraClassPath=${APP_JAR}"
+  --conf "spark.driver.userClassPathFirst=true"
+  --conf "spark.executor.userClassPathFirst=true"
+  --conf "spark.driver.bindAddress=0.0.0.0"
+  --conf "spark.driver.host=${SPARK_DRIVER_HOST:-$(hostname -f)}"
+  --conf "spark.sql.shuffle.partitions=${SPARK_SHUFFLE_PARTITIONS:-8}"
+  --conf "spark.sql.catalogImplementation=hive"
+  --conf "spark.sql.warehouse.dir=${SPARK_WAREHOUSE_DIR:-/spark-warehouse}"
+  --conf "spark.hadoop.javax.jdo.option.ConnectionURL=jdbc:derby:;databaseName=${SPARK_METASTORE_DB:-/spark-warehouse/metastore_db};create=true"
+)
+
 case "${mode}" in
   server)
     java_opts=("${DEFAULT_SERVER_JAVA_OPTS[@]}")
@@ -101,11 +118,18 @@ case "${mode}" in
       "${SPARK_MASTER_URL:-spark://spark-master:7077}" \
       "$@"
     ;;
-  generate)
-    spark_submit_common "${APP_HOME}/spark/generate_and_distribute.py" "$@"
+  publish-benchmark-data)
+    spark_submit_common "${APP_HOME}/spark/publish_benchbase_tables.py" "$@"
     ;;
-  flight-count)
-    spark_submit_common "${APP_HOME}/spark/query_flight.py" "$@"
+  spark-thrift-server)
+    wait_for_tcp "${SPARK_MASTER_HOST:-spark-master}" "${SPARK_MASTER_PORT:-7077}" 120
+    exec "${SPARK_HOME}/bin/spark-submit" \
+      "${spark_common_conf[@]}" \
+      --class org.apache.spark.sql.hive.thriftserver.HiveThriftServer2 \
+      "${SPARK_HOME}/jars/spark-hive-thriftserver_2.12-3.5.1.jar" \
+      --hiveconf "hive.server2.thrift.bind.host=${SPARK_THRIFT_BIND_HOST:-0.0.0.0}" \
+      --hiveconf "hive.server2.thrift.port=${SPARK_THRIFT_PORT:-10000}" \
+      "$@"
     ;;
   *)
     exec "${mode}" "$@"

@@ -7,7 +7,7 @@ x-arrowflight-image: &arrowflight-image
 x-server-env: &server-env
   FLIGHT_DATA_DIR: /data/parquet
   FLIGHT_PORT: "32010"
-  FLIGHT_HOSTS: flight-server-1,flight-server-2,flight-server-3
+  FLIGHT_HOSTS: "${FLIGHT_HOSTS:-flight-server-1,flight-server-2,flight-server-3}"
   HAZELCAST_PORT: "5701"
   JAVA_OPTS: -Xmx2g
 
@@ -47,27 +47,67 @@ services:
     ports:
       - "8082:8082"
 
-  data-generator:
+  spark-benchmark-publisher:
     <<: *arrowflight-image
-    command: ["generate"]
+    profiles: ["benchbase"]
+    command: ["publish-benchmark-data"]
     environment:
       SPARK_MASTER_URL: spark://spark-master:7077
-      SPARK_DRIVER_HOST: data-generator
-      TEST_ROWS: "${TEST_ROWS:-1000000}"
+      SPARK_DRIVER_HOST: spark-benchmark-publisher
+      BENCHMARK_DATASET: "${BENCHMARK_DATASET:-tpch}"
+      BENCHMARK_LOAD_SCHEMA: "${BENCHMARK_LOAD_SCHEMA:-default}"
+      BENCHMARK_SCHEMA: "${BENCHMARK_SCHEMA:-tpch}"
+      PUBLISH_ACTION: "${PUBLISH_ACTION:-all}"
+      FLIGHT_SOURCE_HOST: "${FLIGHT_SOURCE_HOST:-flight-server-1}"
+      FLIGHT_SOURCE_PORT: "${FLIGHT_SOURCE_PORT:-32010}"
+      FLIGHT_SERVER_DATA_DIRS: "${FLIGHT_SERVER_DATA_DIRS:-/server-data/flight-server-1,/server-data/flight-server-2,/server-data/flight-server-3}"
       TEST_PARTITIONS: "${TEST_PARTITIONS:-24}"
-      TEST_SCHEMA: "${TEST_SCHEMA:-test_schema}"
-      TEST_TABLE: "${TEST_TABLE:-test_table}"
-      FLIGHT_SERVER_DATA_DIRS: /server-data/flight-server-1,/server-data/flight-server-2,/server-data/flight-server-3
-    depends_on:
-      - spark-master
-      - spark-worker-1
-      - spark-worker-2
+      SPARK_WAREHOUSE_DIR: /spark-warehouse
+      SPARK_METASTORE_DB: /spark-warehouse/metastore_db
     volumes:
       - generated-data:/generated
       - flight-server-1-data:/server-data/flight-server-1
       - flight-server-2-data:/server-data/flight-server-2
       - flight-server-3-data:/server-data/flight-server-3
+      - spark-warehouse:/spark-warehouse
     restart: "no"
+
+  spark-thrift-server:
+    <<: *arrowflight-image
+    profiles: ["benchbase"]
+    command: ["spark-thrift-server"]
+    environment:
+      SPARK_MASTER_URL: spark://spark-master:7077
+      SPARK_DRIVER_HOST: spark-thrift-server
+      SPARK_THRIFT_BIND_HOST: 0.0.0.0
+      SPARK_THRIFT_PORT: "10000"
+      SPARK_WAREHOUSE_DIR: /spark-warehouse
+      SPARK_METASTORE_DB: /spark-warehouse/metastore_db
+    ports:
+      - "10000:10000"
+      - "4040:4040"
+    volumes:
+      - spark-warehouse:/spark-warehouse
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/10000'"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+
+  benchbase-spark:
+    build:
+      context: ./benchmarks/benchbase-spark
+      args:
+        BENCHBASE_IMAGE: "${BENCHBASE_IMAGE:-benchbase.azurecr.io/benchbase:latest}"
+    profiles: ["benchbase"]
+    environment:
+      BENCHBASE_PROFILE: postgres
+    depends_on:
+      spark-thrift-server:
+        condition: service_healthy
+    volumes:
+      - ./benchmarks/benchbase-spark/config:/benchbase/config/custom:ro
+      - ./benchmarks/benchbase-spark/results:/benchbase/results
 
   flight-server-1:
     <<: *arrowflight-image
@@ -75,9 +115,6 @@ services:
     environment:
       <<: *server-env
       FLIGHT_LOCALHOST: flight-server-1
-    depends_on:
-      data-generator:
-        condition: service_completed_successfully
     volumes:
       - flight-server-1-data:/data/parquet
     ports:
@@ -94,9 +131,6 @@ services:
     environment:
       <<: *server-env
       FLIGHT_LOCALHOST: flight-server-2
-    depends_on:
-      data-generator:
-        condition: service_completed_successfully
     volumes:
       - flight-server-2-data:/data/parquet
     ports:
@@ -113,9 +147,6 @@ services:
     environment:
       <<: *server-env
       FLIGHT_LOCALHOST: flight-server-3
-    depends_on:
-      data-generator:
-        condition: service_completed_successfully
     volumes:
       - flight-server-3-data:/data/parquet
     ports:
@@ -126,25 +157,9 @@ services:
       timeout: 3s
       retries: 60
 
-  spark-client:
-    <<: *arrowflight-image
-    profiles: ["test"]
-    command: ["flight-count"]
-    environment:
-      SPARK_MASTER_URL: spark://spark-master:7077
-      FLIGHT_SERVERS: "${FLIGHT_SERVERS:-flight-server-1:32010,flight-server-2:32010,flight-server-3:32010}"
-      FLIGHT_TABLE: "${TEST_SCHEMA:-test_schema}.${TEST_TABLE:-test_table}"
-      FLIGHT_QUERY: "${FLIGHT_QUERY:-SELECT count(*) AS rows FROM flight_table}"
-    depends_on:
-      flight-server-1:
-        condition: service_healthy
-      flight-server-2:
-        condition: service_healthy
-      flight-server-3:
-        condition: service_healthy
-
 volumes:
   generated-data:
   flight-server-1-data:
   flight-server-2-data:
   flight-server-3-data:
+  spark-warehouse:

@@ -16,21 +16,9 @@ TIME = "Time (seconds)"
 def parse_args():
     script_dir = Path(__file__).resolve().parent
     parser = argparse.ArgumentParser(description="Build HTML report for BenchBase CSV results.")
-    parser.add_argument(
-        "--results",
-        type=Path,
-        default=script_dir / "results",
-        help="BenchBase results directory.",
-    )
-    parser.add_argument(
-        "--base",
-        help="Result prefix, for example tpch_2026-07-09_07-49-48. Defaults to latest summary.",
-    )
-    parser.add_argument(
-        "--out",
-        type=Path,
-        help="Output HTML path. Defaults to <base>.report.html in results directory.",
-    )
+    parser.add_argument("--results", type=Path, default=script_dir / "results")
+    parser.add_argument("--base", help="Result prefix, for example tpch_2026-07-09_07-49-48.")
+    parser.add_argument("--out", type=Path)
     return parser.parse_args()
 
 
@@ -121,9 +109,7 @@ def svg_line_chart(rows, columns, title, unit):
         color = colors[idx % len(colors)]
         points = " ".join(f"{sx(x):.1f},{sy(y):.1f}" for x, y in points_by_column[column])
         lines.append(f'<polyline points="{points}" fill="none" stroke="{color}" stroke-width="3"/>')
-        legends.append(
-            f'<span><i style="background:{color}"></i>{html.escape(column)} ({unit})</span>'
-        )
+        legends.append(f'<span><i style="background:{color}"></i>{html.escape(column)} ({unit})</span>')
 
     y_labels = []
     for step in range(5):
@@ -180,6 +166,7 @@ def per_query_rows(results_dir, base):
 def query_table(rows):
     if not rows:
         return "<section><h2>Per Query</h2><p>No per-query CSV files.</p></section>"
+
     body = []
     for row in rows:
         active = number(row["throughput"]) > 0 or number(row["avg"]) > 0
@@ -195,6 +182,7 @@ def query_table(rows):
                 fmt(row["max"]),
             )
         )
+
     return f"""
 <section>
   <h2>Per Query</h2>
@@ -221,10 +209,8 @@ def summary_block(summary):
 
 
 def build_report(results_dir, base, output):
-    results_csv = results_dir / f"{base}.results.csv"
-    summary_json = results_dir / f"{base}.summary.json"
-    rows = read_csv(results_csv)
-    summary = read_json(summary_json)
+    rows = read_csv(results_dir / f"{base}.results.csv")
+    summary = read_json(results_dir / f"{base}.summary.json")
     query_rows = per_query_rows(results_dir, base)
 
     html_text = f"""<!doctype html>
@@ -232,7 +218,7 @@ def build_report(results_dir, base, output):
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>BenchBase Report - {html.escape(base)}</title>
+  <title>BenchBase Spark Report - {html.escape(base)}</title>
   <style>
     body {{ margin: 0; font: 14px/1.45 system-ui, -apple-system, Segoe UI, sans-serif; background: #f8fafc; color: #111827; }}
     main {{ max-width: 1100px; margin: 0 auto; padding: 28px; }}
@@ -257,7 +243,7 @@ def build_report(results_dir, base, output):
 </head>
 <body>
 <main>
-  <h1>BenchBase Report</h1>
+  <h1>BenchBase Spark Report</h1>
   <p>{html.escape(base)}</p>
   <div class="cards">
     <div class="card"><div class="label">Throughput</div><div class="value">{metric_from_last(rows, THROUGHPUT)} req/s</div></div>

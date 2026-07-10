@@ -31,8 +31,8 @@ spotbugsXml.xml
 *.pid
 hs_err_pid*
 replay_pid*
-benchbase/results/
-benchbase/config/postgres/.tpch-*.xml
+benchmarks/benchbase-spark/results/
+benchmarks/benchbase-spark/config/.*.xml
 
 # Local environment/configuration
 .env
