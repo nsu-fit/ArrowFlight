@@ -358,14 +358,6 @@
     </build>
 
     <profiles>
-        <!-- Fast non-integration tests (default). -->
-        <profile>
-            <id>unit</id>
-            <activation>
-                <activeByDefault>true</activeByDefault>
-            </activation>
-        </profile>
-
         <!-- Minimal end-to-end smoke tests. -->
         <profile>
             <id>smoke</id>
