@@ -20,8 +20,9 @@
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <!-- Override with -DexcludedGroups="" to include integration tests -->
-        <excludedGroups>integration</excludedGroups>
+        <!-- Exclude integration and perf tests by default. -->
+        <excludedGroups>integration,perf</excludedGroups>
+        <groups />
         <hadoop.version>3.3.6</hadoop.version>
         <arrow.version>18.0.0</arrow.version>
         <guava.version>32.1.3-jre</guava.version>
@@ -274,6 +275,8 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.0.0</version>
                 <configuration>
+                    <groups>${groups}</groups>
+                    <excludedGroups>${excludedGroups}</excludedGroups>
                     <argLine>
                         @{argLine}
                         -ea
@@ -283,7 +286,6 @@
                         --add-opens=java.base/java.util=ALL-UNNAMED
                         --add-opens=java.security.jgss/sun.security.krb5=ALL-UNNAMED
                     </argLine>
-                    <excludedGroups>${excludedGroups}</excludedGroups>
                 </configuration>
             </plugin>
             <plugin>
@@ -356,6 +358,34 @@
     </build>
 
     <profiles>
+        <!-- Minimal end-to-end smoke tests. -->
+        <profile>
+            <id>smoke</id>
+            <properties>
+                <groups>smoke</groups>
+                <excludedGroups />
+            </properties>
+        </profile>
+
+        <!-- Full local integration tests (excludes perf). -->
+        <profile>
+            <id>integration</id>
+            <properties>
+                <groups>integration</groups>
+                <excludedGroups>perf</excludedGroups>
+            </properties>
+        </profile>
+
+        <!-- Performance benchmarks. -->
+        <profile>
+            <id>perf</id>
+            <properties>
+                <groups>perf</groups>
+                <excludedGroups />
+            </properties>
+        </profile>
+
+        <!-- Compile server sources only. -->
         <profile>
             <id>server</id>
             <build>
@@ -372,6 +402,8 @@
                 </plugins>
             </build>
         </profile>
+
+        <!-- Compile client sources only. -->
         <profile>
             <id>client</id>
             <build>

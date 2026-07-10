@@ -32,6 +32,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * Smoke test for the Spark DataSource V2 "flight" connector.
  */
 @Tag("integration")
+@Tag("smoke")
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class SparkFlightSmokeTest {
 
