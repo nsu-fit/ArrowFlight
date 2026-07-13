@@ -132,6 +132,7 @@ services:
     profiles: ["benchbase"]
     environment:
       BENCHBASE_PROFILE: postgres
+      BENCHBASE_QUERY_TIMEOUT_SECONDS: "${BENCHBASE_QUERY_TIMEOUT_SECONDS:-120}"
     depends_on:
       spark-thrift-server:
         condition: service_healthy

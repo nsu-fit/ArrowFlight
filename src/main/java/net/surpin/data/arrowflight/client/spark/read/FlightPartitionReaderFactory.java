@@ -1,21 +1,12 @@
 package net.surpin.data.arrowflight.client.spark.read;
 
 import net.surpin.data.arrowflight.client.Configuration;
-import org.apache.arrow.vector.types.DateUnit;
-import org.apache.arrow.vector.types.FloatingPointPrecision;
-import org.apache.arrow.vector.types.TimeUnit;
-import org.apache.arrow.vector.types.pojo.ArrowType;
-import org.apache.arrow.vector.types.pojo.Field;
-import org.apache.arrow.vector.types.pojo.Schema;
 import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.connector.read.InputPartition;
 import org.apache.spark.sql.connector.read.PartitionReader;
 import org.apache.spark.sql.connector.read.PartitionReaderFactory;
-import org.apache.spark.sql.vectorized.ColumnarBatch;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.io.IOException;
 
 /**
  * The flight partition-reader factory for creating flight partition-readers
@@ -43,61 +34,4 @@ public class FlightPartitionReaderFactory implements PartitionReaderFactory {
         return new FlightPartitionReader(this.configuration, inputPartition);
     }
 
-    @Override
-    public boolean supportColumnarReads(InputPartition inputPartition) {
-        if (!(inputPartition instanceof FlightInputPartition flightPartition)) {
-            return false;
-        }
-        try {
-            Schema schema = flightPartition.getSchema();
-            return schema.getFields().stream().allMatch(FlightPartitionReaderFactory::isColumnarType);
-        } catch (IOException e) {
-            LOGGER.warn("Cannot inspect Flight partition schema for columnar read: {}", e.getMessage());
-            return false;
-        }
-    }
-
-    @Override
-    public PartitionReader<ColumnarBatch> createColumnarReader(InputPartition inputPartition) {
-        LOGGER.info("{}.createColumnarReader()", this.getClass().getName());
-        return new FlightColumnarPartitionReader(this.configuration, inputPartition);
-    }
-
-    private static boolean isColumnarType(Field field) {
-        if (field.getDictionary() != null) {
-            return false;
-        }
-        ArrowType type = field.getType();
-        return switch (type.getTypeID()) {
-            case Bool, Utf8, LargeUtf8, Binary, LargeBinary, Null -> true;
-            case FloatingPoint -> {
-                FloatingPointPrecision precision = ((ArrowType.FloatingPoint) type).getPrecision();
-                yield precision == FloatingPointPrecision.SINGLE
-                        || precision == FloatingPointPrecision.DOUBLE;
-            }
-            case Int -> {
-                ArrowType.Int integer = (ArrowType.Int) type;
-                int bitWidth = integer.getBitWidth();
-                yield integer.getIsSigned()
-                        && (bitWidth == 8 || bitWidth == 16 || bitWidth == 32 || bitWidth == 64);
-            }
-            case Decimal -> {
-                ArrowType.Decimal decimal = (ArrowType.Decimal) type;
-                int precision = decimal.getPrecision();
-                int scale = decimal.getScale();
-                yield decimal.getBitWidth() == 128
-                        && precision >= 1 && precision <= 38
-                        && scale >= 0 && scale <= precision;
-            }
-            case Date -> ((ArrowType.Date) type).getUnit() == DateUnit.DAY;
-            case Timestamp -> {
-                ArrowType.Timestamp timestamp = (ArrowType.Timestamp) type;
-                // FieldType currently maps timestamps to Spark TimestampType, while
-                // Arrow timestamps without a zone map to TimestampNTZType.
-                yield timestamp.getUnit() == TimeUnit.MICROSECOND
-                        && timestamp.getTimezone() != null;
-            }
-            default -> false;
-        };
-    }
 }

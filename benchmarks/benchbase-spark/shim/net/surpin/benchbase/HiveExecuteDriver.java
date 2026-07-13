@@ -16,6 +16,7 @@ import java.util.logging.Logger;
 
 public final class HiveExecuteDriver implements Driver {
     private static final String URL_PREFIX = "jdbc:hiveexec:";
+    private static final int QUERY_TIMEOUT_SECONDS = queryTimeoutSeconds();
     private final Driver delegate = new org.apache.hive.jdbc.HiveDriver();
 
     static {
@@ -114,12 +115,18 @@ public final class HiveExecuteDriver implements Driver {
                 case "isWrapperFor":
                     return isWrapperFor(args);
                 case "createStatement":
-                    return wrapStatement((Statement) invokeDelegate(method, args));
+                    Statement statement = (Statement) invokeDelegate(method, args);
+                    configureStatement(statement);
+                    return wrapStatement(statement);
                 default:
                     break;
             }
 
-            return invokeDelegate(method, SqlRewrite.rewriteSqlArgumentIfNeeded(name, args));
+            Object result = invokeDelegate(method, SqlRewrite.rewriteSqlArgumentIfNeeded(name, args));
+            if (result instanceof Statement) {
+                configureStatement((Statement) result);
+            }
+            return result;
         }
 
         private Object invokeDelegate(Method method, Object[] args) throws Throwable {
@@ -141,6 +148,30 @@ public final class HiveExecuteDriver implements Driver {
         private Object isWrapperFor(Object[] args) throws SQLException {
             Class<?> target = (Class<?>) args[0];
             return target.isInstance(delegate) || delegate.isWrapperFor(target);
+        }
+    }
+
+    private static void configureStatement(Statement statement) throws SQLException {
+        if (QUERY_TIMEOUT_SECONDS > 0) {
+            statement.setQueryTimeout(QUERY_TIMEOUT_SECONDS);
+        }
+    }
+
+    private static int queryTimeoutSeconds() {
+        String configured = System.getenv("BENCHBASE_QUERY_TIMEOUT_SECONDS");
+        if (configured == null || configured.trim().isEmpty()) {
+            return 120;
+        }
+        try {
+            int timeout = Integer.parseInt(configured.trim());
+            if (timeout < 0) {
+                throw new IllegalArgumentException(
+                        "BENCHBASE_QUERY_TIMEOUT_SECONDS must be >= 0: " + configured);
+            }
+            return timeout;
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(
+                    "BENCHBASE_QUERY_TIMEOUT_SECONDS must be an integer: " + configured, e);
         }
     }
 
