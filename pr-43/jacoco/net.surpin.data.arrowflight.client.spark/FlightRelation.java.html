@@ -1,0 +1,238 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>FlightRelation.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Hadoop Arrow Flight SQL Server</a> &gt; <a href="index.source.html" class="el_package">net.surpin.data.arrowflight.client.spark</a> &gt; <span class="el_source">FlightRelation.java</span></div><h1>FlightRelation.java</h1><pre class="source lang-java linenums">package net.surpin.data.arrowflight.client.spark;
+
+import net.surpin.data.arrowflight.client.Configuration;
+import net.surpin.data.arrowflight.client.model.Table;
+import net.surpin.data.arrowflight.client.spark.read.FlightBatch;
+import net.surpin.data.arrowflight.client.spark.read.FlightPartitionReader;
+import org.apache.spark.api.java.JavaRDD;
+import org.apache.spark.api.java.JavaSparkContext;
+import org.apache.spark.rdd.RDD;
+import org.apache.spark.sql.Row;
+import org.apache.spark.sql.RowFactory;
+import org.apache.spark.sql.SQLContext;
+import org.apache.spark.sql.catalyst.InternalRow;
+import org.apache.spark.sql.catalyst.expressions.GenericInternalRow;
+import org.apache.spark.sql.connector.read.InputPartition;
+import org.apache.spark.sql.sources.BaseRelation;
+import org.apache.spark.sql.sources.TableScan;
+import org.apache.spark.sql.types.DataType;
+import org.apache.spark.sql.types.DataTypes;
+import org.apache.spark.sql.types.Decimal;
+import org.apache.spark.sql.types.DecimalType;
+import org.apache.spark.sql.types.StructField;
+import org.apache.spark.sql.types.StructType;
+import org.apache.spark.unsafe.types.UTF8String;
+
+import java.io.IOException;
+import java.math.BigDecimal;
+import java.sql.Date;
+import java.sql.Timestamp;
+import java.time.LocalDate;
+import java.util.Arrays;
+import java.util.Iterator;
+import java.util.NoSuchElementException;
+
+/**
+ * Spark DataSource V1 bridge used by Spark Thrift Server for persisted Hive tables.
+ */
+public final class FlightRelation extends BaseRelation implements TableScan {
+    private final SQLContext sqlContext;
+    private final Configuration configuration;
+    private final Table table;
+    private final StructType schema;
+
+<span class="nc" id="L44">    public FlightRelation(SQLContext sqlContext, Configuration configuration, Table table) {</span>
+<span class="nc" id="L45">        this.sqlContext = sqlContext;</span>
+<span class="nc" id="L46">        this.configuration = configuration;</span>
+<span class="nc" id="L47">        this.table = table;</span>
+<span class="nc" id="L48">        this.schema = table.getSparkSchema();</span>
+<span class="nc" id="L49">    }</span>
+
+    @Override
+    public SQLContext sqlContext() {
+<span class="nc" id="L53">        return this.sqlContext;</span>
+    }
+
+    @Override
+    public StructType schema() {
+<span class="nc" id="L58">        return this.schema;</span>
+    }
+
+    @Override
+    public RDD&lt;Row&gt; buildScan() {
+<span class="nc" id="L63">        InputPartition[] partitions = new FlightBatch(this.configuration, this.table).planInputPartitions();</span>
+<span class="nc" id="L64">        JavaSparkContext sparkContext = JavaSparkContext.fromSparkContext(this.sqlContext.sparkContext());</span>
+<span class="nc bnc" id="L65" title="All 2 branches missed.">        if (partitions.length == 0) {</span>
+<span class="nc" id="L66">            JavaRDD&lt;Row&gt; empty = sparkContext.emptyRDD();</span>
+<span class="nc" id="L67">            return empty.rdd();</span>
+        }
+
+<span class="nc" id="L70">        Configuration scanConfiguration = this.configuration;</span>
+<span class="nc" id="L71">        StructType scanSchema = this.schema;</span>
+<span class="nc" id="L72">        JavaRDD&lt;InputPartition&gt; partitionRdd = sparkContext.parallelize(Arrays.asList(partitions), partitions.length);</span>
+<span class="nc" id="L73">        JavaRDD&lt;Row&gt; rows = partitionRdd.mapPartitions(partitionIterator -&gt;</span>
+<span class="nc" id="L74">                new FlightRowIterator(scanConfiguration, scanSchema, partitionIterator));</span>
+<span class="nc" id="L75">        return rows.rdd();</span>
+    }
+
+    private static final class FlightRowIterator implements Iterator&lt;Row&gt; {
+        private final Configuration configuration;
+        private final StructType schema;
+        private final Iterator&lt;InputPartition&gt; partitions;
+
+        private FlightPartitionReader reader;
+        private Row nextRow;
+        private boolean loaded;
+
+<span class="nc" id="L87">        private FlightRowIterator(Configuration configuration, StructType schema, Iterator&lt;InputPartition&gt; partitions) {</span>
+<span class="nc" id="L88">            this.configuration = configuration;</span>
+<span class="nc" id="L89">            this.schema = schema;</span>
+<span class="nc" id="L90">            this.partitions = partitions;</span>
+<span class="nc" id="L91">        }</span>
+
+        @Override
+        public boolean hasNext() {
+<span class="nc bnc" id="L95" title="All 2 branches missed.">            if (!this.loaded) {</span>
+<span class="nc" id="L96">                this.advance();</span>
+            }
+<span class="nc bnc" id="L98" title="All 2 branches missed.">            return this.nextRow != null;</span>
+        }
+
+        @Override
+        public Row next() {
+<span class="nc bnc" id="L103" title="All 2 branches missed.">            if (!this.hasNext()) {</span>
+<span class="nc" id="L104">                throw new NoSuchElementException();</span>
+            }
+<span class="nc" id="L106">            Row current = this.nextRow;</span>
+<span class="nc" id="L107">            this.nextRow = null;</span>
+<span class="nc" id="L108">            this.loaded = false;</span>
+<span class="nc" id="L109">            return current;</span>
+        }
+
+        private void advance() {
+<span class="nc" id="L113">            this.loaded = true;</span>
+<span class="nc" id="L114">            this.nextRow = null;</span>
+
+            while (true) {
+                try {
+<span class="nc bnc" id="L118" title="All 4 branches missed.">                    if (this.reader != null &amp;&amp; this.reader.next()) {</span>
+<span class="nc" id="L119">                        this.nextRow = toExternalRow(this.reader.get(), this.schema);</span>
+<span class="nc" id="L120">                        return;</span>
+                    }
+<span class="nc" id="L122">                    this.closeReader();</span>
+<span class="nc bnc" id="L123" title="All 2 branches missed.">                    if (!this.partitions.hasNext()) {</span>
+<span class="nc" id="L124">                        return;</span>
+                    }
+<span class="nc" id="L126">                    this.reader = new FlightPartitionReader(this.configuration, this.partitions.next());</span>
+<span class="nc" id="L127">                } catch (IOException e) {</span>
+<span class="nc" id="L128">                    this.closeReader();</span>
+<span class="nc" id="L129">                    throw new RuntimeException(&quot;Failed to read Flight partition&quot;, e);</span>
+<span class="nc" id="L130">                }</span>
+            }
+        }
+
+        private void closeReader() {
+<span class="nc bnc" id="L135" title="All 2 branches missed.">            if (this.reader != null) {</span>
+                try {
+<span class="nc" id="L137">                    this.reader.close();</span>
+                } finally {
+<span class="nc" id="L139">                    this.reader = null;</span>
+                }
+            }
+<span class="nc" id="L142">        }</span>
+    }
+
+    private static Row toExternalRow(InternalRow internalRow, StructType schema) {
+<span class="nc" id="L146">        StructField[] fields = schema.fields();</span>
+<span class="nc" id="L147">        Object[] values = new Object[fields.length];</span>
+<span class="nc bnc" id="L148" title="All 2 branches missed.">        for (int i = 0; i &lt; fields.length; i++) {</span>
+<span class="nc" id="L149">            values[i] = toExternalValue(rawValue(internalRow, i, fields[i].dataType()), fields[i].dataType());</span>
+        }
+<span class="nc" id="L151">        return RowFactory.create(values);</span>
+    }
+
+    private static Object rawValue(InternalRow row, int ordinal, DataType dataType) {
+<span class="nc bnc" id="L155" title="All 2 branches missed.">        if (row.isNullAt(ordinal)) {</span>
+<span class="nc" id="L156">            return null;</span>
+        }
+<span class="nc bnc" id="L158" title="All 2 branches missed.">        if (row instanceof GenericInternalRow genericRow) {</span>
+<span class="nc" id="L159">            return genericRow.genericGet(ordinal);</span>
+        }
+<span class="nc" id="L161">        return row.get(ordinal, dataType);</span>
+    }
+
+    private static Object toExternalValue(Object raw, DataType dataType) {
+<span class="nc bnc" id="L165" title="All 2 branches missed.">        if (raw == null) {</span>
+<span class="nc" id="L166">            return null;</span>
+        }
+<span class="nc bnc" id="L168" title="All 2 branches missed.">        if (dataType instanceof DecimalType) {</span>
+<span class="nc" id="L169">            return toBigDecimal(raw);</span>
+        }
+<span class="nc bnc" id="L171" title="All 4 branches missed.">        if (DataTypes.StringType.equals(dataType) &amp;&amp; raw instanceof UTF8String utf8) {</span>
+<span class="nc" id="L172">            return utf8.toString();</span>
+        }
+<span class="nc bnc" id="L174" title="All 2 branches missed.">        if (DataTypes.DateType.equals(dataType)) {</span>
+<span class="nc" id="L175">            return toDate(raw);</span>
+        }
+<span class="nc bnc" id="L177" title="All 4 branches missed.">        if (DataTypes.TimestampType.equals(dataType) || DataTypes.TimestampNTZType.equals(dataType)) {</span>
+<span class="nc" id="L178">            return toTimestamp(raw);</span>
+        }
+<span class="nc bnc" id="L180" title="All 2 branches missed.">        if (raw instanceof Decimal decimal) {</span>
+<span class="nc" id="L181">            return decimal.toJavaBigDecimal();</span>
+        }
+<span class="nc bnc" id="L183" title="All 2 branches missed.">        if (raw instanceof UTF8String utf8) {</span>
+<span class="nc" id="L184">            return utf8.toString();</span>
+        }
+<span class="nc" id="L186">        return raw;</span>
+    }
+
+    private static BigDecimal toBigDecimal(Object raw) {
+<span class="nc bnc" id="L190" title="All 2 branches missed.">        if (raw instanceof BigDecimal decimal) {</span>
+<span class="nc" id="L191">            return decimal;</span>
+        }
+<span class="nc bnc" id="L193" title="All 2 branches missed.">        if (raw instanceof Decimal decimal) {</span>
+<span class="nc" id="L194">            return decimal.toJavaBigDecimal();</span>
+        }
+<span class="nc bnc" id="L196" title="All 2 branches missed.">        if (raw instanceof scala.math.BigDecimal decimal) {</span>
+<span class="nc" id="L197">            return decimal.bigDecimal();</span>
+        }
+<span class="nc" id="L199">        return new BigDecimal(raw.toString());</span>
+    }
+
+    private static Date toDate(Object raw) {
+<span class="nc bnc" id="L203" title="All 2 branches missed.">        if (raw instanceof Date date) {</span>
+<span class="nc" id="L204">            return date;</span>
+        }
+<span class="nc bnc" id="L206" title="All 2 branches missed.">        if (raw instanceof LocalDate date) {</span>
+<span class="nc" id="L207">            return Date.valueOf(date);</span>
+        }
+<span class="nc bnc" id="L209" title="All 2 branches missed.">        if (raw instanceof Integer days) {</span>
+<span class="nc" id="L210">            return Date.valueOf(LocalDate.ofEpochDay(days));</span>
+        }
+<span class="nc bnc" id="L212" title="All 2 branches missed.">        if (raw instanceof Long millis) {</span>
+<span class="nc" id="L213">            return new Date(millis);</span>
+        }
+<span class="nc" id="L215">        return Date.valueOf(raw.toString());</span>
+    }
+
+    private static Timestamp toTimestamp(Object raw) {
+<span class="nc bnc" id="L219" title="All 2 branches missed.">        if (raw instanceof Timestamp timestamp) {</span>
+<span class="nc" id="L220">            return timestamp;</span>
+        }
+<span class="nc bnc" id="L222" title="All 2 branches missed.">        if (raw instanceof Number number) {</span>
+<span class="nc" id="L223">            long value = number.longValue();</span>
+<span class="nc" id="L224">            long abs = Math.abs(value);</span>
+            long millis;
+<span class="nc bnc" id="L226" title="All 2 branches missed.">            if (abs &gt; 100_000_000_000_000L) {</span>
+<span class="nc" id="L227">                millis = value / 1_000L;</span>
+<span class="nc bnc" id="L228" title="All 2 branches missed.">            } else if (abs &gt; 100_000_000_000L) {</span>
+<span class="nc" id="L229">                millis = value;</span>
+            } else {
+<span class="nc" id="L231">                millis = value * 1_000L;</span>
+            }
+<span class="nc" id="L233">            return new Timestamp(millis);</span>
+        }
+<span class="nc" id="L235">        return Timestamp.valueOf(raw.toString());</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

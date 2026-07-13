@@ -1,0 +1,256 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>QueryPlanner.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Hadoop Arrow Flight SQL Server</a> &gt; <a href="index.source.html" class="el_package">net.surpin.data.arrowflight.server.services</a> &gt; <span class="el_source">QueryPlanner.java</span></div><h1>QueryPlanner.java</h1><pre class="source lang-java linenums">package net.surpin.data.arrowflight.server.services;
+
+import org.apache.arrow.flight.FlightEndpoint;
+import org.apache.arrow.flight.Location;
+import org.apache.arrow.flight.Ticket;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.google.protobuf.Any;
+import com.google.protobuf.ByteString;
+import org.apache.arrow.flight.sql.impl.FlightSql;
+
+import java.io.IOException;
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
+
+import net.surpin.data.arrowflight.server.adapters.HostUtils;
+import net.surpin.data.arrowflight.server.adapters.ParquetAdapter;
+import net.surpin.data.arrowflight.server.services.ParquetQueryParser;
+import net.surpin.data.arrowflight.server.model.FileAssignment;
+import net.surpin.data.arrowflight.server.model.HandleState;
+
+import static java.util.UUID.randomUUID;
+
+/**
+ * Plans query execution across cluster nodes.
+ * Determines file locations, assigns files to servers based on data locality and load,
+ * and creates Flight endpoints for distributed execution.
+ */
+public final class QueryPlanner {
+
+<span class="fc" id="L41">    private static final Logger LOGGER = LoggerFactory.getLogger(QueryPlanner.class);</span>
+
+    private final ParquetAdapter parquetAdapter;
+    private final ClusterService clusterService;
+
+    /**
+     * Creates QueryPlanner.
+     *
+     * @param parquetAdapter Parquet metadata adapter
+     * @param clusterService cluster coordination service
+     */
+<span class="nc" id="L52">    public QueryPlanner(ParquetAdapter parquetAdapter, ClusterService clusterService) {</span>
+<span class="nc" id="L53">        this.parquetAdapter = parquetAdapter;</span>
+<span class="nc" id="L54">        this.clusterService = clusterService;</span>
+<span class="nc" id="L55">    }</span>
+
+    /**
+     * Determines Flight endpoints for a SQL query, distributing files across live servers.
+     * Handles JOIN queries specially — single-server if all files are local, per-table split otherwise.
+     *
+     * @param query SQL query
+     * @return list of Flight endpoints
+     * @throws IOException on file system error
+     */
+    public List&lt;FlightEndpoint&gt; determineEndpoints(String query)
+            throws IOException {
+<span class="nc" id="L67">        Map&lt;String, FileAssignment&gt; pathLocations = parquetAdapter.locationsForQuery(query);</span>
+
+<span class="nc" id="L69">        Set&lt;String&gt; allServerUris = new LinkedHashSet&lt;&gt;(clusterService.allServerLoads().keySet());</span>
+<span class="nc bnc" id="L70" title="All 2 branches missed.">        if (allServerUris.isEmpty()) {</span>
+<span class="nc" id="L71">            LOGGER.info(&quot;Server registry is empty, falling back to self&quot;);</span>
+<span class="nc" id="L72">            allServerUris = Set.of(clusterService.serverUri());</span>
+        }
+
+<span class="nc" id="L75">        allServerUris = clusterService.filterLiveServers(allServerUris);</span>
+<span class="nc bnc" id="L76" title="All 2 branches missed.">        if (allServerUris.isEmpty()) {</span>
+<span class="nc" id="L77">            LOGGER.info(&quot;No live servers found, falling back to self&quot;);</span>
+<span class="nc" id="L78">            allServerUris = Set.of(clusterService.serverUri());</span>
+        }
+
+<span class="nc" id="L81">        Map&lt;String, Long&gt; serverLoad = new HashMap&lt;&gt;(</span>
+<span class="nc" id="L82">                clusterService.getLoads(allServerUris));</span>
+<span class="nc bnc" id="L83" title="All 2 branches missed.">        for (String uri : allServerUris) {</span>
+<span class="nc" id="L84">            serverLoad.putIfAbsent(uri, 0L);</span>
+<span class="nc" id="L85">        }</span>
+
+<span class="nc" id="L87">        ParquetQueryParser parsed = ParquetQueryParser.parse(query);</span>
+
+<span class="nc bnc" id="L89" title="All 2 branches missed.">        if (parsed.isJoin) {</span>
+<span class="nc" id="L90">            String allFilesServer = findServerWithAllFiles(pathLocations, allServerUris);</span>
+<span class="nc bnc" id="L91" title="All 2 branches missed.">            if (allFilesServer != null) {</span>
+<span class="nc" id="L92">                long addedBytes = pathLocations.values().stream()</span>
+<span class="nc" id="L93">                        .mapToLong(FileAssignment::size).sum();</span>
+<span class="nc" id="L94">                FlightEndpoint ep = createEndpoint(</span>
+<span class="nc" id="L95">                        allFilesServer, new ArrayList&lt;&gt;(pathLocations.keySet()), query, addedBytes);</span>
+<span class="nc" id="L96">                clusterService.addLoad(allFilesServer, addedBytes);</span>
+<span class="nc" id="L97">                return List.of(ep);</span>
+            }
+<span class="nc" id="L99">            LOGGER.info(&quot;Join query spans multiple servers; splitting into per-table reads&quot;);</span>
+<span class="nc" id="L100">            List&lt;FlightEndpoint&gt; endpoints = new ArrayList&lt;&gt;();</span>
+<span class="nc" id="L101">            Map&lt;String, Set&lt;String&gt;&gt; seenTables = new LinkedHashMap&lt;&gt;();</span>
+<span class="nc bnc" id="L102" title="All 2 branches missed.">            for (String path : pathLocations.keySet()) {</span>
+<span class="nc" id="L103">                String table = extractTableFromPath(path);</span>
+<span class="nc" id="L104">                seenTables.computeIfAbsent(table, k -&gt; new LinkedHashSet&lt;&gt;()).add(path);</span>
+<span class="nc" id="L105">            }</span>
+<span class="nc bnc" id="L106" title="All 2 branches missed.">            for (Map.Entry&lt;String, Set&lt;String&gt;&gt; entry : seenTables.entrySet()) {</span>
+<span class="nc" id="L107">                String perTableQuery = &quot;SELECT * FROM &quot; + entry.getKey();</span>
+<span class="nc" id="L108">                Map&lt;String, FileAssignment&gt; tableLocations = new LinkedHashMap&lt;&gt;();</span>
+<span class="nc bnc" id="L109" title="All 2 branches missed.">                for (String tablePath : entry.getValue()) {</span>
+<span class="nc" id="L110">                    tableLocations.put(tablePath, pathLocations.get(tablePath));</span>
+<span class="nc" id="L111">                }</span>
+<span class="nc" id="L112">                Map&lt;String, List&lt;String&gt;&gt; byServer = groupFilesByServer(tableLocations, serverLoad);</span>
+<span class="nc bnc" id="L113" title="All 2 branches missed.">                for (Map.Entry&lt;String, List&lt;String&gt;&gt; e : byServer.entrySet()) {</span>
+<span class="nc" id="L114">                    long addedBytes = e.getValue().stream()</span>
+<span class="nc" id="L115">                            .mapToLong(p -&gt; tableLocations.get(p).size())</span>
+<span class="nc" id="L116">                            .sum();</span>
+<span class="nc" id="L117">                    endpoints.add(createEndpoint(e.getKey(), e.getValue(), perTableQuery, addedBytes));</span>
+<span class="nc" id="L118">                    clusterService.addLoad(e.getKey(), addedBytes);</span>
+<span class="nc" id="L119">                }</span>
+<span class="nc" id="L120">            }</span>
+<span class="nc" id="L121">            return endpoints;</span>
+        }
+
+<span class="nc" id="L124">        Map&lt;String, List&lt;String&gt;&gt; serverToFiles = new LinkedHashMap&lt;&gt;();</span>
+<span class="nc" id="L125">        Map&lt;String, Long&gt; serverAdditions = new HashMap&lt;&gt;();</span>
+<span class="nc bnc" id="L126" title="All 2 branches missed.">        for (Map.Entry&lt;String, FileAssignment&gt; entry : pathLocations.entrySet()) {</span>
+<span class="nc" id="L127">            String path = entry.getKey();</span>
+<span class="nc" id="L128">            FileAssignment fa = entry.getValue();</span>
+<span class="nc" id="L129">            String bestServer = pickServer(fa.hosts(), serverLoad);</span>
+<span class="nc" id="L130">            serverToFiles.computeIfAbsent(bestServer, k -&gt; new ArrayList&lt;&gt;()).add(path);</span>
+<span class="nc" id="L131">            serverLoad.merge(bestServer, fa.size(), Long::sum);</span>
+<span class="nc" id="L132">            serverAdditions.merge(bestServer, fa.size(), Long::sum);</span>
+<span class="nc" id="L133">        }</span>
+
+<span class="nc" id="L135">        List&lt;FlightEndpoint&gt; endpoints = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L136" title="All 2 branches missed.">        for (Map.Entry&lt;String, List&lt;String&gt;&gt; entry : serverToFiles.entrySet()) {</span>
+<span class="nc" id="L137">            long addedBytes = serverAdditions.getOrDefault(entry.getKey(), 0L);</span>
+<span class="nc" id="L138">            endpoints.add(createEndpoint(entry.getKey(), entry.getValue(), query, addedBytes));</span>
+<span class="nc" id="L139">            clusterService.addLoad(entry.getKey(), addedBytes);</span>
+<span class="nc" id="L140">        }</span>
+<span class="nc" id="L141">        LOGGER.info(&quot;determineEndpoints: {} server(s), {} endpoint(s) for {} file(s), query: {}&quot;,</span>
+<span class="nc" id="L142">                allServerUris.size(), endpoints.size(), pathLocations.size(), query);</span>
+<span class="nc" id="L143">        return endpoints;</span>
+    }
+
+    /**
+     * Creates a Flight endpoint for a set of files assigned to a server.
+     *
+     * @param serverUri target server URI
+     * @param filePaths file paths to stream
+     * @param query     SQL query
+     * @param bytes     estimated byte count for load tracking
+     * @return Flight endpoint
+     */
+    public FlightEndpoint createEndpoint(String serverUri, List&lt;String&gt; filePaths,
+            String query, long bytes) {
+<span class="nc" id="L157">        URI parsedUri = URI.create(serverUri);</span>
+<span class="nc" id="L158">        Location serverLoc = Location.forGrpcInsecure(parsedUri.getHost(), parsedUri.getPort());</span>
+<span class="nc" id="L159">        ByteString serverHandle = ByteString.copyFrom(</span>
+<span class="nc" id="L160">                randomUUID().toString().getBytes(StandardCharsets.UTF_8));</span>
+<span class="nc" id="L161">        clusterService.storeHandle(serverHandle.toStringUtf8(),</span>
+<span class="nc" id="L162">                HandleState.forServerFiles(query, filePaths.toArray(new String[0]),</span>
+                        serverUri, bytes));
+<span class="nc" id="L164">        Ticket serverTicket = new Ticket(Any.pack(</span>
+<span class="nc" id="L165">                FlightSql.TicketStatementQuery.newBuilder()</span>
+<span class="nc" id="L166">                        .setStatementHandle(serverHandle).build())</span>
+<span class="nc" id="L167">                .toByteArray());</span>
+<span class="nc" id="L168">        return new FlightEndpoint(serverTicket, serverLoc);</span>
+    }
+
+    /**
+     * Picks the best server for a set of file block hosts.
+     * Prefers local servers with smallest load; falls back to globally least-loaded.
+     *
+     * @param fileHosts  set of hosts that have the file blocks
+     * @param serverLoad current server loads
+     * @return selected server URI
+     */
+    public static String pickServer(Set&lt;String&gt; fileHosts, Map&lt;String, Long&gt; serverLoad) {
+<span class="nc" id="L180">        Set&lt;String&gt; normalizedFileHosts = fileHosts.stream()</span>
+<span class="nc" id="L181">                .map(HostUtils::normalize)</span>
+<span class="nc" id="L182">                .collect(Collectors.toSet());</span>
+
+<span class="nc" id="L184">        var localServers = serverLoad.keySet().stream()</span>
+<span class="nc" id="L185">                .filter(uri -&gt; normalizedFileHosts.contains(HostUtils.normalize(uri)))</span>
+<span class="nc" id="L186">                .toList();</span>
+
+<span class="nc bnc" id="L188" title="All 4 branches missed.">        boolean hasLocality = !localServers.isEmpty() &amp;&amp; localServers.size() &lt; serverLoad.size();</span>
+<span class="nc bnc" id="L189" title="All 2 branches missed.">        var candidates = hasLocality ? localServers : List.copyOf(serverLoad.keySet());</span>
+<span class="nc" id="L190">        return candidates.stream()</span>
+<span class="nc" id="L191">                .min(Comparator.comparingLong(serverLoad::get))</span>
+<span class="nc" id="L192">                .orElseThrow();</span>
+    }
+
+    /**
+     * Groups files by their assigned server based on data locality and load.
+     *
+     * @param pathLocations file to host assignments
+     * @param serverLoad    current server loads
+     * @return map of server URI to list of file paths
+     */
+    public static Map&lt;String, List&lt;String&gt;&gt; groupFilesByServer(
+            Map&lt;String, FileAssignment&gt; pathLocations, Map&lt;String, Long&gt; serverLoad) {
+<span class="nc" id="L204">        Map&lt;String, List&lt;String&gt;&gt; serverToFiles = new LinkedHashMap&lt;&gt;();</span>
+<span class="nc bnc" id="L205" title="All 2 branches missed.">        for (Map.Entry&lt;String, FileAssignment&gt; entry : pathLocations.entrySet()) {</span>
+<span class="nc" id="L206">            String serverUri = pickServer(entry.getValue().hosts(), serverLoad);</span>
+<span class="nc" id="L207">            serverToFiles.computeIfAbsent(serverUri, k -&gt; new ArrayList&lt;&gt;()).add(entry.getKey());</span>
+<span class="nc" id="L208">        }</span>
+<span class="nc" id="L209">        return serverToFiles;</span>
+    }
+
+    /**
+     * Finds a server that has ALL files in the map, or null if none.
+     *
+     * @param pathLocations file to host assignments
+     * @param allServerUris all registered server URIs
+     * @return server URI with all files, or null
+     */
+    private String findServerWithAllFiles(
+            Map&lt;String, FileAssignment&gt; pathLocations, Set&lt;String&gt; allServerUris) {
+        outer:
+<span class="nc bnc" id="L222" title="All 2 branches missed.">        for (String serverUri : allServerUris) {</span>
+<span class="nc" id="L223">            String normServer = HostUtils.normalize(serverUri);</span>
+<span class="nc bnc" id="L224" title="All 2 branches missed.">            for (FileAssignment fa : pathLocations.values()) {</span>
+<span class="nc" id="L225">                boolean hasHost = false;</span>
+<span class="nc bnc" id="L226" title="All 2 branches missed.">                for (String host : fa.hosts()) {</span>
+<span class="nc bnc" id="L227" title="All 2 branches missed.">                    if (HostUtils.normalize(host).equals(normServer)) {</span>
+<span class="nc" id="L228">                        hasHost = true;</span>
+<span class="nc" id="L229">                        break;</span>
+                    }
+<span class="nc" id="L231">                }</span>
+<span class="nc bnc" id="L232" title="All 2 branches missed.">                if (!hasHost) {</span>
+<span class="nc" id="L233">                    continue outer;</span>
+                }
+<span class="nc" id="L235">            }</span>
+<span class="nc" id="L236">            return serverUri;</span>
+        }
+<span class="nc" id="L238">        return null;</span>
+    }
+
+    /**
+     * Extracts the table name from a relative file path.
+     *
+     * @param path relative file path
+     * @return table name derived from parent directory
+     */
+    public static String extractTableFromPath(String path) {
+<span class="fc" id="L248">        int lastSep = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));</span>
+<span class="pc bpc" id="L249" title="1 of 2 branches missed.">        if (lastSep &lt; 0) {</span>
+<span class="nc" id="L250">            return path;</span>
+        }
+<span class="fc" id="L252">        String parent = path.substring(0, lastSep);</span>
+<span class="fc" id="L253">        return parent.replace('\\', '.').replace('/', '.');</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>
