@@ -20,8 +20,8 @@
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <!-- Override with -DexcludedGroups="" to include integration tests -->
-        <excludedGroups>integration,spark,perf</excludedGroups>
+        <!-- Override with -DexcludedGroups="" to include integration/spark/smoke tests -->
+        <excludedGroups>integration,spark,perf,smoke</excludedGroups>
         <hadoop.version>3.3.6</hadoop.version>
         <arrow.version>18.0.0</arrow.version>
         <guava.version>32.1.3-jre</guava.version>
@@ -31,9 +31,8 @@
         <grpc.version>1.65.0</grpc.version>
         <jackson.version>2.15.3</jackson.version>
         <hazelcast.version>5.6.0</hazelcast.version>
-        <substrate.version>0.91.0</substrate.version>
-        <!-- Override with -Dcheckstyle.failOnViolation=true in lint job -->
-        <checkstyle.failOnViolation>false</checkstyle.failOnViolation>
+        <substrait.version>0.91.0</substrait.version>
+        <checkstyle.failOnViolation>true</checkstyle.failOnViolation>
     </properties>
 
     <dependencies>
@@ -114,13 +113,13 @@
         <dependency>
             <groupId>io.substrait</groupId>
             <artifactId>core</artifactId>
-            <version>${substrate.version}</version>
+            <version>${substrait.version}</version>
         </dependency>
 
         <dependency>
             <groupId>io.substrait</groupId>
             <artifactId>isthmus</artifactId>
-            <version>${substrate.version}</version>
+            <version>${substrait.version}</version>
         </dependency>
 
         <dependency>
@@ -300,7 +299,6 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.0.0</version>
                 <configuration>
-                    <groups>${groups}</groups>
                     <excludedGroups>${excludedGroups}</excludedGroups>
                     <argLine>
                         @{argLine}
@@ -369,17 +367,12 @@
                     <failsOnError>true</failsOnError>
                     <failOnViolation>${checkstyle.failOnViolation}</failOnViolation>
                     <includeTestSourceDirectory>false</includeTestSourceDirectory>
+                    <sourceDirectories>
+                        <sourceDirectory>${project.basedir}/src/main/java</sourceDirectory>
+                    </sourceDirectories>
                     <violationSeverity>warning</violationSeverity>
                 </configuration>
-                <executions>
-                    <execution>
-                        <id>validate</id>
-                        <phase>validate</phase>
-                        <goals>
-                            <goal>check</goal>
-                        </goals>
-                    </execution>
-                </executions>
+
             </plugin>
             <plugin>
                 <groupId>com.github.spotbugs</groupId>
@@ -397,20 +390,11 @@
     </build>
 
     <profiles>
-        <!-- Minimal end-to-end smoke tests. -->
-        <profile>
-            <id>smoke</id>
-            <properties>
-                <groups>smoke</groups>
-                <excludedGroups />
-            </properties>
-        </profile>
-
-        <!-- Full local integration tests (excludes perf). -->
+        <!-- Integration + Spark + Smoke tests (excludes perf). -->
         <profile>
             <id>integration</id>
             <properties>
-                <groups>integration</groups>
+                <groups>integration | spark | smoke</groups>
                 <excludedGroups>perf</excludedGroups>
             </properties>
         </profile>

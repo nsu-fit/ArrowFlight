@@ -6,13 +6,13 @@ This document describes how an SQL query flows through the Arrow Flight server: 
 
 `HadoopArrowFlightServer` starts the server and configures Hadoop FileSystem, Hazelcast, and Arrow Flight.
 
-`HadoopFlightSqlService` implements the Flight SQL layer. It receives queries, creates `FlightInfo`, builds `Ticket` objects, creates endpoints, and restores query state during `DoGet`.
+`FlightSqlProducer` implements the Flight SQL layer. It receives queries, creates `FlightInfo`, builds `Ticket` objects, creates endpoints, and restores query state during `DoGet`.
 
-`ParquetManager` handles Parquet-related work: file discovery, locality detection, Java footer fast paths, Arrow Dataset / Acero scans, and DuckDB execution.
+`ExecutionService`, `MetadataService`, and `ParquetAdapter` handle Parquet-related work. `ParquetAdapter` owns file discovery and locality detection. `MetadataService` handles schema construction and Java footer fast paths. `ExecutionService` orchestrates Arrow Dataset / Acero scans and DuckDB execution.
 
 `ParquetQueryParser` parses SQL and extracts schema, table, selected columns, filters, aggregations, and group by columns.
 
-`RuntimeSettings` loads runtime tuning values from `arrowflight.properties`, with JVM system properties and selected environment variables as overrides.
+`AppConfig` / `ConfigAdapter` loads runtime tuning values from `arrowflight.properties`, with JVM system properties and selected environment variables as overrides.
 
 ## High-Level Flow
 
@@ -26,7 +26,7 @@ Data is not read during `GetFlightInfo`. Actual reading starts only during `DoGe
 
 ## Receiving the SQL Query
 
-The SQL query enters the server through `HadoopFlightSqlService.getFlightInfoStatement`.
+The SQL query enters the server through `FlightSqlProducer.getFlightInfoStatement`.
 
 At this stage, the server:
 
@@ -51,7 +51,7 @@ Entries in `statementCache` have a limited lifetime. The current implementation 
 
 ## Building the Result Schema
 
-Before returning `FlightInfo`, the server must know the result schema. For that, `HadoopFlightSqlService` calls `ParquetManager.getQuerySchema`.
+Before returning `FlightInfo`, the server must know the result schema. For that, `FlightSqlProducer` calls `MetadataService.getQuerySchema`.
 
 The result schema is built before reading data. For regular queries, it is derived from the Parquet table schema and the selected columns. For aggregations, it is derived from aggregation expressions and group by columns.
 
@@ -59,9 +59,9 @@ This schema is returned to the client as part of `FlightInfo`.
 
 ## File Distribution
 
-File distribution is performed in `HadoopFlightSqlService.determineEndpoints`.
+File distribution is performed in `FlightSqlProducer.determineEndpoints`.
 
-First, the server reads the SQL query from `statementCache`. Then `ParquetManager.locationsForQuery` determines which Parquet files belong to the query table and which Hadoop hosts store their blocks.
+First, the server reads the SQL query from `statementCache`. Then `ParquetAdapter.locationsForQuery` determines which Parquet files belong to the query table and which Hadoop hosts store their blocks.
 
 Next, the server retrieves all registered Flight servers from `serverRegistry`. Each Flight node registers itself in `serverRegistry` during startup.
 
@@ -81,17 +81,17 @@ For every endpoint, the server creates a separate handle. The SQL query and the 
 
 ## Reading by Ticket
 
-When the client calls `DoGet`, the server enters `HadoopFlightSqlService.getStreamStatement`.
+When the client calls `DoGet`, the server enters `FlightSqlProducer.getStreamStatement`.
 
 The server extracts the handle from the ticket and uses it to load the SQL query and assigned file list from `statementCache`.
 
-The server then calls `ParquetManager.readParquet`, passing the allocator, SQL query, file list, listener, and stream-start flag.
+The server then calls `ExecutionService.readParquet`, passing the allocator, SQL query, file list, listener, and stream-start flag.
 
 Actual query execution starts at this point.
 
 ## Query Engine Selection
 
-The project uses three execution paths for Parquet reads. The route is selected in `ParquetManager.readParquet` after `ParquetQueryParser` has extracted projection, filter, aggregation, and group-by information.
+The project uses three execution paths for Parquet reads. The route is selected in `ExecutionService.readParquet` after `ParquetQueryParser` has extracted projection, filter, aggregation, and group-by information.
 
 Routing rules:
 
@@ -144,7 +144,7 @@ DuckDB is used for query shapes that need SQL execution beyond a simple scan:
 - aggregates that cannot use footer statistics
 - joins
 
-For single-table queries, `ParquetManager` builds SQL over DuckDB's `read_parquet([...])` table function. For joins, the manager creates temporary DuckDB views for each table alias, each view backed by `read_parquet([...])`, and then executes the rewritten join SQL against those views.
+For single-table queries, `ExecutionService` builds SQL over DuckDB's `read_parquet([...])` table function. For joins, it creates temporary DuckDB views for each table alias, each view backed by `read_parquet([...])`, and then executes the rewritten join SQL against those views.
 
 DuckDB returns results through `DuckDBResultSet.arrowExportStream`. The server copies rows from DuckDB's Arrow stream into Flight batches and sends them to the client.
 
