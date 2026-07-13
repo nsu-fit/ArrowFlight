@@ -1,0 +1,648 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>HadoopFlightSqlService.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Hadoop Arrow Flight SQL Server</a> &gt; <a href="index.source.html" class="el_package">net.surpin.data.arrowflight.server</a> &gt; <span class="el_source">HadoopFlightSqlService.java</span></div><h1>HadoopFlightSqlService.java</h1><pre class="source lang-java linenums">package net.surpin.data.arrowflight.server;
+
+import com.google.protobuf.Any;
+import com.google.protobuf.ByteString;
+import com.google.protobuf.Message;
+import com.google.protobuf.ProtocolStringList;
+import com.hazelcast.core.HazelcastInstance;
+import com.hazelcast.map.IMap;
+import com.hazelcast.map.listener.EntryExpiredListener;
+import org.apache.arrow.flight.*;
+import org.apache.arrow.flight.sql.BasicFlightSqlProducer;
+import org.apache.arrow.flight.sql.SqlInfoBuilder;
+import org.apache.arrow.flight.sql.impl.FlightSql;
+import org.apache.arrow.memory.BufferAllocator;
+import org.apache.arrow.util.AutoCloseables;
+import org.apache.arrow.vector.VectorSchemaRoot;
+import org.apache.arrow.vector.types.pojo.Schema;
+import org.apache.hadoop.fs.Path;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.io.Serializable;
+import java.io.UncheckedIOException;
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.util.*;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.Objects;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+
+import net.surpin.data.arrowflight.server.db.ParquetManager;
+import net.surpin.data.arrowflight.server.db.ParquetQueryParser;
+import net.surpin.data.arrowflight.server.model.HandleState;
+import net.surpin.data.arrowflight.server.model.FileAssignment;
+import net.surpin.data.arrowflight.server.utils.MetadataUtils;
+import net.surpin.data.arrowflight.server.utils.HostUtils;
+
+import static com.google.protobuf.ByteString.copyFrom;
+import static java.util.UUID.randomUUID;
+
+/**
+ * Реализация Flight SQL сервиса для Hadoop Parquet сервера.
+ */
+public class HadoopFlightSqlService extends BasicFlightSqlProducer implements FlightProducer, AutoCloseable {
+<span class="nc" id="L56">    private static final Logger LOGGER = LoggerFactory.getLogger(HadoopFlightSqlService.class);</span>
+
+    private static final String SERVER_REGISTRY_MAP = &quot;server-registry&quot;;
+    private static final String STATEMENT_CACHE_MAP = &quot;statement-cache&quot;;
+    private static final String SERVER_HEARTBEAT_MAP = &quot;server-heartbeats&quot;;
+    private static final long HEARTBEAT_INTERVAL_SEC = 15;
+    private static final long HEARTBEAT_TIMEOUT_SEC = 45;
+
+    private final Location location;
+    private final ParquetManager parquetManager;
+    private final BufferAllocator allocator;
+    private final HazelcastInstance hazelcastInstance;
+    private final SqlInfoBuilder sqlInfoBuilder;
+    private final IMap&lt;String, Serializable&gt; statementCache;
+    private final IMap&lt;String, Long&gt; serverRegistry;
+    private final IMap&lt;String, Long&gt; serverHeartbeats;
+    private final ScheduledExecutorService heartbeatExecutor;
+    private final String serverUri;
+
+    public HadoopFlightSqlService(Location location, ParquetManager parquetManager,
+<span class="nc" id="L76">            BufferAllocator allocator, HazelcastInstance hazelcastInstance) {</span>
+<span class="nc" id="L77">        this.location = Objects.requireNonNull(location);</span>
+<span class="nc" id="L78">        this.parquetManager = Objects.requireNonNull(parquetManager);</span>
+<span class="nc" id="L79">        this.allocator = Objects.requireNonNull(allocator);</span>
+<span class="nc" id="L80">        this.hazelcastInstance = Objects.requireNonNull(hazelcastInstance);</span>
+<span class="nc" id="L81">        this.statementCache = hazelcastInstance.getMap(STATEMENT_CACHE_MAP);</span>
+<span class="nc" id="L82">        this.serverRegistry = hazelcastInstance.getMap(SERVER_REGISTRY_MAP);</span>
+<span class="nc" id="L83">        this.serverHeartbeats = hazelcastInstance.getMap(SERVER_HEARTBEAT_MAP);</span>
+
+<span class="nc" id="L85">        this.serverUri = location.getUri().toString();</span>
+<span class="nc" id="L86">        LOGGER.info(&quot;Registering server: {}&quot;, serverUri);</span>
+<span class="nc" id="L87">        serverRegistry.put(serverUri, 0L);</span>
+<span class="nc" id="L88">        serverHeartbeats.put(serverUri, System.currentTimeMillis());</span>
+
+<span class="nc" id="L90">        this.heartbeatExecutor = Executors.newSingleThreadScheduledExecutor(r -&gt; {</span>
+<span class="nc" id="L91">            Thread t = new Thread(r, &quot;flight-heartbeat&quot;);</span>
+<span class="nc" id="L92">            t.setDaemon(true);</span>
+<span class="nc" id="L93">            return t;</span>
+        });
+<span class="nc" id="L95">        heartbeatExecutor.scheduleAtFixedRate(() -&gt; {</span>
+            try {
+<span class="nc" id="L97">                serverHeartbeats.put(serverUri, System.currentTimeMillis());</span>
+<span class="nc" id="L98">            } catch (Exception e) {</span>
+<span class="nc" id="L99">                LOGGER.warn(&quot;Failed to update heartbeat for {}: {}&quot;, serverUri, e.getMessage());</span>
+<span class="nc" id="L100">            }</span>
+<span class="nc" id="L101">        }, HEARTBEAT_INTERVAL_SEC, HEARTBEAT_INTERVAL_SEC, TimeUnit.SECONDS);</span>
+
+<span class="nc" id="L103">        statementCache.addLocalEntryListener((EntryExpiredListener&lt;String, Serializable&gt;) event -&gt; {</span>
+<span class="nc" id="L104">            Serializable value = event.getOldValue();</span>
+<span class="nc bnc" id="L105" title="All 4 branches missed.">            if (value instanceof HandleState state &amp;&amp; state.serverUri() != null) {</span>
+<span class="nc" id="L106">                serverRegistry.compute(state.serverUri(), (k, v) -&gt; {</span>
+<span class="nc bnc" id="L107" title="All 2 branches missed.">                    if (v == null) {</span>
+<span class="nc" id="L108">                        return null;</span>
+                    }
+<span class="nc" id="L110">                    long updated = v - state.bytes();</span>
+<span class="nc bnc" id="L111" title="All 2 branches missed.">                    return updated &lt;= 0 ? 0L : updated;</span>
+                });
+            }
+<span class="nc" id="L114">        });</span>
+
+<span class="nc" id="L116">        sqlInfoBuilder = new SqlInfoBuilder();</span>
+
+<span class="nc" id="L118">        sqlInfoBuilder</span>
+<span class="nc" id="L119">                .withFlightSqlServerName(&quot;Hadoop-Arrow-Parquet Source&quot;)</span>
+<span class="nc" id="L120">                .withFlightSqlServerVersion(&quot;0.0.1&quot;)</span>
+<span class="nc" id="L121">                .withFlightSqlServerArrowVersion(&quot;0.0.1&quot;)</span>
+<span class="nc" id="L122">                .withFlightSqlServerReadOnly(true)</span>
+<span class="nc" id="L123">                .withFlightSqlServerSql(true)</span>
+<span class="nc" id="L124">                .withFlightSqlServerSubstrait(false)</span>
+<span class="nc" id="L125">                .withFlightSqlServerTransaction(FlightSql.SqlSupportedTransaction.SQL_SUPPORTED_TRANSACTION_NONE)</span>
+<span class="nc" id="L126">                .withSqlDdlCatalog(false)</span>
+<span class="nc" id="L127">                .withSqlDdlSchema(true)</span>
+<span class="nc" id="L128">                .withSqlDdlTable(true)</span>
+<span class="nc" id="L129">                .withSqlIdentifierCase(FlightSql.SqlSupportedCaseSensitivity.SQL_CASE_SENSITIVITY_LOWERCASE)</span>
+<span class="nc" id="L130">                .withSqlQuotedIdentifierCase(FlightSql.SqlSupportedCaseSensitivity.SQL_CASE_SENSITIVITY_UNKNOWN)</span>
+<span class="nc" id="L131">                .withSqlAllTablesAreSelectable(true)</span>
+<span class="nc" id="L132">                .withSqlNullOrdering(FlightSql.SqlNullOrdering.SQL_NULLS_SORTED_AT_END)</span>
+<span class="nc" id="L133">                .withSqlMaxColumnsInTable(1000);</span>
+
+<span class="nc" id="L135">        LOGGER.info(&quot;{} initialized&quot;, getClass().getName());</span>
+<span class="nc" id="L136">    }</span>
+
+
+    @Override
+    protected &lt;T extends Message&gt; List&lt;FlightEndpoint&gt; determineEndpoints(T request, FlightDescriptor descriptor,
+            Schema schema) {
+        try {
+<span class="nc bnc" id="L143" title="All 2 branches missed.">            if (request instanceof FlightSql.TicketStatementQuery statementQuery) {</span>
+<span class="nc" id="L144">                final ByteString handle = statementQuery.getStatementHandle();</span>
+<span class="nc" id="L145">                HandleState outerState = (HandleState) statementCache.get(handle.toStringUtf8());</span>
+<span class="nc" id="L146">                String query = outerState.query();</span>
+<span class="nc" id="L147">                Map&lt;String, FileAssignment&gt; pathLocations = parquetManager.locationsForQuery(query);</span>
+
+                // All registered Flight servers.
+<span class="nc" id="L150">                Set&lt;String&gt; allServerUris = new HashSet&lt;&gt;();</span>
+<span class="nc bnc" id="L151" title="All 2 branches missed.">                for (var entry : serverRegistry.entrySet()) {</span>
+<span class="nc" id="L152">                    allServerUris.add(entry.getKey());</span>
+<span class="nc" id="L153">                }</span>
+<span class="nc bnc" id="L154" title="All 2 branches missed.">                if (allServerUris.isEmpty()) {</span>
+<span class="nc" id="L155">                    LOGGER.info(&quot;Server registry is empty, please restart server for registration&quot;);</span>
+<span class="nc" id="L156">                    allServerUris = Set.of(location.getUri().toString());</span>
+                }
+
+                // Filter out dead servers that haven't sent heartbeat recently.
+<span class="nc" id="L160">                allServerUris = filterLiveServers(allServerUris);</span>
+<span class="nc bnc" id="L161" title="All 2 branches missed.">                if (allServerUris.isEmpty()) {</span>
+<span class="nc" id="L162">                    LOGGER.info(&quot;No live servers found, falling back to self&quot;);</span>
+<span class="nc" id="L163">                    allServerUris = Set.of(serverUri);</span>
+                }
+
+                // Read current server loads from Hazelcast in one bulk call.
+<span class="nc" id="L167">                Map&lt;String, Long&gt; serverLoad = new HashMap&lt;&gt;(serverRegistry.getAll(allServerUris));</span>
+<span class="nc bnc" id="L168" title="All 2 branches missed.">                for (String uri : allServerUris) {</span>
+<span class="nc" id="L169">                    serverLoad.putIfAbsent(uri, 0L);</span>
+<span class="nc" id="L170">                }</span>
+
+                // PATH A: JOIN
+
+                // One endpoint per server: group files by their assigned server so each
+                // server streams all its partial aggregation rows in a single response.
+<span class="nc" id="L176">                ParquetQueryParser pq = ParquetQueryParser.parse(query);</span>
+
+<span class="nc bnc" id="L178" title="All 2 branches missed.">                if (pq.isJoin) {</span>
+<span class="nc" id="L179">                    String allFilesServer = findServerWithAllFiles(pathLocations, allServerUris);</span>
+<span class="nc bnc" id="L180" title="All 2 branches missed.">                    if (allFilesServer != null) {</span>
+<span class="nc" id="L181">                        LOGGER.info(&quot;Join executes server-side on {} with {} file(s)&quot;, allFilesServer, pathLocations.size());</span>
+<span class="nc" id="L182">                        long addedBytes = pathLocations.values().stream().mapToLong(FileAssignment::size).sum();</span>
+<span class="nc" id="L183">                        FlightEndpoint ep = createEndpoint(allFilesServer, pathLocations.keySet().stream().toList(), query, addedBytes);</span>
+<span class="nc bnc" id="L184" title="All 2 branches missed.">                        serverRegistry.compute(allFilesServer, (k, v) -&gt; (v == null ? 0L : v) + addedBytes);</span>
+<span class="nc" id="L185">                        return List.of(ep);</span>
+                    }
+<span class="nc" id="L187">                    LOGGER.info(&quot;Join query spans multiple servers; splitting into per-table reads for Spark-side join&quot;);</span>
+<span class="nc" id="L188">                    List&lt;FlightEndpoint&gt; endpoints = new ArrayList&lt;&gt;();</span>
+<span class="nc" id="L189">                    Map&lt;String, Set&lt;String&gt;&gt; seenTables = new LinkedHashMap&lt;&gt;();</span>
+<span class="nc bnc" id="L190" title="All 2 branches missed.">                    for (String path : pathLocations.keySet()) {</span>
+<span class="nc" id="L191">                        String table = extractTableFromPath(path);</span>
+<span class="nc" id="L192">                        seenTables.computeIfAbsent(table, k -&gt; new LinkedHashSet&lt;&gt;()).add(path);</span>
+<span class="nc" id="L193">                    }</span>
+<span class="nc bnc" id="L194" title="All 2 branches missed.">                    for (Map.Entry&lt;String, Set&lt;String&gt;&gt; entry : seenTables.entrySet()) {</span>
+<span class="nc" id="L195">                        String table = entry.getKey();</span>
+<span class="nc" id="L196">                        Set&lt;String&gt; tablePaths = entry.getValue();</span>
+<span class="nc" id="L197">                        String perTableQuery = &quot;SELECT * FROM &quot; + table;</span>
+<span class="nc" id="L198">                        Map&lt;String, FileAssignment&gt; tableLocations = new LinkedHashMap&lt;&gt;();</span>
+<span class="nc bnc" id="L199" title="All 2 branches missed.">                        for (String path : tablePaths) {</span>
+<span class="nc" id="L200">                            tableLocations.put(path, pathLocations.get(path));</span>
+<span class="nc" id="L201">                        }</span>
+<span class="nc" id="L202">                        Map&lt;String, List&lt;String&gt;&gt; byServer = groupFilesByServer(tableLocations, serverLoad);</span>
+
+<span class="nc bnc" id="L204" title="All 2 branches missed.">                        for (Map.Entry&lt;String, List&lt;String&gt;&gt; e : byServer.entrySet()) {</span>
+<span class="nc" id="L205">                            long addedBytes = e.getValue().stream()</span>
+<span class="nc" id="L206">                                    .mapToLong(p -&gt; tableLocations.get(p).size())</span>
+<span class="nc" id="L207">                                    .sum();</span>
+<span class="nc" id="L208">                            endpoints.add(createEndpoint(e.getKey(), e.getValue(), perTableQuery, addedBytes));</span>
+<span class="nc bnc" id="L209" title="All 2 branches missed.">                            serverRegistry.compute(e.getKey(), (k, v) -&gt; (v == null ? 0L : v) + addedBytes);</span>
+<span class="nc" id="L210">                        }</span>
+<span class="nc" id="L211">                    }</span>
+<span class="nc" id="L212">                    return endpoints;</span>
+                }
+
+                // PATH B: OTHER
+
+                // Group files by assigned server. Data locality is the primary criterion;
+                // among eligible servers, pick the one with the smallest cumulative load.
+<span class="nc" id="L219">                Map&lt;String, List&lt;String&gt;&gt; serverToFiles = new LinkedHashMap&lt;&gt;();</span>
+<span class="nc" id="L220">                Map&lt;String, Long&gt; serverAdditions = new HashMap&lt;&gt;();</span>
+<span class="nc bnc" id="L221" title="All 2 branches missed.">                for (Map.Entry&lt;String, FileAssignment&gt; entry : pathLocations.entrySet()) {</span>
+<span class="nc" id="L222">                    String path = entry.getKey();</span>
+<span class="nc" id="L223">                    FileAssignment fa = entry.getValue();</span>
+<span class="nc" id="L224">                    String bestServer = pickServer(fa.hosts(), serverLoad);</span>
+<span class="nc" id="L225">                    serverToFiles.computeIfAbsent(bestServer, k -&gt; new ArrayList&lt;&gt;()).add(path);</span>
+<span class="nc" id="L226">                    serverLoad.merge(bestServer, fa.size(), Long::sum);</span>
+<span class="nc" id="L227">                    serverAdditions.merge(bestServer, fa.size(), Long::sum);</span>
+<span class="nc" id="L228">                }</span>
+
+<span class="nc" id="L230">                List&lt;FlightEndpoint&gt; endpoints = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L231" title="All 2 branches missed.">                for (Map.Entry&lt;String, List&lt;String&gt;&gt; entry : serverToFiles.entrySet()) {</span>
+<span class="nc" id="L232">                    String serverUri = entry.getKey();</span>
+<span class="nc" id="L233">                    List&lt;String&gt; serverFiles = entry.getValue();</span>
+<span class="nc" id="L234">                    long addedBytes = serverAdditions.getOrDefault(serverUri, 0L);</span>
+<span class="nc" id="L235">                    endpoints.add(createEndpoint(serverUri, serverFiles, query, addedBytes));</span>
+<span class="nc bnc" id="L236" title="All 2 branches missed.">                    serverRegistry.compute(serverUri, (k, v) -&gt; (v == null ? 0L : v) + addedBytes);</span>
+<span class="nc" id="L237">                }</span>
+<span class="nc" id="L238">                LOGGER.info(&quot;determineEndpoints: {} server(s) registered, {} endpoint(s) for {} file(s), query: {}&quot;,</span>
+<span class="nc" id="L239">                        allServerUris.size(), endpoints.size(), pathLocations.size(), query);</span>
+<span class="nc" id="L240">                LOGGER.debug(&quot;determineEndpoints: servers={}, files={}&quot;, allServerUris, pathLocations.keySet());</span>
+<span class="nc" id="L241">                return endpoints;</span>
+            } else {
+<span class="nc" id="L243">                Ticket ticket = new Ticket(Any.pack(request).toByteArray());</span>
+<span class="nc" id="L244">                return List.of(new FlightEndpoint(ticket, this.location));</span>
+            }
+<span class="nc" id="L246">        } catch (IOException e) {</span>
+<span class="nc" id="L247">            throw new UncheckedIOException(e);</span>
+        }
+    }
+
+    private Map&lt;String, List&lt;String&gt;&gt; groupFilesByServer(Map&lt;String, FileAssignment&gt; pathLocations, Map&lt;String, Long&gt; serverLoad) {
+<span class="nc" id="L252">        Map&lt;String, List&lt;String&gt;&gt; serverToFiles = new LinkedHashMap&lt;&gt;();</span>
+<span class="nc bnc" id="L253" title="All 2 branches missed.">        for (Map.Entry&lt;String, FileAssignment&gt; entry : pathLocations.entrySet()) {</span>
+<span class="nc" id="L254">            String serverUri = pickServer(entry.getValue().hosts(), serverLoad);</span>
+<span class="nc" id="L255">            serverToFiles.computeIfAbsent(serverUri, k -&gt; new ArrayList&lt;&gt;()).add(entry.getKey());</span>
+<span class="nc" id="L256">        }</span>
+<span class="nc" id="L257">        return serverToFiles;</span>
+    }
+
+    @Override
+    public FlightInfo getFlightInfoSqlInfo(final FlightSql.CommandGetSqlInfo request, final CallContext context,
+            final FlightDescriptor descriptor) {
+<span class="nc" id="L263">        return getFlightInfoForSchema(request, descriptor, Schemas.GET_SQL_INFO_SCHEMA);</span>
+    }
+
+    @Override
+    public void getStreamSqlInfo(final FlightSql.CommandGetSqlInfo command, final CallContext context,
+            final ServerStreamListener listener) {
+<span class="nc" id="L269">        this.sqlInfoBuilder.send(command.getInfoList(), listener);</span>
+<span class="nc" id="L270">    }</span>
+
+    @Override
+    public FlightInfo getFlightInfoCatalogs(
+            final FlightSql.CommandGetCatalogs request,
+            final CallContext context,
+            final FlightDescriptor descriptor) {
+<span class="nc" id="L277">        return getFlightInfoForSchema(request, descriptor, Schemas.GET_CATALOGS_SCHEMA);</span>
+    }
+
+    @Override
+    public void getStreamCatalogs(final CallContext context, final ServerStreamListener listener) {
+<span class="nc" id="L282">        try (VectorSchemaRoot vectorSchemaRoot = MetadataUtils.getCatalogsRoot(allocator)) {</span>
+<span class="nc" id="L283">            listener.start(vectorSchemaRoot);</span>
+<span class="nc" id="L284">            listener.putNext();</span>
+        } finally {
+<span class="nc" id="L286">            listener.completed();</span>
+        }
+<span class="nc" id="L288">    }</span>
+
+    @Override
+    public FlightInfo getFlightInfoSchemas(
+            final FlightSql.CommandGetDbSchemas request,
+            final CallContext context,
+            final FlightDescriptor descriptor) {
+<span class="nc" id="L295">        return getFlightInfoForSchema(request, descriptor, Schemas.GET_SCHEMAS_SCHEMA);</span>
+    }
+
+    @Override
+    public void getStreamSchemas(
+            final FlightSql.CommandGetDbSchemas command,
+            final CallContext context,
+            final ServerStreamListener listener) {
+<span class="nc bnc" id="L303" title="All 2 branches missed.">        final String catalog = command.hasCatalog() ? command.getCatalog() : null;</span>
+<span class="nc bnc" id="L304" title="All 2 branches missed.">        final String schemaFilterPattern = command.hasDbSchemaFilterPattern() ? command.getDbSchemaFilterPattern()</span>
+<span class="nc" id="L305">                : null;</span>
+
+<span class="nc" id="L307">        try (VectorSchemaRoot vectorSchemaRoot = MetadataUtils</span>
+<span class="nc" id="L308">                .getSchemasRoot(parquetManager.getSchemas(schemaFilterPattern).keySet(), allocator)) {</span>
+<span class="nc" id="L309">            listener.start(vectorSchemaRoot);</span>
+<span class="nc" id="L310">            listener.putNext();</span>
+<span class="nc" id="L311">        } catch (IOException e) {</span>
+<span class="nc" id="L312">            LOGGER.error(&quot;Failed to getStreamSchemas&quot;, e);</span>
+<span class="nc" id="L313">            listener.error(e);</span>
+        } finally {
+<span class="nc" id="L315">            listener.completed();</span>
+        }
+<span class="nc" id="L317">    }</span>
+
+    @Override
+    public FlightInfo getFlightInfoTableTypes(
+            final FlightSql.CommandGetTableTypes request,
+            final CallContext context,
+            final FlightDescriptor descriptor) {
+<span class="nc" id="L324">        return getFlightInfoForSchema(request, descriptor, Schemas.GET_TABLE_TYPES_SCHEMA);</span>
+    }
+
+    @Override
+    public void getStreamTableTypes(final CallContext context, final ServerStreamListener listener) {
+<span class="nc" id="L329">        try (VectorSchemaRoot vectorSchemaRoot = MetadataUtils.getTableTypesRoot(allocator)) {</span>
+<span class="nc" id="L330">            listener.start(vectorSchemaRoot);</span>
+<span class="nc" id="L331">            listener.putNext();</span>
+        } finally {
+<span class="nc" id="L333">            listener.completed();</span>
+        }
+<span class="nc" id="L335">    }</span>
+
+    @Override
+    public FlightInfo getFlightInfoTables(
+            final FlightSql.CommandGetTables request,
+            final CallContext context,
+            final FlightDescriptor descriptor) {
+<span class="nc" id="L342">        Schema schemaToUse = Schemas.GET_TABLES_SCHEMA;</span>
+<span class="nc bnc" id="L343" title="All 2 branches missed.">        if (!request.getIncludeSchema()) {</span>
+<span class="nc" id="L344">            schemaToUse = Schemas.GET_TABLES_SCHEMA_NO_SCHEMA;</span>
+        }
+<span class="nc" id="L346">        return getFlightInfoForSchema(request, descriptor, schemaToUse);</span>
+    }
+
+    @Override
+    public void getStreamTables(
+            final FlightSql.CommandGetTables command,
+            final CallContext context,
+            final ServerStreamListener listener) {
+
+<span class="nc bnc" id="L355" title="All 2 branches missed.">        final String catalog = command.hasCatalog() ? command.getCatalog() : null;</span>
+<span class="nc bnc" id="L356" title="All 2 branches missed.">        final String schemaFilterPattern = command.hasDbSchemaFilterPattern() ? command.getDbSchemaFilterPattern()</span>
+<span class="nc" id="L357">                : null;</span>
+<span class="nc bnc" id="L358" title="All 2 branches missed.">        final String tableFilterPattern = command.hasTableNameFilterPattern() ? command.getTableNameFilterPattern()</span>
+<span class="nc" id="L359">                : null;</span>
+
+<span class="nc bnc" id="L361" title="All 4 branches missed.">        if (catalog != null &amp;&amp; !MetadataUtils.CATALOG_NAME.equalsIgnoreCase(catalog)) {</span>
+<span class="nc" id="L362">            LOGGER.info(&quot;Catalog doesn't exists in call to getStreamTables: {}&quot;, catalog);</span>
+<span class="nc" id="L363">            throw CallStatus.NOT_FOUND.withDescription(&quot;Could not getStreamTables for catalog: &quot; + catalog)</span>
+<span class="nc" id="L364">                    .toRuntimeException();</span>
+        }
+
+<span class="nc" id="L367">        final ProtocolStringList protocolStringList = command.getTableTypesList();</span>
+<span class="nc" id="L368">        final int protocolSize = protocolStringList.size();</span>
+<span class="nc" id="L369">        final String[] tableTypes = protocolStringList.toArray(new String[protocolSize]);</span>
+<span class="nc bnc" id="L370" title="All 2 branches missed.">        if (!Arrays.stream(tableTypes).allMatch(MetadataUtils.TABLE_TYPE::equalsIgnoreCase)) {</span>
+<span class="nc" id="L371">            LOGGER.info(&quot;Table type (at least one of) doesn't exists in call to getStreamTables: {}&quot;,</span>
+<span class="nc" id="L372">                    Arrays.toString(tableTypes));</span>
+<span class="nc" id="L373">            throw CallStatus.NOT_FOUND</span>
+<span class="nc" id="L374">                    .withDescription(&quot;Table type (at least one of) doesn't exists in call to getStreamTables: &quot;</span>
+<span class="nc" id="L375">                            + Arrays.toString(tableTypes))</span>
+<span class="nc" id="L376">                    .toRuntimeException();</span>
+        }
+
+<span class="nc" id="L379">        Map&lt;String, Map&lt;String, Schema&gt;&gt; tables = new HashMap&lt;&gt;();</span>
+        try {
+<span class="nc bnc" id="L381" title="All 2 branches missed.">            for (Map.Entry&lt;String, Path&gt; schemaEntry : parquetManager.getSchemas(schemaFilterPattern).entrySet()) {</span>
+<span class="nc" id="L382">                Map&lt;String, Schema&gt; tablesForSchema = new HashMap&lt;&gt;();</span>
+<span class="nc" id="L383">                tables.put(schemaEntry.getKey(), tablesForSchema);</span>
+<span class="nc bnc" id="L384" title="All 2 branches missed.">                for (Map.Entry&lt;String, Path&gt; tableEntry : parquetManager</span>
+<span class="nc" id="L385">                        .getTables(schemaEntry.getKey(), tableFilterPattern).entrySet()) {</span>
+<span class="nc bnc" id="L386" title="All 2 branches missed.">                    Schema schema = command.getIncludeSchema()</span>
+<span class="nc" id="L387">                            ? parquetManager.getTableSchema(schemaEntry.getKey(), tableEntry.getKey())</span>
+<span class="nc" id="L388">                            : null;</span>
+<span class="nc" id="L389">                    tablesForSchema.put(tableEntry.getKey(), schema);</span>
+<span class="nc" id="L390">                }</span>
+<span class="nc" id="L391">            }</span>
+<span class="nc" id="L392">        } catch (IOException e) {</span>
+<span class="nc" id="L393">            LOGGER.error(&quot;Failed to getStreamTables&quot;, e);</span>
+<span class="nc" id="L394">            listener.error(e);</span>
+<span class="nc" id="L395">            return;</span>
+<span class="nc" id="L396">        }</span>
+
+<span class="nc" id="L398">        try (VectorSchemaRoot vectorSchemaRoot = MetadataUtils.getTablesRoot(</span>
+                tables,
+                allocator,
+<span class="nc" id="L401">                command.getIncludeSchema(),</span>
+                schemaFilterPattern,
+                tableFilterPattern)) {
+<span class="nc" id="L404">            listener.start(vectorSchemaRoot);</span>
+<span class="nc" id="L405">            listener.putNext();</span>
+<span class="nc" id="L406">        } catch (Exception e) {</span>
+<span class="nc" id="L407">            LOGGER.error(&quot;Failed to getStreamTables&quot;, e);</span>
+<span class="nc" id="L408">            listener.error(e);</span>
+        } finally {
+<span class="nc" id="L410">            listener.completed();</span>
+        }
+<span class="nc" id="L412">    }</span>
+
+    @Override
+    public FlightInfo getFlightInfoTypeInfo(
+            FlightSql.CommandGetXdbcTypeInfo request, CallContext context, FlightDescriptor descriptor) {
+<span class="nc" id="L417">        return getFlightInfoForSchema(request, descriptor, Schemas.GET_TYPE_INFO_SCHEMA);</span>
+    }
+
+    @Override
+    public void getStreamTypeInfo(FlightSql.CommandGetXdbcTypeInfo request, CallContext context,
+            ServerStreamListener listener) {
+<span class="nc" id="L423">        try (VectorSchemaRoot vectorSchemaRoot = MetadataUtils.getTypeInfoRoot(request, allocator)) {</span>
+<span class="nc" id="L424">            listener.start(vectorSchemaRoot);</span>
+<span class="nc" id="L425">            listener.putNext();</span>
+
+<span class="nc" id="L427">            listener.completed();</span>
+        }
+<span class="nc" id="L429">    }</span>
+
+    @Override
+    public FlightInfo getFlightInfoStatement(FlightSql.CommandStatementQuery command, CallContext context,
+            FlightDescriptor descriptor) {
+<span class="nc" id="L434">        ByteString handle = copyFrom(randomUUID().toString().getBytes(StandardCharsets.UTF_8));</span>
+<span class="nc" id="L435">        String query = command.getQuery();</span>
+<span class="nc" id="L436">        LOGGER.info(&quot;getFlightInfoStatement, ticket {}: {}&quot;, handle, query);</span>
+
+        Schema arrowSchema;
+        try {
+<span class="nc" id="L440">            arrowSchema = parquetManager.getQuerySchema(query);</span>
+<span class="nc" id="L441">        } catch (Exception e) {</span>
+<span class="nc" id="L442">            LOGGER.error(&quot;Error while getting Arrow schema for the query: &quot; + query, e);</span>
+<span class="nc" id="L443">            throw CallStatus.INTERNAL.withDescription(&quot;Error while getting Arrow schema for the query: &quot; + query)</span>
+<span class="nc" id="L444">                    .withCause(e).toRuntimeException();</span>
+<span class="nc" id="L445">        }</span>
+
+<span class="nc bnc" id="L447" title="All 2 branches missed.">        if (arrowSchema == null) {</span>
+<span class="nc" id="L448">            LOGGER.error(&quot;Error while getting Arrow schema for the query: &quot; + query);</span>
+<span class="nc" id="L449">            throw CallStatus.NOT_FOUND.withDescription(&quot;Could not get Arrow schema for the query: &quot; + query)</span>
+<span class="nc" id="L450">                    .toRuntimeException();</span>
+        }
+
+<span class="nc bnc" id="L453" title="All 2 branches missed.">        if (LOGGER.isInfoEnabled()) {</span>
+<span class="nc" id="L454">            StringBuilder sb = new StringBuilder(&quot;getFlightInfoStatement schema for '&quot;).append(query).append(&quot;': [&quot;);</span>
+<span class="nc" id="L455">            List&lt;org.apache.arrow.vector.types.pojo.Field&gt; fields = arrowSchema.getFields();</span>
+<span class="nc bnc" id="L456" title="All 2 branches missed.">            for (int i = 0; i &lt; fields.size(); i++) {</span>
+<span class="nc bnc" id="L457" title="All 2 branches missed.">                if (i &gt; 0)</span>
+<span class="nc" id="L458">                    sb.append(&quot;, &quot;);</span>
+<span class="nc" id="L459">                sb.append(fields.get(i).getName()).append(':').append(fields.get(i).getType());</span>
+            }
+<span class="nc" id="L461">            sb.append(']');</span>
+<span class="nc" id="L462">            LOGGER.info(&quot;{}&quot;, sb);</span>
+        }
+
+<span class="nc" id="L465">        FlightSql.TicketStatementQuery ticket = FlightSql.TicketStatementQuery.newBuilder().setStatementHandle(handle)</span>
+<span class="nc" id="L466">                .build();</span>
+
+<span class="nc" id="L468">        statementCache.put(handle.toStringUtf8(), HandleState.forQuery(query), 10, TimeUnit.MINUTES);</span>
+
+<span class="nc" id="L470">        return getFlightInfoForSchema(ticket, descriptor, arrowSchema);</span>
+    }
+
+    @Override
+    public SchemaResult getSchemaStatement(FlightSql.CommandStatementQuery command, CallContext context,
+            FlightDescriptor descriptor) {
+<span class="nc" id="L476">        String query = command.getQuery();</span>
+<span class="nc" id="L477">        LOGGER.info(&quot;getSchemaStatement: {}&quot;, query);</span>
+
+        Schema arrowSchema;
+        try {
+<span class="nc" id="L481">            arrowSchema = parquetManager.getQuerySchema(query);</span>
+<span class="nc" id="L482">        } catch (Exception e) {</span>
+<span class="nc" id="L483">            LOGGER.error(&quot;Error while getting Arrow schema for the query: &quot; + query, e);</span>
+<span class="nc" id="L484">            throw CallStatus.INTERNAL.withDescription(&quot;Error while getting Arrow schema for the query: &quot; + query)</span>
+<span class="nc" id="L485">                    .withCause(e).toRuntimeException();</span>
+<span class="nc" id="L486">        }</span>
+
+<span class="nc bnc" id="L488" title="All 2 branches missed.">        if (arrowSchema == null) {</span>
+<span class="nc" id="L489">            throw CallStatus.NOT_FOUND.withDescription(&quot;Could not get Arrow schema for the query: &quot; + query)</span>
+<span class="nc" id="L490">                    .toRuntimeException();</span>
+        }
+
+<span class="nc" id="L493">        return new SchemaResult(arrowSchema);</span>
+    }
+
+    @Override
+    public void getStreamStatement(FlightSql.TicketStatementQuery ticket, CallContext context,
+            ServerStreamListener listener) {
+<span class="nc" id="L499">        final ByteString handle = ticket.getStatementHandle();</span>
+<span class="nc" id="L500">        HandleState state = (HandleState) statementCache.get(handle.toStringUtf8());</span>
+<span class="nc bnc" id="L501" title="All 2 branches missed.">        if (state == null) {</span>
+<span class="nc" id="L502">            String msg = &quot;No HandleState found in cache for handle: &quot; + handle;</span>
+<span class="nc" id="L503">            LOGGER.error(msg);</span>
+<span class="nc" id="L504">            listener.error(new IllegalStateException(msg));</span>
+<span class="nc" id="L505">            return;</span>
+        }
+
+<span class="nc" id="L508">        String query = state.query();</span>
+<span class="nc" id="L509">        String[] filePaths = state.filePaths();</span>
+<span class="nc bnc" id="L510" title="All 2 branches missed.">        if (filePaths == null) {</span>
+<span class="nc" id="L511">            String msg = &quot;No file paths in handle state: &quot; + handle;</span>
+<span class="nc" id="L512">            LOGGER.error(msg);</span>
+<span class="nc" id="L513">            listener.error(new IllegalStateException(msg));</span>
+<span class="nc" id="L514">            return;</span>
+        }
+
+<span class="nc" id="L517">        LOGGER.info(&quot;Server-grouped getStream: {} file(s), query='{}'&quot;, filePaths.length, query);</span>
+        try {
+<span class="nc" id="L519">            parquetManager.readParquet(allocator, query, filePaths, listener, true);</span>
+<span class="nc" id="L520">            listener.completed();</span>
+<span class="nc" id="L521">        } catch (Exception e) {</span>
+<span class="nc" id="L522">            LOGGER.error(&quot;Failed to process server-grouped ticket, files: {}&quot;, Arrays.toString(filePaths), e);</span>
+<span class="nc" id="L523">            listener.error(e);</span>
+        } finally {
+<span class="nc bnc" id="L525" title="All 2 branches missed.">            if (state.serverUri() != null) {</span>
+                // Keep the ticket readable until TTL so Spark can retry a failed task from
+                // the beginning. Only the load accounting is cleared after the first stream.
+<span class="nc" id="L528">                statementCache.set(handle.toStringUtf8(),</span>
+<span class="nc" id="L529">                        HandleState.forServerFiles(query, filePaths, state.serverUri(), 0L),</span>
+                        10, TimeUnit.MINUTES);
+<span class="nc" id="L531">                serverRegistry.compute(state.serverUri(), (k, v) -&gt; {</span>
+<span class="nc bnc" id="L532" title="All 2 branches missed.">                    if (v == null) return null;</span>
+<span class="nc" id="L533">                    long updated = v - state.bytes();</span>
+<span class="nc bnc" id="L534" title="All 2 branches missed.">                    return updated &lt;= 0 ? 0L : updated;</span>
+                });
+            }
+        }
+<span class="nc" id="L538">    }</span>
+
+    /** Returns a server URI that has ALL files in the map, or null if none does. */
+    private String findServerWithAllFiles(Map&lt;String, FileAssignment&gt; pathLocations,
+            Set&lt;String&gt; allServerUris) {
+        outer:
+<span class="nc bnc" id="L544" title="All 2 branches missed.">        for (String serverUri : allServerUris) {</span>
+<span class="nc" id="L545">            String normServer = HostUtils.normalize(serverUri);</span>
+<span class="nc bnc" id="L546" title="All 2 branches missed.">            for (FileAssignment fa : pathLocations.values()) {</span>
+<span class="nc" id="L547">                boolean hasHost = false;</span>
+<span class="nc bnc" id="L548" title="All 2 branches missed.">                for (String host : fa.hosts()) {</span>
+<span class="nc bnc" id="L549" title="All 2 branches missed.">                    if (HostUtils.normalize(host).equals(normServer)) {</span>
+<span class="nc" id="L550">                        hasHost = true;</span>
+<span class="nc" id="L551">                        break;</span>
+                    }
+<span class="nc" id="L553">                }</span>
+<span class="nc bnc" id="L554" title="All 2 branches missed.">                if (!hasHost) continue outer;</span>
+<span class="nc" id="L555">            }</span>
+<span class="nc" id="L556">            return serverUri;</span>
+        }
+<span class="nc" id="L558">        return null;</span>
+    }
+
+    static String extractTableFromPath(String path) {
+<span class="nc" id="L562">        int lastSep = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));</span>
+<span class="nc bnc" id="L563" title="All 2 branches missed.">        if (lastSep &lt; 0) return path;</span>
+<span class="nc" id="L564">        String parent = path.substring(0, lastSep);</span>
+<span class="nc" id="L565">        return parent.replace('\\', '.').replace('/', '.');</span>
+    }
+
+    private FlightEndpoint createEndpoint(String serverUri, List&lt;String&gt; serverFiles,
+            String query, long addedBytes) {
+<span class="nc" id="L570">        URI parsedUri = URI.create(serverUri);</span>
+<span class="nc" id="L571">        Location serverLoc = Location.forGrpcInsecure(parsedUri.getHost(), parsedUri.getPort());</span>
+<span class="nc" id="L572">        ByteString serverHandle = copyFrom(randomUUID().toString().getBytes(StandardCharsets.UTF_8));</span>
+<span class="nc" id="L573">        statementCache.put(serverHandle.toStringUtf8(),</span>
+<span class="nc" id="L574">                HandleState.forServerFiles(query, serverFiles.toArray(new String[0]), serverUri, addedBytes),</span>
+                10, TimeUnit.MINUTES);
+<span class="nc" id="L576">        Ticket serverTicket = new Ticket(Any.pack(</span>
+<span class="nc" id="L577">                FlightSql.TicketStatementQuery.newBuilder().setStatementHandle(serverHandle).build())</span>
+<span class="nc" id="L578">                .toByteArray());</span>
+<span class="nc" id="L579">        return new FlightEndpoint(serverTicket, serverLoc);</span>
+    }
+
+    @Override
+    public void close() throws Exception {
+        try {
+<span class="nc" id="L585">            serverRegistry.remove(serverUri);</span>
+<span class="nc" id="L586">            serverHeartbeats.remove(serverUri);</span>
+<span class="nc" id="L587">        } catch (Throwable t) {</span>
+<span class="nc" id="L588">            LOGGER.warn(&quot;Failed to deregister server from registry: {}&quot;, t.getMessage());</span>
+<span class="nc" id="L589">        }</span>
+<span class="nc" id="L590">        heartbeatExecutor.shutdownNow();</span>
+<span class="nc" id="L591">        AutoCloseables.close(allocator);</span>
+<span class="nc" id="L592">    }</span>
+
+    /**
+     * Filters out servers that haven't sent a heartbeat within the timeout window.
+     */
+    Set&lt;String&gt; filterLiveServers(Set&lt;String&gt; serverUris) {
+<span class="nc" id="L598">        long now = System.currentTimeMillis();</span>
+<span class="nc" id="L599">        long deadline = now - HEARTBEAT_TIMEOUT_SEC * 1000;</span>
+
+<span class="nc" id="L601">        Map&lt;String, Long&gt; heartbeats = serverHeartbeats.getAll(serverUris);</span>
+<span class="nc" id="L602">        Set&lt;String&gt; live = new LinkedHashSet&lt;&gt;();</span>
+<span class="nc bnc" id="L603" title="All 2 branches missed.">        for (String uri : serverUris) {</span>
+<span class="nc" id="L604">            Long lastHb = heartbeats.get(uri);</span>
+<span class="nc bnc" id="L605" title="All 2 branches missed.">            if (lastHb == null) {</span>
+                // No heartbeat yet — probably just registered, give it a chance
+<span class="nc" id="L607">                live.add(uri);</span>
+<span class="nc bnc" id="L608" title="All 2 branches missed.">            } else if (lastHb &gt;= deadline) {</span>
+<span class="nc" id="L609">                live.add(uri);</span>
+            } else {
+<span class="nc" id="L611">                LOGGER.warn(&quot;Server {} is stale (last heartbeat {}ms ago), removing from pool&quot;,</span>
+<span class="nc" id="L612">                        uri, now - lastHb);</span>
+<span class="nc" id="L613">                serverRegistry.remove(uri);</span>
+<span class="nc" id="L614">                serverHeartbeats.remove(uri);</span>
+            }
+<span class="nc" id="L616">        }</span>
+<span class="nc bnc" id="L617" title="All 2 branches missed.">        if (live.size() &lt; serverUris.size()) {</span>
+<span class="nc" id="L618">            LOGGER.info(&quot;filterLiveServers: {} of {} servers are alive&quot;, live.size(), serverUris.size());</span>
+        }
+<span class="nc" id="L620">        return live;</span>
+    }
+
+    /**
+     * Picks the Flight server URI with the smallest cumulative load.
+     * Prefers a server whose hostname matches one of the file's block hosts
+     * (data locality) when not all servers are equally local.
+     */
+    private static String pickServer(Set&lt;String&gt; fileHosts, Map&lt;String, Long&gt; serverLoad) {
+<span class="nc" id="L629">        Set&lt;String&gt; normalizedFileHosts = fileHosts.stream()</span>
+<span class="nc" id="L630">                .map(HostUtils::normalize)</span>
+<span class="nc" id="L631">                .collect(Collectors.toSet());</span>
+
+<span class="nc" id="L633">        var localServers = serverLoad.keySet().stream()</span>
+<span class="nc" id="L634">                .filter(uri -&gt; normalizedFileHosts.contains(HostUtils.normalize(uri)))</span>
+<span class="nc" id="L635">                .toList();</span>
+
+<span class="nc bnc" id="L637" title="All 4 branches missed.">        boolean hasLocality = !localServers.isEmpty() &amp;&amp; localServers.size() &lt; serverLoad.size();</span>
+<span class="nc bnc" id="L638" title="All 2 branches missed.">        var candidates = hasLocality ? localServers : List.copyOf(serverLoad.keySet());</span>
+<span class="nc" id="L639">        return candidates.stream().min(Comparator.comparingLong(serverLoad::get)).orElseThrow();</span>
+    }
+
+    protected &lt;T extends Message&gt; FlightInfo getFlightInfoForSchema(T request, FlightDescriptor descriptor,
+            Schema schema) {
+<span class="nc" id="L644">        final List&lt;FlightEndpoint&gt; endpoints = determineEndpoints(request, descriptor, schema);</span>
+<span class="nc" id="L645">        return new FlightInfo(schema, descriptor, endpoints, -1, -1);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>
