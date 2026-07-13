@@ -72,13 +72,35 @@ jobs:
           cache: maven
       - run: mvn --batch-mode clean verify -Dmaven.test.failure.ignore=true
         continue-on-error: true
-      - uses: actions/upload-artifact@v4
+
+      - name: Generate JaCoCo badge SVG
+        uses: cicirello/jacoco-badge-generator@v2
+        with:
+          generate-branches-badge: true
+          badges-directory: target/site/jacoco
+        if: always()
+
+      - name: Upload JaCoCo report
+        uses: actions/upload-artifact@v4
         if: always()
         with:
           name: jacoco-report
           path: target/site/jacoco/
           if-no-files-found: warn
           retention-days: 14
+
+      - name: PR coverage comment
+        uses: madrapps/jacoco-report@v1.7
+        with:
+          paths: target/site/jacoco/jacoco.xml
+          token: ${{ secrets.GITHUB_TOKEN }}
+          min-coverage-overall: 80
+          min-coverage-changed-files: 80
+          title: "📊 JaCoCo Coverage Report — [HTML Report](https://nsu-fit.github.io/ArrowFlight/pr-${{ github.event.number }}/jacoco/)"
+          update-comment: true
+        continue-on-error: true
+        if: github.event_name == 'pull_request'
+
       - uses: coverallsapp/github-action@v2
         continue-on-error: true
         if: always()
@@ -86,14 +108,18 @@ jobs:
           file: target/site/jacoco/jacoco.xml
           format: jacoco
           base-path: /src/main/java
-      - uses: peaceiris/actions-gh-pages@v4
+
+      - name: Deploy JaCoCo report to gh-pages (main)
+        uses: peaceiris/actions-gh-pages@v4
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./target/site
           destination_dir: jacoco
           keep_files: true
-      - uses: peaceiris/actions-gh-pages@v4
+
+      - name: Deploy JaCoCo report to gh-pages (PR)
+        uses: peaceiris/actions-gh-pages@v4
         if: github.event_name == 'pull_request'
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}

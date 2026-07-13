@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/nsu-fit/ArrowFlight/actions/workflows/ci.yml/badge.svg)](https://github.com/nsu-fit/ArrowFlight/actions/workflows/ci.yml)
 [![Coverage Status](https://coveralls.io/repos/github/nsu-fit/ArrowFlight/badge.svg)](https://coveralls.io/github/nsu-fit/ArrowFlight)
+[![Coverage](https://nsu-fit.github.io/ArrowFlight/jacoco/badge.svg)](https://nsu-fit.github.io/ArrowFlight/jacoco/)
 
 High-performance **Arrow Flight SQL** server for analytical queries on Parquet data. Built for teams running SQL over large Parquet datasets in distributed environments (HDFS, S3, local FS).
 
@@ -132,7 +133,7 @@ PR checks (`.github/workflows/ci.yml`) enforce on every pull request:
 - `build-server` / `build-client` — compilation via `mvn compile -P server` / `-P client`
 - `lint` — Checkstyle violations and SpotBugs errors via `mvn compile checkstyle:check spotbugs:check`
 - `integration` — integration + spark + smoke tests via `mvn test -P integration`
-- `coverage` — JaCoCo coverage with per-file table in PR comments and detailed HTML report on GitHub Pages
+- `coverage` — JaCoCo coverage with per-file table in PR comments, coverage badge on GitHub Pages, and 80% coverage target (non-blocking)
 
 **Run tests locally**:
 ```bash
