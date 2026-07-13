@@ -117,128 +117,113 @@ public final class RuntimeSettings {
 <span class="nc" id="L117">        return getInt(&quot;hazelcastPort&quot;, 5701);</span>
     }
 
-    public static int hazelcastClusterJoinTimeoutSec() {
-<span class="nc" id="L121">        return getInt(&quot;hazelcastClusterJoinTimeoutSec&quot;,</span>
-                &quot;arrowflight.hazelcast.clusterJoinTimeoutSec&quot;, 60);
-    }
-
-    public static String logLevel() {
-<span class="nc" id="L126">        String level = getString(&quot;logLevel&quot;, &quot;arrowflight.log.level&quot;, &quot;LOGGING_LEVEL&quot;, null);</span>
-<span class="nc bnc" id="L127" title="All 2 branches missed.">        return level != null ? level.toUpperCase() : &quot;INFO&quot;;</span>
-    }
-
     public static int ioFileBufferSize() {
-<span class="nc" id="L131">        return getInt(&quot;ioFileBufferSize&quot;, 131072);</span>
+<span class="nc" id="L121">        return getInt(&quot;ioFileBufferSize&quot;, 131072);</span>
     }
 
     private static String getString(String key, String fallback) {
-<span class="nc" id="L135">        String value = System.getProperty(key);</span>
-<span class="nc bnc" id="L136" title="All 4 branches missed.">        if (value == null || value.isBlank()) {</span>
-<span class="nc" id="L137">            value = PROPERTIES.getProperty(key);</span>
+<span class="nc" id="L125">        String value = System.getProperty(key);</span>
+<span class="nc bnc" id="L126" title="All 4 branches missed.">        if (value == null || value.isBlank()) {</span>
+<span class="nc" id="L127">            value = PROPERTIES.getProperty(key);</span>
         }
-<span class="nc bnc" id="L139" title="All 4 branches missed.">        return value == null || value.isBlank() ? fallback : value.trim();</span>
+<span class="nc bnc" id="L129" title="All 4 branches missed.">        return value == null || value.isBlank() ? fallback : value.trim();</span>
     }
 
     private static String getString(String key, String systemPropertyAlias, String envName, String fallback) {
-<span class="nc" id="L143">        String value = System.getProperty(key);</span>
-<span class="nc bnc" id="L144" title="All 4 branches missed.">        if (value == null || value.isBlank()) {</span>
-<span class="nc" id="L145">            value = System.getProperty(systemPropertyAlias);</span>
+<span class="nc" id="L133">        String value = System.getProperty(key);</span>
+<span class="nc bnc" id="L134" title="All 4 branches missed.">        if (value == null || value.isBlank()) {</span>
+<span class="nc" id="L135">            value = System.getProperty(systemPropertyAlias);</span>
         }
-<span class="nc bnc" id="L147" title="All 4 branches missed.">        if (value == null || value.isBlank()) {</span>
-<span class="nc" id="L148">            value = System.getenv(envName);</span>
+<span class="nc bnc" id="L137" title="All 4 branches missed.">        if (value == null || value.isBlank()) {</span>
+<span class="nc" id="L138">            value = System.getenv(envName);</span>
         }
-<span class="nc bnc" id="L150" title="All 4 branches missed.">        if (value == null || value.isBlank()) {</span>
-<span class="nc" id="L151">            value = PROPERTIES.getProperty(key);</span>
+<span class="nc bnc" id="L140" title="All 4 branches missed.">        if (value == null || value.isBlank()) {</span>
+<span class="nc" id="L141">            value = PROPERTIES.getProperty(key);</span>
         }
-<span class="nc bnc" id="L153" title="All 4 branches missed.">        if (value == null || value.isBlank()) {</span>
-<span class="nc" id="L154">            value = PROPERTIES.getProperty(systemPropertyAlias);</span>
+<span class="nc bnc" id="L143" title="All 4 branches missed.">        if (value == null || value.isBlank()) {</span>
+<span class="nc" id="L144">            value = PROPERTIES.getProperty(systemPropertyAlias);</span>
         }
-<span class="nc bnc" id="L156" title="All 4 branches missed.">        return value == null || value.isBlank() ? fallback : value.trim();</span>
+<span class="nc bnc" id="L146" title="All 4 branches missed.">        return value == null || value.isBlank() ? fallback : value.trim();</span>
     }
 
     private static int getInt(String key, int fallback) {
-<span class="nc" id="L160">        return parseInt(key, getString(key, String.valueOf(fallback)));</span>
+<span class="nc" id="L150">        return parseInt(key, getString(key, String.valueOf(fallback)));</span>
     }
 
     private static int getInt(String key, String systemPropertyAlias, int fallback) {
-<span class="nc" id="L164">        String value = System.getProperty(key);</span>
-<span class="nc bnc" id="L165" title="All 4 branches missed.">        if (value == null || value.isBlank()) {</span>
-<span class="nc" id="L166">            value = System.getProperty(systemPropertyAlias);</span>
+<span class="nc" id="L154">        String value = System.getProperty(key);</span>
+<span class="nc bnc" id="L155" title="All 4 branches missed.">        if (value == null || value.isBlank()) {</span>
+<span class="nc" id="L156">            value = System.getProperty(systemPropertyAlias);</span>
         }
-<span class="nc bnc" id="L168" title="All 4 branches missed.">        if (value == null || value.isBlank()) {</span>
-<span class="nc" id="L169">            value = PROPERTIES.getProperty(key);</span>
+<span class="nc bnc" id="L158" title="All 4 branches missed.">        if (value == null || value.isBlank()) {</span>
+<span class="nc" id="L159">            value = PROPERTIES.getProperty(key);</span>
         }
-<span class="nc bnc" id="L171" title="All 4 branches missed.">        if (value == null || value.isBlank()) {</span>
-<span class="nc" id="L172">            value = PROPERTIES.getProperty(systemPropertyAlias);</span>
+<span class="nc bnc" id="L161" title="All 4 branches missed.">        if (value == null || value.isBlank()) {</span>
+<span class="nc" id="L162">            value = PROPERTIES.getProperty(systemPropertyAlias);</span>
         }
-<span class="nc bnc" id="L174" title="All 4 branches missed.">        return parseInt(key, value == null || value.isBlank() ? String.valueOf(fallback) : value.trim());</span>
+<span class="nc bnc" id="L164" title="All 4 branches missed.">        return parseInt(key, value == null || value.isBlank() ? String.valueOf(fallback) : value.trim());</span>
     }
 
     private static Integer getOptionalInt(String key, String systemPropertyAlias) {
-<span class="nc" id="L178">        String value = System.getProperty(key);</span>
-<span class="nc bnc" id="L179" title="All 4 branches missed.">        if (value == null || value.isBlank()) {</span>
-<span class="nc" id="L180">            value = System.getProperty(systemPropertyAlias);</span>
+<span class="nc" id="L168">        String value = System.getProperty(key);</span>
+<span class="nc bnc" id="L169" title="All 4 branches missed.">        if (value == null || value.isBlank()) {</span>
+<span class="nc" id="L170">            value = System.getProperty(systemPropertyAlias);</span>
         }
-<span class="nc bnc" id="L182" title="All 4 branches missed.">        if (value == null || value.isBlank()) {</span>
-<span class="nc" id="L183">            value = PROPERTIES.getProperty(key);</span>
+<span class="nc bnc" id="L172" title="All 4 branches missed.">        if (value == null || value.isBlank()) {</span>
+<span class="nc" id="L173">            value = PROPERTIES.getProperty(key);</span>
         }
-<span class="nc bnc" id="L185" title="All 4 branches missed.">        if (value == null || value.isBlank()) {</span>
-<span class="nc" id="L186">            value = PROPERTIES.getProperty(systemPropertyAlias);</span>
+<span class="nc bnc" id="L175" title="All 4 branches missed.">        if (value == null || value.isBlank()) {</span>
+<span class="nc" id="L176">            value = PROPERTIES.getProperty(systemPropertyAlias);</span>
         }
-<span class="nc bnc" id="L188" title="All 4 branches missed.">        return value == null || value.isBlank() ? null : parseInt(key, value.trim());</span>
+<span class="nc bnc" id="L178" title="All 4 branches missed.">        return value == null || value.isBlank() ? null : parseInt(key, value.trim());</span>
     }
 
     private static boolean getBoolean(String key, String systemPropertyAlias, String envName,
             boolean fallback) {
-<span class="nc" id="L193">        String value = getString(key, systemPropertyAlias, envName, null);</span>
-<span class="nc bnc" id="L194" title="All 2 branches missed.">        return value == null ? fallback : Boolean.parseBoolean(value);</span>
+<span class="nc" id="L183">        String value = getString(key, systemPropertyAlias, envName, null);</span>
+<span class="nc bnc" id="L184" title="All 2 branches missed.">        return value == null ? fallback : Boolean.parseBoolean(value);</span>
     }
 
     private static long getLong(String key, String systemPropertyAlias, long fallback) {
-<span class="nc" id="L198">        String value = System.getProperty(key);</span>
-<span class="nc bnc" id="L199" title="All 4 branches missed.">        if (value == null || value.isBlank()) {</span>
-<span class="nc" id="L200">            value = System.getProperty(systemPropertyAlias);</span>
+<span class="nc" id="L188">        String value = System.getProperty(key);</span>
+<span class="nc bnc" id="L189" title="All 4 branches missed.">        if (value == null || value.isBlank()) {</span>
+<span class="nc" id="L190">            value = System.getProperty(systemPropertyAlias);</span>
         }
-<span class="nc bnc" id="L202" title="All 4 branches missed.">        if (value == null || value.isBlank()) {</span>
-<span class="nc" id="L203">            value = PROPERTIES.getProperty(key);</span>
+<span class="nc bnc" id="L192" title="All 4 branches missed.">        if (value == null || value.isBlank()) {</span>
+<span class="nc" id="L193">            value = PROPERTIES.getProperty(key);</span>
         }
-<span class="nc bnc" id="L205" title="All 4 branches missed.">        if (value == null || value.isBlank()) {</span>
-<span class="nc" id="L206">            value = PROPERTIES.getProperty(systemPropertyAlias);</span>
+<span class="nc bnc" id="L195" title="All 4 branches missed.">        if (value == null || value.isBlank()) {</span>
+<span class="nc" id="L196">            value = PROPERTIES.getProperty(systemPropertyAlias);</span>
         }
-<span class="nc bnc" id="L208" title="All 4 branches missed.">        return parseLong(key, value == null || value.isBlank() ? String.valueOf(fallback) : value.trim());</span>
+<span class="nc bnc" id="L198" title="All 4 branches missed.">        return parseLong(key, value == null || value.isBlank() ? String.valueOf(fallback) : value.trim());</span>
     }
 
     private static int parseInt(String key, String value) {
         try {
-<span class="nc" id="L213">            return Integer.parseInt(value);</span>
-<span class="nc" id="L214">        } catch (NumberFormatException e) {</span>
-<span class="nc" id="L215">            throw new IllegalArgumentException(&quot;Invalid integer value for &quot; + key + &quot;: &quot; + value, e);</span>
+<span class="nc" id="L203">            return Integer.parseInt(value);</span>
+<span class="nc" id="L204">        } catch (NumberFormatException e) {</span>
+<span class="nc" id="L205">            throw new IllegalArgumentException(&quot;Invalid integer value for &quot; + key + &quot;: &quot; + value, e);</span>
         }
     }
 
     private static long parseLong(String key, String value) {
         try {
-<span class="nc" id="L221">            return Long.parseLong(value);</span>
-<span class="nc" id="L222">        } catch (NumberFormatException e) {</span>
-<span class="nc" id="L223">            throw new IllegalArgumentException(&quot;Invalid long value for &quot; + key + &quot;: &quot; + value, e);</span>
+<span class="nc" id="L211">            return Long.parseLong(value);</span>
+<span class="nc" id="L212">        } catch (NumberFormatException e) {</span>
+<span class="nc" id="L213">            throw new IllegalArgumentException(&quot;Invalid long value for &quot; + key + &quot;: &quot; + value, e);</span>
         }
     }
 
     private static Properties loadProperties() {
-<span class="nc" id="L228">        Properties properties = new Properties();</span>
-<span class="nc" id="L229">        try (InputStream input = RuntimeSettings.class.getClassLoader().getResourceAsStream(CONFIG_RESOURCE)) {</span>
-<span class="nc bnc" id="L230" title="All 2 branches missed.">            if (input != null) {</span>
-<span class="nc" id="L231">                properties.load(input);</span>
+<span class="nc" id="L218">        Properties properties = new Properties();</span>
+<span class="nc" id="L219">        try (InputStream input = RuntimeSettings.class.getClassLoader().getResourceAsStream(CONFIG_RESOURCE)) {</span>
+<span class="nc bnc" id="L220" title="All 2 branches missed.">            if (input != null) {</span>
+<span class="nc" id="L221">                properties.load(input);</span>
             }
-<span class="nc" id="L233">        } catch (IOException e) {</span>
-<span class="nc" id="L234">            throw new ExceptionInInitializerError(e);</span>
-<span class="nc" id="L235">        }</span>
-<span class="nc" id="L236">        String level = properties.getProperty(&quot;logLevel&quot;);</span>
-<span class="nc bnc" id="L237" title="All 4 branches missed.">        if (level != null &amp;&amp; !level.isBlank()</span>
-<span class="nc bnc" id="L238" title="All 2 branches missed.">                &amp;&amp; System.getProperty(&quot;org.slf4j.simpleLogger.defaultLogLevel&quot;) == null) {</span>
-<span class="nc" id="L239">            System.setProperty(&quot;org.slf4j.simpleLogger.defaultLogLevel&quot;, level.trim());</span>
-        }
-<span class="nc" id="L241">        return properties;</span>
+<span class="nc" id="L223">        } catch (IOException e) {</span>
+<span class="nc" id="L224">            throw new ExceptionInInitializerError(e);</span>
+<span class="nc" id="L225">        }</span>
+<span class="nc" id="L226">        return properties;</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

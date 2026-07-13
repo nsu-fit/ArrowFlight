@@ -42,47 +42,47 @@ import static org.apache.arrow.vector.ipc.message.MessageSerializer.serializeMet
     public static final String TABLE_TYPE = &quot;TABLE&quot;;
 
     public static VectorSchemaRoot getCatalogsRoot(final BufferAllocator allocator) {
-<span class="fc" id="L45">        List&lt;Map&lt;String, Object&gt;&gt; data = List.of(</span>
-<span class="fc" id="L46">                Map.of(&quot;TABLE_CATALOG&quot;, CATALOG_NAME)</span>
+<span class="nc" id="L45">        List&lt;Map&lt;String, Object&gt;&gt; data = List.of(</span>
+<span class="nc" id="L46">                Map.of(&quot;TABLE_CATALOG&quot;, CATALOG_NAME)</span>
         );
-<span class="fc" id="L48">        return getRoot(data, allocator, &quot;catalog_name&quot;, &quot;TABLE_CATALOG&quot;);</span>
+<span class="nc" id="L48">        return getRoot(data, allocator, &quot;catalog_name&quot;, &quot;TABLE_CATALOG&quot;);</span>
     }
 
     public static VectorSchemaRoot getSchemasRoot(Collection&lt;String&gt; schemas, BufferAllocator allocator) {
-<span class="fc" id="L52">        final VarCharVector catalogsVector = new VarCharVector(&quot;catalog_name&quot;, allocator);</span>
-<span class="fc" id="L53">        final VarCharVector schemasVector = new VarCharVector(&quot;db_schema_name&quot;, FieldType.notNullable(Types.MinorType.VARCHAR.getType()), allocator);</span>
+<span class="nc" id="L52">        final VarCharVector catalogsVector = new VarCharVector(&quot;catalog_name&quot;, allocator);</span>
+<span class="nc" id="L53">        final VarCharVector schemasVector = new VarCharVector(&quot;db_schema_name&quot;, FieldType.notNullable(Types.MinorType.VARCHAR.getType()), allocator);</span>
 
-<span class="fc" id="L55">        final List&lt;FieldVector&gt; vectors = ImmutableList.of(catalogsVector, schemasVector);</span>
-<span class="fc" id="L56">        vectors.forEach(FieldVector::allocateNew);</span>
+<span class="nc" id="L55">        final List&lt;FieldVector&gt; vectors = ImmutableList.of(catalogsVector, schemasVector);</span>
+<span class="nc" id="L56">        vectors.forEach(FieldVector::allocateNew);</span>
 
-<span class="fc" id="L58">        final Map&lt;FieldVector, String&gt; vectorToColumnName = ImmutableMap.of(</span>
+<span class="nc" id="L58">        final Map&lt;FieldVector, String&gt; vectorToColumnName = ImmutableMap.of(</span>
                 catalogsVector, &quot;TABLE_CATALOG&quot;,
                 schemasVector, &quot;TABLE_SCHEM&quot;
         );
 
-<span class="fc" id="L63">        List&lt;? extends Map&lt;String, ?&gt;&gt; data = schemas.stream().map(schema -&gt; Map.of(</span>
+<span class="nc" id="L63">        List&lt;? extends Map&lt;String, ?&gt;&gt; data = schemas.stream().map(schema -&gt; Map.of(</span>
                 &quot;TABLE_CATALOG&quot;, CATALOG_NAME,
                 &quot;TABLE_SCHEM&quot;, schema
-<span class="fc" id="L66">        )).toList();</span>
+<span class="nc" id="L66">        )).toList();</span>
 
 
-<span class="fc" id="L69">        saveToVectors(vectorToColumnName, data);</span>
+<span class="nc" id="L69">        saveToVectors(vectorToColumnName, data);</span>
 
-<span class="fc" id="L71">        final int rows = vectors.stream()</span>
-<span class="fc" id="L72">                        .map(FieldVector::getValueCount)</span>
-<span class="fc" id="L73">                        .findAny()</span>
-<span class="fc" id="L74">                        .orElseThrow(IllegalStateException::new);</span>
-<span class="fc" id="L75">        vectors.forEach(vector -&gt; vector.setValueCount(rows));</span>
+<span class="nc" id="L71">        final int rows = vectors.stream()</span>
+<span class="nc" id="L72">                        .map(FieldVector::getValueCount)</span>
+<span class="nc" id="L73">                        .findAny()</span>
+<span class="nc" id="L74">                        .orElseThrow(IllegalStateException::new);</span>
+<span class="nc" id="L75">        vectors.forEach(vector -&gt; vector.setValueCount(rows));</span>
 
-<span class="fc" id="L77">        return new VectorSchemaRoot(vectors);</span>
+<span class="nc" id="L77">        return new VectorSchemaRoot(vectors);</span>
     }
 
     public static VectorSchemaRoot getTableTypesRoot(BufferAllocator allocator) {
-<span class="fc" id="L81">        List&lt;Map&lt;String, Object&gt;&gt; data = List.of(</span>
-<span class="fc" id="L82">                Map.of(&quot;TABLE_TYPE&quot;, TABLE_TYPE)</span>
+<span class="nc" id="L81">        List&lt;Map&lt;String, Object&gt;&gt; data = List.of(</span>
+<span class="nc" id="L82">                Map.of(&quot;TABLE_TYPE&quot;, TABLE_TYPE)</span>
         );
 
-<span class="fc" id="L85">        return getRoot(data, allocator, &quot;table_type&quot;, &quot;TABLE_TYPE&quot;);</span>
+<span class="nc" id="L85">        return getRoot(data, allocator, &quot;table_type&quot;, &quot;TABLE_TYPE&quot;);</span>
     }
 
     public static VectorSchemaRoot getTablesRoot(
@@ -195,35 +195,35 @@ import static org.apache.arrow.vector.ipc.message.MessageSerializer.serializeMet
             BufferAllocator allocator,
             String fieldVectorName,
             String columnName) {
-<span class="fc" id="L198">        final VarCharVector dataVector = new VarCharVector(fieldVectorName, FieldType.notNullable(Types.MinorType.VARCHAR.getType()), allocator);</span>
-<span class="fc" id="L199">        saveToVectors(ImmutableMap.of(dataVector, columnName), data);</span>
-<span class="fc" id="L200">        dataVector.setValueCount(dataVector.getValueCount());</span>
-<span class="fc" id="L201">        return new VectorSchemaRoot(singletonList(dataVector));</span>
+<span class="nc" id="L198">        final VarCharVector dataVector = new VarCharVector(fieldVectorName, FieldType.notNullable(Types.MinorType.VARCHAR.getType()), allocator);</span>
+<span class="nc" id="L199">        saveToVectors(ImmutableMap.of(dataVector, columnName), data);</span>
+<span class="nc" id="L200">        dataVector.setValueCount(dataVector.getValueCount());</span>
+<span class="nc" id="L201">        return new VectorSchemaRoot(singletonList(dataVector));</span>
     }
 
     private static &lt;T extends FieldVector&gt; void saveToVectors(final Map&lt;T, String&gt; vectorToColumnName, List&lt;? extends Map&lt;String, ?&gt;&gt; data) {
-<span class="fc" id="L205">        saveToVectors(vectorToColumnName, data, none -&gt; true);</span>
-<span class="fc" id="L206">    }</span>
+<span class="nc" id="L205">        saveToVectors(vectorToColumnName, data, none -&gt; true);</span>
+<span class="nc" id="L206">    }</span>
 
     @SuppressWarnings(&quot;StringSplitter&quot;)
     private static &lt;T extends FieldVector&gt; int saveToVectors(
             Map&lt;T, String&gt; vectorToColumnName,
             List&lt;? extends Map&lt;String, ?&gt;&gt; data,
             Predicate&lt;Map&lt;String, ?&gt;&gt; rowPredicate) {
-<span class="fc" id="L213">        Objects.requireNonNull(vectorToColumnName, &quot;vectorToColumnName cannot be null.&quot;);</span>
-<span class="fc" id="L214">        Objects.requireNonNull(data, &quot;data cannot be null.&quot;);</span>
-<span class="fc" id="L215">        final Set&lt;Map.Entry&lt;T, String&gt;&gt; entrySet = vectorToColumnName.entrySet();</span>
-<span class="fc" id="L216">        int rows = 0;</span>
+<span class="nc" id="L213">        Objects.requireNonNull(vectorToColumnName, &quot;vectorToColumnName cannot be null.&quot;);</span>
+<span class="nc" id="L214">        Objects.requireNonNull(data, &quot;data cannot be null.&quot;);</span>
+<span class="nc" id="L215">        final Set&lt;Map.Entry&lt;T, String&gt;&gt; entrySet = vectorToColumnName.entrySet();</span>
+<span class="nc" id="L216">        int rows = 0;</span>
 
-<span class="fc bfc" id="L218" title="All 2 branches covered.">        for (Map&lt;String, ?&gt; row : data) {</span>
-<span class="pc bpc" id="L219" title="1 of 2 branches missed.">            if (!rowPredicate.test(row)) {</span>
+<span class="nc bnc" id="L218" title="All 2 branches missed.">        for (Map&lt;String, ?&gt; row : data) {</span>
+<span class="nc bnc" id="L219" title="All 2 branches missed.">            if (!rowPredicate.test(row)) {</span>
 <span class="nc" id="L220">                continue;</span>
             }
-<span class="fc bfc" id="L222" title="All 2 branches covered.">            for (final Map.Entry&lt;T, String&gt; vectorToColumn : entrySet) {</span>
-<span class="fc" id="L223">                final T vector = vectorToColumn.getKey();</span>
-<span class="fc" id="L224">                final String columnName = vectorToColumn.getValue();</span>
-<span class="pc bpc" id="L225" title="1 of 2 branches missed.">                if (vector instanceof VarCharVector) {</span>
-<span class="fc" id="L226">                    saveToVector((String) row.get(columnName), (VarCharVector) vector, rows);</span>
+<span class="nc bnc" id="L222" title="All 2 branches missed.">            for (final Map.Entry&lt;T, String&gt; vectorToColumn : entrySet) {</span>
+<span class="nc" id="L223">                final T vector = vectorToColumn.getKey();</span>
+<span class="nc" id="L224">                final String columnName = vectorToColumn.getValue();</span>
+<span class="nc bnc" id="L225" title="All 2 branches missed.">                if (vector instanceof VarCharVector) {</span>
+<span class="nc" id="L226">                    saveToVector((String) row.get(columnName), (VarCharVector) vector, rows);</span>
 <span class="nc bnc" id="L227" title="All 2 branches missed.">                } else if (vector instanceof IntVector) {</span>
 <span class="nc" id="L228">                    saveToVector((Integer) row.get(columnName), (IntVector) vector, rows);</span>
 <span class="nc bnc" id="L229" title="All 2 branches missed.">                } else if (vector instanceof UInt1Vector) {</span>
@@ -262,14 +262,14 @@ import static org.apache.arrow.vector.ipc.message.MessageSerializer.serializeMet
 <span class="nc" id="L262">                            .withDescription(&quot;Provided vector not supported&quot;)</span>
 <span class="nc" id="L263">                            .toRuntimeException();</span>
                 }
-<span class="fc" id="L265">            }</span>
-<span class="fc" id="L266">            rows++;</span>
-<span class="fc" id="L267">        }</span>
-<span class="fc bfc" id="L268" title="All 2 branches covered.">        for (final Map.Entry&lt;T, String&gt; vectorToColumn : entrySet) {</span>
-<span class="fc" id="L269">            vectorToColumn.getKey().setValueCount(rows);</span>
-<span class="fc" id="L270">        }</span>
+<span class="nc" id="L265">            }</span>
+<span class="nc" id="L266">            rows++;</span>
+<span class="nc" id="L267">        }</span>
+<span class="nc bnc" id="L268" title="All 2 branches missed.">        for (final Map.Entry&lt;T, String&gt; vectorToColumn : entrySet) {</span>
+<span class="nc" id="L269">            vectorToColumn.getKey().setValueCount(rows);</span>
+<span class="nc" id="L270">        }</span>
 
-<span class="fc" id="L272">        return rows;</span>
+<span class="nc" id="L272">        return rows;</span>
     }
 
     private static void saveToVector(final Byte data, final UInt1Vector vector, final int index) {
@@ -289,13 +289,13 @@ import static org.apache.arrow.vector.ipc.message.MessageSerializer.serializeMet
 <span class="nc" id="L289">    }</span>
 
     private static void saveToVector(final String data, final VarCharVector vector, final int index) {
-<span class="fc" id="L292">        preconditionCheckSaveToVector(vector, index);</span>
-<span class="fc" id="L293">        vectorConsumer(</span>
+<span class="nc" id="L292">        preconditionCheckSaveToVector(vector, index);</span>
+<span class="nc" id="L293">        vectorConsumer(</span>
                 data,
                 vector,
 <span class="nc" id="L296">                fieldVector -&gt; fieldVector.setNull(index),</span>
-<span class="fc" id="L297">                (theData, fieldVector) -&gt; fieldVector.setSafe(index, new Text(theData)));</span>
-<span class="fc" id="L298">    }</span>
+<span class="nc" id="L297">                (theData, fieldVector) -&gt; fieldVector.setSafe(index, new Text(theData)));</span>
+<span class="nc" id="L298">    }</span>
 
     private static void saveToVector(final Integer data, final IntVector vector, final int index) {
 <span class="nc" id="L301">        preconditionCheckSaveToVector(vector, index);</span>
@@ -317,32 +317,32 @@ import static org.apache.arrow.vector.ipc.message.MessageSerializer.serializeMet
 <span class="nc" id="L317">    }</span>
 
     private static void preconditionCheckSaveToVector(final FieldVector vector, final int index) {
-<span class="fc" id="L320">        Objects.requireNonNull(vector, &quot;vector cannot be null.&quot;);</span>
-<span class="pc bpc" id="L321" title="1 of 2 branches missed.">        Preconditions.checkState(index &gt;= 0, &quot;Index must be a positive number!&quot;);</span>
-<span class="fc" id="L322">    }</span>
+<span class="nc" id="L320">        Objects.requireNonNull(vector, &quot;vector cannot be null.&quot;);</span>
+<span class="nc bnc" id="L321" title="All 2 branches missed.">        Preconditions.checkState(index &gt;= 0, &quot;Index must be a positive number!&quot;);</span>
+<span class="nc" id="L322">    }</span>
 
     private static &lt;T, V extends FieldVector&gt; void vectorConsumer(
             final T data,
             final V vector,
             final Consumer&lt;V&gt; consumerIfNullable,
             final BiConsumer&lt;T, V&gt; defaultConsumer) {
-<span class="pc bpc" id="L329" title="1 of 2 branches missed.">        if (Objects.isNull(data)) {</span>
+<span class="nc bnc" id="L329" title="All 2 branches missed.">        if (Objects.isNull(data)) {</span>
 <span class="nc" id="L330">            consumerIfNullable.accept(vector);</span>
 <span class="nc" id="L331">            return;</span>
         }
-<span class="fc" id="L333">        defaultConsumer.accept(data, vector);</span>
-<span class="fc" id="L334">    }</span>
+<span class="nc" id="L333">        defaultConsumer.accept(data, vector);</span>
+<span class="nc" id="L334">    }</span>
 
     public static Predicate&lt;String&gt; createLikePredicate(String sqlPattern) {
-<span class="fc bfc" id="L337" title="All 2 branches covered.">        if (sqlPattern == null) {</span>
-<span class="fc" id="L338">            return s -&gt; true;</span>
+<span class="nc bnc" id="L337" title="All 2 branches missed.">        if (sqlPattern == null) {</span>
+<span class="nc" id="L338">            return s -&gt; true;</span>
         }
 
-<span class="fc" id="L341">        String regex = &quot;^&quot; + Pattern.quote(sqlPattern)</span>
-<span class="fc" id="L342">                .replace(&quot;%&quot;, &quot;\\E.*\\Q&quot;)</span>
-<span class="fc" id="L343">                .replace(&quot;_&quot;, &quot;\\E.\\Q&quot;) + &quot;$&quot;;</span>
+<span class="nc" id="L341">        String regex = &quot;^&quot; + Pattern.quote(sqlPattern)</span>
+<span class="nc" id="L342">                .replace(&quot;%&quot;, &quot;\\E.*\\Q&quot;)</span>
+<span class="nc" id="L343">                .replace(&quot;_&quot;, &quot;\\E.\\Q&quot;) + &quot;$&quot;;</span>
 
-<span class="fc" id="L345">        return Pattern.compile(regex).asPredicate();</span>
+<span class="nc" id="L345">        return Pattern.compile(regex).asPredicate();</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>
