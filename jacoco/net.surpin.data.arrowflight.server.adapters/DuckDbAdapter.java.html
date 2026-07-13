@@ -33,7 +33,7 @@ import net.surpin.data.arrowflight.server.model.AppConfig;
  */
 public final class DuckDbAdapter {
 
-<span class="nc" id="L36">    private static final Logger LOGGER = LoggerFactory.getLogger(DuckDbAdapter.class);</span>
+<span class="fc" id="L36">    private static final Logger LOGGER = LoggerFactory.getLogger(DuckDbAdapter.class);</span>
 
     private final ThreadLocal&lt;Connection&gt; threadConn;
     private final ExecutorService ioPool;
@@ -425,15 +425,15 @@ public final class DuckDbAdapter {
      * @return FROM clause string
      */
     public static String readParquetFromClause(List&lt;String&gt; duckDbPaths) {
-<span class="nc" id="L428">        StringBuilder sb = new StringBuilder(&quot;read_parquet([&quot;);</span>
-<span class="nc bnc" id="L429" title="All 2 branches missed.">        for (int i = 0; i &lt; duckDbPaths.size(); i++) {</span>
-<span class="nc bnc" id="L430" title="All 2 branches missed.">            if (i &gt; 0) {</span>
-<span class="nc" id="L431">                sb.append(&quot;, &quot;);</span>
+<span class="fc" id="L428">        StringBuilder sb = new StringBuilder(&quot;read_parquet([&quot;);</span>
+<span class="fc bfc" id="L429" title="All 2 branches covered.">        for (int i = 0; i &lt; duckDbPaths.size(); i++) {</span>
+<span class="fc bfc" id="L430" title="All 2 branches covered.">            if (i &gt; 0) {</span>
+<span class="fc" id="L431">                sb.append(&quot;, &quot;);</span>
             }
-<span class="nc" id="L433">            sb.append(sqlStringLiteral(duckDbPaths.get(i)));</span>
+<span class="fc" id="L433">            sb.append(sqlStringLiteral(duckDbPaths.get(i)));</span>
         }
-<span class="nc" id="L435">        sb.append(&quot;])&quot;);</span>
-<span class="nc" id="L436">        return sb.toString();</span>
+<span class="fc" id="L435">        sb.append(&quot;])&quot;);</span>
+<span class="fc" id="L436">        return sb.toString();</span>
     }
 
     /**
@@ -495,7 +495,7 @@ public final class DuckDbAdapter {
      * @return quoted identifier
      */
     public static String quoteIdentifier(String identifier) {
-<span class="nc" id="L498">        return &quot;\&quot;&quot; + identifier.replace(&quot;\&quot;&quot;, &quot;\&quot;\&quot;&quot;) + &quot;\&quot;&quot;;</span>
+<span class="fc" id="L498">        return &quot;\&quot;&quot; + identifier.replace(&quot;\&quot;&quot;, &quot;\&quot;\&quot;&quot;) + &quot;\&quot;&quot;;</span>
     }
 
     /**
@@ -505,7 +505,7 @@ public final class DuckDbAdapter {
      * @return SQL string literal
      */
     public static String sqlStringLiteral(String value) {
-<span class="nc" id="L508">        return &quot;'&quot; + value.replace(&quot;'&quot;, &quot;''&quot;) + &quot;'&quot;;</span>
+<span class="fc" id="L508">        return &quot;'&quot; + value.replace(&quot;'&quot;, &quot;''&quot;) + &quot;'&quot;;</span>
     }
 
     /**

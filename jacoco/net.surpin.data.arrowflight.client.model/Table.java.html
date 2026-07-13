@@ -61,7 +61,7 @@ public final class Table implements Serializable {
      * @return - the name of the table
      */
     public String getName() {
-<span class="nc" id="L64">        return this.name;</span>
+<span class="fc" id="L64">        return this.name;</span>
     }
 
     /**
@@ -112,7 +112,7 @@ public final class Table implements Serializable {
      * @return - the character for quoting columns
      */
     public String getColumnQuote() {
-<span class="nc" id="L115">        return this.columnQuote;</span>
+<span class="fc" id="L115">        return this.columnQuote;</span>
     }
 
     /**
@@ -200,57 +200,57 @@ public final class Table implements Serializable {
      * @return SQL WHERE clause string
      */
     public String toWhereClause(Filter filter) {
-<span class="nc" id="L203">        StringBuilder sb = new StringBuilder();</span>
-<span class="nc bnc" id="L204" title="All 2 branches missed.">        if (filter instanceof EqualTo) {</span>
-<span class="nc" id="L205">            EqualTo et = (EqualTo) filter;</span>
-<span class="nc bnc" id="L206" title="All 2 branches missed.">            sb.append((et.value() instanceof Number)</span>
-<span class="nc" id="L207">                ? String.format(&quot;%s%s%s = %s&quot;, this.columnQuote, et.attribute(), this.columnQuote, et.value().toString())</span>
-<span class="nc" id="L208">                : String.format(&quot;%s%s%s = '%s'&quot;, this.columnQuote, et.attribute(), this.columnQuote, et.value().toString())</span>
+<span class="fc" id="L203">        StringBuilder sb = new StringBuilder();</span>
+<span class="fc bfc" id="L204" title="All 2 branches covered.">        if (filter instanceof EqualTo) {</span>
+<span class="fc" id="L205">            EqualTo et = (EqualTo) filter;</span>
+<span class="fc bfc" id="L206" title="All 2 branches covered.">            sb.append((et.value() instanceof Number)</span>
+<span class="fc" id="L207">                ? String.format(&quot;%s%s%s = %s&quot;, this.columnQuote, et.attribute(), this.columnQuote, et.value().toString())</span>
+<span class="fc" id="L208">                : String.format(&quot;%s%s%s = '%s'&quot;, this.columnQuote, et.attribute(), this.columnQuote, et.value().toString())</span>
             );
-<span class="nc bnc" id="L210" title="All 2 branches missed.">        } else if (filter instanceof EqualNullSafe) {</span>
-<span class="nc" id="L211">            EqualNullSafe ens = (EqualNullSafe) filter;</span>
-<span class="nc" id="L212">            sb.append(String.format(&quot;((%s%s%s is null and %s is null) or (%s%s%s is not null and %s is not null))&quot;, this.columnQuote, ens.attribute(), this.columnQuote, ens.value(), this.columnQuote, ens.attribute(), this.columnQuote, ens.value()));</span>
-<span class="nc bnc" id="L213" title="All 2 branches missed.">        } else if (filter instanceof LessThan) {</span>
-<span class="nc" id="L214">            LessThan lt = (LessThan) filter;</span>
-<span class="nc bnc" id="L215" title="All 2 branches missed.">            sb.append((lt.value() instanceof Number) ? String.format(&quot;%s%s%s &lt; %s&quot;, this.columnQuote, lt.attribute(), this.columnQuote, lt.value()) : String.format(&quot;%s%s%s &lt; '%s'&quot;, this.columnQuote, lt.attribute(), this.columnQuote, lt.value()));</span>
-<span class="nc bnc" id="L216" title="All 2 branches missed.">        } else if (filter instanceof LessThanOrEqual) {</span>
-<span class="nc" id="L217">            LessThanOrEqual lt = (LessThanOrEqual) filter;</span>
-<span class="nc bnc" id="L218" title="All 2 branches missed.">            sb.append((lt.value() instanceof Number) ? String.format(&quot;%s%s%s &lt;= %s&quot;, this.columnQuote, lt.attribute(), this.columnQuote, lt.value()) : String.format(&quot;%s%s%s &lt;= '%s'&quot;, this.columnQuote, lt.attribute(), this.columnQuote, lt.value()));</span>
-<span class="nc bnc" id="L219" title="All 2 branches missed.">        } else if (filter instanceof GreaterThan) {</span>
-<span class="nc" id="L220">            GreaterThan gt = (GreaterThan) filter;</span>
-<span class="nc bnc" id="L221" title="All 2 branches missed.">            sb.append((gt.value() instanceof Number) ? String.format(&quot;%s%s%s &gt; %s&quot;, this.columnQuote, gt.attribute(), this.columnQuote, gt.value()) : String.format(&quot;%s%s%s &gt; '%s'&quot;, this.columnQuote, gt.attribute(), this.columnQuote, gt.value()));</span>
-<span class="nc bnc" id="L222" title="All 2 branches missed.">        } else if (filter instanceof GreaterThanOrEqual) {</span>
-<span class="nc" id="L223">            GreaterThanOrEqual gt = (GreaterThanOrEqual) filter;</span>
-<span class="nc bnc" id="L224" title="All 2 branches missed.">            sb.append((gt.value() instanceof Number) ? String.format(&quot;%s%s%s &gt;= %s&quot;, this.columnQuote, gt.attribute(), this.columnQuote, gt.value()) : String.format(&quot;%s%s%s &gt;= '%s'&quot;, this.columnQuote, gt.attribute(), this.columnQuote, gt.value()));</span>
-<span class="nc bnc" id="L225" title="All 2 branches missed.">        } else if (filter instanceof And) {</span>
-<span class="nc" id="L226">            And and = (And) filter;</span>
-<span class="nc" id="L227">            sb.append(String.format(&quot;(%s and %s)&quot;, toWhereClause(and.left()), toWhereClause(and.right())));</span>
-<span class="nc bnc" id="L228" title="All 2 branches missed.">        } else if (filter instanceof Or) {</span>
-<span class="nc" id="L229">            Or or = (Or) filter;</span>
-<span class="nc" id="L230">            sb.append(String.format(&quot;(%s or %s)&quot;, toWhereClause(or.left()), toWhereClause(or.right())));</span>
-<span class="nc bnc" id="L231" title="All 2 branches missed.">        } else if (filter instanceof IsNull) {</span>
-<span class="nc" id="L232">            IsNull in = (IsNull) filter;</span>
-<span class="nc" id="L233">            sb.append(String.format(&quot;%s%s%s is null&quot;, this.columnQuote, in.attribute(), this.columnQuote));</span>
-<span class="nc bnc" id="L234" title="All 2 branches missed.">        } else if (filter instanceof IsNotNull) {</span>
-<span class="nc" id="L235">            IsNotNull in = (IsNotNull) filter;</span>
-<span class="nc" id="L236">            sb.append(String.format(&quot;%s%s%s is not null&quot;, this.columnQuote, in.attribute(), this.columnQuote));</span>
-<span class="nc bnc" id="L237" title="All 2 branches missed.">        } else if (filter instanceof StringStartsWith) {</span>
-<span class="nc" id="L238">            StringStartsWith ss = (StringStartsWith) filter;</span>
-<span class="nc" id="L239">            sb.append(String.format(&quot;%s%s%s like '%s%s'&quot;, this.columnQuote, ss.attribute(), this.columnQuote, ss.value(), &quot;%&quot;));</span>
-<span class="nc bnc" id="L240" title="All 2 branches missed.">        } else if (filter instanceof StringContains) {</span>
-<span class="nc" id="L241">            StringContains sc = (StringContains) filter;</span>
-<span class="nc" id="L242">            sb.append(String.format(&quot;%s%s%s like '%s%s%s'&quot;, this.columnQuote, sc.attribute(), this.columnQuote, &quot;%&quot;, sc.value(), &quot;%&quot;));</span>
-<span class="nc bnc" id="L243" title="All 2 branches missed.">        } else if (filter instanceof StringEndsWith) {</span>
-<span class="nc" id="L244">            StringEndsWith se = (StringEndsWith) filter;</span>
-<span class="nc" id="L245">            sb.append(String.format(&quot;%s%s%s like '%s%s'&quot;, this.columnQuote, se.attribute(), this.columnQuote, &quot;%&quot;, se.value()));</span>
-<span class="nc bnc" id="L246" title="All 2 branches missed.">        } else if (filter instanceof Not) {</span>
-<span class="nc" id="L247">            Not not = (Not) filter;</span>
-<span class="nc" id="L248">            sb.append(String.format(&quot;not (%s)&quot;, toWhereClause(not.child())));</span>
-<span class="nc bnc" id="L249" title="All 2 branches missed.">        } else if (filter instanceof In) {</span>
-<span class="nc" id="L250">            In in = (In) filter;</span>
-<span class="nc bnc" id="L251" title="All 2 branches missed.">            sb.append(String.format(&quot;%s%s%s in (%s)&quot;, this.columnQuote, in.attribute(), this.columnQuote, String.join(&quot;,&quot;, Arrays.stream(in.values()).map(v -&gt; (v instanceof Number) ? v.toString() : String.format(&quot;'%s'&quot;, v.toString())).toArray(String[]::new))));</span>
+<span class="fc bfc" id="L210" title="All 2 branches covered.">        } else if (filter instanceof EqualNullSafe) {</span>
+<span class="fc" id="L211">            EqualNullSafe ens = (EqualNullSafe) filter;</span>
+<span class="fc" id="L212">            sb.append(String.format(&quot;((%s%s%s is null and %s is null) or (%s%s%s is not null and %s is not null))&quot;, this.columnQuote, ens.attribute(), this.columnQuote, ens.value(), this.columnQuote, ens.attribute(), this.columnQuote, ens.value()));</span>
+<span class="fc bfc" id="L213" title="All 2 branches covered.">        } else if (filter instanceof LessThan) {</span>
+<span class="fc" id="L214">            LessThan lt = (LessThan) filter;</span>
+<span class="fc bfc" id="L215" title="All 2 branches covered.">            sb.append((lt.value() instanceof Number) ? String.format(&quot;%s%s%s &lt; %s&quot;, this.columnQuote, lt.attribute(), this.columnQuote, lt.value()) : String.format(&quot;%s%s%s &lt; '%s'&quot;, this.columnQuote, lt.attribute(), this.columnQuote, lt.value()));</span>
+<span class="fc bfc" id="L216" title="All 2 branches covered.">        } else if (filter instanceof LessThanOrEqual) {</span>
+<span class="fc" id="L217">            LessThanOrEqual lt = (LessThanOrEqual) filter;</span>
+<span class="pc bpc" id="L218" title="1 of 2 branches missed.">            sb.append((lt.value() instanceof Number) ? String.format(&quot;%s%s%s &lt;= %s&quot;, this.columnQuote, lt.attribute(), this.columnQuote, lt.value()) : String.format(&quot;%s%s%s &lt;= '%s'&quot;, this.columnQuote, lt.attribute(), this.columnQuote, lt.value()));</span>
+<span class="fc bfc" id="L219" title="All 2 branches covered.">        } else if (filter instanceof GreaterThan) {</span>
+<span class="fc" id="L220">            GreaterThan gt = (GreaterThan) filter;</span>
+<span class="pc bpc" id="L221" title="1 of 2 branches missed.">            sb.append((gt.value() instanceof Number) ? String.format(&quot;%s%s%s &gt; %s&quot;, this.columnQuote, gt.attribute(), this.columnQuote, gt.value()) : String.format(&quot;%s%s%s &gt; '%s'&quot;, this.columnQuote, gt.attribute(), this.columnQuote, gt.value()));</span>
+<span class="fc bfc" id="L222" title="All 2 branches covered.">        } else if (filter instanceof GreaterThanOrEqual) {</span>
+<span class="fc" id="L223">            GreaterThanOrEqual gt = (GreaterThanOrEqual) filter;</span>
+<span class="pc bpc" id="L224" title="1 of 2 branches missed.">            sb.append((gt.value() instanceof Number) ? String.format(&quot;%s%s%s &gt;= %s&quot;, this.columnQuote, gt.attribute(), this.columnQuote, gt.value()) : String.format(&quot;%s%s%s &gt;= '%s'&quot;, this.columnQuote, gt.attribute(), this.columnQuote, gt.value()));</span>
+<span class="fc bfc" id="L225" title="All 2 branches covered.">        } else if (filter instanceof And) {</span>
+<span class="fc" id="L226">            And and = (And) filter;</span>
+<span class="fc" id="L227">            sb.append(String.format(&quot;(%s and %s)&quot;, toWhereClause(and.left()), toWhereClause(and.right())));</span>
+<span class="fc bfc" id="L228" title="All 2 branches covered.">        } else if (filter instanceof Or) {</span>
+<span class="fc" id="L229">            Or or = (Or) filter;</span>
+<span class="fc" id="L230">            sb.append(String.format(&quot;(%s or %s)&quot;, toWhereClause(or.left()), toWhereClause(or.right())));</span>
+<span class="fc bfc" id="L231" title="All 2 branches covered.">        } else if (filter instanceof IsNull) {</span>
+<span class="fc" id="L232">            IsNull in = (IsNull) filter;</span>
+<span class="fc" id="L233">            sb.append(String.format(&quot;%s%s%s is null&quot;, this.columnQuote, in.attribute(), this.columnQuote));</span>
+<span class="fc bfc" id="L234" title="All 2 branches covered.">        } else if (filter instanceof IsNotNull) {</span>
+<span class="fc" id="L235">            IsNotNull in = (IsNotNull) filter;</span>
+<span class="fc" id="L236">            sb.append(String.format(&quot;%s%s%s is not null&quot;, this.columnQuote, in.attribute(), this.columnQuote));</span>
+<span class="fc bfc" id="L237" title="All 2 branches covered.">        } else if (filter instanceof StringStartsWith) {</span>
+<span class="fc" id="L238">            StringStartsWith ss = (StringStartsWith) filter;</span>
+<span class="fc" id="L239">            sb.append(String.format(&quot;%s%s%s like '%s%s'&quot;, this.columnQuote, ss.attribute(), this.columnQuote, ss.value(), &quot;%&quot;));</span>
+<span class="fc bfc" id="L240" title="All 2 branches covered.">        } else if (filter instanceof StringContains) {</span>
+<span class="fc" id="L241">            StringContains sc = (StringContains) filter;</span>
+<span class="fc" id="L242">            sb.append(String.format(&quot;%s%s%s like '%s%s%s'&quot;, this.columnQuote, sc.attribute(), this.columnQuote, &quot;%&quot;, sc.value(), &quot;%&quot;));</span>
+<span class="fc bfc" id="L243" title="All 2 branches covered.">        } else if (filter instanceof StringEndsWith) {</span>
+<span class="fc" id="L244">            StringEndsWith se = (StringEndsWith) filter;</span>
+<span class="fc" id="L245">            sb.append(String.format(&quot;%s%s%s like '%s%s'&quot;, this.columnQuote, se.attribute(), this.columnQuote, &quot;%&quot;, se.value()));</span>
+<span class="fc bfc" id="L246" title="All 2 branches covered.">        } else if (filter instanceof Not) {</span>
+<span class="fc" id="L247">            Not not = (Not) filter;</span>
+<span class="fc" id="L248">            sb.append(String.format(&quot;not (%s)&quot;, toWhereClause(not.child())));</span>
+<span class="pc bpc" id="L249" title="1 of 2 branches missed.">        } else if (filter instanceof In) {</span>
+<span class="fc" id="L250">            In in = (In) filter;</span>
+<span class="fc bfc" id="L251" title="All 2 branches covered.">            sb.append(String.format(&quot;%s%s%s in (%s)&quot;, this.columnQuote, in.attribute(), this.columnQuote, String.join(&quot;,&quot;, Arrays.stream(in.values()).map(v -&gt; (v instanceof Number) ? v.toString() : String.format(&quot;'%s'&quot;, v.toString())).toArray(String[]::new))));</span>
         }
-<span class="nc" id="L253">        return sb.toString();</span>
+<span class="fc" id="L253">        return sb.toString();</span>
     }
 
     /**
@@ -276,7 +276,7 @@ public final class Table implements Serializable {
      */
     public static Table forTable(String tableName, String columnQuote) {
 <span class="fc" id="L278">        Function&lt;String, Boolean&gt; isQuery = (t) -&gt; t.replaceAll(&quot;[\r|\n]&quot;, &quot; &quot;).trim().toLowerCase().matches(&quot;^select .+ [from]?.+&quot;);</span>
-<span class="pc bpc" id="L279" title="1 of 2 branches missed.">        return new Table(isQuery.apply(tableName) ? String.format(&quot;(%s) t&quot;, tableName) : tableName, columnQuote);</span>
+<span class="fc bfc" id="L279" title="All 2 branches covered.">        return new Table(isQuery.apply(tableName) ? String.format(&quot;(%s) t&quot;, tableName) : tableName, columnQuote);</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

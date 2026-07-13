@@ -340,14 +340,14 @@ public class ParquetAdapter {
      * Prevents path traversal via names like &quot;..&quot; or &quot;./etc&quot;.
      */
     public static String validateName(String name) {
-<span class="nc bnc" id="L343" title="All 2 branches missed.">        if (name == null) {</span>
-<span class="nc" id="L344">            return null;</span>
+<span class="fc bfc" id="L343" title="All 2 branches covered.">        if (name == null) {</span>
+<span class="fc" id="L344">            return null;</span>
         }
-<span class="nc bnc" id="L346" title="All 2 branches missed.">        if (!name.matches(&quot;^[a-zA-Z_][a-zA-Z0-9_]*$&quot;)) {</span>
-<span class="nc" id="L347">            throw new IllegalArgumentException(&quot;Invalid name: '&quot; + name</span>
+<span class="fc bfc" id="L346" title="All 2 branches covered.">        if (!name.matches(&quot;^[a-zA-Z_][a-zA-Z0-9_]*$&quot;)) {</span>
+<span class="fc" id="L347">            throw new IllegalArgumentException(&quot;Invalid name: '&quot; + name</span>
                     + &quot;'. Must match [a-zA-Z_][a-zA-Z0-9_]*&quot;);
         }
-<span class="nc" id="L350">        return name;</span>
+<span class="fc" id="L350">        return name;</span>
     }
 
     /**
@@ -419,17 +419,17 @@ public class ParquetAdapter {
      * @return predicate
      */
     private static java.util.function.Predicate&lt;String&gt; createLikePredicate(String pattern) {
-<span class="nc bnc" id="L422" title="All 6 branches missed.">        if (pattern == null || pattern.isEmpty() || pattern.equals(&quot;%&quot;)) {</span>
-<span class="nc" id="L423">            return s -&gt; true;</span>
+<span class="pc bpc" id="L422" title="1 of 6 branches missed.">        if (pattern == null || pattern.isEmpty() || pattern.equals(&quot;%&quot;)) {</span>
+<span class="fc" id="L423">            return s -&gt; true;</span>
         }
-<span class="nc" id="L425">        String regex = pattern</span>
-<span class="nc" id="L426">                .replace(&quot;\\&quot;, &quot;\\\\&quot;)</span>
-<span class="nc" id="L427">                .replace(&quot;.&quot;, &quot;\\.&quot;)</span>
-<span class="nc" id="L428">                .replace(&quot;%&quot;, &quot;.*&quot;)</span>
-<span class="nc" id="L429">                .replace(&quot;_&quot;, &quot;.&quot;);</span>
-<span class="nc" id="L430">        java.util.regex.Pattern p = java.util.regex.Pattern.compile(regex,</span>
+<span class="fc" id="L425">        String regex = pattern</span>
+<span class="fc" id="L426">                .replace(&quot;\\&quot;, &quot;\\\\&quot;)</span>
+<span class="fc" id="L427">                .replace(&quot;.&quot;, &quot;\\.&quot;)</span>
+<span class="fc" id="L428">                .replace(&quot;%&quot;, &quot;.*&quot;)</span>
+<span class="fc" id="L429">                .replace(&quot;_&quot;, &quot;.&quot;);</span>
+<span class="fc" id="L430">        java.util.regex.Pattern p = java.util.regex.Pattern.compile(regex,</span>
                 java.util.regex.Pattern.CASE_INSENSITIVE);
-<span class="nc" id="L432">        return s -&gt; p.matcher(s).matches();</span>
+<span class="fc" id="L432">        return s -&gt; p.matcher(s).matches();</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>
