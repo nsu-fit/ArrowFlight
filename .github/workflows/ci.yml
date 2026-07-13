@@ -46,7 +46,18 @@ jobs:
           java-version: 21
           distribution: temurin
           cache: maven
-      - run: mvn validate spotbugs:check -Dcheckstyle.failOnViolation=true --batch-mode --errors --fail-at-end
+      - run: mvn compile checkstyle:check spotbugs:check --batch-mode --errors --fail-at-end
+
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: 21
+          distribution: temurin
+          cache: maven
+      - run: mvn test -P integration --batch-mode --errors --fail-at-end
 
   coverage:
     runs-on: ubuntu-latest

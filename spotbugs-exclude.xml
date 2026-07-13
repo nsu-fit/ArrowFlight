@@ -23,12 +23,12 @@
     </Match>
 
     <!--
-      DLS_DEAD_LOCAL_STORE: rexBuilder in SubstraitFilterConverter is captured by an inner
+      DLS_DEAD_LOCAL_STORE: rexBuilder in FilterConverter is captured by an inner
       anonymous class — SpotBugs does not track cross-anonymous-class variable capture.
     -->
     <Match>
         <Bug pattern="DLS_DEAD_LOCAL_STORE"/>
-        <Class name="~net\.surpin\.data\.arrowflight\.server\.SubstraitFilterConverter.*"/>
+        <Class name="~net\.surpin\.data\.arrowflight\.server\.adapters\.FilterConverter.*"/>
     </Match>
 
     <!--
@@ -48,6 +48,17 @@
     -->
     <Match>
         <Bug pattern="MS_EXPOSE_REP,SING_SINGLETON_IMPLEMENTS_SERIALIZABLE"/>
-        <Class name="net.surpin.data.arrowflight.client.ArrowConversion"/>
+        <Class name="net.surpin.data.arrowflight.client.model.ArrowConversion"/>
+    </Match>
+
+    <!--
+      CT_CONSTRUCTOR_THROW: ParquetAdapter constructors throw UncheckedIOException when
+      schema/table cache initialization fails. This is a deliberate fail-fast design.
+      finalize() was deprecated in JDK 9 and removed in JDK 21+, so the concern about
+      constructor-thrown exceptions breaking finalization is moot.
+    -->
+    <Match>
+        <Bug pattern="CT_CONSTRUCTOR_THROW"/>
+        <Class name="net.surpin.data.arrowflight.server.adapters.ParquetAdapter"/>
     </Match>
 </FindBugsFilter>

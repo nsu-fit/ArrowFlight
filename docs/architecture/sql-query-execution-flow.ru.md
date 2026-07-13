@@ -6,13 +6,13 @@
 
 `HadoopArrowFlightServer` запускает сервер и настраивает Hadoop FileSystem, Hazelcast и Arrow Flight.
 
-`HadoopFlightSqlService` реализует слой Flight SQL. Он принимает запросы, строит `FlightInfo`, создает `Ticket`, распределяет файлы по Flight-нодам и восстанавливает состояние запроса во время `DoGet`.
+`FlightSqlProducer` реализует слой Flight SQL. Он принимает запросы, строит `FlightInfo`, создает `Ticket`, распределяет файлы по Flight-нодам и восстанавливает состояние запроса во время `DoGet`.
 
-`ParquetManager` отвечает за Parquet-часть: поиск файлов, локальность блоков, Java fast path по footer metadata, сканирование через Arrow Dataset / Acero и выполнение SQL через DuckDB.
+`ExecutionService`, `MetadataService` и `ParquetAdapter` отвечают за Parquet-часть. `ParquetAdapter` занимается поиском файлов и локальностью блоков. `MetadataService` строит схему результата и реализует Java fast path по footer metadata. `ExecutionService` координирует сканирование через Arrow Dataset / Acero и выполнение SQL через DuckDB.
 
 `ParquetQueryParser` разбирает SQL и извлекает схему, таблицу, список колонок, фильтр, агрегаты и `GROUP BY`.
 
-`RuntimeSettings` читает настройки из `arrowflight.properties`. JVM system properties и часть environment variables могут переопределять значения из файла.
+`AppConfig` / `ConfigAdapter` читает настройки из `arrowflight.properties`. JVM system properties и часть environment variables могут переопределять значения из файла.
 
 ## Общий поток
 
@@ -25,7 +25,7 @@
 
 ## Получение SQL-запроса
 
-SQL приходит в `HadoopFlightSqlService.getFlightInfoStatement`.
+SQL приходит в `FlightSqlProducer.getFlightInfoStatement`.
 
 На этом этапе сервер:
 
@@ -48,15 +48,15 @@ Ticket не содержит сами файлы и не является пол
 
 ## Построение схемы результата
 
-Перед возвратом `FlightInfo` сервер должен знать схему результата. Для этого `HadoopFlightSqlService` вызывает `ParquetManager.getQuerySchema`.
+Перед возвратом `FlightInfo` сервер должен знать схему результата. Для этого `FlightSqlProducer` вызывает `MetadataService.getQuerySchema`.
 
 Для обычных `SELECT` схема строится из Parquet schema таблицы и выбранных колонок. Для агрегатов схема строится из aggregate expressions и `GROUP BY`.
 
 ## Распределение файлов
 
-Распределение выполняется в `HadoopFlightSqlService.determineEndpoints`.
+Распределение выполняется в `FlightSqlProducer.determineEndpoints`.
 
-Сервер получает SQL из `statementCache`, затем `ParquetManager.locationsForQuery` определяет Parquet-файлы таблицы и Hadoop hosts, на которых лежат блоки этих файлов.
+Сервер получает SQL из `statementCache`, затем `ParquetAdapter.locationsForQuery` определяет Parquet-файлы таблицы и Hadoop hosts, на которых лежат блоки этих файлов.
 
 Дальше сервер читает список зарегистрированных Flight-нод из `serverRegistry`. Для каждого файла вызывается `pickServer`, который выбирает ноду для чтения.
 
@@ -66,15 +66,15 @@ Ticket не содержит сами файлы и не является пол
 
 ## Чтение по ticket
 
-Когда клиент вызывает `DoGet`, сервер попадает в `HadoopFlightSqlService.getStreamStatement`.
+Когда клиент вызывает `DoGet`, сервер попадает в `FlightSqlProducer.getStreamStatement`.
 
-Сервер извлекает handle из ticket, загружает SQL и список назначенных файлов из `statementCache`, затем вызывает `ParquetManager.readParquet`.
+Сервер извлекает handle из ticket, загружает SQL и список назначенных файлов из `statementCache`, затем вызывает `ExecutionService.readParquet`.
 
 Именно здесь начинается выполнение запроса.
 
 ## Выбор query engine
 
-В проекте есть три пути чтения и выполнения Parquet-запросов. Выбор делается в `ParquetManager.readParquet` после разбора SQL.
+В проекте есть три пути чтения и выполнения Parquet-запросов. Выбор делается в `ExecutionService.readParquet` после разбора SQL.
 
 Правила маршрутизации:
 
@@ -106,7 +106,7 @@ Acero используется для чтения без фильтра:
 - `SELECT * FROM schema.table`
 - `SELECT col1, col2 FROM schema.table`
 
-`ParquetManager` превращает назначенные относительные пути в абсолютные URI и создает Arrow Dataset scanner на файлы конкретного ticket. Projection передается в scanner как список колонок. Если projection нет, читаются все колонки таблицы.
+`ExecutionService` превращает назначенные относительные пути в абсолютные URI и создает Arrow Dataset scanner на файлы конкретного ticket. Projection передается в scanner как список колонок. Если projection нет, читаются все колонки таблицы.
 
 Arrow Dataset / Acero открывает Parquet-файлы, читает нужные колонки и возвращает Arrow batches. Java не конвертирует значения вручную: результат приходит как `ArrowReader` и `VectorSchemaRoot`.
 
@@ -123,9 +123,9 @@ DuckDB используется для запросов, где нужен SQL e
 - агрегаты, которые не удалось выполнить из footer statistics
 - `JOIN`
 
-Для single-table запросов `ParquetManager` строит SQL поверх DuckDB table function `read_parquet([...])`.
+Для single-table запросов `ExecutionService` строит SQL поверх DuckDB table function `read_parquet([...])`.
 
-Для join-запросов `ParquetManager` создает временные DuckDB views для alias-ов таблиц. Каждая view читает свои файлы через `read_parquet([...])`. После этого выполняется переписанный join SQL.
+Для join-запросов `ExecutionService` создает временные DuckDB views для alias-ов таблиц. Каждая view читает свои файлы через `read_parquet([...])`. После этого выполняется переписанный join SQL.
 
 DuckDB возвращает результат через `DuckDBResultSet.arrowExportStream`. Сервер копирует строки из DuckDB Arrow stream в Flight batches и отправляет клиенту.
 

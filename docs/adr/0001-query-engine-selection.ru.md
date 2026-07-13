@@ -109,7 +109,7 @@ DuckDB. Если нужной статистики нет, запрос долж
   `columns` (пусто = `*`), `filter` (пусто/не пусто) и `hasAggregation`
   до того, как начнётся I/O.
 
-- `ParquetManager` предоставляет два метода и одну metadata-оптимизацию:
+- `ExecutionService` и `MetadataService` предоставляют два метода и одну metadata-оптимизацию:
   - `readFooterStats(paths, aggregate)` — Java Parquet footer fast path для
     metadata-only агрегатов
   - `scanWithAcero(paths, columns)` — zero-copy Arrow сканирование

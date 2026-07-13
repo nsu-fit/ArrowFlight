@@ -112,7 +112,7 @@ server itself and by any local-optimised client.
   extracts `columns` (empty = `*`), `filter` (empty/non-empty), and
   `hasAggregation` from the SQL before any I/O occurs.
 
-- The `ParquetManager` exposes two read methods and one metadata optimization:
+- `ExecutionService` and `MetadataService` expose two read methods and one metadata optimization:
   - `readFooterStats(paths, aggregate)` — Java Parquet footer fast path for
     metadata-only aggregates
   - `scanWithAcero(paths, columns)` — zero-copy Arrow scan

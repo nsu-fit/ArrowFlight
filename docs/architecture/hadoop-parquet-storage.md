@@ -8,7 +8,7 @@ Data is not stored inside the Arrow Flight server. Flight nodes act as the compu
 
 The data root is configured by the `dataDirectory` parameter. Tables are expected under a `schema/table` hierarchy. For each table, the server recursively searches for Parquet files.
 
-`ParquetManager` owns the main file and path handling logic.
+`ParquetAdapter` owns the main file and path handling logic.
 
 ## Hadoop FileSystem
 
@@ -24,11 +24,11 @@ In HDFS, a file is split into blocks. Blocks may be placed on different DataNode
 
 The project uses this information for data locality. If a Flight server runs on the same host where file blocks are stored, reading that file from this server is preferred. This reduces network traffic and usually improves scan performance.
 
-`ParquetManager.fileLocality` is responsible for extracting locality information. It collects hosts from the block locations returned by Hadoop.
+`ParquetAdapter.fileLocality` is responsible for extracting locality information. It collects hosts from the block locations returned by Hadoop.
 
 ## File Discovery for a Query
 
-When the server needs to determine which files belong to a query, it uses `ParquetManager.locationsForQuery`.
+When the server needs to determine which files belong to a query, it uses `ParquetAdapter.locationsForQuery`.
 
 This method:
 
@@ -76,7 +76,7 @@ The current regular aggregation fallback is DuckDB. Acero is not used for groupe
 
 ## File Distribution Across Flight Nodes
 
-File distribution is performed in `HadoopFlightSqlService.determineEndpoints`. For each Parquet file, the server chooses the Flight server that will read it.
+File distribution is performed in `FlightSqlProducer.determineEndpoints`. For each Parquet file, the server chooses the Flight server that will read it.
 
 Server selection is handled by `pickServer`.
 
