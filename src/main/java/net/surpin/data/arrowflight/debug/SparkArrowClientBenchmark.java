@@ -157,7 +157,7 @@ public class SparkArrowClientBenchmark {
 
             // The server prints "READY port=N" on stdout when it is accepting connections.
             try (BufferedReader br = new BufferedReader(
-                    new InputStreamReader(serverProc.getInputStream()))) {
+                    new InputStreamReader(serverProc.getInputStream(), java.nio.charset.StandardCharsets.UTF_8))) {
                 String line;
                 while ((line = br.readLine()) != null) {
                     System.out.println("[server] " + line);
@@ -466,8 +466,10 @@ public class SparkArrowClientBenchmark {
                 .redirectError(ProcessBuilder.Redirect.DISCARD)
                 .start();
         long resultRows = 0;
-        try (BufferedReader br = new BufferedReader(new InputStreamReader(proc.getInputStream()))) {
-            while (br.readLine() != null) {
+        try (BufferedReader br = new BufferedReader(
+                new InputStreamReader(proc.getInputStream(), java.nio.charset.StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = br.readLine()) != null) {
                 resultRows++;
             }
         }

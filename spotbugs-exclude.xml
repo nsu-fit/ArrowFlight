@@ -23,12 +23,12 @@
     </Match>
 
     <!--
-      DLS_DEAD_LOCAL_STORE: rexBuilder in SubstraitFilterConverter is captured by an inner
+      DLS_DEAD_LOCAL_STORE: rexBuilder in FilterConverter is captured by an inner
       anonymous class — SpotBugs does not track cross-anonymous-class variable capture.
     -->
     <Match>
         <Bug pattern="DLS_DEAD_LOCAL_STORE"/>
-        <Class name="~net\.surpin\.data\.arrowflight\.server\.SubstraitFilterConverter.*"/>
+        <Class name="~net\.surpin\.data\.arrowflight\.server\.adapters\.FilterConverter.*"/>
     </Match>
 
     <!--
@@ -48,6 +48,46 @@
     -->
     <Match>
         <Bug pattern="MS_EXPOSE_REP,SING_SINGLETON_IMPLEMENTS_SERIALIZABLE"/>
-        <Class name="net.surpin.data.arrowflight.client.ArrowConversion"/>
+        <Class name="net.surpin.data.arrowflight.client.model.ArrowConversion"/>
+    </Match>
+
+    <!--
+      CT_CONSTRUCTOR_THROW: ParquetAdapter constructors throw UncheckedIOException when
+      schema/table cache initialization fails. This is a deliberate fail-fast design.
+      finalize() was deprecated in JDK 9 and removed in JDK 21+, so the concern about
+      constructor-thrown exceptions breaking finalization is moot.
+    -->
+    <Match>
+        <Bug pattern="CT_CONSTRUCTOR_THROW"/>
+        <Class name="net.surpin.data.arrowflight.server.adapters.ParquetAdapter"/>
+    </Match>
+
+    <!--
+      DE_MIGHT_IGNORE: Intentional resource cleanup in finally blocks.
+      Close failures are silently swallowed because:
+        - We're already in a finally / on-error path.
+        - An exception from close() would mask the primary failure.
+        - Close failures on read-only resources are harmless.
+      Affects AceroAdapter (Arrow resource close), ExecutionService (DROP VIEW cleanup),
+      FilterConverter (warm-up), and SparkArrowClientBenchmark (temp file cleanup).
+    -->
+    <Match>
+        <Bug pattern="DE_MIGHT_IGNORE"/>
+        <Or>
+            <Class name="net.surpin.data.arrowflight.server.adapters.AceroAdapter"/>
+            <Class name="net.surpin.data.arrowflight.server.services.ExecutionService"/>
+            <Class name="net.surpin.data.arrowflight.server.adapters.FilterConverter"/>
+            <Class name="net.surpin.data.arrowflight.debug.SparkArrowClientBenchmark"/>
+        </Or>
+    </Match>
+
+    <!--
+      SF_SWITCH_NO_DEFAULT: Switch expression is exhaustive over the enum constants.
+      Java switch expressions enforce exhaustiveness at compile time; no default
+      needed. SpotBugs does not distinguish switch statements from expressions.
+    -->
+    <Match>
+        <Bug pattern="SF_SWITCH_NO_DEFAULT"/>
+        <Class name="net.surpin.data.arrowflight.server.adapters.SchemaConverter"/>
     </Match>
 </FindBugsFilter>

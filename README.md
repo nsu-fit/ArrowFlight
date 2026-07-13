@@ -130,23 +130,16 @@ Supports exponential backoff retry, connection pooling, TLS, BasicAuth and Beare
 
 PR checks (`.github/workflows/ci.yml`) enforce on every pull request:
 - `build-server` / `build-client` — compilation via `mvn compile -P server` / `-P client`
-- `lint` — Checkstyle violations and SpotBugs errors via `mvn validate spotbugs:check`
-- `test` — unit tests via `mvn test` (excludes `integration` and `perf` tags)
-- `integration` — integration tests via `mvn test -P integration`
-- `smoke` — smoke tests via `mvn test -P smoke`
+- `lint` — Checkstyle violations and SpotBugs errors via `mvn compile checkstyle:check spotbugs:check`
+- `integration` — integration + spark + smoke tests via `mvn test -P integration`
 - `coverage` — JaCoCo coverage with per-file table in PR comments and detailed HTML report on GitHub Pages
 
-**Run locally**:
+**Run tests locally**:
 ```bash
-./mvnw test                  # unit (default)
-./mvnw test -P smoke         # smoke tests
-./mvnw test -P integration   # integration tests
+./mvnw test                  # unit (excludes integration/spark/perf/smoke)
+./mvnw test -P integration   # integration + spark + smoke
 ./mvnw test -P perf          # performance benchmarks
 ```
-
-### GitLab CI
-
-Two-stage pipeline (`.gitlab-ci.yml`): build server/client separately → test with JUnit report upload.
 
 ---
 
@@ -154,7 +147,7 @@ Two-stage pipeline (`.gitlab-ci.yml`): build server/client separately → test w
 
 Configuration resolves from three tiers: **JVM property** → **`arrowflight.properties`** → **default**. DuckDB HDFS settings additionally support environment variables.
 
-Key properties (see `RuntimeSettings.java` for the full list):
+Key properties (see `AppConfig.java` / `ConfigAdapter.java` for the full list):
 
 | Area | Key Properties |
 | :--- | :--- |
@@ -180,7 +173,7 @@ Key properties (see `RuntimeSettings.java` for the full list):
 | Cross-type join coercion (INT32/INT64, FLOAT/DOUBLE, BOOL/INT8) | Experimental |
 | `ORDER BY` | Not supported (server); Supported (Spark client-side) |
 | `LIMIT` / `OFFSET` | Not supported (server); Supported (Spark client-side) |
-| Subqueries | Not supported |
+| Subqueries | Experimental |
 | Window functions | Not supported |
 | Write (`INSERT` / `TRUNCATE`) | Experimental (Spark-side only) |
 | Info commands (schemas, tables, types) | Supported |
