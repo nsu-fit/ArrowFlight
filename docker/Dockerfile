@@ -47,8 +47,7 @@ WORKDIR ${APP_HOME}
 COPY --from=build /src/target/hadoop-arrow-flight-1.0-SNAPSHOT.jar ${APP_JAR}
 COPY docker/bin/ ./bin/
 COPY docker/spark/ ./spark/
-RUN ln -sf "${APP_JAR}" "${SPARK_HOME}/jars/hadoop-arrow-flight-1.0-SNAPSHOT.jar" \
-    && chmod +x ./bin/*.sh
+RUN chmod +x ./bin/*.sh
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/opt/arrowflight/bin/entrypoint.sh"]
 CMD ["server"]

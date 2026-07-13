@@ -112,8 +112,10 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
                         return true;
                     }
                 } catch (Exception midStreamError) {
-                    LOGGER.warn("Mid-stream read error: {}", midStreamError.getMessage());
-                    throw midStreamError;
+                    LOGGER.warn("Mid-stream read error: {}, attempt reconnect", midStreamError.getMessage());
+                    if (!reopenStream()) {
+                        throw midStreamError;
+                    }
                 }
             }
 

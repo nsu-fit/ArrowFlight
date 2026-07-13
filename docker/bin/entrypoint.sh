@@ -31,9 +31,6 @@ DEFAULT_SPARK_JAVA_OPTIONS="${DEFAULT_SPARK_JAVA_OPTIONS:-\
 --add-exports=java.base/sun.security.action=ALL-UNNAMED \
 -Dio.netty.tryReflectionSetAccessible=true}"
 
-DEFAULT_HIVE_METASTORE_SHARED_PREFIXES="${SPARK_HIVE_METASTORE_SHARED_PREFIXES:-\
-net.surpin.data.arrowflight,flight,org.apache.arrow,io.grpc,io.netty,com.google.protobuf}"
-
 export SPARK_DAEMON_JAVA_OPTS="${SPARK_DAEMON_JAVA_OPTS:-${DEFAULT_SPARK_JAVA_OPTIONS}}"
 
 wait_for_tcp() {
@@ -51,20 +48,13 @@ wait_for_tcp() {
   return 1
 }
 
-expose_app_jar_to_spark_driver() {
-  export SPARK_CLASSPATH="${APP_JAR}${SPARK_CLASSPATH:+:${SPARK_CLASSPATH}}"
-  export SPARK_DIST_CLASSPATH="${APP_JAR}${SPARK_DIST_CLASSPATH:+:${SPARK_DIST_CLASSPATH}}"
-}
-
 spark_submit_common() {
   local app_file="$1"
   shift
   wait_for_tcp "${SPARK_MASTER_HOST:-spark-master}" "${SPARK_MASTER_PORT:-7077}" 120
-  expose_app_jar_to_spark_driver
   exec "${SPARK_HOME}/bin/spark-submit" \
     --master "${SPARK_MASTER_URL:-spark://spark-master:7077}" \
     --jars "${APP_JAR}" \
-    --driver-class-path "${APP_JAR}" \
     --driver-java-options "${SPARK_DRIVER_EXTRA_JAVA_OPTIONS:-${DEFAULT_SPARK_JAVA_OPTIONS}}" \
     --conf "spark.executor.extraJavaOptions=${SPARK_EXECUTOR_EXTRA_JAVA_OPTIONS:-${DEFAULT_SPARK_JAVA_OPTIONS}}" \
     --conf "spark.driver.extraClassPath=${APP_JAR}" \
@@ -74,32 +64,9 @@ spark_submit_common() {
     --conf "spark.driver.bindAddress=0.0.0.0" \
     --conf "spark.driver.host=${SPARK_DRIVER_HOST:-$(hostname -f)}" \
     --conf "spark.sql.shuffle.partitions=${SPARK_SHUFFLE_PARTITIONS:-8}" \
-    --conf "spark.sql.catalogImplementation=hive" \
-    --conf "spark.sql.hive.metastore.sharedPrefixes=${DEFAULT_HIVE_METASTORE_SHARED_PREFIXES}" \
-    --conf "spark.sql.warehouse.dir=${SPARK_WAREHOUSE_DIR:-/spark-warehouse}" \
-    --conf "spark.hadoop.javax.jdo.option.ConnectionURL=jdbc:derby:;databaseName=${SPARK_METASTORE_DB:-/spark-warehouse/metastore_db};create=true" \
     "${app_file}" \
     "$@"
 }
-
-spark_common_conf=(
-  --master "${SPARK_MASTER_URL:-spark://spark-master:7077}"
-  --jars "${APP_JAR}"
-  --driver-class-path "${APP_JAR}"
-  --driver-java-options "${SPARK_DRIVER_EXTRA_JAVA_OPTIONS:-${DEFAULT_SPARK_JAVA_OPTIONS}}"
-  --conf "spark.executor.extraJavaOptions=${SPARK_EXECUTOR_EXTRA_JAVA_OPTIONS:-${DEFAULT_SPARK_JAVA_OPTIONS}}"
-  --conf "spark.driver.extraClassPath=${APP_JAR}"
-  --conf "spark.executor.extraClassPath=${APP_JAR}"
-  --conf "spark.driver.userClassPathFirst=true"
-  --conf "spark.executor.userClassPathFirst=true"
-  --conf "spark.driver.bindAddress=0.0.0.0"
-  --conf "spark.driver.host=${SPARK_DRIVER_HOST:-$(hostname -f)}"
-  --conf "spark.sql.shuffle.partitions=${SPARK_SHUFFLE_PARTITIONS:-8}"
-  --conf "spark.sql.catalogImplementation=hive"
-  --conf "spark.sql.hive.metastore.sharedPrefixes=${DEFAULT_HIVE_METASTORE_SHARED_PREFIXES}"
-  --conf "spark.sql.warehouse.dir=${SPARK_WAREHOUSE_DIR:-/spark-warehouse}"
-  --conf "spark.hadoop.javax.jdo.option.ConnectionURL=jdbc:derby:;databaseName=${SPARK_METASTORE_DB:-/spark-warehouse/metastore_db};create=true"
-)
 
 case "${mode}" in
   server)
@@ -134,19 +101,11 @@ case "${mode}" in
       "${SPARK_MASTER_URL:-spark://spark-master:7077}" \
       "$@"
     ;;
-  publish-benchmark-data)
-    spark_submit_common "${APP_HOME}/spark/publish_benchbase_tables.py" "$@"
+  generate)
+    spark_submit_common "${APP_HOME}/spark/generate_and_distribute.py" "$@"
     ;;
-  spark-thrift-server)
-    wait_for_tcp "${SPARK_MASTER_HOST:-spark-master}" "${SPARK_MASTER_PORT:-7077}" 120
-    expose_app_jar_to_spark_driver
-    exec "${SPARK_HOME}/bin/spark-submit" \
-      "${spark_common_conf[@]}" \
-      --class org.apache.spark.sql.hive.thriftserver.HiveThriftServer2 \
-      "${SPARK_HOME}/jars/spark-hive-thriftserver_2.12-3.5.1.jar" \
-      --hiveconf "hive.server2.thrift.bind.host=${SPARK_THRIFT_BIND_HOST:-0.0.0.0}" \
-      --hiveconf "hive.server2.thrift.port=${SPARK_THRIFT_PORT:-10000}" \
-      "$@"
+  flight-count)
+    spark_submit_common "${APP_HOME}/spark/query_flight.py" "$@"
     ;;
   *)
     exec "${mode}" "$@"
