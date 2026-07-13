@@ -1,0 +1,36 @@
+[
+  {
+    "kind": "run",
+    "id": "tpch-fresh-q6-20260713-151345",
+    "title": "tpch-fresh-q6-20260713-151345",
+    "benchmark": "tpch",
+    "path": "tpch-fresh-q6-20260713-151345",
+    "query": "q6",
+    "scale": 0.01,
+    "timestamp": "2026-07-13T15:19:40",
+    "throughput": 0.24998457320200312,
+    "lastThroughput": 0.2,
+    "avgMs": 758.559,
+    "p95Ms": 758.559,
+    "measuredRequests": 1,
+    "report": "benchmarks/tpch-fresh-q6-20260713-151345/tpch_2026-07-13_08-19-32.report.html",
+    "files": "benchmarks/tpch-fresh-q6-20260713-151345"
+  },
+  {
+    "kind": "run",
+    "id": "tpch-fresh-q6-20260713-144931",
+    "title": "tpch-fresh-q6-20260713-144931",
+    "benchmark": "tpch",
+    "path": "tpch-fresh-q6-20260713-144931",
+    "query": "q6",
+    "scale": "0.01",
+    "timestamp": "2026-07-13T14:55:40",
+    "throughput": 0.031249161665068505,
+    "lastThroughput": 0.2,
+    "avgMs": 28805.348,
+    "p95Ms": 28805.348,
+    "measuredRequests": 1,
+    "report": "",
+    "files": "benchmarks/tpch-fresh-q6-20260713-144931"
+  }
+]

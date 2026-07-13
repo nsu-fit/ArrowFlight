@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Arrow Flight Benchmarks</title>
+  <style>
+    body { margin: 0; font: 14px/1.45 system-ui, -apple-system, Segoe UI, sans-serif; background: #f7f8fb; color: #111827; }
+    main { max-width: 1220px; margin: 0 auto; padding: 28px; }
+    h1 { margin: 0 0 6px; font-size: 30px; }
+    p { color: #5b6472; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 10px; margin: 22px 0; }
+    select, input { border: 1px solid #d1d5db; border-radius: 7px; padding: 9px 10px; background: #fff; min-width: 150px; }
+    input { flex: 1; min-width: 230px; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; margin: 18px 0; }
+    .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; }
+    .label { color: #6b7280; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+    .value { font-size: 25px; font-weight: 750; margin-top: 3px; }
+    table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; }
+    th, td { padding: 10px 12px; border-bottom: 1px solid #edf0f3; text-align: right; vertical-align: top; }
+    th:first-child, td:first-child { text-align: left; }
+    th { color: #5b6472; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; background: #fbfcfe; }
+    td strong { display: block; }
+    td span { display: block; color: #6b7280; font-size: 12px; margin-top: 2px; }
+    a { color: #2563eb; margin-right: 10px; white-space: nowrap; }
+    .empty { display: none; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 18px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Arrow Flight Benchmarks</h1>
+  <p>Single entry point for BenchBase Spark reports. Choose a benchmark, query, or path and open compare/direct/flight details.</p>
+
+  <div class="cards">
+    <div class="card"><div class="label">Reports</div><div class="value" id="visible-count">0</div></div>
+    <div class="card"><div class="label">Compare Runs</div><div class="value" id="compare-count">0</div></div>
+    <div class="card"><div class="label">Latest Run</div><div class="value" id="latest-run">-</div></div>
+  </div>
+
+  <div class="toolbar">
+    <select id="benchmark-filter">
+      <option value="">All benchmarks</option>
+    </select>
+    <select id="kind-filter">
+      <option value="">All paths</option>
+      <option value="compare">Flight vs Direct</option>
+      <option value="run">Single run</option>
+    </select>
+    <select id="query-filter">
+      <option value="">All queries</option>
+    </select>
+    <input id="search" type="search" placeholder="Search run name">
+  </div>
+
+  <div class="empty" id="empty">No reports match the selected filters.</div>
+  <table>
+    <thead>
+      <tr>
+        <th>Run</th>
+        <th>Benchmark</th>
+        <th>Query</th>
+        <th>SF</th>
+        <th>Flight thr.</th>
+        <th>Direct thr.</th>
+        <th>Flight avg</th>
+        <th>Direct avg</th>
+        <th>Nodes</th>
+        <th>Open</th>
+      </tr>
+    </thead>
+    <tbody id="runs">
+      
+      <tr data-benchmark="tpch" data-kind="run" data-query="q6">
+        <td><strong>tpch-fresh-q6-20260713-151345</strong><span>tpch-fresh-q6-20260713-151345</span></td>
+        <td>tpch</td>
+        <td>q6</td>
+        <td>0.01</td>
+        <td>0.250 req/s</td>
+        <td>-</td>
+        <td>758.6 ms</td>
+        <td>-</td>
+        <td>-</td>
+        <td><a href="benchmarks/tpch-fresh-q6-20260713-151345/tpch_2026-07-13_08-19-32.report.html">report</a> <a href="benchmarks/tpch-fresh-q6-20260713-151345">files</a></td>
+      </tr>
+
+      <tr data-benchmark="tpch" data-kind="run" data-query="q6">
+        <td><strong>tpch-fresh-q6-20260713-144931</strong><span>tpch-fresh-q6-20260713-144931</span></td>
+        <td>tpch</td>
+        <td>q6</td>
+        <td>0.01</td>
+        <td>0.031 req/s</td>
+        <td>-</td>
+        <td>28805.3 ms</td>
+        <td>-</td>
+        <td>-</td>
+        <td><a href="benchmarks/tpch-fresh-q6-20260713-144931">files</a></td>
+      </tr>
+
+    </tbody>
+  </table>
+</main>
+<script type="application/json" id="runs-json">[{&quot;kind&quot;: &quot;run&quot;, &quot;id&quot;: &quot;tpch-fresh-q6-20260713-151345&quot;, &quot;title&quot;: &quot;tpch-fresh-q6-20260713-151345&quot;, &quot;benchmark&quot;: &quot;tpch&quot;, &quot;path&quot;: &quot;tpch-fresh-q6-20260713-151345&quot;, &quot;query&quot;: &quot;q6&quot;, &quot;scale&quot;: 0.01, &quot;timestamp&quot;: &quot;2026-07-13T15:19:40&quot;, &quot;throughput&quot;: 0.24998457320200312, &quot;lastThroughput&quot;: 0.2, &quot;avgMs&quot;: 758.559, &quot;p95Ms&quot;: 758.559, &quot;measuredRequests&quot;: 1, &quot;report&quot;: &quot;benchmarks/tpch-fresh-q6-20260713-151345/tpch_2026-07-13_08-19-32.report.html&quot;, &quot;files&quot;: &quot;benchmarks/tpch-fresh-q6-20260713-151345&quot;}, {&quot;kind&quot;: &quot;run&quot;, &quot;id&quot;: &quot;tpch-fresh-q6-20260713-144931&quot;, &quot;title&quot;: &quot;tpch-fresh-q6-20260713-144931&quot;, &quot;benchmark&quot;: &quot;tpch&quot;, &quot;path&quot;: &quot;tpch-fresh-q6-20260713-144931&quot;, &quot;query&quot;: &quot;q6&quot;, &quot;scale&quot;: &quot;0.01&quot;, &quot;timestamp&quot;: &quot;2026-07-13T14:55:40&quot;, &quot;throughput&quot;: 0.031249161665068505, &quot;lastThroughput&quot;: 0.2, &quot;avgMs&quot;: 28805.348, &quot;p95Ms&quot;: 28805.348, &quot;measuredRequests&quot;: 1, &quot;report&quot;: &quot;&quot;, &quot;files&quot;: &quot;benchmarks/tpch-fresh-q6-20260713-144931&quot;}]</script>
+<script>
+  const runs = JSON.parse(document.getElementById('runs-json').textContent);
+  const rows = [...document.querySelectorAll('#runs tr')];
+  const benchmarkFilter = document.getElementById('benchmark-filter');
+  const kindFilter = document.getElementById('kind-filter');
+  const queryFilter = document.getElementById('query-filter');
+  const search = document.getElementById('search');
+
+  function addOptions(select, values) {
+    values.filter(Boolean).sort().forEach((value) => {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = value;
+      select.appendChild(option);
+    });
+  }
+
+  addOptions(benchmarkFilter, [...new Set(runs.map((run) => String(run.benchmark)))]);
+  addOptions(queryFilter, [...new Set(runs.map((run) => String(run.query)))]);
+  document.getElementById('compare-count').textContent = runs.filter((run) => run.kind === 'compare').length;
+  document.getElementById('latest-run').textContent = runs[0]?.title || '-';
+
+  function applyFilters() {
+    const benchmark = benchmarkFilter.value;
+    const kind = kindFilter.value;
+    const query = queryFilter.value;
+    const term = search.value.trim().toLowerCase();
+    let visible = 0;
+    rows.forEach((row) => {
+      const text = row.textContent.toLowerCase();
+      const show = (!benchmark || row.dataset.benchmark === benchmark)
+        && (!kind || row.dataset.kind === kind)
+        && (!query || row.dataset.query === query)
+        && (!term || text.includes(term));
+      row.style.display = show ? '' : 'none';
+      if (show) visible += 1;
+    });
+    document.getElementById('visible-count').textContent = visible;
+    document.getElementById('empty').style.display = visible ? 'none' : 'block';
+  }
+
+  [benchmarkFilter, kindFilter, queryFilter, search].forEach((element) => {
+    element.addEventListener('input', applyFilters);
+  });
+  applyFilters();
+</script>
+</body>
+</html>
