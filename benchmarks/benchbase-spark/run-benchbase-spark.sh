@@ -395,6 +395,22 @@ fail_on_benchbase_sql_errors() {
   fi
 }
 
+benchbase_progress() {
+  local db_schema="$1"
+  local interval_seconds="${BENCHBASE_PROGRESS_INTERVAL_SECONDS:-30}"
+  local elapsed_seconds=0
+
+  if [[ ! "${interval_seconds}" =~ ^[1-9][0-9]*$ ]]; then
+    echo "BENCHBASE_PROGRESS_INTERVAL_SECONDS must be a positive integer: ${interval_seconds}" >&2
+    return 2
+  fi
+
+  while sleep "${interval_seconds}"; do
+    elapsed_seconds=$((elapsed_seconds + interval_seconds))
+    echo "[BenchBase] ${db_schema}: ${elapsed_seconds}s elapsed; measurement=${BENCHBASE_TIME_SECONDS:-serial}s, waiting for the current query before phase exit"
+  done
+}
+
 prune_inactive_query_csv() {
   if [[ "${BENCHMARK}" != "tpch" || -z "${QUERY_SET}" ]]; then
     return
@@ -491,6 +507,13 @@ benchbase_execute() {
 
   local db_schema="${BENCHBASE_DB_SCHEMA:-${BENCHMARK}}"
   local log_file="${RESULTS_DIR}/last-${BENCHMARK}-${db_schema}.log"
+  local progress_pid=""
+  echo "[BenchBase] Starting schema=${db_schema}, measurement=${BENCHBASE_TIME_SECONDS:-serial}s, terminals=${BENCHBASE_TERMINALS:-config default}"
+  if [[ -n "${BENCHBASE_TIME_SECONDS}" ]]; then
+    benchbase_progress "${db_schema}" &
+    progress_pid="$!"
+  fi
+
   set +e
   compose --profile benchbase run --rm benchbase-spark \
     -b "${BENCHMARK}" \
@@ -500,11 +523,16 @@ benchbase_execute() {
     --execute=true \
     -d "${RESULTS_IN_CONTAINER}" 2>&1 | tee "${log_file}"
   local benchbase_status="${PIPESTATUS[0]}"
+  if [[ -n "${progress_pid}" ]]; then
+    kill "${progress_pid}" 2>/dev/null
+    wait "${progress_pid}" 2>/dev/null
+  fi
   set -e
 
   if (( benchbase_status != 0 )); then
     exit "${benchbase_status}"
   fi
+  echo "[BenchBase] Completed schema=${db_schema}"
   fail_on_benchbase_sql_errors "${log_file}"
   prune_inactive_query_csv
   capture_query_results
@@ -533,6 +561,8 @@ prepare_compare_stack() {
 
 compare_execute() {
   local parent_run_id="${COMPARE_PARENT_RUN_ID}"
+
+  echo "[BenchBase] Compare runs Flight and Direct sequentially; configured measurement time applies to each phase."
 
   BENCHBASE_DB_SCHEMA="${BENCHMARK}_flight"
   RESULTS_RUN_ID="${parent_run_id}/flight"
