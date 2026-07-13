@@ -177,19 +177,19 @@ public final class QueryPlanner {
      * @return selected server URI
      */
     public static String pickServer(Set&lt;String&gt; fileHosts, Map&lt;String, Long&gt; serverLoad) {
-<span class="nc" id="L180">        Set&lt;String&gt; normalizedFileHosts = fileHosts.stream()</span>
-<span class="nc" id="L181">                .map(HostUtils::normalize)</span>
-<span class="nc" id="L182">                .collect(Collectors.toSet());</span>
+<span class="fc" id="L180">        Set&lt;String&gt; normalizedFileHosts = fileHosts.stream()</span>
+<span class="fc" id="L181">                .map(HostUtils::normalize)</span>
+<span class="fc" id="L182">                .collect(Collectors.toSet());</span>
 
-<span class="nc" id="L184">        var localServers = serverLoad.keySet().stream()</span>
-<span class="nc" id="L185">                .filter(uri -&gt; normalizedFileHosts.contains(HostUtils.normalize(uri)))</span>
-<span class="nc" id="L186">                .toList();</span>
+<span class="fc" id="L184">        var localServers = serverLoad.keySet().stream()</span>
+<span class="fc" id="L185">                .filter(uri -&gt; normalizedFileHosts.contains(HostUtils.normalize(uri)))</span>
+<span class="fc" id="L186">                .toList();</span>
 
-<span class="nc bnc" id="L188" title="All 4 branches missed.">        boolean hasLocality = !localServers.isEmpty() &amp;&amp; localServers.size() &lt; serverLoad.size();</span>
-<span class="nc bnc" id="L189" title="All 2 branches missed.">        var candidates = hasLocality ? localServers : List.copyOf(serverLoad.keySet());</span>
-<span class="nc" id="L190">        return candidates.stream()</span>
-<span class="nc" id="L191">                .min(Comparator.comparingLong(serverLoad::get))</span>
-<span class="nc" id="L192">                .orElseThrow();</span>
+<span class="fc bfc" id="L188" title="All 4 branches covered.">        boolean hasLocality = !localServers.isEmpty() &amp;&amp; localServers.size() &lt; serverLoad.size();</span>
+<span class="fc bfc" id="L189" title="All 2 branches covered.">        var candidates = hasLocality ? localServers : List.copyOf(serverLoad.keySet());</span>
+<span class="fc" id="L190">        return candidates.stream()</span>
+<span class="fc" id="L191">                .min(Comparator.comparingLong(serverLoad::get))</span>
+<span class="fc" id="L192">                .orElseThrow();</span>
     }
 
     /**
@@ -201,12 +201,12 @@ public final class QueryPlanner {
      */
     public static Map&lt;String, List&lt;String&gt;&gt; groupFilesByServer(
             Map&lt;String, FileAssignment&gt; pathLocations, Map&lt;String, Long&gt; serverLoad) {
-<span class="nc" id="L204">        Map&lt;String, List&lt;String&gt;&gt; serverToFiles = new LinkedHashMap&lt;&gt;();</span>
-<span class="nc bnc" id="L205" title="All 2 branches missed.">        for (Map.Entry&lt;String, FileAssignment&gt; entry : pathLocations.entrySet()) {</span>
-<span class="nc" id="L206">            String serverUri = pickServer(entry.getValue().hosts(), serverLoad);</span>
-<span class="nc" id="L207">            serverToFiles.computeIfAbsent(serverUri, k -&gt; new ArrayList&lt;&gt;()).add(entry.getKey());</span>
-<span class="nc" id="L208">        }</span>
-<span class="nc" id="L209">        return serverToFiles;</span>
+<span class="fc" id="L204">        Map&lt;String, List&lt;String&gt;&gt; serverToFiles = new LinkedHashMap&lt;&gt;();</span>
+<span class="fc bfc" id="L205" title="All 2 branches covered.">        for (Map.Entry&lt;String, FileAssignment&gt; entry : pathLocations.entrySet()) {</span>
+<span class="fc" id="L206">            String serverUri = pickServer(entry.getValue().hosts(), serverLoad);</span>
+<span class="fc" id="L207">            serverToFiles.computeIfAbsent(serverUri, k -&gt; new ArrayList&lt;&gt;()).add(entry.getKey());</span>
+<span class="fc" id="L208">        }</span>
+<span class="fc" id="L209">        return serverToFiles;</span>
     }
 
     /**

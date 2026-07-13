@@ -14,7 +14,7 @@ public class WriteBehavior implements Serializable {
     private final String[] mergeByColumns;
 
     //the truncate flag
-<span class="nc" id="L17">    private Boolean truncate = false;</span>
+<span class="fc" id="L17">    private Boolean truncate = false;</span>
 
     /**
      * Construct a WriteBehavior
@@ -23,19 +23,19 @@ public class WriteBehavior implements Serializable {
      * @param mergeByColumn - the columns on which to merge data into the target table
      * @param typeMapping - the arrow-type to target data-type mapping
      */
-<span class="nc" id="L26">    public WriteBehavior(WriteProtocol protocol, int batchSize, String[] mergeByColumn, Map&lt;String, String&gt; typeMapping) {</span>
-<span class="nc" id="L27">        this.protocol = protocol;</span>
-<span class="nc" id="L28">        this.batchSize = batchSize;</span>
-<span class="nc" id="L29">        this.mergeByColumns = mergeByColumn;</span>
-<span class="nc" id="L30">        this.typeMapping = typeMapping;</span>
-<span class="nc" id="L31">    }</span>
+<span class="fc" id="L26">    public WriteBehavior(WriteProtocol protocol, int batchSize, String[] mergeByColumn, Map&lt;String, String&gt; typeMapping) {</span>
+<span class="fc" id="L27">        this.protocol = protocol;</span>
+<span class="fc" id="L28">        this.batchSize = batchSize;</span>
+<span class="fc" id="L29">        this.mergeByColumns = mergeByColumn;</span>
+<span class="fc" id="L30">        this.typeMapping = typeMapping;</span>
+<span class="fc" id="L31">    }</span>
 
     /**
      * Get the write-procotol
      * @return - the protocol for writing
      */
     public WriteProtocol getProtocol() {
-<span class="nc" id="L38">        return this.protocol;</span>
+<span class="fc" id="L38">        return this.protocol;</span>
     }
 
     /**
@@ -43,7 +43,7 @@ public class WriteBehavior implements Serializable {
      * @return - the size of batch for writing
      */
     public int getBatchSize() {
-<span class="nc" id="L46">        return this.batchSize;</span>
+<span class="fc" id="L46">        return this.batchSize;</span>
     }
 
     /**
@@ -51,7 +51,7 @@ public class WriteBehavior implements Serializable {
      * @return - the columns on which to merge data into the target table
      */
     public String[] getMergeByColumns() {
-<span class="nc bnc" id="L54" title="All 2 branches missed.">        return isTruncate() ? new String[0] : this.mergeByColumns;</span>
+<span class="fc bfc" id="L54" title="All 2 branches covered.">        return isTruncate() ? new String[0] : this.mergeByColumns;</span>
     }
 
     /**
@@ -59,25 +59,25 @@ public class WriteBehavior implements Serializable {
      * @return - the mapping between arrow-type &amp; target data-types
      */
     public Map&lt;String, String&gt; getTypeMapping() {
-<span class="nc" id="L62">        return this.typeMapping;</span>
+<span class="fc" id="L62">        return this.typeMapping;</span>
     }
 
     /**
      * set the flag to truncate the target table
      */
     public void truncate() {
-<span class="nc bnc" id="L69" title="All 4 branches missed.">        if (this.mergeByColumns != null &amp;&amp; this.mergeByColumns.length &gt; 0) {</span>
-<span class="nc" id="L70">            throw new RuntimeException(&quot;The merge-by can only work with append mode.&quot;);</span>
+<span class="fc bfc" id="L69" title="All 4 branches covered.">        if (this.mergeByColumns != null &amp;&amp; this.mergeByColumns.length &gt; 0) {</span>
+<span class="fc" id="L70">            throw new RuntimeException(&quot;The merge-by can only work with append mode.&quot;);</span>
         }
-<span class="nc" id="L72">        this.truncate = true;</span>
-<span class="nc" id="L73">    }</span>
+<span class="fc" id="L72">        this.truncate = true;</span>
+<span class="fc" id="L73">    }</span>
 
     /**
      * Flag to truncate the target table
      * @return - true if it is to truncate the target table
      */
     public Boolean isTruncate() {
-<span class="nc" id="L80">        return this.truncate;</span>
+<span class="fc" id="L80">        return this.truncate;</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

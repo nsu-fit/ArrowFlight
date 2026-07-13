@@ -18,12 +18,12 @@ public class FlightWriterCommitMessage implements WriterCommitMessage, Serializa
      * @param taskId - the task id of the writing operation
      * @param messageCount - number of rows been written
      */
-<span class="nc" id="L21">    public FlightWriterCommitMessage(int partitionId, long taskId, long messageCount) {</span>
-<span class="nc" id="L22">        this.partitionId = partitionId;</span>
-<span class="nc" id="L23">        this.taskId = taskId;</span>
-<span class="nc" id="L24">        this.epochId = &quot;&quot;;</span>
-<span class="nc" id="L25">        this.messageCount = messageCount;</span>
-<span class="nc" id="L26">    }</span>
+<span class="fc" id="L21">    public FlightWriterCommitMessage(int partitionId, long taskId, long messageCount) {</span>
+<span class="fc" id="L22">        this.partitionId = partitionId;</span>
+<span class="fc" id="L23">        this.taskId = taskId;</span>
+<span class="fc" id="L24">        this.epochId = &quot;&quot;;</span>
+<span class="fc" id="L25">        this.messageCount = messageCount;</span>
+<span class="fc" id="L26">    }</span>
 
     /**
      * Construct a failure Flight-Writer-Commit-Message
@@ -32,32 +32,32 @@ public class FlightWriterCommitMessage implements WriterCommitMessage, Serializa
      * @param epochId - the epoch-id for streaming write.
      * @param messageCount - number of rows been written
      */
-<span class="nc" id="L35">    public FlightWriterCommitMessage(int partitionId, long taskId, String epochId, long messageCount) {</span>
-<span class="nc" id="L36">        this.partitionId = partitionId;</span>
-<span class="nc" id="L37">        this.taskId = taskId;</span>
-<span class="nc" id="L38">        this.epochId = epochId;</span>
-<span class="nc" id="L39">        this.messageCount = messageCount;</span>
-<span class="nc" id="L40">    }</span>
+<span class="fc" id="L35">    public FlightWriterCommitMessage(int partitionId, long taskId, String epochId, long messageCount) {</span>
+<span class="fc" id="L36">        this.partitionId = partitionId;</span>
+<span class="fc" id="L37">        this.taskId = taskId;</span>
+<span class="fc" id="L38">        this.epochId = epochId;</span>
+<span class="fc" id="L39">        this.messageCount = messageCount;</span>
+<span class="fc" id="L40">    }</span>
 
     /**
      * Construct a failure Flight-Writer-Commit-Message
      * @param message - the base write commit message
      * @param epochId - the epoch-id for streaming write.
      */
-<span class="nc" id="L47">    public FlightWriterCommitMessage(FlightWriterCommitMessage message, long epochId) {</span>
-<span class="nc" id="L48">        this.partitionId = message.partitionId;</span>
-<span class="nc" id="L49">        this.taskId = message.taskId;</span>
-<span class="nc" id="L50">        this.epochId = Long.toString(epochId);</span>
-<span class="nc" id="L51">        this.messageCount = message.messageCount;</span>
-<span class="nc" id="L52">    }</span>
+<span class="fc" id="L47">    public FlightWriterCommitMessage(FlightWriterCommitMessage message, long epochId) {</span>
+<span class="fc" id="L48">        this.partitionId = message.partitionId;</span>
+<span class="fc" id="L49">        this.taskId = message.taskId;</span>
+<span class="fc" id="L50">        this.epochId = Long.toString(epochId);</span>
+<span class="fc" id="L51">        this.messageCount = message.messageCount;</span>
+<span class="fc" id="L52">    }</span>
 
     /**
      * form the committed message
      * @return - the commit message
      */
     public String getMessage() {
-<span class="nc bnc" id="L59" title="All 4 branches missed.">        return (this.epochId == null || this.epochId.length() == 0) ? String.format(&quot;Streaming write for %d messages with partition (%d), task (%d) committed.&quot;, this.messageCount, this.partitionId, this.taskId)</span>
-<span class="nc" id="L60">            : String.format(&quot;Streaming write for %d messages with partition (%d), task (%d) and epoch (%s) committed.&quot;, this.messageCount, this.partitionId, this.taskId, this.epochId);</span>
+<span class="pc bpc" id="L59" title="1 of 4 branches missed.">        return (this.epochId == null || this.epochId.length() == 0) ? String.format(&quot;Streaming write for %d messages with partition (%d), task (%d) committed.&quot;, this.messageCount, this.partitionId, this.taskId)</span>
+<span class="fc" id="L60">            : String.format(&quot;Streaming write for %d messages with partition (%d), task (%d) and epoch (%s) committed.&quot;, this.messageCount, this.partitionId, this.taskId, this.epochId);</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>
