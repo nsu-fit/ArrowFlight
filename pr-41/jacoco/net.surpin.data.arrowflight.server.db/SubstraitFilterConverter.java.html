@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>SubstraitFilterConverter.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Hadoop Arrow Flight SQL Server</a> &gt; <a href="index.source.html" class="el_package">net.surpin.data.arrowflight.server.db</a> &gt; <span class="el_source">SubstraitFilterConverter.java</span></div><h1>SubstraitFilterConverter.java</h1><pre class="source lang-java linenums">package net.surpin.data.arrowflight.server.db;
+
+import io.substrait.isthmus.CallConverter;
+import io.substrait.isthmus.ConverterProvider;
+import io.substrait.isthmus.SqlExpressionToSubstrait;
+import io.substrait.isthmus.expression.CallConverters;
+import io.substrait.isthmus.expression.ScalarFunctionConverter;
+import java.nio.ByteBuffer;
+import java.util.Collections;
+import java.util.List;
+import java.util.Optional;
+import java.util.function.Function;
+import org.apache.calcite.rex.RexBuilder;
+import org.apache.calcite.rex.RexCall;
+import org.apache.calcite.rex.RexNode;
+import org.apache.calcite.sql.SqlKind;
+import org.apache.calcite.sql.parser.SqlParseException;
+
+/**
+ * Converts a SQL filter expression to a Substrait {@link ByteBuffer} suitable for
+ * {@link org.apache.arrow.dataset.scanner.ScanOptions.Builder#substraitFilter}.
+ *
+ * &lt;p&gt;Works around three isthmus 0.91.0 limitations:
+ * &lt;ol&gt;
+ *   &lt;li&gt;{@code SqlExpressionToSubstrait} builds its {@code RexExpressionConverter} with only
+ *       {@code ScalarFunctionConverter}, omitting {@code CallConverters.CAST}. This causes
+ *       {@code CAST} nodes inserted by Calcite's type coercion (e.g. {@code &quot;smallint_col&quot;=0})
+ *       to throw {@code IllegalArgumentException: Unable to convert call CAST(…)}.
+ *       Fix: inject a CAST-aware wrapper via {@code ConverterProvider}.
+ *   &lt;li&gt;Arrow Acero only implements binary {@code and_kleene} / {@code or_kleene}. Calcite
+ *       flattens {@code A AND B AND C} into a flat 3-arg {@code AND} node; isthmus serialises
+ *       it as 3-arg {@code and_kleene}, which Acero rejects. Fix: left-fold n-ary AND/OR into
+ *       nested binary calls before conversion.
+ *   &lt;li&gt;For some nullable types (e.g. {@code CAST(col:i8?)} where isthmus has no type mapping),
+ *       {@code CallConverters.CAST} returns empty, causing the same
+ *       {@code IllegalArgumentException}. Fix: when the official cast converter cannot handle a
+ *       {@code CAST} node, strip the cast and pass the inner expression directly — Acero handles
+ *       numeric coercions natively inside its filter kernels.
+ * &lt;/ol&gt;
+ */
+public final class SubstraitFilterConverter {
+
+<span class="nc" id="L43">    private static final ConverterProvider CAST_AWARE_PROVIDER = new ConverterProvider() {</span>
+        @Override
+        public ScalarFunctionConverter getScalarFunctionConverter() {
+<span class="nc" id="L46">            ScalarFunctionConverter base = super.getScalarFunctionConverter();</span>
+<span class="nc" id="L47">            CallConverter castConv = CallConverters.CAST.apply(getTypeConverter());</span>
+<span class="nc" id="L48">            RexBuilder rexBuilder = new RexBuilder(getTypeFactory());</span>
+<span class="nc" id="L49">            return new ScalarFunctionConverter(Collections.emptyList(), getTypeFactory()) {</span>
+                @Override
+                public Optional&lt;io.substrait.expression.Expression&gt; convert(
+                        RexCall call, Function&lt;RexNode, io.substrait.expression.Expression&gt; visitor) {
+                    // Acero only supports binary and_kleene/or_kleene; fold n-ary AND/OR left
+<span class="nc bnc" id="L54" title="All 4 branches missed.">                    if ((call.getKind() == SqlKind.AND || call.getKind() == SqlKind.OR)</span>
+<span class="nc bnc" id="L55" title="All 2 branches missed.">                            &amp;&amp; call.getOperands().size() &gt; 2) {</span>
+<span class="nc" id="L56">                        RexNode folded = call.getOperands().get(0);</span>
+<span class="nc bnc" id="L57" title="All 2 branches missed.">                        for (int i = 1; i &lt; call.getOperands().size(); i++) {</span>
+<span class="nc" id="L58">                            folded = rexBuilder.makeCall(call.getOperator(), folded, call.getOperands().get(i));</span>
+                        }
+<span class="nc" id="L60">                        return Optional.of(visitor.apply(folded));</span>
+                    }
+                    // For CAST: try official converter; if it has no mapping for the type
+                    // (e.g. Calcite inserts CAST(col:i8?) for nullable-tinyint coercion),
+                    // strip the cast — Acero handles numeric coercions inside filter kernels.
+<span class="nc bnc" id="L65" title="All 2 branches missed.">                    if (call.getKind() == SqlKind.CAST) {</span>
+<span class="nc" id="L66">                        return castConv.convert(call, visitor)</span>
+<span class="nc" id="L67">                                .or(() -&gt; Optional.of(visitor.apply(call.getOperands().get(0))));</span>
+                    }
+<span class="nc" id="L69">                    return castConv.convert(call, visitor).or(() -&gt; base.convert(call, visitor));</span>
+                }
+            };
+        }
+    };
+
+    private SubstraitFilterConverter() {
+    }
+
+    /**
+     * Pre-loads the Calcite and Substrait-Java class graph so that the first real
+     * {@link #toByteBuffer} call does not pay the ~1.5 s JVM class-loading cost.
+     *
+     * &lt;p&gt;Must be called once during server startup before any query arrives.
+     * Uses schema-stripped DDL statements (same form as {@link
+     * ParquetManager#buildFilterBytes} passes).
+     *
+     * @param strippedCreateStatements DDL without schema prefix, e.g. {@code CREATE TABLE t(col1 INTEGER)}
+     */
+    public static void warmUp(List&lt;String&gt; strippedCreateStatements) {
+<span class="nc bnc" id="L89" title="All 2 branches missed.">        if (strippedCreateStatements.isEmpty()) return;</span>
+        // Build a filter that references a real column so the type-coercion code path is
+        // exercised (a pure literal comparison like &quot;1 = 1&quot; won't fully exercise it).
+<span class="nc" id="L92">        String firstDdl = strippedCreateStatements.get(0);</span>
+<span class="nc" id="L93">        String dummyFilter = &quot;1 = 1&quot;; // safe fallback</span>
+<span class="nc" id="L94">        java.util.regex.Matcher m =</span>
+<span class="nc" id="L95">                java.util.regex.Pattern.compile(&quot;\&quot;([^\&quot;]+)\&quot;&quot;).matcher(firstDdl);</span>
+<span class="nc bnc" id="L96" title="All 2 branches missed.">        if (m.find()) {</span>
+<span class="nc" id="L97">            dummyFilter = &quot;\&quot;&quot; + m.group(1) + &quot;\&quot; IS NOT NULL&quot;;</span>
+        }
+        try {
+<span class="nc" id="L100">            toByteBuffer(dummyFilter, strippedCreateStatements);</span>
+<span class="nc" id="L101">        } catch (Exception ignored) {</span>
+            // Failure is fine — we only need to trigger class loading, not a valid result.
+<span class="nc" id="L103">        }</span>
+<span class="nc" id="L104">    }</span>
+
+    /**
+     * Converts {@code sqlExpression} to a Substrait {@link ByteBuffer} ready for Arrow scanning.
+     *
+     * @param sqlExpression    SQL WHERE-clause expression (no SELECT/WHERE keywords)
+     * @param createStatements DDL CREATE TABLE statements that define the schema
+     * @return direct {@link ByteBuffer} positioned at 0, containing the serialised
+     *         {@code ExtendedExpression} protobuf
+     */
+    public static ByteBuffer toByteBuffer(String sqlExpression, List&lt;String&gt; createStatements)
+            throws SqlParseException {
+<span class="nc" id="L116">        SqlExpressionToSubstrait converter = new SqlExpressionToSubstrait(CAST_AWARE_PROVIDER);</span>
+<span class="nc" id="L117">        byte[] bytes = converter.convert(sqlExpression, createStatements).toByteArray();</span>
+<span class="nc" id="L118">        ByteBuffer buffer = ByteBuffer.allocateDirect(bytes.length);</span>
+<span class="nc" id="L119">        buffer.put(bytes);</span>
+<span class="nc" id="L120">        buffer.rewind();</span>
+<span class="nc" id="L121">        return buffer;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>
