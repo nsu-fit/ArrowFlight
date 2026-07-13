@@ -177,6 +177,15 @@ def read_config(path):
     }
 
 
+def configured_query_ids(config):
+    query_ids = set()
+    for token in config.get("queries", "").split(","):
+        token = token.strip().lower().removeprefix("q")
+        if token.isdigit():
+            query_ids.add(int(token))
+    return query_ids or None
+
+
 def query_number(path):
     suffix = path.name.split(".results.Q", 1)[-1].split(".csv", 1)[0]
     try:
@@ -456,8 +465,13 @@ def settings_section(metadata):
 """
 
 
-def query_reference_section(run_dir, metadata, title="Query Results"):
+def query_reference_section(run_dir, metadata, title="Query Results", active_query_ids=None):
     references = metadata.get("reference_queries", []) if metadata else []
+    if active_query_ids:
+        references = [
+            query for query in references
+            if int(query.get("query_id", 0)) in active_query_ids
+        ]
     if not references:
         return ""
 
@@ -528,7 +542,7 @@ def build_report(results_dir, base, output):
   {svg_line_chart(run["rows"], [LAT_AVG, LAT_P95, LAT_MAX], "Latency", "ms")}
   {svg_line_chart(run["rows"], [THROUGHPUT], "Throughput", "req/s")}
   {query_table(run["query_rows"])}
-  {query_reference_section(run["dir"], metadata)}
+  {query_reference_section(run["dir"], metadata, active_query_ids=configured_query_ids(run["config"]))}
   {summary_block(run["summary"])}
 </main>
 </body>
@@ -567,15 +581,15 @@ def compare_cards(flight, direct):
 """
 
 
-def compare_reference_section(parent_dir, metadata):
+def compare_reference_section(parent_dir, metadata, flight, direct):
     if not metadata or not metadata.get("reference_queries"):
         return ""
     return f"""
 <section>
   <h2>Query Result Correctness</h2>
   <div class="grid2">
-    <div>{query_reference_section(parent_dir / "flight", metadata, "Flight Actual vs Expected")}</div>
-    <div>{query_reference_section(parent_dir / "direct", metadata, "Direct Actual vs Expected")}</div>
+    <div>{query_reference_section(parent_dir / "flight", metadata, "Flight Actual vs Expected", configured_query_ids(flight["config"]))}</div>
+    <div>{query_reference_section(parent_dir / "direct", metadata, "Direct Actual vs Expected", configured_query_ids(direct["config"]))}</div>
   </div>
 </section>
 """
@@ -619,7 +633,7 @@ def build_compare_report(results_dir, output):
       {"label": "Flight P95 latency", "rows": flight["rows"], "column": LAT_P95, "color": "#2563eb"},
       {"label": "Direct P95 latency", "rows": direct["rows"], "column": LAT_P95, "color": "#f97316"},
   ], "P95 Latency: Flight vs Direct", "ms")}
-  {compare_reference_section(results_dir, metadata)}
+  {compare_reference_section(results_dir, metadata, flight, direct)}
 </main>
 </body>
 </html>

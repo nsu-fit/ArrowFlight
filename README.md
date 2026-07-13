@@ -216,3 +216,4 @@ Key properties (see `AppConfig.java` / `ConfigAdapter.java` for the full list):
 | **[Architecture — Parquet Storage](docs/architecture/hadoop-parquet-storage.md)** | Storage model, Hadoop FS abstraction, block locality, file discovery |
 | **[ADR](docs/adr/)** | Architecture Decision Records (query engine selection, file distribution scheduler) |
 | **[User Guide — Build & Test](docs/user_guides/build-test-and-scripts.md)** | Build profiles, unit/integration/perf test commands, `run.sh` usage, DuckDB HDFS extension setup |
+| **[BenchBase Spark — Linux](docs/user_guides/benchbase-spark-linux.ru.md)** | Russian guide for selected TPC-H queries and Flight-vs-Direct comparison runs |

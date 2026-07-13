@@ -449,7 +449,8 @@ capture_query_results() {
 
   run_python "${SCRIPT_DIR}/capture-query-results.py" \
     --metadata "${metadata_file}" \
-    --results "${RESULTS_DIR}" >/dev/null
+    --results "${RESULTS_DIR}" \
+    --queries "${QUERY_SET}" >/dev/null
 
   local db_schema="${BENCHBASE_DB_SCHEMA:-${BENCHMARK}}"
   local sql_file name sql_in_container out_in_container
