@@ -16,8 +16,8 @@ High-performance **Arrow Flight SQL** server for analytical queries on Parquet d
 git clone https://github.com/nsu-fit/ArrowFlight.git
 cd ArrowFlight
 
-# Build (Java 21 required)
-mvn package -DskipTests
+# Build (Java 21 required, Maven Wrapper included — no Maven install needed)
+./mvnw package -DskipTests
 
 # Start a single-node server with test data
 java -jar target/hadoop-arrow-flight-1.0-SNAPSHOT.jar \
@@ -136,9 +136,9 @@ PR checks (`.github/workflows/ci.yml`) enforce on every pull request:
 
 **Run tests locally**:
 ```bash
-mvn test                  # unit (excludes integration/spark/perf/smoke)
-mvn test -P integration   # integration + spark + smoke
-mvn test -P perf          # performance benchmarks
+./mvnw test                  # unit (excludes integration/spark/perf/smoke)
+./mvnw test -P integration   # integration + spark + smoke
+./mvnw test -P perf          # performance benchmarks
 ```
 
 ---
