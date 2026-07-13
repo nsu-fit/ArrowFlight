@@ -6,7 +6,6 @@ import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.arrow.vector.types.pojo.Schema;
 import org.apache.spark.sql.connector.read.InputPartition;
 import org.apache.spark.sql.connector.read.PartitionReader;
-import org.apache.spark.sql.vectorized.ArrowColumnVector;
 import org.apache.spark.sql.vectorized.ColumnVector;
 import org.apache.spark.sql.vectorized.ColumnarBatch;
 
@@ -57,7 +56,7 @@ public final class FlightColumnarPartitionReader implements PartitionReader<Colu
         if (this.current == null) {
             VectorSchemaRoot root = this.streamReader.currentBatch();
             ColumnVector[] columns = root.getFieldVectors().stream()
-                    .map(ArrowColumnVector::new)
+                    .map(FlightArrowColumnVector::new)
                     .toArray(ColumnVector[]::new);
             this.current = new FlightOwnedColumnarBatch(columns, root.getRowCount());
         }

@@ -227,12 +227,14 @@ def export_table_shard(connection, table, target, shard_count, shard):
         COPY (
           SELECT {columns}
           FROM {table_name}
-          WHERE (hash({columns}) % {shard_count}) = {shard}
+          WHERE (rowid % {shard_count}) = {shard}
         )
         TO {sql_string(target)}
         (FORMAT PARQUET)
     """
     connection.execute(query)
+    if not target.is_file() or target.stat().st_size == 0:
+        raise RuntimeError(f"DuckDB did not create Parquet shard {target}")
 
 
 def export_table_to_flight_roots(connection, table, schema, flight_roots, flight_hosts):

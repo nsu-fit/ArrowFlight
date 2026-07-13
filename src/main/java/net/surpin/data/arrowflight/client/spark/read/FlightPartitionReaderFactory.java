@@ -64,6 +64,9 @@ public class FlightPartitionReaderFactory implements PartitionReaderFactory {
     }
 
     private static boolean isColumnarType(Field field) {
+        if (field.getDictionary() != null) {
+            return false;
+        }
         ArrowType type = field.getType();
         return switch (type.getTypeID()) {
             case Bool, Utf8, LargeUtf8, Binary, LargeBinary, Null -> true;
@@ -72,10 +75,19 @@ public class FlightPartitionReaderFactory implements PartitionReaderFactory {
                 yield precision == FloatingPointPrecision.SINGLE
                         || precision == FloatingPointPrecision.DOUBLE;
             }
-            case Int -> ((ArrowType.Int) type).getIsSigned();
+            case Int -> {
+                ArrowType.Int integer = (ArrowType.Int) type;
+                int bitWidth = integer.getBitWidth();
+                yield integer.getIsSigned()
+                        && (bitWidth == 8 || bitWidth == 16 || bitWidth == 32 || bitWidth == 64);
+            }
             case Decimal -> {
                 ArrowType.Decimal decimal = (ArrowType.Decimal) type;
-                yield decimal.getBitWidth() == 128 && decimal.getPrecision() <= 38;
+                int precision = decimal.getPrecision();
+                int scale = decimal.getScale();
+                yield decimal.getBitWidth() == 128
+                        && precision >= 1 && precision <= 38
+                        && scale >= 0 && scale <= precision;
             }
             case Date -> ((ArrowType.Date) type).getUnit() == DateUnit.DAY;
             case Timestamp -> {

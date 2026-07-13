@@ -15,12 +15,29 @@ def sql_string(value):
 
 
 def list_exported_tables(roots, schema):
-    tables = set()
+    tables_by_root = {}
     for root in roots:
         schema_dir = root / schema
+        tables = set()
         if schema_dir.exists():
-            tables.update(path.name for path in schema_dir.iterdir() if path.is_dir())
-    return sorted(tables)
+            tables.update(
+                path.name
+                for path in schema_dir.iterdir()
+                if path.is_dir() and any(path.rglob("*.parquet"))
+            )
+        tables_by_root[root] = tables
+
+    all_tables = set().union(*tables_by_root.values()) if tables_by_root else set()
+    missing = {
+        str(root): sorted(all_tables - tables)
+        for root, tables in tables_by_root.items()
+        if all_tables - tables
+    }
+    if missing:
+        raise RuntimeError(
+            f"Incomplete node-local Parquet layout for schema '{schema}': {missing}"
+        )
+    return sorted(all_tables)
 
 
 def create_database(spark, schema):
@@ -50,6 +67,11 @@ def register_flight_tables(spark, publish_schema, source_schema, tables, host, p
             )
             """
         )
+        if not spark.table(spark_table).schema.fields:
+            raise RuntimeError(
+                f"Flight returned an empty schema for {source_table}; "
+                f"verify the Parquet shard mounted on {host}"
+            )
         print(f"Registered Spark Flight table {publish_schema}.{table} via flight://{host}:{port}/{source_table}")
 
 
