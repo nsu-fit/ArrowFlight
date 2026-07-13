@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - feature/bench-mark
     paths:
       - pages/**
       - .github/workflows/benchmark-pages.yml
