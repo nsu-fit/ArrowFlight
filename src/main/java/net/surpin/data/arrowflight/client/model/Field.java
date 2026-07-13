@@ -46,7 +46,7 @@ public class Field implements Serializable {
      */
     @Override
     public int hashCode() {
-        return this.name.hashCode();
+        return this.name.toLowerCase().hashCode();
     }
 
     @Override
