@@ -11,8 +11,9 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.security.GeneralSecurityException;
 import java.security.KeyStore;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.security.cert.Certificate;
-import java.util.Arrays;
 import java.util.Enumeration;
 
 /**
@@ -188,14 +189,48 @@ public final class Configuration implements Serializable {
     }
 
     /**
-     * Retrieve the connection string for connecting to the remote flight service
-     * @return - the connection string
+     * Retrieve an opaque connection identity for client pooling.
+     * Does not contain raw secrets — the credential is replaced with a SHA-256 hash.
+     * @return - the connection identity string
      */
     public String getConnectionString() {
-        String secret = (this.password != null && this.password.length() > 0) ? this.password : this.bearerToken;
-        return String.format("%s://%s:%s@%s:%d", this.tlsEnabled ? "https:" : "http", this.user, secret, this.fsHost, this.fsPort);
+        String secret = (this.password != null && !this.password.isEmpty()) ? this.password : this.bearerToken;
+        return String.format("%s://%s:%s@%s:%d",
+                this.tlsEnabled ? "https:" : "http",
+                this.user,
+                hash(secret),
+                this.fsHost,
+                this.fsPort);
     }
 
+    /**
+     * Computes SHA-256 hex digest of a value.
+     * @param value input string (may be null)
+     * @return hex-encoded hash or empty string if null
+     */
+    private static String hash(String value) {
+        if (value == null) {
+            return "";
+        }
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] digest = md.digest(value.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            for (byte b : digest) {
+                sb.append(String.format("%02x", b));
+            }
+            return sb.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    /**
+     * Loads certificate bytes from a JKS truststore.
+     * @param keyStorePath path to JKS file
+     * @param keyStorePassword truststore password
+     * @return certificate bytes or empty array on failure
+     */
     private static byte[] getCertificateBytes(String keyStorePath, String keyStorePassword) {
         try {
             KeyStore keyStore = KeyStore.getInstance(KeyStore.getDefaultType());
@@ -217,6 +252,12 @@ public final class Configuration implements Serializable {
         return new byte[0];
     }
 
+    /**
+     * Serializes an X.509 certificate to PEM-encoded bytes.
+     * @param certificate the certificate
+     * @return PEM bytes
+     * @throws IOException on write error
+     */
     private static byte[] toBytes(Certificate certificate) throws IOException {
         try (
             StringWriter writer = new StringWriter();
@@ -290,26 +331,50 @@ public final class Configuration implements Serializable {
         this.allocationLimit = limit;
     }
 
+    /**
+     * Gets the maximum number of retry attempts.
+     * @return max retries
+     */
     public int getMaxRetries() {
         return this.maxRetries;
     }
 
+    /**
+     * Sets the maximum number of retry attempts.
+     * @param maxRetries max retries
+     */
     public void setMaxRetries(int maxRetries) {
         this.maxRetries = maxRetries;
     }
 
+    /**
+     * Gets the retry backoff interval in milliseconds.
+     * @return backoff in ms
+     */
     public long getRetryBackoffMs() {
         return this.retryBackoffMs;
     }
 
+    /**
+     * Sets the retry backoff interval in milliseconds.
+     * @param retryBackoffMs backoff in ms
+     */
     public void setRetryBackoffMs(long retryBackoffMs) {
         this.retryBackoffMs = retryBackoffMs;
     }
 
+    /**
+     * Gets the connection timeout in milliseconds.
+     * @return timeout in ms
+     */
     public long getConnectTimeoutMs() {
         return this.connectTimeoutMs;
     }
 
+    /**
+     * Sets the connection timeout in milliseconds.
+     * @param connectTimeoutMs timeout in ms
+     */
     public void setConnectTimeoutMs(long connectTimeoutMs) {
         this.connectTimeoutMs = connectTimeoutMs;
     }
@@ -322,14 +387,14 @@ public final class Configuration implements Serializable {
                 ", tlsEnabled=" + tlsEnabled +
                 ", crtVerify=" + crtVerify +
                 ", trustStoreJks='" + trustStoreJks + '\'' +
-                ", trustStorePass='" + trustStorePass + '\'' +
+                ", trustStorePass='" + (trustStorePass != null ? "[hidden]" : "[not set]") + '\'' +
                 ", user='" + user + '\'' +
                 ", password='" + (password != null ? "[hidden]" : "[not set]") + '\'' +
-                ", bearerToken='" + bearerToken + '\'' +
+                ", bearerToken='" + (bearerToken != null ? "[hidden]" : "[not set]") + '\'' +
                 ", defaultSchema='" + defaultSchema + '\'' +
                 ", routingTag='" + routingTag + '\'' +
                 ", routingQueue='" + routingQueue + '\'' +
-                ", certBytes=" + Arrays.toString(certBytes) +
+                ", certBytes='" + (certBytes != null ? "[hidden, " + certBytes.length + " bytes]" : "[not set]") + '\'' +
                 ", allocationLimit=" + allocationLimit +
                 ", maxRetries=" + maxRetries +
                 ", retryBackoffMs=" + retryBackoffMs +

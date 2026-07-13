@@ -1,171 +1,202 @@
 package net.surpin.data.arrowflight.server;
 
 import com.hazelcast.cluster.Member;
-import com.hazelcast.config.Config;
-import com.hazelcast.config.JoinConfig;
-import com.hazelcast.config.NetworkConfig;
-import com.hazelcast.config.TcpIpConfig;
-import com.hazelcast.core.Hazelcast;
 import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.map.IMap;
 import org.apache.arrow.flight.FlightServer;
 import org.apache.arrow.flight.Location;
-import org.apache.arrow.memory.BufferAllocator;
-import org.apache.arrow.memory.DefaultAllocationManagerOption;
-import org.apache.arrow.memory.RootAllocator;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.fs.Path;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.io.Serializable;
-import java.io.UncheckedIOException;
+import java.io.InputStream;
 import java.util.Arrays;
+import java.util.Properties;
 import java.util.Set;
 
-import net.surpin.data.arrowflight.server.db.ParquetManager;
-
-import static org.apache.arrow.memory.DefaultAllocationManagerOption.ALLOCATION_MANAGER_TYPE_PROPERTY_NAME;
+import net.surpin.data.arrowflight.server.adapters.ConfigAdapter;
+import net.surpin.data.arrowflight.server.model.AppConfig;
 
 /**
- * Основной класс сервера Hadoop Arrow Flight SQL.
+ * Main entry point for the Hadoop Arrow Flight SQL server.
+ * Uses Dagger for dependency injection and manages the Flight server lifecycle.
  */
 public class HadoopArrowFlightServer {
 
+    static {
+        initLogLevel();
+    }
+
     private static final Logger LOGGER = LoggerFactory.getLogger(HadoopArrowFlightServer.class);
 
+    /**
+     * Initializes SLF4J log level from properties, system properties, or env var.
+     */
+    private static void initLogLevel() {
+        Properties props = new Properties();
+        try (InputStream input = HadoopArrowFlightServer.class.getClassLoader()
+                .getResourceAsStream("arrowflight.properties")) {
+            if (input != null) {
+                props.load(input);
+            }
+        } catch (IOException e) {
+            throw new ExceptionInInitializerError(e);
+        }
+        for (String key : new String[]{"logLevel", "arrowflight.log.level"}) {
+            String v = System.getProperty(key);
+            if (v != null && !v.isBlank()) {
+                System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", v.trim());
+                return;
+            }
+            v = props.getProperty(key);
+            if (v != null && !v.isBlank()) {
+                System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", v.trim());
+                return;
+            }
+        }
+        String env = System.getenv("LOGGING_LEVEL");
+        if (env != null && !env.isBlank()) {
+            System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", env.trim());
+        }
+    }
+
     private FlightServer server;
-    private ParquetManager parquetManager;
-    private Configuration hadoopConfig;
-    private FileSystem fileSystem;
-    private BufferAllocator allocator;
-    private HazelcastInstance hazelcastInstance;
+    private ServerComponent component;
 
     /**
-     * Запуск сервера.
+     * Starts the server with command-line arguments.
+     *
+     * @param args CLI arguments: --data-dir, --port, --hosts, --localhost
      */
     public void start(String... args) {
-        String dataDirectory = getArgValue(args, "--data-dir", RuntimeSettings.defaultDataDir());
-        int port = Integer.parseInt(getArgValue(args, "--port", String.valueOf(RuntimeSettings.defaultPort())));
+        AppConfig config = ConfigAdapter.getConfig();
+        String dataDirectory = getArgValue(args, "--data-dir", config.dataDir());
+        int port = Integer.parseInt(
+                getArgValue(args, "--port", String.valueOf(config.port())));
         String hosts = getArgValue(args, "--hosts", "0.0.0.0");
         String localhost = getArgValue(args, "--localhost", "localhost");
+        int hazelcastPort = Integer.parseInt(
+                getArgValue(args, "--hazelcast-port", String.valueOf(config.hazelcastPort())));
 
-        int hazelcastPort = Integer.parseInt(getArgValue(
-                args,
-                "--hazelcast-port",
-                String.valueOf(RuntimeSettings.defaultHazelcastPort())));
+        // Push CLI overrides into system properties so ConfigAdapter picks them up
+        System.setProperty("dataDir", dataDirectory);
+        System.setProperty("port", String.valueOf(port));
+        System.setProperty("hazelcastPort", String.valueOf(hazelcastPort));
 
-        LOGGER.info("Запуск Hadoop Arrow Flight SQL сервера...");
+        LOGGER.info("Starting Hadoop Arrow Flight SQL server...");
         LOGGER.info("Data Directory: {}", dataDirectory);
         LOGGER.info("Hosts: {}", hosts);
         LOGGER.info("Port: {}", port);
 
-        // Инициализация hazelcast
-        setupHazelcast(hazelcastPort, hosts.split(","));
+        Configuration hadoopConfig = new Configuration();
+        String[] hazelcastHosts = hosts.split(",");
 
-        // Инициализация конфигурации Hadoop
-        this.hadoopConfig = new Configuration();
-        hadoopConfig.setInt("io.file.buffer.size", RuntimeSettings.ioFileBufferSize());
-        hadoopConfig.setBoolean("dfs.client.read.shortcircuit", true);
-        hadoopConfig.setBoolean("dfs.client.read.shortcircuit.skip.checksum", false);
-        hadoopConfig.setBoolean("fs.file.impl.disable.cache", true);
+        // Create Dagger component with runtime parameters
+        component = DaggerServerComponent.builder()
+                .serverModule(new ServerModule(hazelcastHosts,
+                        Location.forGrpcInsecure(localhost, port).getUri().toString(),
+                        hadoopConfig))
+                .build();
 
-        try {
-            this.fileSystem = new Path(dataDirectory).getFileSystem(hadoopConfig);
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
+        // Wait for cluster nodes (single-node skip)
+        if (hazelcastHosts.length > 1) {
+            waitForCluster(hazelcastHosts, config.hazelcastClusterJoinTimeoutSec());
         }
 
-        // Инициализация менеджера Parquet файлов
-        parquetManager = new ParquetManager(fileSystem, dataDirectory, localhost);
-
-        // Создание локации (адреса сервера)
-        Location location = Location.forGrpcInsecure(localhost, port);
-
-        // Запуск сервера
         try {
-            // Создание allocator для Arrow
-            System.setProperty(ALLOCATION_MANAGER_TYPE_PROPERTY_NAME, DefaultAllocationManagerOption.AllocationManagerType.Netty.name());
-            allocator = new RootAllocator(Long.MAX_VALUE);
-
-            // Инициализация Flight SQL сервера
-            HadoopFlightSqlService sqlService = new HadoopFlightSqlService(location, parquetManager, allocator, hazelcastInstance);
-
-            server = FlightServer.builder(allocator, location, sqlService)
-                    .maxInboundMessageSize(RuntimeSettings.grpcMaxInboundMessageSize())
+            Location location = Location.forGrpcInsecure(localhost, port);
+            server = FlightServer.builder(
+                    component.allocator(),
+                    location,
+                    component.producer())
+                    .maxInboundMessageSize(config.grpcMaxInboundMessageSize())
                     .build();
             server.start();
 
-            LOGGER.info("Сервер Arrow Flight SQL запущен на {}", location);
-            LOGGER.info("Data Directory: {}", dataDirectory);
+            LOGGER.info("Server Arrow Flight SQL started on {}", location);
 
-            // Ожидание завершения (сервер работает в фоновом потоке)
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-                LOGGER.info("Остановка сервера...");
+                LOGGER.info("Shutting down server...");
                 stop();
             }));
 
-            // Блокируем основной поток
-            try {
-                server.awaitTermination();
-            } catch (InterruptedException e) {
-                LOGGER.info("Ожидание прервано");
-            }
-
+            server.awaitTermination();
         } catch (Exception e) {
-            LOGGER.error("Ошибка при запуске сервера", e);
+            LOGGER.error("Error starting server", e);
             System.exit(1);
         }
     }
 
-    protected void setupHazelcast(int hazelcastPort, String... hosts) {
-        Config config = new Config();
-        NetworkConfig network = config.getNetworkConfig();
-        network.setPort(hazelcastPort);
-        network.setPortAutoIncrement(false);
-        JoinConfig join = network.getJoin();
-        join.getMulticastConfig().setEnabled(false);
-        TcpIpConfig tcpIpConfig = join.getTcpIpConfig();
-        Arrays.stream(hosts).forEach(tcpIpConfig::addMember);
-        tcpIpConfig.setEnabled(true);
-
-        LOGGER.info("Hazelcast config: {}", config);
-
-        hazelcastInstance = Hazelcast.newHazelcastInstance(config);
-
-        LOGGER.info("Waiting for all {} nodes to connect", hosts.length);
-        Set<Member> members;
-        do {
-            members = hazelcastInstance.getCluster().getMembers();
-            LOGGER.info("Connected: {} of {} nodes", members.size(), hosts.length);
-        } while (members.size() < hosts.length);
-        LOGGER.info("All {} nodes connected. Initializing...", hosts.length);
-    }
-
     /**
-     * Остановка сервера.
+     * Stops the server and releases resources.
      */
     public void stop() {
         if (server != null) {
             server.shutdown();
-            LOGGER.info("Flight SQL сервер остановлен");
+            LOGGER.info("Flight SQL server stopped");
         }
-        if (allocator != null) {
-            allocator.close();
-            LOGGER.info("Arrow allocator закрыт");
-        }
-        if (fileSystem != null) {
+        if (component != null) {
             try {
-                fileSystem.close();
-            } catch (IOException e) {
-                throw new RuntimeException("Ошибка закрытия файловой системы", e);
+                component.clusterService().close();
+            } catch (Exception e) {
+                LOGGER.error("Error closing cluster service", e);
             }
-            LOGGER.info("Файловая система закрыта");
+            try {
+                component.allocator().close();
+            } catch (Exception e) {
+                LOGGER.error("Error closing allocator", e);
+            }
         }
     }
 
+    /**
+     * Waits for all Hazelcast cluster nodes to connect.
+     * @param hosts expected host addresses
+     * @param timeoutSec max wait time in seconds
+     * @throws IllegalStateException if timeout reached or interrupted
+     */
+    private void waitForCluster(String[] hosts, int timeoutSec) {
+        HazelcastInstance hazelcast = component.clusterService().getHazelcastInstance();
+        long deadline = System.currentTimeMillis() + timeoutSec * 1000L;
+        long started = System.currentTimeMillis();
+
+        LOGGER.info("Waiting up to {}s for {} nodes to connect (hosts: {})",
+                timeoutSec, hosts.length, Arrays.toString(hosts));
+
+        Set<Member> members;
+        do {
+            members = hazelcast.getCluster().getMembers();
+            long elapsed = (System.currentTimeMillis() - started) / 1000;
+            LOGGER.info("Connected: {} of {} nodes ({}s elapsed)",
+                    members.size(), hosts.length, elapsed);
+
+            if (System.currentTimeMillis() >= deadline) {
+                String msg = String.format(
+                        "Cluster join timeout after %ds: only %d of %d nodes connected. "
+                                + "Expected hosts: %s.",
+                        timeoutSec, members.size(), hosts.length, Arrays.toString(hosts));
+                LOGGER.error(msg);
+                throw new IllegalStateException(msg);
+            }
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("Interrupted while waiting for cluster join", e);
+            }
+        } while (members.size() < hosts.length);
+
+        long totalSec = (System.currentTimeMillis() - started) / 1000;
+        LOGGER.info("All {} nodes connected in {}s. Initializing...", hosts.length, totalSec);
+    }
+
+    /**
+     * Gets the value of a named CLI argument.
+     * @param args CLI arguments array
+     * @param key argument name
+     * @param defaultValue default if not found
+     * @return argument value or default
+     */
     private String getArgValue(String[] args, String key, String defaultValue) {
         for (int i = 0; i < args.length; i++) {
             if (args[i].equals(key) && i + 1 < args.length) {
@@ -175,9 +206,14 @@ public class HadoopArrowFlightServer {
         return defaultValue;
     }
 
+    /**
+     * Main entry point.
+     *
+     * @param args CLI arguments
+     * @throws Exception on startup failure
+     */
     public static void main(String... args) throws Exception {
         HadoopArrowFlightServer server = new HadoopArrowFlightServer();
         server.start(args);
-//        server.start("--data-dir", "/Users/16713217/Documents/GigaCodeCLI/hadoop-arrow-flight/src/test/resources/test_db/");
     }
 }

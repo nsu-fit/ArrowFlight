@@ -57,3 +57,4 @@ skills-lock.json
 .DS_Store
 Thumbs.db
 desktop.ini
+benchmark-results.json

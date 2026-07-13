@@ -32,13 +32,12 @@
     </Match>
 
     <!--
-      RCN_REDUNDANT_NULLCHECK_OF_NONNULL_VALUE: arrowSchema at line 293 of
-      HadoopFlightSqlService can legitimately be null (getQuerySchema may return null);
-      the null guard is intentional.
+      RCN_REDUNDANT_NULLCHECK_OF_NONNULL_VALUE: null guards on schema-query results
+      are intentional — getQuerySchema may return null.
     -->
     <Match>
         <Bug pattern="RCN_REDUNDANT_NULLCHECK_OF_NONNULL_VALUE"/>
-        <Class name="net.surpin.data.arrowflight.server.HadoopFlightSqlService"/>
+        <Class name="~net\.surpin\.data\.arrowflight\.server\..*"/>
     </Match>
 
     <!--

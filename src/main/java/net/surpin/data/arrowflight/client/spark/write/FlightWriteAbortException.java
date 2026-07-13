@@ -3,6 +3,9 @@ package net.surpin.data.arrowflight.client.spark.write;
 import java.io.IOException;
 import java.io.Serializable;
 
+/**
+ * Exception thrown when a streaming write is aborted, carrying partition, task, and message count details.
+ */
 public class FlightWriteAbortException extends IOException implements Serializable {
     /**
      * Construct a success Flight-Writer-Commit-Message
@@ -25,12 +28,23 @@ public class FlightWriteAbortException extends IOException implements Serializab
         super(getMessage(partitionId, taskId, epochId, messageCount));
     }
 
-    //form the error message
+    /**
+     * @param partitionId partition id of the data frame
+     * @param taskId task id of the write operation
+     * @param messageCount number of rows written
+     * @return formatted abort message
+     */
     private static String getMessage(int partitionId, long taskId, long messageCount) {
         return String.format("Streaming write for %d messages with partition (%d), task (%d) aborted.", messageCount, partitionId, taskId);
     }
 
-    //form the error message
+    /**
+     * @param partitionId partition id of the data frame
+     * @param taskId task id of the write operation
+     * @param epochId epoch id for streaming write
+     * @param messageCount number of rows written
+     * @return formatted abort message with epoch info
+     */
     private static String getMessage(int partitionId, long taskId, String epochId, long messageCount) {
         return String.format("Streaming write for %d messages with partition (%d), task (%d) and epoch (%s) aborted.", messageCount, partitionId, taskId, epochId);
     }
