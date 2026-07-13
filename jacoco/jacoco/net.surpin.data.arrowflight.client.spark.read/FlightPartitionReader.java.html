@@ -112,10 +112,10 @@ public class FlightPartitionReader implements PartitionReader&lt;InternalRow&gt;
 <span class="nc" id="L112">                        return true;</span>
                     }
 <span class="nc" id="L114">                } catch (Exception midStreamError) {</span>
-<span class="nc" id="L115">                    LOGGER.warn(&quot;Mid-stream read error: {}, attempt reconnect&quot;, midStreamError.getMessage());</span>
-<span class="nc bnc" id="L116" title="All 2 branches missed.">                    if (!reopenStream()) {</span>
-<span class="nc" id="L117">                        throw midStreamError;</span>
-                    }
+                    // Restarting this stream here would replay rows already returned from
+                    // the partition. Let Spark retry the whole task with the retained ticket.
+<span class="nc" id="L117">                    LOGGER.warn(&quot;Mid-stream read error: {}&quot;, midStreamError.getMessage());</span>
+<span class="nc" id="L118">                    throw midStreamError;</span>
 <span class="nc" id="L119">                }</span>
             }
 
