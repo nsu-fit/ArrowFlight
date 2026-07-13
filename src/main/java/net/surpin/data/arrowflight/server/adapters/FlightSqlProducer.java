@@ -134,7 +134,10 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
         } finally {
             MDC.remove("qid");
             if (state.serverUri() != null) {
-                clusterService.removeHandle(handle.toStringUtf8());
+                // Spark may retry a failed task with the same Flight ticket. Keep the
+                // ticket readable until its TTL, but clear its accounted load once.
+                clusterService.storeHandle(handle.toStringUtf8(),
+                        HandleState.forServerFiles(query, filePaths, state.serverUri(), 0L));
                 clusterService.addLoad(state.serverUri(), -state.bytes());
             }
         }
