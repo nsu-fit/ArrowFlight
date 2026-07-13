@@ -1,0 +1,1089 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ArrowConversion.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Hadoop Arrow Flight SQL Server</a> &gt; <a href="index.source.html" class="el_package">net.surpin.data.arrowflight.client.model</a> &gt; <span class="el_source">ArrowConversion.java</span></div><h1>ArrowConversion.java</h1><pre class="source lang-java linenums">package net.surpin.data.arrowflight.client.model;
+
+import com.google.common.collect.Streams;
+import org.apache.arrow.vector.*;
+import org.apache.arrow.vector.complex.*;
+import org.apache.arrow.vector.holders.*;
+import org.apache.spark.sql.catalyst.InternalRow;
+import org.apache.spark.sql.catalyst.expressions.UnsafeArrayData;
+import org.apache.spark.sql.catalyst.expressions.UnsafeMapData;
+import org.apache.spark.sql.catalyst.expressions.UnsafeRow;
+import org.apache.spark.sql.catalyst.util.ArrayBasedMapData;
+import org.apache.spark.sql.catalyst.util.ArrayData;
+import org.apache.spark.sql.catalyst.util.DateTimeUtils;
+import org.apache.spark.sql.catalyst.util.IntervalUtils;
+import org.apache.spark.sql.types.*;
+import org.apache.spark.unsafe.types.UTF8String;
+import org.apache.arrow.vector.util.JsonStringHashMap;
+import scala.collection.JavaConverters;
+import java.io.Serializable;
+import java.math.BigDecimal;
+import java.sql.Timestamp;
+import java.time.*;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
+import java.util.function.BiFunction;
+import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+
+/**
+ * Defines utility methods for transformation &amp; conversion
+ */
+public final class ArrowConversion implements Serializable {
+    //the fromConversion interface
+    @FunctionalInterface
+    private interface ConvertFrom&lt;X, Y, Z, R&gt; {
+        R apply(X x, Y y, Z z);
+    }
+    //the toConversion interface
+    @FunctionalInterface
+    private interface ConvertTo&lt;A, B, C, D&gt; {
+        void apply(A a, B b, C c, D d);
+    }
+    /**
+     * Casts a FieldVector to a specific vector subtype.
+     * @param fv the field vector to cast
+     * @param &lt;V&gt; target vector type
+     * @return casted vector
+     * @throws RuntimeException if cast fails
+     */
+    @SuppressWarnings(&quot;unchecked&quot;)
+    private static &lt;V extends org.apache.arrow.vector.FieldVector&gt; V cast(org.apache.arrow.vector.FieldVector fv) {
+        try {
+<span class="nc" id="L56">            return (V) fv;</span>
+<span class="nc" id="L57">        } catch (Exception e) {</span>
+<span class="nc" id="L58">            throw new RuntimeException(String.format(&quot;ArrowVector casting to [%s] failed.&quot;, fv.getClass().getTypeName()), e);</span>
+        }
+    }
+
+    //the from-converter container
+<span class="nc" id="L63">    private final transient Map&lt;String, ConvertFrom&lt;org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector&gt;&gt; fromConverters = new java.util.HashMap&lt;&gt;();</span>
+    //the to-converter container
+<span class="nc" id="L65">    private final transient Map&lt;String, ConvertTo&lt;org.apache.arrow.vector.FieldVector, InternalRow[], Integer, DataType&gt;&gt; toConverters = new java.util.HashMap&lt;&gt;();</span>
+    //the to-object-converter container
+<span class="nc" id="L67">    private final transient Map&lt;String, ConvertTo&lt;org.apache.arrow.vector.FieldVector, Integer, Object, DataType&gt;&gt; toObjectConverters = new java.util.HashMap&lt;&gt;();</span>
+
+    /**
+     * Construct a Vector object
+     */
+<span class="nc" id="L72">    private ArrowConversion() {</span>
+<span class="nc" id="L73">        this.initializeFrom();</span>
+<span class="nc" id="L74">        this.initializeTo();</span>
+<span class="nc" id="L75">    }</span>
+
+    /**
+     * Convert an arrow FieldVector into a custom FieldVector
+     * @param vector - the arrow FieldVector
+     * @param type - the type of all elements in the vector
+     * @param rowCount - the number of rows in the vector
+     * @return - a custom FieldVector hodling java-type objects
+     */
+    public FieldVector convert(org.apache.arrow.vector.FieldVector vector, FieldType type, int rowCount) {
+<span class="nc" id="L85">        String key = String.format(&quot;%s-%s&quot;, vector.getClass().getTypeName(), type.getTypeID());</span>
+<span class="nc bnc" id="L86" title="All 2 branches missed.">        if (!this.fromConverters.containsKey(key)) {</span>
+<span class="nc" id="L87">            throw new RuntimeException(String.format(&quot;The %s doesn't have a converter defined.&quot;, key));</span>
+        }
+<span class="nc" id="L89">        return this.fromConverters.get(key).apply(vector, rowCount, type);</span>
+    }
+
+    /**
+     * Populate an arrow FieldVector with data in rows
+     * @param vector - the target arrow vector
+     * @param rows - the rows containing source data
+     * @param idxColumn - the index of column in rows whose data is to be used for the population
+     * @param type - the data-type in the target column.
+     */
+    public void populate(org.apache.arrow.vector.FieldVector vector, InternalRow[] rows, int idxColumn, DataType type) {
+<span class="nc" id="L100">        String key = vector.getClass().getTypeName();</span>
+<span class="nc bnc" id="L101" title="All 2 branches missed.">        if (!this.toConverters.containsKey(key)) {</span>
+<span class="nc" id="L102">            throw new RuntimeException(String.format(&quot;The %s doesn't have a converter defined.&quot;, key));</span>
+        }
+<span class="nc" id="L104">        this.toConverters.get(key).apply(vector, rows, idxColumn, type);</span>
+<span class="nc" id="L105">    }</span>
+    /**
+     * Populates a single value into an arrow vector at the given index.
+     * @param vector target vector
+     * @param index row index
+     * @param value value to set
+     * @param type Spark data type of the value
+     */
+    private void populateObject(org.apache.arrow.vector.FieldVector vector, int index, Object value, DataType type) {
+<span class="nc" id="L114">        String key = vector.getClass().getTypeName();</span>
+<span class="nc bnc" id="L115" title="All 2 branches missed.">        if (!this.toObjectConverters.containsKey(key)) {</span>
+<span class="nc" id="L116">            throw new RuntimeException(String.format(&quot;The %s doesn't have a converter defined.&quot;, key));</span>
+        }
+<span class="nc" id="L118">        this.toObjectConverters.get(key).apply(vector, index, value, type);</span>
+<span class="nc" id="L119">    }</span>
+
+    /**
+     * Initialize from-converters
+     */
+    private void initializeFrom() {
+<span class="nc" id="L125">        this.fromConverters.put(String.format(&quot;%s-%s&quot;, TinyIntVector.class.getTypeName(), FieldType.IDs.BYTE), ArrowConversion.fromTinyInt);</span>
+<span class="nc" id="L126">        this.fromConverters.put(String.format(&quot;%s-%s&quot;, SmallIntVector.class.getTypeName(), FieldType.IDs.SHORT), ArrowConversion.fromSmallInt);</span>
+<span class="nc" id="L127">        this.fromConverters.put(String.format(&quot;%s-%s&quot;, IntVector.class.getTypeName(), FieldType.IDs.INT), ArrowConversion.fromInt);</span>
+<span class="nc" id="L128">        this.fromConverters.put(String.format(&quot;%s-%s&quot;, BigIntVector.class.getTypeName(), FieldType.IDs.LONG), ArrowConversion.fromBigInt);</span>
+<span class="nc" id="L129">        this.fromConverters.put(String.format(&quot;%s-%s&quot;, UInt1Vector.class.getTypeName(), FieldType.IDs.SHORT), ArrowConversion.fromUInt1);</span>
+<span class="nc" id="L130">        this.fromConverters.put(String.format(&quot;%s-%s&quot;, UInt2Vector.class.getTypeName(), FieldType.IDs.INT), ArrowConversion.fromUInt2);</span>
+<span class="nc" id="L131">        this.fromConverters.put(String.format(&quot;%s-%s&quot;, UInt4Vector.class.getTypeName(), FieldType.IDs.INT), ArrowConversion.fromUInt4Int);</span>
+<span class="nc" id="L132">        this.fromConverters.put(String.format(&quot;%s-%s&quot;, UInt4Vector.class.getTypeName(), FieldType.IDs.LONG), ArrowConversion.fromUInt4Long);</span>
+<span class="nc" id="L133">        this.fromConverters.put(String.format(&quot;%s-%s&quot;, UInt8Vector.class.getTypeName(), FieldType.IDs.LONG), ArrowConversion.fromUInt8Long);</span>
+<span class="nc" id="L134">        this.fromConverters.put(String.format(&quot;%s-%s&quot;, UInt8Vector.class.getTypeName(), FieldType.IDs.BIGINT), ArrowConversion.fromUInt8Bigint);</span>
+<span class="nc" id="L135">        this.fromConverters.put(String.format(&quot;%s-%s&quot;, Float4Vector.class.getTypeName(), FieldType.IDs.FLOAT), ArrowConversion.fromFloat4);</span>
+<span class="nc" id="L136">        this.fromConverters.put(String.format(&quot;%s-%s&quot;, Float8Vector.class.getTypeName(), FieldType.IDs.DOUBLE), ArrowConversion.fromFloat8);</span>
+<span class="nc" id="L137">        this.fromConverters.put(String.format(&quot;%s-%s&quot;, DecimalVector.class.getTypeName(), FieldType.IDs.DECIMAL), ArrowConversion.fromDecimal);</span>
+<span class="nc" id="L138">        this.fromConverters.put(String.format(&quot;%s-%s&quot;, Decimal256Vector.class.getTypeName(), FieldType.IDs.DECIMAL), ArrowConversion.fromDecimal256);</span>
+<span class="nc" id="L139">        this.fromConverters.put(String.format(&quot;%s-%s&quot;, VarCharVector.class.getTypeName(), FieldType.IDs.VARCHAR), ArrowConversion.fromVarChar);</span>
+<span class="nc" id="L140">        this.fromConverters.put(String.format(&quot;%s-%s&quot;, LargeVarCharVector.class.getTypeName(), FieldType.IDs.VARCHAR), ArrowConversion.fromLargeVarChar);</span>
+<span class="nc" id="L141">        this.fromConverters.put(String.format(&quot;%s-%s&quot;, BitVector.class.getTypeName(), FieldType.IDs.BOOLEAN), ArrowConversion.fromBit);</span>
+<span class="nc" id="L142">        this.fromConverters.put(String.format(&quot;%s-%s&quot;, DateDayVector.class.getTypeName(), FieldType.IDs.DATE), ArrowConversion.fromDateDay);</span>
+<span class="nc" id="L143">        this.fromConverters.put(String.format(&quot;%s-%s&quot;, DateMilliVector.class.getTypeName(), FieldType.IDs.DATE), ArrowConversion.fromDateMilli);</span>
+<span class="nc" id="L144">        this.fromConverters.put(String.format(&quot;%s-%s&quot;, TimeSecVector.class.getTypeName(), FieldType.IDs.TIME), ArrowConversion.fromTimeSec);</span>
+<span class="nc" id="L145">        this.fromConverters.put(String.format(&quot;%s-%s&quot;, TimeMilliVector.class.getTypeName(), FieldType.IDs.TIME), ArrowConversion.fromTimeMilli);</span>
+<span class="nc" id="L146">        this.fromConverters.put(String.format(&quot;%s-%s&quot;, TimeMicroVector.class.getTypeName(), FieldType.IDs.TIME), ArrowConversion.fromTimeMicro);</span>
+<span class="nc" id="L147">        this.fromConverters.put(String.format(&quot;%s-%s&quot;, TimeNanoVector.class.getTypeName(), FieldType.IDs.TIME), ArrowConversion.fromTimeNano);</span>
+<span class="nc" id="L148">        this.fromConverters.put(String.format(&quot;%s-%s&quot;, TimeStampMicroVector.class.getTypeName(), FieldType.IDs.TIMESTAMP), ArrowConversion.fromTimeStampMicro);</span>
+<span class="nc" id="L149">        this.fromConverters.put(String.format(&quot;%s-%s&quot;, TimeStampMicroTZVector.class.getTypeName(), FieldType.IDs.TIMESTAMP), ArrowConversion.fromTimeStampMicroTZ);</span>
+<span class="nc" id="L150">        this.fromConverters.put(String.format(&quot;%s-%s&quot;, TimeStampMilliVector.class.getTypeName(), FieldType.IDs.TIMESTAMP), ArrowConversion.fromTimeStampMilli);</span>
+<span class="nc" id="L151">        this.fromConverters.put(String.format(&quot;%s-%s&quot;, TimeStampMilliTZVector.class.getTypeName(), FieldType.IDs.TIMESTAMP), ArrowConversion.fromTimeStampMilliTZ);</span>
+<span class="nc" id="L152">        this.fromConverters.put(String.format(&quot;%s-%s&quot;, TimeStampSecVector.class.getTypeName(), FieldType.IDs.TIMESTAMP), ArrowConversion.fromTimeStampSec);</span>
+<span class="nc" id="L153">        this.fromConverters.put(String.format(&quot;%s-%s&quot;, TimeStampSecTZVector.class.getTypeName(), FieldType.IDs.TIMESTAMP), ArrowConversion.fromTimeStampSecTZ);</span>
+<span class="nc" id="L154">        this.fromConverters.put(String.format(&quot;%s-%s&quot;, TimeStampNanoVector.class.getTypeName(), FieldType.IDs.TIMESTAMP), ArrowConversion.fromTimeStampNano);</span>
+
+<span class="nc" id="L156">        this.fromConverters.put(String.format(&quot;%s-%s&quot;, TimeStampNanoVector.class.getTypeName(), FieldType.IDs.INT), ArrowConversion.fromTimeStampNanoToInt);</span>
+
+<span class="nc" id="L158">        this.fromConverters.put(String.format(&quot;%s-%s&quot;, TimeStampNanoTZVector.class.getTypeName(), FieldType.IDs.TIMESTAMP), ArrowConversion.fromTimeStampNanoTZ);</span>
+<span class="nc" id="L159">        this.fromConverters.put(String.format(&quot;%s-%s&quot;, IntervalYearVector.class.getTypeName(), FieldType.IDs.PERIOD_YEAR_MONTH), ArrowConversion.fromIntervalYear);</span>
+<span class="nc" id="L160">        this.fromConverters.put(String.format(&quot;%s-%s&quot;, IntervalDayVector.class.getTypeName(), FieldType.IDs.DURATION_DAY_TIME), ArrowConversion.fromIntervalDay);</span>
+<span class="nc" id="L161">        this.fromConverters.put(String.format(&quot;%s-%s&quot;, DurationVector.class.getTypeName(), FieldType.IDs.DURATION_DAY_TIME), ArrowConversion.fromDuration);</span>
+<span class="nc" id="L162">        this.fromConverters.put(String.format(&quot;%s-%s&quot;, IntervalMonthDayNanoVector.class.getTypeName(), FieldType.IDs.PERIOD_DURATION_MONTH_DAY_TIME), ArrowConversion.fromMonthDay);</span>
+<span class="nc" id="L163">        this.fromConverters.put(String.format(&quot;%s-%s&quot;, NullVector.class.getTypeName(), FieldType.IDs.NULL), ArrowConversion.fromNull);</span>
+<span class="nc" id="L164">        this.fromConverters.put(String.format(&quot;%s-%s&quot;, VarBinaryVector.class.getTypeName(), FieldType.IDs.BYTES), ArrowConversion.fromVarBinary);</span>
+<span class="nc" id="L165">        this.fromConverters.put(String.format(&quot;%s-%s&quot;, LargeVarBinaryVector.class.getTypeName(), FieldType.IDs.BYTES), ArrowConversion.fromLargeVarBinary);</span>
+<span class="nc" id="L166">        this.fromConverters.put(String.format(&quot;%s-%s&quot;, FixedSizeBinaryVector.class.getTypeName(), FieldType.IDs.BYTES), ArrowConversion.fromFixedSizeBinary);</span>
+<span class="nc" id="L167">        this.fromConverters.put(String.format(&quot;%s-%s&quot;, LargeListVector.class.getTypeName(), FieldType.IDs.LIST), ArrowConversion.fromLargeList);</span>
+<span class="nc" id="L168">        this.fromConverters.put(String.format(&quot;%s-%s&quot;, FixedSizeListVector.class.getTypeName(), FieldType.IDs.LIST), ArrowConversion.fromFixedSizeList);</span>
+<span class="nc" id="L169">        this.fromConverters.put(String.format(&quot;%s-%s&quot;, MapVector.class.getTypeName(), FieldType.IDs.MAP), ArrowConversion.fromMap);</span>
+<span class="nc" id="L170">        this.fromConverters.put(String.format(&quot;%s-%s&quot;, ListVector.class.getTypeName(), FieldType.IDs.LIST), ArrowConversion.fromList);</span>
+<span class="nc" id="L171">        this.fromConverters.put(String.format(&quot;%s-%s&quot;, StructVector.class.getTypeName(), FieldType.IDs.STRUCT), ArrowConversion.fromStruct);</span>
+<span class="nc" id="L172">    }</span>
+    //convert arrow TinyIntVector to FieldVector for BYTE
+<span class="nc" id="L174">    private static final ConvertFrom&lt;org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector&gt; fromTinyInt = (vector, size, type) -&gt; new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.&lt;TinyIntVector&gt;cast(vector))::getObject).toArray(Object[]::new));</span>
+    //convert arrow SmallIntVector to FieldVector for SHORT
+<span class="nc" id="L176">    private static final ConvertFrom&lt;org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector&gt; fromSmallInt = (vector, size, type) -&gt; new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.&lt;SmallIntVector&gt;cast(vector))::getObject).toArray(Object[]::new));</span>
+    //convert arrow IntVector to FieldVector for INT
+<span class="nc" id="L178">    private static final ConvertFrom&lt;org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector&gt; fromInt = (vector, size, type) -&gt; new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.&lt;IntVector&gt;cast(vector))::getObject).toArray(Object[]::new));</span>
+    //convert arrow BigIntVector to FieldVector for LONG
+<span class="nc" id="L180">    private static final ConvertFrom&lt;org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector&gt; fromBigInt = (vector, size, type) -&gt; new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.&lt;BigIntVector&gt;cast(vector))::getObject).toArray(Object[]::new));</span>
+    //convert arrow UInt1Vector to FieldVector for SHORT
+<span class="nc" id="L182">    private static final ConvertFrom&lt;org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector&gt; fromUInt1 = (vector, size, type) -&gt; new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.&lt;UInt1Vector&gt;cast(vector))::getObject).toArray(Object[]::new));</span>
+    //convert arrow UInt2Vector to FieldVector for INT
+<span class="nc" id="L184">    private static final ConvertFrom&lt;org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector&gt; fromUInt2 = (vector, size, type) -&gt; new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.&lt;UInt2Vector&gt;cast(vector))::getObject).toArray(Object[]::new));</span>
+    //convert arrow UInt4Vector to FieldVector for INT
+<span class="nc" id="L186">    private static final ConvertFrom&lt;org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector&gt; fromUInt4Int = (vector, size, type) -&gt; new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.&lt;UInt4Vector&gt;cast(vector))::getObject).toArray(Object[]::new));</span>
+    //convert arrow UInt4Vector to FieldVector for LONG
+<span class="nc" id="L188">    private static final ConvertFrom&lt;org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector&gt; fromUInt4Long = (vector, size, type) -&gt; new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.&lt;UInt4Vector&gt;cast(vector))::getObjectNoOverflow).toArray(Object[]::new));</span>
+    //convert arrow UInt8Vector to FieldVector for LONG
+<span class="nc" id="L190">    private static final ConvertFrom&lt;org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector&gt; fromUInt8Long = (vector, size, type) -&gt; new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.&lt;UInt8Vector&gt;cast(vector))::getObject).toArray(Object[]::new));</span>
+    //convert arrow UInt8Vector to FieldVector for BIGINT
+<span class="nc" id="L192">    private static final ConvertFrom&lt;org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector&gt; fromUInt8Bigint = (vector, size, type) -&gt; new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.&lt;UInt8Vector&gt;cast(vector))::getObjectNoOverflow).toArray(Object[]::new));</span>
+    //convert arrow Float4Vector to FieldVector for FLOAT
+<span class="nc" id="L194">    private static final ConvertFrom&lt;org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector&gt; fromFloat4 = (vector, size, type) -&gt; new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.&lt;Float4Vector&gt;cast(vector))::getObject).toArray(Object[]::new));</span>
+    //convert arrow Float8Vector to FieldVector for DOUBLE
+<span class="nc" id="L196">    private static final ConvertFrom&lt;org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector&gt; fromFloat8 = (vector, size, type) -&gt; new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.&lt;Float8Vector&gt;cast(vector))::getObject).toArray(Object[]::new));</span>
+    //convert arrow DecimalVector to FieldVector for DECIMAL
+<span class="nc bnc" id="L198" title="All 2 branches missed.">    private static final ConvertFrom&lt;org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector&gt; fromDecimal = (vector, size, type) -&gt; new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.&lt;DecimalVector&gt;cast(vector))::getObject).map(bd -&gt; (bd == null) ? null : ArrowConversion.bigDecimalToDecimal.apply(bd)).toArray(Object[]::new));</span>
+    //convert arrow Decimal256Vector to FieldVector for DECIMAL
+<span class="nc bnc" id="L200" title="All 2 branches missed.">    private static final ConvertFrom&lt;org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector&gt; fromDecimal256 = (vector, size, type) -&gt; new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.&lt;Decimal256Vector&gt;cast(vector))::getObject).map(bd -&gt; (bd == null) ? null : ArrowConversion.bigDecimalToDecimal.apply(bd)).toArray(Object[]::new));</span>
+    //convert arrow VarCharVector to FieldVector for STRING
+<span class="nc bnc" id="L202" title="All 2 branches missed.">    private static final ConvertFrom&lt;org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector&gt; fromVarChar = (vector, size, type) -&gt; new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.&lt;VarCharVector&gt;cast(vector))::getObject).map(s -&gt; (s == null) ? null : ArrowConversion.stringToUtf8String.apply(s.toString())).toArray(Object[]::new));</span>
+    //convert arrow LargeVarCharVector to FieldVector for STRING
+<span class="nc bnc" id="L204" title="All 2 branches missed.">    private static final ConvertFrom&lt;org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector&gt; fromLargeVarChar = (vector, size, type) -&gt; new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.&lt;LargeVarCharVector&gt;cast(vector))::getObject).map(s -&gt; (s == null) ? null : ArrowConversion.stringToUtf8String.apply(s.toString())).toArray(Object[]::new));</span>
+    //convert arrow BitVector to FieldVector for STRING
+<span class="nc" id="L206">    private static final ConvertFrom&lt;org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector&gt; fromBit = (vector, size, type) -&gt; new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.&lt;BitVector&gt;cast(vector))::getObject).toArray(Object[]::new));</span>
+    //convert arrow DateDayVector to FieldVector for DATE
+<span class="nc bnc" id="L208" title="All 2 branches missed.">    private static final ConvertFrom&lt;org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector&gt; fromDateDay = (vector, size, type) -&gt; new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.&lt;DateDayVector&gt;cast(vector))::getObject).map(dd -&gt; (dd == null) ? null : ArrowConversion.dateDayToInt.apply(dd)).toArray(Object[]::new));</span>
+    //convert arrow DateMilliVector to FieldVector for DATE
+<span class="nc bnc" id="L210" title="All 2 branches missed.">    private static final ConvertFrom&lt;org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector&gt; fromDateMilli = (vector, size, type) -&gt; new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.&lt;DateMilliVector&gt;cast(vector))::getObject).map(ldt -&gt; (ldt == null) ? null : ArrowConversion.localDateTimeToInt.apply(ldt)).toArray(Object[]::new));</span>
+    //convert arrow TimeSecVector to FieldVector for TIME
+<span class="nc bnc" id="L212" title="All 2 branches missed.">    private static final ConvertFrom&lt;org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector&gt; fromTimeSec = (vector, size, type) -&gt; new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.&lt;TimeSecVector&gt;cast(vector))::getObject).map(ts -&gt; (ts == null) ? null : ArrowConversion.timeSecToString.apply(ts)).toArray(Object[]::new));</span>
+    //convert arrow TimeMilliVector to FieldVector for TIME
+<span class="nc bnc" id="L214" title="All 2 branches missed.">    private static final ConvertFrom&lt;org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector&gt; fromTimeMilli = (vector, size, type) -&gt; new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.&lt;TimeMilliVector&gt;cast(vector))::getObject).map(tm -&gt; (tm == null) ? null : ArrowConversion.timeMilliToString.apply(tm)).toArray(Object[]::new));</span>
+    //convert arrow TimeMicroVector to FieldVector for TIME
+<span class="nc bnc" id="L216" title="All 2 branches missed.">    private static final ConvertFrom&lt;org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector&gt; fromTimeMicro = (vector, size, type) -&gt; new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.&lt;TimeMicroVector&gt;cast(vector))::getObject).map(tm -&gt; (tm == null) ? null : ArrowConversion.timeMicroToString.apply(tm)).toArray(Object[]::new));</span>
+    //convert arrow TimeNanoVector to FieldVector for TIME
+<span class="nc bnc" id="L218" title="All 2 branches missed.">    private static final ConvertFrom&lt;org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector&gt; fromTimeNano = (vector, size, type) -&gt; new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.&lt;TimeNanoVector&gt;cast(vector))::getObject).map(tn -&gt; (tn == null) ? null : ArrowConversion.timeNanoToString.apply(tn)).toArray(Object[]::new));</span>
+    //convert arrow TimeStampMicroVector to FieldVector for TIMESTAMP
+<span class="nc bnc" id="L220" title="All 2 branches missed.">    private static final ConvertFrom&lt;org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector&gt; fromTimeStampMicro = (vector, size, type) -&gt; new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.&lt;TimeStampMicroVector&gt;cast(vector))::getObject).map(tsm -&gt; (tsm == null) ? null : ArrowConversion.localDateTimeToLong.apply(tsm)).toArray(Object[]::new));</span>
+    //convert arrow TimeStampMicroTZVector to FieldVector for TIMESTAMP
+<span class="nc" id="L222">    private static final ConvertFrom&lt;org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector&gt; fromTimeStampMicroTZ = (vector, size, type) -&gt; {</span>
+<span class="nc" id="L223">        TimeStampMicroTZVector value = ArrowConversion.cast(vector);</span>
+<span class="nc bnc" id="L224" title="All 2 branches missed.">        return new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj(value::getObject).map(tsm -&gt; (tsm == null) ? null : ArrowConversion.timestampMicroTZToLong.apply(tsm, value.getTimeZone())).toArray(Object[]::new));</span>
+    };
+    //convert arrow TimeStampMilliVector to FieldVector for TIMESTAMP
+<span class="nc bnc" id="L227" title="All 2 branches missed.">    private static final ConvertFrom&lt;org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector&gt; fromTimeStampMilli = (vector, size, type) -&gt; new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.&lt;TimeStampMilliVector&gt;cast(vector))::getObject).map(tsm -&gt; (tsm == null) ? null : ArrowConversion.timestampToLong.apply(Timestamp.valueOf(tsm))).toArray(Object[]::new));</span>
+    //convert arrow TimeStampMilliTZVector to FieldVector for TIMESTAMP
+<span class="nc" id="L229">    private static final ConvertFrom&lt;org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector&gt; fromTimeStampMilliTZ = (vector, size, type) -&gt; {</span>
+<span class="nc" id="L230">        TimeStampMilliTZVector value = ArrowConversion.cast(vector);</span>
+<span class="nc bnc" id="L231" title="All 2 branches missed.">        return new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj(value::getObject).map(tsm -&gt; (tsm == null) ? null : ArrowConversion.timestampMilliTZToLong.apply(tsm, value.getTimeZone())).toArray(Object[]::new));</span>
+    };
+    //convert arrow TimeStampSecVector to FieldVector for TIMESTAMP
+<span class="nc bnc" id="L234" title="All 2 branches missed.">    private static final ConvertFrom&lt;org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector&gt; fromTimeStampSec = (vector, size, type) -&gt; new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.&lt;TimeStampSecVector&gt;cast(vector))::getObject).map(ldt -&gt; (ldt == null) ? null : ArrowConversion.localDateTimeToLong.apply(ldt)).toArray(Object[]::new));</span>
+    //convert arrow TimeStampSecTZVector to FieldVector for TIMESTAMP
+<span class="nc" id="L236">    private static final ConvertFrom&lt;org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector&gt; fromTimeStampSecTZ = (vector, size, type) -&gt; {</span>
+<span class="nc" id="L237">        TimeStampSecTZVector value = ArrowConversion.cast(vector);</span>
+<span class="nc bnc" id="L238" title="All 2 branches missed.">        return new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj(value::getObject).map(l -&gt; (l == null) ? null : ArrowConversion.timestampSecTZToLong.apply(l, value.getTimeZone())).toArray(Object[]::new));</span>
+    };
+    //convert arrow TimeStampNanoVector to FieldVector for TIMESTAMP
+<span class="nc bnc" id="L241" title="All 2 branches missed.">    private static final ConvertFrom&lt;org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector&gt; fromTimeStampNano = (vector, size, type) -&gt; new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.&lt;TimeStampNanoVector&gt;cast(vector))::getObject).map(ldt -&gt; (ldt == null) ? null : ArrowConversion.localDateTimeToLong.apply(ldt)).toArray(Object[]::new));</span>
+
+<span class="nc bnc" id="L243" title="All 2 branches missed.">    private static final ConvertFrom&lt;org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector&gt; fromTimeStampNanoToInt = (vector, size, type) -&gt; new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.&lt;TimeStampNanoVector&gt;cast(vector))::getObject).map(ldt -&gt; (ldt == null) ? null : ArrowConversion.localDateTimeToInt.apply(ldt)).toArray(Object[]::new));</span>
+
+
+    //convert arrow TimeStampNanoTZVector to FieldVector for TIMESTAMP
+<span class="nc" id="L247">    private static final ConvertFrom&lt;org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector&gt; fromTimeStampNanoTZ = (vector, size, type) -&gt; {</span>
+<span class="nc" id="L248">        TimeStampNanoTZVector value = ArrowConversion.cast(vector);</span>
+<span class="nc bnc" id="L249" title="All 2 branches missed.">        return new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj(value::getObject).map(l -&gt; (l == null) ? null : ArrowConversion.timestampNanoTZToLong.apply(l, value.getTimeZone())).toArray(Object[]::new));</span>
+    };
+    //convert arrow IntervalYearVector to FieldVector for PERIOD_YEAR_MONTH
+<span class="nc bnc" id="L252" title="All 2 branches missed.">    private static final ConvertFrom&lt;org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector&gt; fromIntervalYear = (vector, size, type) -&gt; new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.&lt;IntervalYearVector&gt;cast(vector))::getObject).map(p -&gt; (p == null) ? null : ArrowConversion.periodToInt.apply(p)).toArray(Object[]::new));</span>
+    //convert arrow IntervalDayVector to FieldVector for DURATION_DAY_TIME
+<span class="nc bnc" id="L254" title="All 2 branches missed.">    private static final ConvertFrom&lt;org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector&gt; fromIntervalDay = (vector, size, type) -&gt; new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.&lt;IntervalDayVector&gt;cast(vector))::getObject).map(d -&gt; (d == null) ? null : ArrowConversion.durationToLong.apply(d)).toArray(Object[]::new));</span>
+    //convert arrow DurationVector to FieldVector for DURATION_DAY_TIME
+<span class="nc bnc" id="L256" title="All 2 branches missed.">    private static final ConvertFrom&lt;org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector&gt; fromDuration = (vector, size, type) -&gt; new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.&lt;DurationVector&gt;cast(vector))::getObject).map(d -&gt; (d == null) ? null : ArrowConversion.durationToLong.apply(d)).toArray(Object[]::new));</span>
+    //convert arrow IntervalMonthDayNanoVector to FieldVector for PERIOD_DURATION_MONTH_DAY_TIME
+<span class="nc bnc" id="L258" title="All 2 branches missed.">    private static final ConvertFrom&lt;org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector&gt; fromMonthDay = (vector, size, type) -&gt; new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.&lt;IntervalMonthDayNanoVector&gt;cast(vector))::getObject).map(pd -&gt; (pd == null) ? null : ArrowConversion.translatePeriodDuration.apply(pd)).toArray(Object[]::new));</span>
+    //convert arrow NullVector to FieldVector for NULL
+<span class="nc" id="L260">    private static final ConvertFrom&lt;org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector&gt; fromNull = (vector, size, type) -&gt; new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.&lt;NullVector&gt;cast(vector))::getObject).toArray(Object[]::new));</span>
+    //convert arrow VarBinaryVector to FieldVector for BYTES
+<span class="nc" id="L262">    private static final ConvertFrom&lt;org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector&gt; fromVarBinary = (vector, size, type) -&gt; new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.&lt;VarBinaryVector&gt;cast(vector))::getObject).toArray(Object[]::new));</span>
+    //convert arrow LargeVarBinaryVector to FieldVector for BYTES
+<span class="nc" id="L264">    private static final ConvertFrom&lt;org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector&gt; fromLargeVarBinary = (vector, size, type) -&gt; new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.&lt;LargeVarBinaryVector&gt;cast(vector))::getObject).toArray(Object[]::new));</span>
+    //convert arrow FixedSizeBinaryVector to FieldVector for BYTES
+<span class="nc" id="L266">    private static final ConvertFrom&lt;org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector&gt; fromFixedSizeBinary = (vector, size, type) -&gt; new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.&lt;FixedSizeBinaryVector&gt;cast(vector))::getObject).toArray(Object[]::new));</span>
+    //convert arrow LargeListVector to FieldVector for LIST
+<span class="nc bnc" id="L268" title="All 2 branches missed.">    private static final ConvertFrom&lt;org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector&gt; fromLargeList = (vector, size, type) -&gt; new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.&lt;LargeListVector&gt;cast(vector))::getObject).map(e -&gt; (e == null) ? null : ArrowConversion.translateList.apply(e, ArrowConversion.cast(vector), (FieldType.ListType) type)).toArray(Object[]::new));</span>
+    //convert arrow FixedSizeListVector to FieldVector for LIST
+<span class="nc bnc" id="L270" title="All 2 branches missed.">    private static final ConvertFrom&lt;org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector&gt; fromFixedSizeList = (vector, size, type) -&gt; new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.&lt;FixedSizeListVector&gt;cast(vector))::getObject).map(e -&gt; (e == null) ? null : ArrowConversion.translateList.apply(e, ArrowConversion.cast(vector), (FieldType.ListType) type)).toArray(Object[]::new));</span>
+    //convert arrow MapVector to FieldVector for MAP
+<span class="nc bnc" id="L272" title="All 2 branches missed.">    private static final ConvertFrom&lt;org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector&gt; fromMap = (vector, size, type) -&gt; new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.&lt;MapVector&gt;cast(vector))::getObject).map(e -&gt; (e == null) ? null : ArrowConversion.translateMap.apply(e, ArrowConversion.cast(vector), (FieldType.MapType) type)).toArray(Object[]::new));</span>
+    //convert arrow ListVector to FieldVector for LIST
+<span class="nc bnc" id="L274" title="All 2 branches missed.">    private static final ConvertFrom&lt;org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector&gt; fromList = (vector, size, type) -&gt; new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.&lt;ListVector&gt;cast(vector))::getObject).map(e -&gt; (e == null) ? null : ArrowConversion.translateList.apply(e, ArrowConversion.cast(vector), (FieldType.ListType) type)).toArray(Object[]::new));</span>
+    //convert arrow StructVector to FieldVector for STRUCT
+<span class="nc bnc" id="L276" title="All 2 branches missed.">    private static final ConvertFrom&lt;org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector&gt; fromStruct = (vector, size, type) -&gt; new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.&lt;StructVector&gt;cast(vector))::getObject).map(e -&gt; (e == null) ? null : ArrowConversion.mapElseStruct.apply(e, ArrowConversion.cast(vector), (FieldType.StructType) type)).toArray(Object[]::new));</span>
+
+    /**
+     * Initialize to-converters
+     */
+    private void initializeTo() {
+<span class="nc" id="L282">        this.toConverters.put(MapVector.class.getTypeName(), ArrowConversion.toMap);</span>
+<span class="nc" id="L283">        this.toObjectConverters.put(MapVector.class.getTypeName(), ArrowConversion.toMapObject);</span>
+<span class="nc" id="L284">        this.toConverters.put(ListVector.class.getTypeName(), ArrowConversion.toList);</span>
+<span class="nc" id="L285">        this.toObjectConverters.put(ListVector.class.getTypeName(), ArrowConversion.toListObject);</span>
+<span class="nc" id="L286">        this.toConverters.put(StructVector.class.getTypeName(), ArrowConversion.toStruct);</span>
+<span class="nc" id="L287">        this.toObjectConverters.put(StructVector.class.getTypeName(), ArrowConversion.toStructObject);</span>
+<span class="nc" id="L288">        this.toConverters.put(IntervalDayVector.class.getTypeName(), ArrowConversion.toIntervalDay);</span>
+<span class="nc" id="L289">        this.toObjectConverters.put(IntervalDayVector.class.getTypeName(), ArrowConversion.toIntervalDayObject);</span>
+<span class="nc" id="L290">        this.toConverters.put(IntervalYearVector.class.getTypeName(), ArrowConversion.toIntervalYear);</span>
+<span class="nc" id="L291">        this.toObjectConverters.put(IntervalYearVector.class.getTypeName(), ArrowConversion.toIntervalYearObject);</span>
+<span class="nc" id="L292">        this.toConverters.put(DurationVector.class.getTypeName(), ArrowConversion.toDuration);</span>
+<span class="nc" id="L293">        this.toObjectConverters.put(DurationVector.class.getTypeName(), ArrowConversion.toDurationObject);</span>
+<span class="nc" id="L294">        this.toConverters.put(TimeStampNanoTZVector.class.getTypeName(), ArrowConversion.toTimeStampNanoTZ);</span>
+<span class="nc" id="L295">        this.toObjectConverters.put(TimeStampNanoTZVector.class.getTypeName(), ArrowConversion.toTimeStampNanoTZObject);</span>
+<span class="nc" id="L296">        this.toConverters.put(TimeStampNanoVector.class.getTypeName(), ArrowConversion.toTimeStampNano);</span>
+<span class="nc" id="L297">        this.toObjectConverters.put(TimeStampNanoVector.class.getTypeName(), ArrowConversion.toTimeStampNanoObject);</span>
+<span class="nc" id="L298">        this.toConverters.put(TimeStampSecTZVector.class.getTypeName(), ArrowConversion.toTimeStampSecTZ);</span>
+<span class="nc" id="L299">        this.toObjectConverters.put(TimeStampSecTZVector.class.getTypeName(), ArrowConversion.toTimeStampSecTZObject);</span>
+<span class="nc" id="L300">        this.toConverters.put(TimeStampSecVector.class.getTypeName(), ArrowConversion.toTimeStampSec);</span>
+<span class="nc" id="L301">        this.toObjectConverters.put(TimeStampSecVector.class.getTypeName(), ArrowConversion.toTimeStampSecObject);</span>
+<span class="nc" id="L302">        this.toConverters.put(TimeStampMilliTZVector.class.getTypeName(), ArrowConversion.toTimeStampMilliTZ);</span>
+<span class="nc" id="L303">        this.toObjectConverters.put(TimeStampMilliTZVector.class.getTypeName(), ArrowConversion.toTimeStampMilliTZObject);</span>
+<span class="nc" id="L304">        this.toConverters.put(TimeStampMilliVector.class.getTypeName(), ArrowConversion.toTimeStampMilli);</span>
+<span class="nc" id="L305">        this.toObjectConverters.put(TimeStampMilliVector.class.getTypeName(), ArrowConversion.toTimeStampMilliObject);</span>
+<span class="nc" id="L306">        this.toConverters.put(TimeStampMicroTZVector.class.getTypeName(), ArrowConversion.toTimeStampMicroTZ);</span>
+<span class="nc" id="L307">        this.toObjectConverters.put(TimeStampMicroTZVector.class.getTypeName(), ArrowConversion.toTimeStampMicroTZObject);</span>
+<span class="nc" id="L308">        this.toConverters.put(TimeStampMicroVector.class.getTypeName(), ArrowConversion.toTimeStampMicro);</span>
+<span class="nc" id="L309">        this.toObjectConverters.put(TimeStampMicroVector.class.getTypeName(), ArrowConversion.toTimeStampMicroObject);</span>
+<span class="nc" id="L310">        this.toConverters.put(TimeNanoVector.class.getTypeName(), ArrowConversion.toTimeNano);</span>
+<span class="nc" id="L311">        this.toObjectConverters.put(TimeNanoVector.class.getTypeName(), ArrowConversion.toTimeNanoObject);</span>
+<span class="nc" id="L312">        this.toConverters.put(TimeMicroVector.class.getTypeName(), ArrowConversion.toTimeMicro);</span>
+<span class="nc" id="L313">        this.toObjectConverters.put(TimeMicroVector.class.getTypeName(), ArrowConversion.toTimeMicroObject);</span>
+<span class="nc" id="L314">        this.toConverters.put(TimeMilliVector.class.getTypeName(), ArrowConversion.toTimeMilli);</span>
+<span class="nc" id="L315">        this.toObjectConverters.put(TimeMilliVector.class.getTypeName(), ArrowConversion.toTimeMilliObject);</span>
+<span class="nc" id="L316">        this.toConverters.put(TimeSecVector.class.getTypeName(), ArrowConversion.toTimeSec);</span>
+<span class="nc" id="L317">        this.toObjectConverters.put(TimeSecVector.class.getTypeName(), ArrowConversion.toTimeSecObject);</span>
+<span class="nc" id="L318">        this.toConverters.put(DateMilliVector.class.getTypeName(), ArrowConversion.toDateMilli);</span>
+<span class="nc" id="L319">        this.toObjectConverters.put(DateMilliVector.class.getTypeName(), ArrowConversion.toDateMilliObject);</span>
+<span class="nc" id="L320">        this.toConverters.put(DateDayVector.class.getTypeName(), ArrowConversion.toDateDay);</span>
+<span class="nc" id="L321">        this.toObjectConverters.put(DateDayVector.class.getTypeName(), ArrowConversion.toDateDayObject);</span>
+<span class="nc" id="L322">        this.toConverters.put(BitVector.class.getTypeName(), ArrowConversion.toBit);</span>
+<span class="nc" id="L323">        this.toObjectConverters.put(BitVector.class.getTypeName(), ArrowConversion.toBitObject);</span>
+<span class="nc" id="L324">        this.toConverters.put(LargeVarCharVector.class.getTypeName(), ArrowConversion.toLargeVarChar);</span>
+<span class="nc" id="L325">        this.toObjectConverters.put(LargeVarCharVector.class.getTypeName(), ArrowConversion.toLargeVarCharObject);</span>
+<span class="nc" id="L326">        this.toConverters.put(VarCharVector.class.getTypeName(), ArrowConversion.toVarChar);</span>
+<span class="nc" id="L327">        this.toObjectConverters.put(VarCharVector.class.getTypeName(), ArrowConversion.toVarCharObject);</span>
+<span class="nc" id="L328">        this.toConverters.put(Decimal256Vector.class.getTypeName(), ArrowConversion.toDecimal256);</span>
+<span class="nc" id="L329">        this.toObjectConverters.put(Decimal256Vector.class.getTypeName(), ArrowConversion.toDecimal256Object);</span>
+<span class="nc" id="L330">        this.toConverters.put(DecimalVector.class.getTypeName(), ArrowConversion.toDecimal);</span>
+<span class="nc" id="L331">        this.toObjectConverters.put(DecimalVector.class.getTypeName(), ArrowConversion.toDecimalObject);</span>
+<span class="nc" id="L332">        this.toConverters.put(Float8Vector.class.getTypeName(), ArrowConversion.toFloat8);</span>
+<span class="nc" id="L333">        this.toObjectConverters.put(Float8Vector.class.getTypeName(), ArrowConversion.toFloat8Object);</span>
+<span class="nc" id="L334">        this.toConverters.put(Float4Vector.class.getTypeName(), ArrowConversion.toFloat4);</span>
+<span class="nc" id="L335">        this.toObjectConverters.put(Float4Vector.class.getTypeName(), ArrowConversion.toFloat4Object);</span>
+<span class="nc" id="L336">        this.toConverters.put(UInt8Vector.class.getTypeName(), ArrowConversion.toUInt8);</span>
+<span class="nc" id="L337">        this.toObjectConverters.put(UInt8Vector.class.getTypeName(), ArrowConversion.toUInt8Object);</span>
+<span class="nc" id="L338">        this.toConverters.put(UInt4Vector.class.getTypeName(), ArrowConversion.toUInt4);</span>
+<span class="nc" id="L339">        this.toObjectConverters.put(UInt4Vector.class.getTypeName(), ArrowConversion.toUInt4Object);</span>
+<span class="nc" id="L340">        this.toConverters.put(UInt2Vector.class.getTypeName(), ArrowConversion.toUInt2);</span>
+<span class="nc" id="L341">        this.toObjectConverters.put(UInt2Vector.class.getTypeName(), ArrowConversion.toUInt2Object);</span>
+<span class="nc" id="L342">        this.toConverters.put(UInt1Vector.class.getTypeName(), ArrowConversion.toUInt1);</span>
+<span class="nc" id="L343">        this.toObjectConverters.put(UInt1Vector.class.getTypeName(), ArrowConversion.toUInt1Object);</span>
+<span class="nc" id="L344">        this.toConverters.put(BigIntVector.class.getTypeName(), ArrowConversion.toBigInt);</span>
+<span class="nc" id="L345">        this.toObjectConverters.put(BigIntVector.class.getTypeName(), ArrowConversion.toBigIntObject);</span>
+<span class="nc" id="L346">        this.toConverters.put(IntVector.class.getTypeName(), ArrowConversion.toInt);</span>
+<span class="nc" id="L347">        this.toObjectConverters.put(IntVector.class.getTypeName(), ArrowConversion.toIntObject);</span>
+<span class="nc" id="L348">        this.toConverters.put(SmallIntVector.class.getTypeName(), ArrowConversion.toSmallInt);</span>
+<span class="nc" id="L349">        this.toObjectConverters.put(SmallIntVector.class.getTypeName(), ArrowConversion.toSmallIntObject);</span>
+<span class="nc" id="L350">        this.toConverters.put(TinyIntVector.class.getTypeName(), ArrowConversion.toTinyInt);</span>
+<span class="nc" id="L351">        this.toObjectConverters.put(TinyIntVector.class.getTypeName(), ArrowConversion.toTinyIntObject);</span>
+<span class="nc" id="L352">    }</span>
+    //convert BYTE to arrow TinyIntVector
+<span class="nc" id="L354">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, InternalRow[], Integer, DataType&gt; toTinyInt = (vector, rows, idxColumn, type) -&gt; IntStream.range(0, rows.length).forEach(idxRow -&gt; ArrowConversion.toTinyIntObject.apply(vector, idxRow, rows[idxRow].get(idxColumn, type), type));</span>
+<span class="nc" id="L355">    private static final NullableTinyIntHolder nullTinyInt = new NullableTinyIntHolder();</span>
+<span class="nc" id="L356">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, Integer, Object, DataType&gt; toTinyIntObject = (vector, row, value, type) -&gt; {</span>
+<span class="nc bnc" id="L357" title="All 2 branches missed.">        if (value == null) {</span>
+<span class="nc" id="L358">            ArrowConversion.&lt;TinyIntVector&gt;cast(vector).setSafe(row, ArrowConversion.nullTinyInt);</span>
+        } else {
+<span class="nc bnc" id="L360" title="All 2 branches missed.">            ArrowConversion.&lt;TinyIntVector&gt;cast(vector).setSafe(row, (value instanceof Number) ? (Byte) value : Byte.parseByte(value.toString()));</span>
+        }
+<span class="nc" id="L362">    };</span>
+    //convert SHORT to arrow SmallIntVector
+<span class="nc" id="L364">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, InternalRow[], Integer, DataType&gt; toSmallInt = (vector, rows, idxColumn, type) -&gt; IntStream.range(0, rows.length).forEach(idxRow -&gt; ArrowConversion.toSmallIntObject.apply(vector, idxRow, rows[idxRow].get(idxColumn, type), type));</span>
+<span class="nc" id="L365">    private static final NullableSmallIntHolder nullSmallInt = new NullableSmallIntHolder();</span>
+<span class="nc" id="L366">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, Integer, Object, DataType&gt; toSmallIntObject = (vector, row, value, type) -&gt; {</span>
+<span class="nc bnc" id="L367" title="All 2 branches missed.">        if (value == null) {</span>
+<span class="nc" id="L368">            ArrowConversion.&lt;SmallIntVector&gt;cast(vector).setSafe(row, ArrowConversion.nullSmallInt);</span>
+        } else {
+<span class="nc bnc" id="L370" title="All 2 branches missed.">            ArrowConversion.&lt;SmallIntVector&gt;cast(vector).setSafe(row, (value instanceof Number) ? (Short) value : Short.parseShort(value.toString()));</span>
+        }
+<span class="nc" id="L372">    };</span>
+    //convert INT to arrow IntVector
+<span class="nc" id="L374">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, InternalRow[], Integer, DataType&gt; toInt = (vector, rows, idxColumn, type) -&gt; IntStream.range(0, rows.length).forEach(idxRow -&gt; ArrowConversion.toIntObject.apply(vector, idxRow, rows[idxRow].get(idxColumn, type), type));</span>
+<span class="nc" id="L375">    private static final NullableIntHolder nullInt = new NullableIntHolder();</span>
+<span class="nc" id="L376">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, Integer, Object, DataType&gt; toIntObject = (vector, row, value, type) -&gt; {</span>
+<span class="nc bnc" id="L377" title="All 2 branches missed.">        if (value == null) {</span>
+<span class="nc" id="L378">            ArrowConversion.&lt;IntVector&gt;cast(vector).setSafe(row, ArrowConversion.nullInt);</span>
+        } else {
+<span class="nc bnc" id="L380" title="All 2 branches missed.">            ArrowConversion.&lt;IntVector&gt;cast(vector).setSafe(row, (value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString()));</span>
+        }
+<span class="nc" id="L382">    };</span>
+    //convert LONG to arrow BigIntVector
+<span class="nc" id="L384">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, InternalRow[], Integer, DataType&gt; toBigInt = (vector, rows, idxColumn, type) -&gt; IntStream.range(0, rows.length).forEach(idxRow -&gt; ArrowConversion.toBigIntObject.apply(vector, idxRow, rows[idxRow].get(idxColumn, type), type));</span>
+<span class="nc" id="L385">    private static final NullableBigIntHolder nullBigInt = new NullableBigIntHolder();</span>
+<span class="nc" id="L386">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, Integer, Object, DataType&gt; toBigIntObject = (vector, row, value, type) -&gt; {</span>
+<span class="nc bnc" id="L387" title="All 2 branches missed.">        if (value == null) {</span>
+<span class="nc" id="L388">            ArrowConversion.&lt;BigIntVector&gt;cast(vector).setSafe(row, ArrowConversion.nullBigInt);</span>
+        } else {
+<span class="nc bnc" id="L390" title="All 2 branches missed.">            ArrowConversion.&lt;BigIntVector&gt;cast(vector).setSafe(row, (value instanceof Number) ? (Long) value : Long.parseLong(value.toString()));</span>
+        }
+<span class="nc" id="L392">    };</span>
+    //convert SHORT to arrow UInt1Vector
+<span class="nc" id="L394">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, InternalRow[], Integer, DataType&gt; toUInt1 = (vector, rows, idxColumn, type) -&gt; IntStream.range(0, rows.length).forEach(idxRow -&gt; ArrowConversion.toUInt1Object.apply(vector, idxRow, rows[idxRow].get(idxColumn, type), type));</span>
+<span class="nc" id="L395">    private static final NullableUInt1Holder nullUInt1 = new NullableUInt1Holder();</span>
+<span class="nc" id="L396">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, Integer, Object, DataType&gt; toUInt1Object = (vector, row, value, type) -&gt; {</span>
+<span class="nc bnc" id="L397" title="All 2 branches missed.">        if (value == null) {</span>
+<span class="nc" id="L398">            ArrowConversion.&lt;UInt1Vector&gt;cast(vector).setSafe(row, ArrowConversion.nullUInt1);</span>
+        } else {
+<span class="nc bnc" id="L400" title="All 2 branches missed.">            ArrowConversion.&lt;UInt1Vector&gt;cast(vector).setSafe(row, (value instanceof Number) ? (Short) value : Short.parseShort(value.toString()));</span>
+        }
+<span class="nc" id="L402">    };</span>
+    //convert INT to arrow UInt2Vector
+<span class="nc" id="L404">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, InternalRow[], Integer, DataType&gt; toUInt2 = (vector, rows, idxColumn, type) -&gt; IntStream.range(0, rows.length).forEach(idxRow -&gt; ArrowConversion.toUInt2Object.apply(vector, idxRow, rows[idxRow].get(idxColumn, type), type));</span>
+<span class="nc" id="L405">    private static final NullableUInt2Holder nullUInt2 = new NullableUInt2Holder();</span>
+<span class="nc" id="L406">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, Integer, Object, DataType&gt; toUInt2Object = (vector, row, value, type) -&gt; {</span>
+<span class="nc bnc" id="L407" title="All 2 branches missed.">        if (value == null) {</span>
+<span class="nc" id="L408">            ArrowConversion.&lt;UInt2Vector&gt;cast(vector).setSafe(row, ArrowConversion.nullUInt2);</span>
+        } else {
+<span class="nc bnc" id="L410" title="All 2 branches missed.">            ArrowConversion.&lt;UInt2Vector&gt;cast(vector).setSafe(row, (value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString()));</span>
+        }
+<span class="nc" id="L412">    };</span>
+    //convert INT to arrow UInt4Vector
+<span class="nc" id="L414">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, InternalRow[], Integer, DataType&gt; toUInt4 = (vector, rows, idxColumn, type) -&gt; IntStream.range(0, rows.length).forEach(idxRow -&gt; ArrowConversion.toUInt4Object.apply(vector, idxRow, rows[idxRow].get(idxColumn, type), type));</span>
+<span class="nc" id="L415">    private static final NullableUInt4Holder nullUInt4 = new NullableUInt4Holder();</span>
+<span class="nc" id="L416">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, Integer, Object, DataType&gt; toUInt4Object = (vector, row, value, type) -&gt; {</span>
+<span class="nc bnc" id="L417" title="All 2 branches missed.">        if (value == null) {</span>
+<span class="nc" id="L418">            ArrowConversion.&lt;UInt4Vector&gt;cast(vector).setSafe(row, ArrowConversion.nullUInt4);</span>
+        } else {
+<span class="nc bnc" id="L420" title="All 2 branches missed.">            ArrowConversion.&lt;UInt4Vector&gt;cast(vector).setSafe(row, (value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString()));</span>
+        }
+<span class="nc" id="L422">    };</span>
+    //convert LONG to arrow UInt8Vector
+<span class="nc" id="L424">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, InternalRow[], Integer, DataType&gt; toUInt8 = (vector, rows, idxColumn, type) -&gt; IntStream.range(0, rows.length).forEach(idxRow -&gt; ArrowConversion.toUInt8Object.apply(vector, idxRow, rows[idxRow].get(idxColumn, type), type));</span>
+<span class="nc" id="L425">    private static final NullableUInt8Holder nullUInt8 = new NullableUInt8Holder();</span>
+<span class="nc" id="L426">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, Integer, Object, DataType&gt; toUInt8Object = (vector, row, value, type) -&gt; {</span>
+<span class="nc bnc" id="L427" title="All 2 branches missed.">        if (value == null) {</span>
+<span class="nc" id="L428">            ArrowConversion.&lt;UInt8Vector&gt;cast(vector).setSafe(row, ArrowConversion.nullUInt8);</span>
+        } else {
+<span class="nc bnc" id="L430" title="All 2 branches missed.">            ArrowConversion.&lt;UInt8Vector&gt;cast(vector).setSafe(row, (value instanceof Number) ? (Long) value : Long.parseLong(value.toString()));</span>
+        }
+<span class="nc" id="L432">    };</span>
+    //convert FLOAT to arrow Float4Vector
+<span class="nc" id="L434">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, InternalRow[], Integer, DataType&gt; toFloat4 = (vector, rows, idxColumn, type) -&gt; IntStream.range(0, rows.length).forEach(idxRow -&gt; ArrowConversion.toFloat4Object.apply(vector, idxRow, rows[idxRow].get(idxColumn, type), type));</span>
+<span class="nc" id="L435">    private static final NullableFloat4Holder nullFloat4 = new NullableFloat4Holder();</span>
+<span class="nc" id="L436">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, Integer, Object, DataType&gt; toFloat4Object = (vector, row, value, type) -&gt; {</span>
+<span class="nc bnc" id="L437" title="All 2 branches missed.">        if (value == null) {</span>
+<span class="nc" id="L438">            ArrowConversion.&lt;Float4Vector&gt;cast(vector).setSafe(row, ArrowConversion.nullFloat4);</span>
+        } else {
+<span class="nc bnc" id="L440" title="All 2 branches missed.">            ArrowConversion.&lt;Float4Vector&gt;cast(vector).setSafe(row, (value instanceof Number) ? (Float) value : Float.parseFloat(value.toString()));</span>
+        }
+<span class="nc" id="L442">    };</span>
+    //convert DOUBLE to arrow Float8Vector
+<span class="nc" id="L444">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, InternalRow[], Integer, DataType&gt; toFloat8 = (vector, rows, idxColumn, type) -&gt; IntStream.range(0, rows.length).forEach(idxRow -&gt; ArrowConversion.toFloat8Object.apply(vector, idxRow, rows[idxRow].get(idxColumn, type), type));</span>
+<span class="nc" id="L445">    private static final NullableFloat8Holder nullFloat8 = new NullableFloat8Holder();</span>
+<span class="nc" id="L446">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, Integer, Object, DataType&gt; toFloat8Object = (vector, row, value, type) -&gt; {</span>
+<span class="nc bnc" id="L447" title="All 2 branches missed.">        if (value == null) {</span>
+<span class="nc" id="L448">            ArrowConversion.&lt;Float8Vector&gt;cast(vector).setSafe(row, ArrowConversion.nullFloat8);</span>
+        } else {
+<span class="nc bnc" id="L450" title="All 2 branches missed.">            ArrowConversion.&lt;Float8Vector&gt;cast(vector).setSafe(row, (value instanceof Number) ? (Double) value : Double.parseDouble(value.toString()));</span>
+        }
+<span class="nc" id="L452">    };</span>
+    //convert DECIMAL to arrow DecimalVector
+<span class="nc" id="L454">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, InternalRow[], Integer, DataType&gt; toDecimal = (vector, rows, idxColumn, type) -&gt; IntStream.range(0, rows.length).forEach(idxRow -&gt; ArrowConversion.toDecimalObject.apply(vector, idxRow, rows[idxRow].get(idxColumn, type), type));</span>
+<span class="nc" id="L455">    private static final NullableDecimalHolder nullDecimal = new NullableDecimalHolder();</span>
+<span class="nc" id="L456">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, Integer, Object, DataType&gt; toDecimalObject = (vector, row, value, type) -&gt; {</span>
+<span class="nc bnc" id="L457" title="All 2 branches missed.">        if (value == null) {</span>
+<span class="nc" id="L458">            ArrowConversion.&lt;DecimalVector&gt;cast(vector).setSafe(row, ArrowConversion.nullDecimal);</span>
+        } else {
+<span class="nc bnc" id="L460" title="All 2 branches missed.">            ArrowConversion.&lt;DecimalVector&gt;cast(vector).setSafe(row, (value instanceof Decimal) ? ((Decimal) value).toJavaBigDecimal() : BigDecimal.valueOf(Double.parseDouble(value.toString())));</span>
+        }
+<span class="nc" id="L462">    };</span>
+    //convert DECIMAL to arrow Decimal256Vector
+<span class="nc" id="L464">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, InternalRow[], Integer, DataType&gt; toDecimal256 = (vector, rows, idxColumn, type) -&gt; IntStream.range(0, rows.length).forEach(idxRow -&gt; ArrowConversion.toDecimal256Object.apply(vector, idxRow, rows[idxRow].get(idxColumn, type), type));</span>
+<span class="nc" id="L465">    private static final NullableDecimal256Holder nullDecimal256 = new NullableDecimal256Holder();</span>
+<span class="nc" id="L466">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, Integer, Object, DataType&gt; toDecimal256Object = (vector, row, value, type) -&gt; {</span>
+<span class="nc bnc" id="L467" title="All 2 branches missed.">        if (value == null) {</span>
+<span class="nc" id="L468">            ArrowConversion.&lt;Decimal256Vector&gt;cast(vector).setSafe(row, ArrowConversion.nullDecimal256);</span>
+        } else {
+<span class="nc bnc" id="L470" title="All 2 branches missed.">            ArrowConversion.&lt;Decimal256Vector&gt;cast(vector).setSafe(row, (value instanceof Decimal) ? ((Decimal) value).toJavaBigDecimal() : BigDecimal.valueOf(Double.parseDouble(value.toString())));</span>
+        }
+<span class="nc" id="L472">    };</span>
+    //convert STRING to arrow VarCharVector
+<span class="nc" id="L474">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, InternalRow[], Integer, DataType&gt; toVarChar = (vector, rows, idxColumn, type) -&gt; IntStream.range(0, rows.length).forEach(idxRow -&gt; ArrowConversion.toVarCharObject.apply(vector, idxRow, rows[idxRow].get(idxColumn, type), type));</span>
+<span class="nc" id="L475">    private static final NullableVarCharHolder nullVarChar = new NullableVarCharHolder();</span>
+<span class="nc" id="L476">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, Integer, Object, DataType&gt; toVarCharObject = (vector, row, value, type) -&gt; {</span>
+<span class="nc bnc" id="L477" title="All 2 branches missed.">        if (value == null) {</span>
+<span class="nc" id="L478">            ArrowConversion.&lt;VarCharVector&gt;cast(vector).setSafe(row, ArrowConversion.nullVarChar);</span>
+        } else {
+<span class="nc" id="L480">            ArrowConversion.&lt;VarCharVector&gt;cast(vector).setSafe(row, new org.apache.arrow.vector.util.Text(value.toString()));</span>
+        }
+<span class="nc" id="L482">    };</span>
+    //convert STRING to arrow LargeVarCharVector
+<span class="nc" id="L484">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, InternalRow[], Integer, DataType&gt; toLargeVarChar = (vector, rows, idxColumn, type) -&gt; IntStream.range(0, rows.length).forEach(idxRow -&gt; ArrowConversion.toLargeVarCharObject.apply(vector, idxRow, rows[idxRow].get(idxColumn, type), type));</span>
+<span class="nc" id="L485">    private static final NullableLargeVarCharHolder nullLargeVarChar = new NullableLargeVarCharHolder();</span>
+<span class="nc" id="L486">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, Integer, Object, DataType&gt; toLargeVarCharObject = (vector, row, value, type) -&gt; {</span>
+<span class="nc bnc" id="L487" title="All 2 branches missed.">        if (value == null) {</span>
+<span class="nc" id="L488">            ArrowConversion.&lt;LargeVarCharVector&gt;cast(vector).setSafe(row, ArrowConversion.nullLargeVarChar);</span>
+        } else {
+<span class="nc" id="L490">            ArrowConversion.&lt;LargeVarCharVector&gt;cast(vector).setSafe(row, new org.apache.arrow.vector.util.Text(value.toString()));</span>
+        }
+<span class="nc" id="L492">    };</span>
+    //convert BOOLEAN to arrow BitVector
+<span class="nc" id="L494">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, InternalRow[], Integer, DataType&gt; toBit = (vector, rows, idxColumn, type) -&gt; {</span>
+<span class="nc bnc" id="L495" title="All 2 branches missed.">        if (type == DataTypes.BooleanType) {</span>
+<span class="nc" id="L496">            IntStream.range(0, rows.length).forEach(idxRow -&gt; ArrowConversion.toBitObject.apply(vector, idxRow, rows[idxRow].get(idxColumn, type), type));</span>
+        } else {
+<span class="nc" id="L498">            throw new RuntimeException(&quot;The data cannot be converted to arrow Bit.&quot;);</span>
+        }
+<span class="nc" id="L500">    };</span>
+<span class="nc" id="L501">    private static final NullableBitHolder nullBit = new NullableBitHolder();</span>
+<span class="nc" id="L502">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, Integer, Object, DataType&gt; toBitObject = (vector, row, value, type) -&gt; {</span>
+<span class="nc bnc" id="L503" title="All 2 branches missed.">        if (value == null) {</span>
+<span class="nc" id="L504">            ArrowConversion.&lt;BitVector&gt;cast(vector).setSafe(row, ArrowConversion.nullBit);</span>
+        } else {
+<span class="nc bnc" id="L506" title="All 2 branches missed.">            ArrowConversion.&lt;BitVector&gt;cast(vector).setSafe(row, (Boolean) value ? 1 : 0);</span>
+        }
+<span class="nc" id="L508">    };</span>
+    //convert DATE to arrow DateDayVector
+<span class="nc" id="L510">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, InternalRow[], Integer, DataType&gt; toDateDay = (vector, rows, idxColumn, type) -&gt; {</span>
+<span class="nc bnc" id="L511" title="All 4 branches missed.">        if (type == DataTypes.DateType || type == DataTypes.TimestampType) {</span>
+<span class="nc" id="L512">            IntStream.range(0, rows.length).forEach(idxRow -&gt; ArrowConversion.toDateDayObject.apply(vector, idxRow, rows[idxRow].get(idxColumn, type), type));</span>
+        } else {
+<span class="nc" id="L514">            throw new RuntimeException(&quot;The data cannot be converted to arrow DateDay.&quot;);</span>
+        }
+<span class="nc" id="L516">    };</span>
+<span class="nc" id="L517">    private static final NullableDateDayHolder nullDateDay = new NullableDateDayHolder();</span>
+<span class="nc" id="L518">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, Integer, Object, DataType&gt; toDateDayObject = (vector, row, value, type) -&gt; {</span>
+<span class="nc bnc" id="L519" title="All 2 branches missed.">        if (value == null) {</span>
+<span class="nc" id="L520">            ArrowConversion.&lt;DateDayVector&gt;cast(vector).setSafe(row, ArrowConversion.nullDateDay);</span>
+<span class="nc bnc" id="L521" title="All 2 branches missed.">        } else if (type == DataTypes.DateType) {</span>
+<span class="nc bnc" id="L522" title="All 2 branches missed.">            ArrowConversion.&lt;DateDayVector&gt;cast(vector).setSafe(row, (value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString()));</span>
+<span class="nc bnc" id="L523" title="All 2 branches missed.">        } else if (type == DataTypes.TimestampType) {</span>
+<span class="nc bnc" id="L524" title="All 2 branches missed.">            ArrowConversion.&lt;DateDayVector&gt;cast(vector).setSafe(row, DateTimeUtils.microsToDays((value instanceof Number) ? (Long) value : Long.parseLong(value.toString()), ZoneId.systemDefault()));</span>
+        }
+<span class="nc" id="L526">    };</span>
+    //convert DATE to arrow DateMilliVector
+<span class="nc" id="L528">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, InternalRow[], Integer, DataType&gt; toDateMilli = (vector, rows, idxColumn, type) -&gt; {</span>
+<span class="nc bnc" id="L529" title="All 4 branches missed.">        if (type == DataTypes.DateType || type == DataTypes.TimestampType) {</span>
+<span class="nc" id="L530">            IntStream.range(0, rows.length).forEach(idxRow -&gt; ArrowConversion.toDateMilliObject.apply(vector, idxRow, rows[idxRow].get(idxColumn, type), type));</span>
+        } else {
+<span class="nc" id="L532">            throw new RuntimeException(&quot;The data cannot be converted to arrow DateMilli.&quot;);</span>
+        }
+<span class="nc" id="L534">    };</span>
+<span class="nc" id="L535">    private static final NullableDateMilliHolder nullDateMilli = new NullableDateMilliHolder();</span>
+<span class="nc" id="L536">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, Integer, Object, DataType&gt; toDateMilliObject = (vector, row, value, type) -&gt; {</span>
+<span class="nc bnc" id="L537" title="All 2 branches missed.">        if (value == null) {</span>
+<span class="nc" id="L538">            ArrowConversion.&lt;DateMilliVector&gt;cast(vector).setSafe(row, ArrowConversion.nullDateMilli);</span>
+        } else {
+<span class="nc bnc" id="L540" title="All 4 branches missed.">            LocalDateTime ldt = (type == DataTypes.DateType) ? LocalDateTime.of(DateTimeUtils.daysToLocalDate((value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString())), LocalTime.of(0, 0))</span>
+<span class="nc bnc" id="L541" title="All 4 branches missed.">                : (type == DataTypes.TimestampType) ? DateTimeUtils.microsToLocalDateTime((value instanceof Number) ? (Long) value : Long.parseLong(value.toString())) : LocalDateTime.now();</span>
+<span class="nc" id="L542">            ArrowConversion.&lt;DateMilliVector&gt;cast(vector).setSafe(row, Timestamp.valueOf(ldt).getTime());</span>
+        }
+<span class="nc" id="L544">    };</span>
+    //convert TIME to arrow TimeSecVector
+<span class="nc" id="L546">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, InternalRow[], Integer, DataType&gt; toTimeSec = (vector, rows, idxColumn, type) -&gt; {</span>
+<span class="nc bnc" id="L547" title="All 4 branches missed.">        if (type == DataTypes.TimestampType || type == DataTypes.StringType) {</span>
+<span class="nc" id="L548">            IntStream.range(0, rows.length).forEach(idxRow -&gt; ArrowConversion.toTimeSecObject.apply(vector, idxRow, rows[idxRow].get(idxColumn, type), type));</span>
+        } else {
+<span class="nc" id="L550">            throw new RuntimeException(&quot;The data cannot be converted to arrow TimeSec.&quot;);</span>
+        }
+<span class="nc" id="L552">    };</span>
+<span class="nc" id="L553">    private static final NullableTimeSecHolder nullTimeSec = new NullableTimeSecHolder();</span>
+<span class="nc" id="L554">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, Integer, Object, DataType&gt; toTimeSecObject = (vector, row, value, type) -&gt; {</span>
+<span class="nc bnc" id="L555" title="All 2 branches missed.">        if (value == null) {</span>
+<span class="nc" id="L556">            ArrowConversion.&lt;TimeSecVector&gt;cast(vector).setSafe(row, ArrowConversion.nullTimeSec);</span>
+<span class="nc bnc" id="L557" title="All 2 branches missed.">        } else if (type == DataTypes.TimestampType) {</span>
+<span class="nc bnc" id="L558" title="All 2 branches missed.">            ArrowConversion.&lt;TimeSecVector&gt;cast(vector).setSafe(row, (int) (ArrowConversion.microsToEpochNanos.apply((value instanceof Number) ? (Long) value : Long.parseLong(value.toString())) / 1000000000L));</span>
+<span class="nc bnc" id="L559" title="All 2 branches missed.">        } else if (type == DataTypes.StringType) {</span>
+<span class="nc" id="L560">            ArrowConversion.&lt;TimeSecVector&gt;cast(vector).setSafe(row, (int) (ArrowConversion.timestrToNanos.apply(value.toString()) / 1000000000L));</span>
+        }
+<span class="nc" id="L562">    };</span>
+    //convert TIME to arrow TimeMilliVector
+<span class="nc" id="L564">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, InternalRow[], Integer, DataType&gt; toTimeMilli = (vector, rows, idxColumn, type) -&gt; {</span>
+<span class="nc bnc" id="L565" title="All 4 branches missed.">        if (type == DataTypes.TimestampType || type == DataTypes.StringType) {</span>
+<span class="nc" id="L566">            IntStream.range(0, rows.length).forEach(idxRow -&gt; ArrowConversion.toTimeMilliObject.apply(vector, idxRow, rows[idxRow].get(idxColumn, type), type));</span>
+        } else {
+<span class="nc" id="L568">            throw new RuntimeException(&quot;The data cannot be converted to arrow TimeMilli.&quot;);</span>
+        }
+<span class="nc" id="L570">    };</span>
+<span class="nc" id="L571">    private static final NullableTimeMilliHolder nullTimeMilli = new NullableTimeMilliHolder();</span>
+<span class="nc" id="L572">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, Integer, Object, DataType&gt; toTimeMilliObject = (vector, row, value, type) -&gt; {</span>
+<span class="nc bnc" id="L573" title="All 2 branches missed.">        if (value == null) {</span>
+<span class="nc" id="L574">            ArrowConversion.&lt;TimeMilliVector&gt;cast(vector).setSafe(row, ArrowConversion.nullTimeMilli);</span>
+<span class="nc bnc" id="L575" title="All 2 branches missed.">        } else if (type == DataTypes.TimestampType) {</span>
+<span class="nc bnc" id="L576" title="All 2 branches missed.">            ArrowConversion.&lt;TimeMilliVector&gt;cast(vector).setSafe(row, (int) (ArrowConversion.microsToEpochNanos.apply((value instanceof Number) ? (Long) value : Long.parseLong(value.toString())) / 1000000L));</span>
+<span class="nc bnc" id="L577" title="All 2 branches missed.">        } else if (type == DataTypes.StringType) {</span>
+<span class="nc" id="L578">            ArrowConversion.&lt;TimeMilliVector&gt;cast(vector).setSafe(row, (int) (ArrowConversion.timestrToNanos.apply(value.toString()) / 1000000L));</span>
+        }
+<span class="nc" id="L580">    };</span>
+    //convert TIME arrow TimeMicroVector
+<span class="nc" id="L582">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, InternalRow[], Integer, DataType&gt; toTimeMicro = (vector, rows, idxColumn, type) -&gt; {</span>
+<span class="nc bnc" id="L583" title="All 4 branches missed.">        if (type == DataTypes.TimestampType || type == DataTypes.StringType) {</span>
+<span class="nc" id="L584">            IntStream.range(0, rows.length).forEach(idxRow -&gt; ArrowConversion.toTimeMicroObject.apply(vector, idxRow, rows[idxRow].get(idxColumn, type), type));</span>
+        } else {
+<span class="nc" id="L586">            throw new RuntimeException(&quot;The data cannot be converted to arrow TimeMicro.&quot;);</span>
+        }
+<span class="nc" id="L588">    };</span>
+<span class="nc" id="L589">    private static final NullableTimeMicroHolder nullTimeMicro = new NullableTimeMicroHolder();</span>
+<span class="nc" id="L590">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, Integer, Object, DataType&gt; toTimeMicroObject = (vector, row, value, type) -&gt; {</span>
+<span class="nc bnc" id="L591" title="All 2 branches missed.">        if (value == null) {</span>
+<span class="nc" id="L592">            ArrowConversion.&lt;TimeMicroVector&gt;cast(vector).setSafe(row, ArrowConversion.nullTimeMicro);</span>
+<span class="nc bnc" id="L593" title="All 2 branches missed.">        } else if (type == DataTypes.TimestampType) {</span>
+<span class="nc bnc" id="L594" title="All 2 branches missed.">           ArrowConversion.&lt;TimeMicroVector&gt;cast(vector).setSafe(row, ArrowConversion.microsToEpochNanos.apply((value instanceof Number) ? (Long) value : Long.parseLong(value.toString())) / 1000L);</span>
+<span class="nc bnc" id="L595" title="All 2 branches missed.">        } else if (type == DataTypes.StringType) {</span>
+<span class="nc" id="L596">            ArrowConversion.&lt;TimeMicroVector&gt;cast(vector).setSafe(row, ArrowConversion.timestrToNanos.apply(value.toString()) / 1000L);</span>
+        }
+<span class="nc" id="L598">    };</span>
+    //convert TIME to arrow TimeNanoVector
+<span class="nc" id="L600">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, InternalRow[], Integer, DataType&gt; toTimeNano = (vector, rows, idxColumn, type) -&gt; {</span>
+<span class="nc bnc" id="L601" title="All 4 branches missed.">        if (type == DataTypes.TimestampType || type == DataTypes.StringType) {</span>
+<span class="nc" id="L602">            IntStream.range(0, rows.length).forEach(idxRow -&gt; ArrowConversion.toTimeNanoObject.apply(vector, idxRow, rows[idxRow].get(idxColumn, type), type));</span>
+        } else {
+<span class="nc" id="L604">            throw new RuntimeException(&quot;The data cannot be converted to arrow TimeNano.&quot;);</span>
+        }
+<span class="nc" id="L606">    };</span>
+<span class="nc" id="L607">    private static final NullableTimeNanoHolder nullTimeNano = new NullableTimeNanoHolder();</span>
+<span class="nc" id="L608">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, Integer, Object, DataType&gt; toTimeNanoObject = (vector, row, value, type) -&gt; {</span>
+<span class="nc bnc" id="L609" title="All 2 branches missed.">        if (value == null) {</span>
+<span class="nc" id="L610">            ArrowConversion.&lt;TimeNanoVector&gt;cast(vector).setSafe(row, ArrowConversion.nullTimeNano);</span>
+<span class="nc bnc" id="L611" title="All 2 branches missed.">        } else if (type == DataTypes.TimestampType) {</span>
+<span class="nc bnc" id="L612" title="All 2 branches missed.">            ArrowConversion.&lt;TimeNanoVector&gt;cast(vector).setSafe(row, ArrowConversion.microsToEpochNanos.apply((value instanceof Number) ? (Long) value : Long.parseLong(value.toString())));</span>
+<span class="nc bnc" id="L613" title="All 2 branches missed.">        } else if (type == DataTypes.StringType) {</span>
+<span class="nc" id="L614">            ArrowConversion.&lt;TimeNanoVector&gt;cast(vector).setSafe(row, ArrowConversion.timestrToNanos.apply(value.toString()));</span>
+        }
+<span class="nc" id="L616">    };</span>
+    //convert TIMESTAMP to arrow TimeStampMicroVector
+<span class="nc" id="L618">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, InternalRow[], Integer, DataType&gt; toTimeStampMicro = (vector, rows, idxColumn, type) -&gt; {</span>
+<span class="nc bnc" id="L619" title="All 4 branches missed.">        if (type == DataTypes.TimestampType || type == DataTypes.DateType) {</span>
+<span class="nc" id="L620">            IntStream.range(0, rows.length).forEach(idxRow -&gt; ArrowConversion.toTimeStampMicroObject.apply(vector, idxRow, rows[idxRow].get(idxColumn, type), type));</span>
+        } else {
+<span class="nc" id="L622">            throw new RuntimeException(&quot;The data cannot be converted to arrow TimeStampMicro.&quot;);</span>
+        }
+<span class="nc" id="L624">    };</span>
+<span class="nc" id="L625">    private static final NullableTimeStampMicroHolder nullTimeStampMicro = new NullableTimeStampMicroHolder();</span>
+<span class="nc" id="L626">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, Integer, Object, DataType&gt; toTimeStampMicroObject = (vector, row, value, type) -&gt; {</span>
+<span class="nc bnc" id="L627" title="All 2 branches missed.">        if (value == null) {</span>
+<span class="nc" id="L628">            ArrowConversion.&lt;TimeStampMicroVector&gt;cast(vector).setSafe(row, ArrowConversion.nullTimeStampMicro);</span>
+<span class="nc bnc" id="L629" title="All 2 branches missed.">        } else if (type == DataTypes.TimestampType) {</span>
+<span class="nc bnc" id="L630" title="All 2 branches missed.">            ArrowConversion.&lt;TimeStampMicroVector&gt;cast(vector).setSafe(row, ((value instanceof Number) ? (Long) value : Long.parseLong(value.toString())));</span>
+<span class="nc bnc" id="L631" title="All 2 branches missed.">        } else if (type == DataTypes.DateType) {</span>
+<span class="nc bnc" id="L632" title="All 2 branches missed.">            ArrowConversion.&lt;TimeStampMicroVector&gt;cast(vector).setSafe(row, ArrowConversion.daysToMicros.apply((value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString()), ZoneId.systemDefault()));</span>
+        }
+<span class="nc" id="L634">    };</span>
+    //convert TIMESTAMP to arrow TimeStampMicroTZVector
+<span class="nc" id="L636">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, InternalRow[], Integer, DataType&gt; toTimeStampMicroTZ = (vector, rows, idxColumn, type) -&gt; {</span>
+<span class="nc bnc" id="L637" title="All 4 branches missed.">        if (type == DataTypes.TimestampType || type == DataTypes.DateType) {</span>
+<span class="nc" id="L638">            IntStream.range(0, rows.length).forEach(idxRow -&gt; ArrowConversion.toTimeStampMicroTZObject.apply(vector, idxRow, rows[idxRow].get(idxColumn, type), type));</span>
+        } else {
+<span class="nc" id="L640">            throw new RuntimeException(&quot;The data cannot be converted to arrow TimeStampMicroTZ.&quot;);</span>
+        }
+<span class="nc" id="L642">    };</span>
+<span class="nc" id="L643">    private static final NullableTimeStampMicroTZHolder nullTimeStampMicroTZ = new NullableTimeStampMicroTZHolder();</span>
+<span class="nc" id="L644">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, Integer, Object, DataType&gt; toTimeStampMicroTZObject = (vector, row, value, type) -&gt; {</span>
+<span class="nc bnc" id="L645" title="All 2 branches missed.">        if (value == null) {</span>
+<span class="nc" id="L646">            ArrowConversion.&lt;TimeStampMicroTZVector&gt;cast(vector).setSafe(row, ArrowConversion.nullTimeStampMicroTZ);</span>
+<span class="nc bnc" id="L647" title="All 2 branches missed.">        } else if (type == DataTypes.TimestampType) {</span>
+<span class="nc bnc" id="L648" title="All 2 branches missed.">            ArrowConversion.&lt;TimeStampMicroTZVector&gt;cast(vector).setSafe(row, DateTimeUtils.convertTz((value instanceof Number) ? (Long) value : Long.parseLong(value.toString()), ZoneId.systemDefault(), ZoneId.of(ArrowConversion.&lt;TimeStampMicroTZVector&gt;cast(vector).getTimeZone())));</span>
+<span class="nc bnc" id="L649" title="All 2 branches missed.">        } else if (type == DataTypes.DateType) {</span>
+<span class="nc bnc" id="L650" title="All 2 branches missed.">            ArrowConversion.&lt;TimeStampMicroTZVector&gt;cast(vector).setSafe(row, ArrowConversion.daysToMicros.apply((value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString()), ZoneId.of(ArrowConversion.&lt;TimeStampMicroTZVector&gt;cast(vector).getTimeZone())));</span>
+        }
+<span class="nc" id="L652">    };</span>
+    //convert TIMESTAMP to arrow TimeStampMilliVector
+<span class="nc" id="L654">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, InternalRow[], Integer, DataType&gt; toTimeStampMilli = (vector, rows, idxColumn, type) -&gt; {</span>
+<span class="nc bnc" id="L655" title="All 4 branches missed.">        if (type == DataTypes.TimestampType || type == DataTypes.DateType) {</span>
+<span class="nc" id="L656">            IntStream.range(0, rows.length).forEach(idxRow -&gt; ArrowConversion.toTimeStampMilliObject.apply(vector, idxRow, rows[idxRow].get(idxColumn, type), type));</span>
+        } else {
+<span class="nc" id="L658">            throw new RuntimeException(&quot;The data cannot be converted to arrow TimeStampMilli.&quot;);</span>
+        }
+<span class="nc" id="L660">    };</span>
+<span class="nc" id="L661">    private static final NullableTimeStampMilliHolder nullTimeStampMilli = new NullableTimeStampMilliHolder();</span>
+<span class="nc" id="L662">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, Integer, Object, DataType&gt; toTimeStampMilliObject = (vector, row, value, type) -&gt; {</span>
+<span class="nc bnc" id="L663" title="All 2 branches missed.">        if (value == null) {</span>
+<span class="nc" id="L664">            ArrowConversion.&lt;TimeStampMilliVector&gt;cast(vector).setSafe(row, ArrowConversion.nullTimeStampMilli);</span>
+<span class="nc bnc" id="L665" title="All 2 branches missed.">        } else if (type == DataTypes.TimestampType) {</span>
+<span class="nc bnc" id="L666" title="All 2 branches missed.">            ArrowConversion.&lt;TimeStampMilliVector&gt;cast(vector).setSafe(row, ArrowConversion.microsToMillis.apply(((value instanceof Number) ? (Long) value : Long.parseLong(value.toString()))));</span>
+<span class="nc bnc" id="L667" title="All 2 branches missed.">        } else if (type == DataTypes.DateType) {</span>
+<span class="nc bnc" id="L668" title="All 2 branches missed.">            ArrowConversion.&lt;TimeStampMilliVector&gt;cast(vector).setSafe(row, ArrowConversion.microsToMillis.apply(ArrowConversion.daysToMicros.apply((value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString()), ZoneId.systemDefault())));</span>
+        }
+<span class="nc" id="L670">    };</span>
+    //convert TIMESTAMP to arrow TimeStampMilliTZVector
+<span class="nc" id="L672">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, InternalRow[], Integer, DataType&gt; toTimeStampMilliTZ = (vector, rows, idxColumn, type) -&gt; {</span>
+<span class="nc bnc" id="L673" title="All 4 branches missed.">        if (type == DataTypes.TimestampType || type == DataTypes.DateType) {</span>
+<span class="nc" id="L674">            IntStream.range(0, rows.length).forEach(idxRow -&gt; ArrowConversion.toTimeStampMilliTZObject.apply(vector, idxRow, rows[idxRow].get(idxColumn, type), type));</span>
+        } else {
+<span class="nc" id="L676">            throw new RuntimeException(&quot;The data cannot be converted to arrow TimeStampMilliTZ.&quot;);</span>
+        }
+<span class="nc" id="L678">    };</span>
+<span class="nc" id="L679">    private static final NullableTimeStampMilliTZHolder nullTimeStampMilliTZ = new NullableTimeStampMilliTZHolder();</span>
+<span class="nc" id="L680">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, Integer, Object, DataType&gt; toTimeStampMilliTZObject = (vector, row, value, type) -&gt; {</span>
+<span class="nc bnc" id="L681" title="All 2 branches missed.">        if (value == null) {</span>
+<span class="nc" id="L682">            ArrowConversion.&lt;TimeStampMilliTZVector&gt;cast(vector).setSafe(row, ArrowConversion.nullTimeStampMilliTZ);</span>
+<span class="nc bnc" id="L683" title="All 2 branches missed.">        } else if (type == DataTypes.TimestampType) {</span>
+<span class="nc bnc" id="L684" title="All 2 branches missed.">            ArrowConversion.&lt;TimeStampMilliTZVector&gt;cast(vector).setSafe(row, ArrowConversion.microsToMillis.apply(DateTimeUtils.convertTz((value instanceof Number) ? (Long) value : Long.parseLong(value.toString()), ZoneId.systemDefault(), ZoneId.of(ArrowConversion.&lt;TimeStampMilliTZVector&gt;cast(vector).getTimeZone()))));</span>
+<span class="nc bnc" id="L685" title="All 2 branches missed.">        } else if (type == DataTypes.DateType) {</span>
+<span class="nc bnc" id="L686" title="All 2 branches missed.">            ArrowConversion.&lt;TimeStampMilliTZVector&gt;cast(vector).setSafe(row, ArrowConversion.microsToMillis.apply(ArrowConversion.daysToMicros.apply((value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString()), ZoneId.of(ArrowConversion.&lt;TimeStampMilliTZVector&gt;cast(vector).getTimeZone()))));</span>
+        }
+<span class="nc" id="L688">    };</span>
+    //convert TIMESTAMP to arrow TimeStampSecVector
+<span class="nc" id="L690">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, InternalRow[], Integer, DataType&gt; toTimeStampSec = (vector, rows, idxColumn, type) -&gt; {</span>
+<span class="nc bnc" id="L691" title="All 4 branches missed.">        if (type == DataTypes.TimestampType || type == DataTypes.DateType) {</span>
+<span class="nc" id="L692">            IntStream.range(0, rows.length).forEach(idxRow -&gt; ArrowConversion.toTimeStampSecObject.apply(vector, idxRow, rows[idxRow].get(idxColumn, type), type));</span>
+        } else {
+<span class="nc" id="L694">            throw new RuntimeException(&quot;The data cannot be converted to arrow TimeStampSec.&quot;);</span>
+        }
+<span class="nc" id="L696">    };</span>
+<span class="nc" id="L697">    private static final NullableTimeStampSecHolder nullTimeStampSec = new NullableTimeStampSecHolder();</span>
+<span class="nc" id="L698">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, Integer, Object, DataType&gt; toTimeStampSecObject = (vector, row, value, type) -&gt; {</span>
+<span class="nc bnc" id="L699" title="All 2 branches missed.">        if (value == null) {</span>
+<span class="nc" id="L700">            ArrowConversion.&lt;TimeStampSecVector&gt;cast(vector).setSafe(row, ArrowConversion.nullTimeStampSec);</span>
+<span class="nc bnc" id="L701" title="All 2 branches missed.">        } else if (type == DataTypes.TimestampType) {</span>
+<span class="nc bnc" id="L702" title="All 2 branches missed.">            ArrowConversion.&lt;TimeStampSecVector&gt;cast(vector).setSafe(row, ArrowConversion.microsToSecs.apply(((value instanceof Number) ? (Long) value : Long.parseLong(value.toString()))));</span>
+<span class="nc bnc" id="L703" title="All 2 branches missed.">        } else if (type == DataTypes.DateType) {</span>
+<span class="nc bnc" id="L704" title="All 2 branches missed.">            ArrowConversion.&lt;TimeStampSecVector&gt;cast(vector).setSafe(row, ArrowConversion.microsToSecs.apply(ArrowConversion.daysToMicros.apply((value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString()), ZoneId.systemDefault())));</span>
+        }
+<span class="nc" id="L706">    };</span>
+    //convert TIMESTAMP to arrow TimeStampSecTZVector
+<span class="nc" id="L708">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, InternalRow[], Integer, DataType&gt; toTimeStampSecTZ = (vector, rows, idxColumn, type) -&gt; {</span>
+<span class="nc bnc" id="L709" title="All 4 branches missed.">        if (type == DataTypes.TimestampType || type == DataTypes.DateType) {</span>
+<span class="nc" id="L710">            IntStream.range(0, rows.length).forEach(idxRow -&gt; ArrowConversion.toTimeStampSecTZObject.apply(vector, idxRow, rows[idxRow].get(idxColumn, type), type));</span>
+        } else {
+<span class="nc" id="L712">            throw new RuntimeException(&quot;The data cannot be converted to arrow TimeStampSecTZ.&quot;);</span>
+        }
+<span class="nc" id="L714">    };</span>
+<span class="nc" id="L715">    private static final NullableTimeStampSecTZHolder nullTimeStampSecTZ = new NullableTimeStampSecTZHolder();</span>
+<span class="nc" id="L716">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, Integer, Object, DataType&gt; toTimeStampSecTZObject = (vector, row, value, type) -&gt; {</span>
+<span class="nc bnc" id="L717" title="All 2 branches missed.">        if (value == null) {</span>
+<span class="nc" id="L718">            ArrowConversion.&lt;TimeStampSecTZVector&gt;cast(vector).setSafe(row, ArrowConversion.nullTimeStampSecTZ);</span>
+<span class="nc bnc" id="L719" title="All 2 branches missed.">        } else if (type == DataTypes.TimestampType) {</span>
+<span class="nc bnc" id="L720" title="All 2 branches missed.">            ArrowConversion.&lt;TimeStampSecTZVector&gt;cast(vector).setSafe(row, ArrowConversion.microsToSecs.apply(DateTimeUtils.convertTz((value instanceof Number) ? (Long) value : Long.parseLong(value.toString()), ZoneId.systemDefault(), ZoneId.of(ArrowConversion.&lt;TimeStampSecTZVector&gt;cast(vector).getTimeZone()))));</span>
+<span class="nc bnc" id="L721" title="All 2 branches missed.">        } else if (type == DataTypes.DateType) {</span>
+<span class="nc bnc" id="L722" title="All 2 branches missed.">            ArrowConversion.&lt;TimeStampSecTZVector&gt;cast(vector).setSafe(row, ArrowConversion.microsToSecs.apply(ArrowConversion.daysToMicros.apply((value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString()), ZoneId.of(ArrowConversion.&lt;TimeStampSecTZVector&gt;cast(vector).getTimeZone()))));</span>
+        }
+<span class="nc" id="L724">    };</span>
+    //convert TIMESTAMP to arrow TimeStampNanoVector
+<span class="nc" id="L726">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, InternalRow[], Integer, DataType&gt; toTimeStampNano = (vector, rows, idxColumn, type) -&gt; {</span>
+<span class="nc bnc" id="L727" title="All 4 branches missed.">        if (type == DataTypes.TimestampType || type == DataTypes.DateType) {</span>
+<span class="nc" id="L728">            IntStream.range(0, rows.length).forEach(idxRow -&gt; ArrowConversion.toTimeStampNanoObject.apply(vector, idxRow, rows[idxRow].get(idxColumn, type), type));</span>
+        } else {
+<span class="nc" id="L730">            throw new RuntimeException(&quot;The data cannot be converted to arrow TimeStampNano.&quot;);</span>
+        }
+<span class="nc" id="L732">    };</span>
+<span class="nc" id="L733">    private static final NullableTimeStampNanoHolder nullTimeStampNano = new NullableTimeStampNanoHolder();</span>
+<span class="nc" id="L734">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, Integer, Object, DataType&gt; toTimeStampNanoObject = (vector, row, value, type) -&gt; {</span>
+<span class="nc bnc" id="L735" title="All 2 branches missed.">        if (value == null) {</span>
+<span class="nc" id="L736">            ArrowConversion.&lt;TimeStampNanoVector&gt;cast(vector).setSafe(row, ArrowConversion.nullTimeStampNano);</span>
+<span class="nc bnc" id="L737" title="All 2 branches missed.">        } else if (type == DataTypes.TimestampType) {</span>
+<span class="nc bnc" id="L738" title="All 2 branches missed.">            ArrowConversion.&lt;TimeStampNanoVector&gt;cast(vector).setSafe(row, ArrowConversion.microsToNanos.apply(((value instanceof Number) ? (Long) value : Long.parseLong(value.toString()))));</span>
+<span class="nc bnc" id="L739" title="All 2 branches missed.">        } else if (type == DataTypes.DateType) {</span>
+<span class="nc bnc" id="L740" title="All 2 branches missed.">            ArrowConversion.&lt;TimeStampNanoVector&gt;cast(vector).setSafe(row, ArrowConversion.microsToNanos.apply(ArrowConversion.daysToMicros.apply((value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString()), ZoneId.systemDefault())));</span>
+        }
+<span class="nc" id="L742">    };</span>
+    //convert TIMESTAMP to arrow TimeStampNanoTZVector
+<span class="nc" id="L744">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, InternalRow[], Integer, DataType&gt; toTimeStampNanoTZ = (vector, rows, idxColumn, type) -&gt; {</span>
+<span class="nc bnc" id="L745" title="All 4 branches missed.">        if (type == DataTypes.TimestampType || type == DataTypes.DateType) {</span>
+<span class="nc" id="L746">            IntStream.range(0, rows.length).forEach(idxRow -&gt; ArrowConversion.toTimeStampNanoTZObject.apply(vector, idxRow, rows[idxRow].get(idxColumn, type), type));</span>
+        } else {
+<span class="nc" id="L748">            throw new RuntimeException(&quot;The data cannot be converted to arrow TimeStampNanoTZ.&quot;);</span>
+        }
+<span class="nc" id="L750">    };</span>
+<span class="nc" id="L751">    private static final NullableTimeStampNanoTZHolder nullTimeStampNanoTZ = new NullableTimeStampNanoTZHolder();</span>
+<span class="nc" id="L752">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, Integer, Object, DataType&gt; toTimeStampNanoTZObject = (vector, row, value, type) -&gt; {</span>
+<span class="nc bnc" id="L753" title="All 2 branches missed.">        if (value == null) {</span>
+<span class="nc" id="L754">            ArrowConversion.&lt;TimeStampNanoTZVector&gt;cast(vector).setSafe(row, ArrowConversion.nullTimeStampNanoTZ);</span>
+<span class="nc bnc" id="L755" title="All 2 branches missed.">        } else if (type == DataTypes.TimestampType) {</span>
+<span class="nc bnc" id="L756" title="All 2 branches missed.">            ArrowConversion.&lt;TimeStampNanoTZVector&gt;cast(vector).setSafe(row, ArrowConversion.microsToNanos.apply(DateTimeUtils.convertTz((value instanceof Number) ? (Long) value : Long.parseLong(value.toString()), ZoneId.systemDefault(), ZoneId.of(ArrowConversion.&lt;TimeStampNanoTZVector&gt;cast(vector).getTimeZone()))));</span>
+        } else {
+<span class="nc bnc" id="L758" title="All 2 branches missed.">            ArrowConversion.&lt;TimeStampNanoTZVector&gt;cast(vector).setSafe(row, ArrowConversion.microsToNanos.apply(ArrowConversion.daysToMicros.apply((value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString()), ZoneId.of(ArrowConversion.&lt;TimeStampNanoTZVector&gt;cast(vector).getTimeZone()))));</span>
+        }
+<span class="nc" id="L760">    };</span>
+    //convert DURATION_DAY_TIME to arrow DurationVector
+<span class="nc" id="L762">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, InternalRow[], Integer, DataType&gt; toDuration = (vector, rows, idxColumn, type) -&gt; {</span>
+<span class="nc bnc" id="L763" title="All 2 branches missed.">        if (type instanceof DayTimeIntervalType) {</span>
+<span class="nc" id="L764">            IntStream.range(0, rows.length).forEach(idxRow -&gt; ArrowConversion.toDurationObject.apply(vector, idxRow, rows[idxRow].get(idxColumn, type), type));</span>
+        } else {
+<span class="nc" id="L766">            throw new RuntimeException(&quot;The data cannot be converted to arrow Duration.&quot;);</span>
+        }
+<span class="nc" id="L768">    };</span>
+<span class="nc" id="L769">    private static final NullableDurationHolder nullDuration = new NullableDurationHolder();</span>
+<span class="nc" id="L770">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, Integer, Object, DataType&gt; toDurationObject = (vector, row, value, type) -&gt; {</span>
+<span class="nc bnc" id="L771" title="All 2 branches missed.">        if (value == null) {</span>
+<span class="nc" id="L772">            ArrowConversion.&lt;DurationVector&gt;cast(vector).setSafe(row, ArrowConversion.nullDuration);</span>
+        } else {
+<span class="nc bnc" id="L774" title="All 2 branches missed.">            ArrowConversion.&lt;DurationVector&gt;cast(vector).setSafe(row, (value instanceof Number) ? (Long) value : Long.parseLong(value.toString()));</span>
+        }
+<span class="nc" id="L776">    };</span>
+    //convert PERIOD_YEAR_MONTH to arrow IntervalYearVector
+<span class="nc" id="L778">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, InternalRow[], Integer, DataType&gt; toIntervalYear = (vector, rows, idxColumn, type) -&gt; {</span>
+<span class="nc bnc" id="L779" title="All 2 branches missed.">        if (type instanceof YearMonthIntervalType) {</span>
+<span class="nc" id="L780">            IntStream.range(0, rows.length).forEach(idxRow -&gt; ArrowConversion.toIntervalYearObject.apply(vector, idxRow, rows[idxRow].get(idxColumn, type), type));</span>
+        } else {
+<span class="nc" id="L782">            throw new RuntimeException(&quot;The data cannot be converted to arrow IntervalYear.&quot;);</span>
+        }
+<span class="nc" id="L784">    };</span>
+<span class="nc" id="L785">    private static final NullableIntervalYearHolder nullIntervalYear = new NullableIntervalYearHolder();</span>
+<span class="nc" id="L786">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, Integer, Object, DataType&gt; toIntervalYearObject = (vector, row, value, type) -&gt; {</span>
+<span class="nc bnc" id="L787" title="All 2 branches missed.">        if (value == null) {</span>
+<span class="nc" id="L788">            ArrowConversion.&lt;IntervalYearVector&gt;cast(vector).setSafe(row, ArrowConversion.nullIntervalYear);</span>
+        } else {
+<span class="nc bnc" id="L790" title="All 2 branches missed.">            ArrowConversion.&lt;IntervalYearVector&gt;cast(vector).setSafe(row, (value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString()));</span>
+        }
+<span class="nc" id="L792">    };</span>
+    //convert DURATION_DAY_TIME to arrow IntervalDayVector
+<span class="nc" id="L794">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, InternalRow[], Integer, DataType&gt; toIntervalDay = (vector, rows, idxColumn, type) -&gt; {</span>
+<span class="nc bnc" id="L795" title="All 2 branches missed.">        if (type instanceof DayTimeIntervalType) {</span>
+<span class="nc" id="L796">            IntStream.range(0, rows.length).forEach(idxRow -&gt; ArrowConversion.toIntervalDayObject.apply(vector, idxRow, rows[idxRow].get(idxColumn, type), type));</span>
+        } else {
+<span class="nc" id="L798">            throw new RuntimeException(&quot;The data cannot be converted to arrow IntervalDay.&quot;);</span>
+        }
+<span class="nc" id="L800">    };</span>
+<span class="nc" id="L801">    private static final NullableIntervalDayHolder nullIntervalDay = new NullableIntervalDayHolder();</span>
+<span class="nc" id="L802">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, Integer, Object, DataType&gt; toIntervalDayObject = (vector, row, value, type) -&gt; {</span>
+<span class="nc bnc" id="L803" title="All 2 branches missed.">        if (value == null) {</span>
+<span class="nc" id="L804">            ArrowConversion.&lt;IntervalDayVector&gt;cast(vector).setSafe(row, ArrowConversion.nullIntervalDay);</span>
+        } else {
+<span class="nc bnc" id="L806" title="All 2 branches missed.">            long micros = (value instanceof Number) ? (Long) value : Long.parseLong(value.toString());</span>
+<span class="nc" id="L807">            ArrowConversion.&lt;IntervalDayVector&gt;cast(vector).setSafe(row, IntervalUtils.getDays(micros), (int) (micros % 1000L));</span>
+        }
+<span class="nc" id="L809">    };</span>
+    //convert StructType to arrow StructVector
+<span class="nc" id="L811">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, InternalRow[], Integer, DataType&gt; toStruct = (vector, rows, idxColumn, type) -&gt; {</span>
+<span class="nc bnc" id="L812" title="All 4 branches missed.">        if (vector instanceof StructVector &amp;&amp; type instanceof StructType) {</span>
+<span class="nc" id="L813">            IntStream.range(0, rows.length).forEach(idxRow -&gt; ArrowConversion.toStructObject.apply(vector, idxRow, rows[idxRow].get(idxColumn, type), type));</span>
+<span class="nc bnc" id="L814" title="All 4 branches missed.">        } else if (vector instanceof StructVector &amp;&amp; type instanceof MapType) {</span>
+<span class="nc" id="L815">            IntStream.range(0, rows.length).forEach(idxRow -&gt; ArrowConversion.toStructMap.apply(vector, idxRow, rows[idxRow].get(idxColumn, type), type));</span>
+        } else {
+<span class="nc" id="L817">            throw new RuntimeException(&quot;The data cannot be converted to arrow Struct.&quot;);</span>
+        }
+<span class="nc" id="L819">    };</span>
+<span class="nc" id="L820">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, Integer, Object, DataType&gt; toStructObject = (vector, row, value, type) -&gt; {</span>
+<span class="nc bnc" id="L821" title="All 2 branches missed.">        if (value == null) {</span>
+<span class="nc" id="L822">            ArrowConversion.&lt;StructVector&gt;cast(vector).setNull(row);</span>
+<span class="nc bnc" id="L823" title="All 2 branches missed.">        } else if (type instanceof StructType) {</span>
+<span class="nc" id="L824">            org.apache.arrow.vector.FieldVector[] vectorChildren = ArrowConversion.&lt;StructVector&gt;cast(vector).getChildrenFromFields().toArray(new org.apache.arrow.vector.FieldVector[0]);</span>
+<span class="nc" id="L825">            DataType[] dataTypes = Arrays.stream(((StructType) type).fields()).map(StructField::dataType).collect(Collectors.toList()).toArray(new DataType[0]);</span>
+<span class="nc bnc" id="L826" title="All 2 branches missed.">            if (vectorChildren.length == dataTypes.length) {</span>
+<span class="nc" id="L827">                UnsafeRow rowsChildren = (UnsafeRow) value;</span>
+<span class="nc" id="L828">                IntStream.range(0, vectorChildren.length).forEach(idx -&gt; ArrowConversion.getOrCreate().populateObject(vectorChildren[idx], 0, rowsChildren.get(idx, dataTypes[idx]), dataTypes[idx]));</span>
+<span class="nc" id="L829">            } else {</span>
+<span class="nc" id="L830">                throw new RuntimeException(&quot;The data cannot be converted to arrow Struct.&quot;);</span>
+            }
+        }
+<span class="nc" id="L833">    };</span>
+<span class="nc" id="L834">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, Integer, Object, DataType&gt; toStructMap = (vector, row, value, type) -&gt; {</span>
+<span class="nc bnc" id="L835" title="All 2 branches missed.">        if (value == null) {</span>
+<span class="nc" id="L836">            ArrowConversion.&lt;StructVector&gt;cast(vector).setNull(row);</span>
+        } else {
+<span class="nc" id="L838">            boolean populated = false;</span>
+<span class="nc bnc" id="L839" title="All 2 branches missed.">            if (type instanceof MapType) {</span>
+<span class="nc" id="L840">                org.apache.arrow.vector.FieldVector[] vectorChildren = ArrowConversion.&lt;StructVector&gt;cast(vector).getChildrenFromFields().toArray(new org.apache.arrow.vector.FieldVector[0]);</span>
+<span class="nc bnc" id="L841" title="All 6 branches missed.">                if (vectorChildren.length == 1 &amp;&amp; vectorChildren[0] instanceof ListVector &amp;&amp; vectorChildren[0].getName().equals(&quot;map&quot;)) {</span>
+<span class="nc" id="L842">                    org.apache.arrow.vector.FieldVector dataVector = ArrowConversion.&lt;ListVector&gt;cast(vectorChildren[0]).getDataVector();</span>
+<span class="nc bnc" id="L843" title="All 2 branches missed.">                    if (dataVector instanceof StructVector) {</span>
+<span class="nc" id="L844">                        org.apache.arrow.vector.FieldVector[] valueChildren = ArrowConversion.&lt;StructVector&gt;cast(dataVector).getChildrenFromFields().toArray(new org.apache.arrow.vector.FieldVector[0]);</span>
+<span class="nc bnc" id="L845" title="All 6 branches missed.">                        if (valueChildren.length == 2 &amp;&amp; valueChildren[0].getName().equals(&quot;key&quot;) &amp;&amp; valueChildren[1].getName().equals(&quot;value&quot;)) {</span>
+<span class="nc" id="L846">                            DataType keyType = ((MapType) type).keyType();</span>
+<span class="nc" id="L847">                            DataType valueType = ((MapType) type).valueType();</span>
+<span class="nc" id="L848">                            UnsafeMapData data = (UnsafeMapData) value;</span>
+<span class="nc" id="L849">                            UnsafeArrayData keyData = data.keyArray();</span>
+<span class="nc" id="L850">                            UnsafeArrayData valueData = data.valueArray();</span>
+<span class="nc" id="L851">                            IntStream.range(0, data.numElements()).forEach(idx -&gt; {</span>
+<span class="nc" id="L852">                                ArrowConversion.getOrCreate().populateObject(valueChildren[0], idx, keyData.get(idx, keyType), keyType);</span>
+<span class="nc" id="L853">                                ArrowConversion.getOrCreate().populateObject(valueChildren[1], idx, valueData.get(idx, valueType), valueType);</span>
+<span class="nc" id="L854">                            });</span>
+<span class="nc" id="L855">                            populated = true;</span>
+                        }
+                    }
+                }
+            }
+<span class="nc bnc" id="L860" title="All 2 branches missed.">            if (!populated) {</span>
+<span class="nc" id="L861">                throw new RuntimeException(&quot;The data cannot be converted to arrow Struct.&quot;);</span>
+            }
+        }
+<span class="nc" id="L864">    };</span>
+    //convert ArrayType to arrow ListVector
+<span class="nc" id="L866">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, InternalRow[], Integer, DataType&gt; toList = (vector, rows, idxColumn, type) -&gt; {</span>
+<span class="nc bnc" id="L867" title="All 4 branches missed.">        if (vector instanceof ListVector &amp;&amp; type instanceof ArrayType) {</span>
+<span class="nc" id="L868">            IntStream.range(0, rows.length).forEach(idxRow -&gt; ArrowConversion.toListObject.apply(vector, idxRow, rows[idxRow].get(idxColumn, type), type));</span>
+        } else {
+<span class="nc" id="L870">            throw new RuntimeException(&quot;The data cannot be converted to arrow List.&quot;);</span>
+        }
+<span class="nc" id="L872">    };</span>
+<span class="nc" id="L873">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, Integer, Object, DataType&gt; toListObject = (vector, row, value, type) -&gt; {</span>
+<span class="nc bnc" id="L874" title="All 2 branches missed.">        if (value == null) {</span>
+<span class="nc" id="L875">            ArrowConversion.&lt;ListVector&gt;cast(vector).setNull(row);</span>
+<span class="nc bnc" id="L876" title="All 2 branches missed.">        } else if (type instanceof ArrayType) {</span>
+<span class="nc" id="L877">            org.apache.arrow.vector.FieldVector dataVector = ArrowConversion.&lt;ListVector&gt;cast(vector).getDataVector();</span>
+<span class="nc" id="L878">            DataType dataType = ((ArrayType) type).elementType();</span>
+<span class="nc" id="L879">            UnsafeArrayData data = (UnsafeArrayData) value;</span>
+<span class="nc" id="L880">            IntStream.range(0, data.numElements()).forEach(idx -&gt; ArrowConversion.getOrCreate().populateObject(dataVector, idx, data.get(idx, dataType), dataType));</span>
+<span class="nc" id="L881">        } else {</span>
+<span class="nc" id="L882">            throw new RuntimeException(&quot;The data cannot be converted to arrow List.&quot;);</span>
+        }
+<span class="nc" id="L884">    };</span>
+    //convert MapType to arrow MapVector
+<span class="nc" id="L886">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, InternalRow[], Integer, DataType&gt; toMap = (vector, rows, idxColumn, type) -&gt; {</span>
+<span class="nc bnc" id="L887" title="All 4 branches missed.">        if (vector instanceof MapVector &amp;&amp; type instanceof MapType) {</span>
+<span class="nc" id="L888">            IntStream.range(0, rows.length).forEach(idxRow -&gt; ArrowConversion.toMapObject.apply(vector, idxRow, rows[idxRow].get(idxColumn, type), type));</span>
+        } else {
+<span class="nc" id="L890">            throw new RuntimeException(&quot;The data cannot be converted to arrow Map.&quot;);</span>
+        }
+<span class="nc" id="L892">    };</span>
+<span class="nc" id="L893">    private static final ConvertTo&lt;org.apache.arrow.vector.FieldVector, Integer, Object, DataType&gt; toMapObject = (vector, row, value, type) -&gt; {</span>
+<span class="nc bnc" id="L894" title="All 2 branches missed.">        if (value == null) {</span>
+<span class="nc" id="L895">            ArrowConversion.&lt;MapVector&gt;cast(vector).setNull(row);</span>
+<span class="nc bnc" id="L896" title="All 2 branches missed.">        } else if (type instanceof MapType) {</span>
+<span class="nc" id="L897">            org.apache.arrow.vector.FieldVector[] valueChildren = ArrowConversion.&lt;MapVector&gt;cast(vector).getChildrenFromFields().toArray(new org.apache.arrow.vector.FieldVector[0]);</span>
+<span class="nc bnc" id="L898" title="All 2 branches missed.">            if (valueChildren.length == 2) {</span>
+<span class="nc" id="L899">                DataType keyType = ((MapType) type).keyType();</span>
+<span class="nc" id="L900">                DataType valueType = ((MapType) type).valueType();</span>
+<span class="nc" id="L901">                UnsafeMapData data = (UnsafeMapData) value;</span>
+<span class="nc" id="L902">                UnsafeArrayData keyData = data.keyArray();</span>
+<span class="nc" id="L903">                UnsafeArrayData valueData = data.valueArray();</span>
+<span class="nc" id="L904">                IntStream.range(0, data.numElements()).forEach(idx -&gt; {</span>
+<span class="nc" id="L905">                    ArrowConversion.getOrCreate().populateObject(valueChildren[0], idx, keyData.get(idx, keyType), keyType);</span>
+<span class="nc" id="L906">                    ArrowConversion.getOrCreate().populateObject(valueChildren[1], idx, valueData.get(idx, valueType), valueType);</span>
+<span class="nc" id="L907">                });</span>
+<span class="nc" id="L908">            } else {</span>
+<span class="nc" id="L909">                throw new RuntimeException(&quot;The data cannot be converted to arrow Map.&quot;);</span>
+            }
+        }
+<span class="nc" id="L912">    };</span>
+
+    //base converters
+<span class="nc" id="L915">    private static final Function&lt;BigDecimal, Decimal&gt; bigDecimalToDecimal = Decimal::apply;</span>
+<span class="nc" id="L916">    private static final Function&lt;String, UTF8String&gt; stringToUtf8String = UTF8String::fromString;</span>
+<span class="nc" id="L917">    private static final Function&lt;Integer, Integer&gt; dateDayToInt = (dd) -&gt; DateTimeUtils.fromJavaDate(java.sql.Date.valueOf(LocalDate.ofEpochDay(dd)));</span>
+<span class="nc" id="L918">    private static final Function&lt;LocalDateTime, Integer&gt; localDateTimeToInt = (ldt) -&gt; DateTimeUtils.fromJavaDate(java.sql.Date.valueOf(ldt.toLocalDate()));</span>
+<span class="nc" id="L919">    private static final Function&lt;LocalDateTime, Long&gt; localDateTimeToLong = (ldt) -&gt; DateTimeUtils.fromJavaTimestamp(Timestamp.valueOf(ldt));</span>
+<span class="nc" id="L920">    private static final BiFunction&lt;Long, String, Long&gt; timestampSecTZToLong = (ss, zone) -&gt; DateTimeUtils.fromJavaTimestamp(Timestamp.valueOf(LocalDateTime.from(Instant.ofEpochSecond(ss).atZone(ZoneId.of(zone)))));</span>
+<span class="nc" id="L921">    private static final BiFunction&lt;Long, String, Long&gt; timestampMilliTZToLong = (mss, zone) -&gt; DateTimeUtils.fromJavaTimestamp(Timestamp.valueOf(LocalDateTime.from(Instant.ofEpochMilli(mss).atZone(ZoneId.of(zone)))));</span>
+<span class="nc" id="L922">    private static final BiFunction&lt;Long, String, Long&gt; timestampNanoTZToLong = (ns, zone) -&gt; DateTimeUtils.fromJavaTimestamp(Timestamp.valueOf(LocalDateTime.from(Instant.ofEpochMilli(ns / 1000000L).atZone(ZoneId.of(zone)))));</span>
+<span class="nc" id="L923">    private static final BiFunction&lt;Long, String, Long&gt; timestampMicroTZToLong = (ms, zone) -&gt; DateTimeUtils.fromJavaTimestamp(Timestamp.valueOf(LocalDateTime.from(Instant.ofEpochMilli(ms / 1000L).atZone(ZoneId.of(zone))).plusNanos(ms % 1_000 * 1000L)));</span>
+<span class="nc" id="L924">    private static final Function&lt;Timestamp, Long&gt; timestampToLong = DateTimeUtils::fromJavaTimestamp;</span>
+<span class="nc" id="L925">    private static final Function&lt;Integer, UTF8String&gt; timeSecToString = (ts) -&gt; {</span>
+<span class="nc" id="L926">        int hours = ts / 3600;</span>
+<span class="nc" id="L927">        int minutes = (ts - hours * 3600) / 60;</span>
+<span class="nc" id="L928">        int seconds = (ts - hours * 3600 - minutes * 60);</span>
+<span class="nc" id="L929">        return ArrowConversion.stringToUtf8String.apply(String.format(&quot;%02d:%02d:%02d&quot;, hours, minutes, seconds));</span>
+    };
+<span class="nc" id="L931">    private static final Function&lt;LocalDateTime, UTF8String&gt; timeMilliToString = (ldt) -&gt; ArrowConversion.stringToUtf8String.apply(String.format(&quot;%02d:%02d:%02d.%03d&quot;, ldt.getHour(), ldt.getMinute(), ldt.getSecond(), ldt.getNano() / 1000000L));</span>
+<span class="nc" id="L932">    private static final Function&lt;Long, UTF8String&gt; timeMicroToString = (ms) -&gt; {</span>
+<span class="nc" id="L933">        int totalSeconds = (int) (ms / 1000000L);</span>
+<span class="nc" id="L934">        long microSeconds = ms - totalSeconds * 1000000L;</span>
+<span class="nc" id="L935">        int hours = totalSeconds / 3600;</span>
+<span class="nc" id="L936">        int minutes = (totalSeconds - hours * 3600) / 60;</span>
+<span class="nc" id="L937">        int seconds = (totalSeconds - hours * 3600 - minutes * 60);</span>
+<span class="nc" id="L938">        return ArrowConversion.stringToUtf8String.apply(String.format(&quot;%02d:%02d:%02d.%06d&quot;, hours, minutes, seconds, microSeconds));</span>
+    };
+<span class="nc" id="L940">    private static final Function&lt;Long, UTF8String&gt; timeNanoToString = (ns) -&gt; {</span>
+<span class="nc" id="L941">        int totalSeconds = (int) (ns / 1000000000L);</span>
+<span class="nc" id="L942">        long nanoSeconds = totalSeconds * 1000000000L;</span>
+<span class="nc" id="L943">        int hours = totalSeconds / 3600;</span>
+<span class="nc" id="L944">        int minutes = (totalSeconds - hours * 3600) / 60;</span>
+<span class="nc" id="L945">        int seconds = (totalSeconds - hours * 3600 - minutes * 60);</span>
+<span class="nc" id="L946">        return ArrowConversion.stringToUtf8String.apply(String.format(&quot;%02d:%02d:%02d.%09d&quot;, hours, minutes, seconds, nanoSeconds));</span>
+    };
+<span class="nc" id="L948">    private static final Function&lt;Duration, Long&gt; durationToLong = IntervalUtils::durationToMicros;</span>
+<span class="nc" id="L949">    private static final Function&lt;Period, Integer&gt; periodToInt = IntervalUtils::periodToMonths;</span>
+<span class="nc" id="L950">    private static final Function&lt;PeriodDuration, InternalRow&gt; translatePeriodDuration = (pd) -&gt; InternalRow.fromSeq(JavaConverters.asScalaBuffer(Arrays.asList(new Object[] { ArrowConversion.periodToInt.apply(pd.getPeriod()), ArrowConversion.durationToLong.apply(pd.getDuration()) })));</span>
+    @SuppressWarnings(&quot;unchecked&quot;)
+<span class="nc" id="L952">    private static final ConvertFrom&lt;FieldType, Object, ValueVector, Object&gt; translate = (t, o, v) -&gt; {</span>
+<span class="nc bnc" id="L953" title="All 13 branches missed.">        switch (t.getTypeID()) {</span>
+            case VARCHAR:
+            case CHAR:
+<span class="nc" id="L956">                return ArrowConversion.stringToUtf8String.apply(o.toString());</span>
+            case TIMESTAMP:
+<span class="nc bnc" id="L958" title="All 2 branches missed.">                return (v instanceof TimeStampMilliVector) ? ArrowConversion.timestampToLong.apply((Timestamp) o)</span>
+<span class="nc bnc" id="L959" title="All 2 branches missed.">                    : (v instanceof TimeStampMicroTZVector) ? ArrowConversion.timestampMicroTZToLong.apply((Long) o, ((TimeStampMicroTZVector) v).getTimeZone())</span>
+<span class="nc bnc" id="L960" title="All 2 branches missed.">                    : (v instanceof TimeStampSecTZVector) ? ArrowConversion.timestampSecTZToLong.apply((Long) o, ((TimeStampSecTZVector) v).getTimeZone())</span>
+<span class="nc bnc" id="L961" title="All 2 branches missed.">                    : (v instanceof TimeStampMilliTZVector) ? ArrowConversion.timestampMilliTZToLong.apply((Long) o, ((TimeStampMilliTZVector) v).getTimeZone())</span>
+<span class="nc bnc" id="L962" title="All 2 branches missed.">                    : (v instanceof TimeStampNanoTZVector) ? ArrowConversion.timestampNanoTZToLong.apply((Long) o, ((TimeStampNanoTZVector) v).getTimeZone())</span>
+<span class="nc bnc" id="L963" title="All 6 branches missed.">                    : (v instanceof TimeStampMicroVector || v instanceof TimeStampSecVector || v instanceof TimeStampNanoVector) ? ArrowConversion.localDateTimeToLong.apply((LocalDateTime) o) : o;</span>
+            case TIME:
+<span class="nc bnc" id="L965" title="All 2 branches missed.">                return (v instanceof TimeSecVector) ? ArrowConversion.timeSecToString.apply((Integer) o)</span>
+<span class="nc bnc" id="L966" title="All 2 branches missed.">                    : (v instanceof TimeMilliVector) ? ArrowConversion.timeMilliToString.apply((LocalDateTime) o)</span>
+<span class="nc bnc" id="L967" title="All 2 branches missed.">                    : (v instanceof TimeMicroVector) ? ArrowConversion.timeMicroToString.apply((Long) o)</span>
+<span class="nc bnc" id="L968" title="All 2 branches missed.">                    : (v instanceof TimeNanoVector) ? ArrowConversion.timeNanoToString.apply((Long) o) : o;</span>
+            case DATE:
+<span class="nc bnc" id="L970" title="All 4 branches missed.">                return (v instanceof DateDayVector) ? ArrowConversion.dateDayToInt.apply((Integer) o) : (v instanceof DateMilliVector) ? ArrowConversion.localDateTimeToInt.apply((LocalDateTime) o) : o;</span>
+            case DECIMAL:
+<span class="nc" id="L972">                return ArrowConversion.bigDecimalToDecimal.apply((BigDecimal) o);</span>
+            case DURATION_DAY_TIME:
+<span class="nc bnc" id="L974" title="All 4 branches missed.">                return (v instanceof IntervalDayVector || v instanceof DurationVector) ? ArrowConversion.durationToLong.apply((Duration) o) : o;</span>
+            case PERIOD_YEAR_MONTH:
+<span class="nc bnc" id="L976" title="All 2 branches missed.">                return (v instanceof IntervalYearVector) ? ArrowConversion.periodToInt.apply((Period) o) : o;</span>
+            case PERIOD_DURATION_MONTH_DAY_TIME:
+<span class="nc bnc" id="L978" title="All 2 branches missed.">                return (v instanceof IntervalMonthDayNanoVector) ? ArrowConversion.translatePeriodDuration.apply((PeriodDuration) o) : o;</span>
+            case LIST:
+<span class="nc bnc" id="L980" title="All 2 branches missed.">                return (v instanceof ListVector) ? ArrowConversion.translateList.apply((List&lt;?&gt;) o, (ListVector) v, (FieldType.ListType) t) : o;</span>
+            case MAP:
+<span class="nc bnc" id="L982" title="All 2 branches missed.">                return (v instanceof MapVector) ? ArrowConversion.translateMap.apply((List&lt;?&gt;) o, (MapVector) v, (FieldType.MapType) t) : o;</span>
+            case STRUCT:
+<span class="nc bnc" id="L984" title="All 2 branches missed.">                return (v instanceof StructVector) ? ArrowConversion.mapElseStruct.apply((Map&lt;String, ?&gt;) o, (StructVector) v, (FieldType.StructType) t) : o;</span>
+            case NULL:
+<span class="nc" id="L986">                return null;</span>
+            default:
+                break;
+        }
+<span class="nc" id="L990">        return o;</span>
+    };
+    @SuppressWarnings(&quot;UstableApiUsage&quot;)
+<span class="nc" id="L993">    private static final ConvertFrom&lt;Map&lt;String, ?&gt;, StructVector, FieldType.StructType, InternalRow&gt; translateStruct = (m, sv, t) -&gt; {</span>
+<span class="nc" id="L994">        Map&lt;String, FieldType&gt; mt = t.getChildrenType();</span>
+<span class="nc" id="L995">        BiFunction&lt;Map.Entry&lt;String, ?&gt;, Long, Object&gt; setV = (e, i) -&gt; {</span>
+<span class="nc" id="L996">            String k = e.getKey();</span>
+<span class="nc" id="L997">            Object v = e.getValue();</span>
+<span class="nc bnc" id="L998" title="All 4 branches missed.">            return (v != null &amp;&amp; mt.containsKey(k)) ? ArrowConversion.translate.apply(mt.get(k), v, sv.getVectorById(i.intValue())) : null;</span>
+        };
+<span class="nc" id="L1000">        List&lt;Object&gt; nm = new java.util.ArrayList&lt;&gt;();</span>
+<span class="nc" id="L1001">        Streams.mapWithIndex(m.entrySet().stream(), setV::apply).forEach(nm::add);</span>
+<span class="nc" id="L1002">        return InternalRow.fromSeq(JavaConverters.asScalaBuffer(Arrays.asList(nm.toArray())).toSeq());</span>
+    };
+<span class="nc" id="L1004">    private static final ConvertFrom&lt;Map&lt;String, ?&gt;, StructVector, FieldType.StructType, ArrayBasedMapData&gt; structToMap = (m, sv, t) -&gt; {</span>
+<span class="nc" id="L1005">        Map&lt;String, FieldType&gt; mt = t.getChildrenType();</span>
+<span class="nc bnc" id="L1006" title="All 8 branches missed.">        if (mt.size() == 1 &amp;&amp; mt.containsKey(&quot;map&quot;) &amp;&amp; mt.get(&quot;map&quot;).getTypeID() == FieldType.IDs.LIST &amp;&amp; sv.getVectorById(0) instanceof ListVector) {</span>
+<span class="nc" id="L1007">            ListVector lv = (ListVector) sv.getVectorById(0);</span>
+<span class="nc" id="L1008">            FieldType.ListType lt = (FieldType.ListType) mt.get(&quot;map&quot;);</span>
+<span class="nc bnc" id="L1009" title="All 4 branches missed.">            if (lt.getChildType().getTypeID() == FieldType.IDs.STRUCT &amp;&amp; lv.getDataVector() instanceof StructVector) {</span>
+<span class="nc" id="L1010">                StructVector dv = (StructVector) lv.getDataVector();</span>
+<span class="nc" id="L1011">                FieldType.StructType st = (FieldType.StructType) lt.getChildType();</span>
+<span class="nc" id="L1012">                String[] childKeys = st.getChildrenType().keySet().toArray(new String[0]);</span>
+<span class="nc bnc" id="L1013" title="All 6 branches missed.">                if (childKeys.length == 2 &amp;&amp; childKeys[0].equals(&quot;key&quot;) &amp;&amp; childKeys[1].equals(&quot;value&quot;)) {</span>
+<span class="nc" id="L1014">                    List&lt;Map.Entry&lt;String, ?&gt;&gt; kvs = new java.util.ArrayList&lt;&gt;(m.entrySet());</span>
+<span class="nc bnc" id="L1015" title="All 6 branches missed.">                    if (kvs.size() == 1 &amp;&amp; kvs.get(0).getKey().equals(&quot;map&quot;) &amp;&amp; kvs.get(0).getValue() instanceof List&lt;?&gt;) {</span>
+<span class="nc" id="L1016">                        FieldType kt = st.getChildrenType().get(&quot;key&quot;);</span>
+<span class="nc" id="L1017">                        FieldType vt = st.getChildrenType().get(&quot;value&quot;);</span>
+<span class="nc" id="L1018">                        List&lt;?&gt; list = (List&lt;?&gt;) kvs.get(0).getValue();</span>
+<span class="nc" id="L1019">                        List&lt;Object&gt; keys = new java.util.ArrayList&lt;&gt;();</span>
+<span class="nc" id="L1020">                        List&lt;Object&gt; values = new java.util.ArrayList&lt;&gt;();</span>
+<span class="nc" id="L1021">                        list.forEach(e -&gt; {</span>
+<span class="nc" id="L1022">                            Map&lt;?, ?&gt; mes = (Map&lt;?, ?&gt;) e;</span>
+<span class="nc" id="L1023">                            mes.forEach((key, value) -&gt; {</span>
+<span class="nc" id="L1024">                                keys.add(ArrowConversion.translate.apply(kt, key, dv.getVectorById(0)));</span>
+<span class="nc" id="L1025">                                values.add(ArrowConversion.translate.apply(vt, value, dv.getVectorById(1)));</span>
+<span class="nc" id="L1026">                            });</span>
+<span class="nc" id="L1027">                        });</span>
+<span class="nc" id="L1028">                        return new ArrayBasedMapData(ArrayData.toArrayData(keys.toArray()), ArrayData.toArrayData(values.toArray()));</span>
+                    }
+                }
+            }
+        }
+<span class="nc" id="L1033">        return null;</span>
+    };
+<span class="nc" id="L1035">    private static final ConvertFrom&lt;Map&lt;String, ?&gt;, StructVector, FieldType.StructType, Object&gt; mapElseStruct = (m, sv, t) -&gt; ArrowConversion.o1ElseO2.apply(ArrowConversion.structToMap.apply(m, sv, t), ArrowConversion.translateStruct.apply(m, sv, t));</span>
+<span class="nc" id="L1036">    private static final ConvertFrom&lt;List&lt;?&gt;, MapVector, FieldType.MapType, ArrayBasedMapData&gt; translateMap = (l, mv, mt) -&gt; {</span>
+<span class="nc" id="L1037">        List&lt;Object&gt; keys = new java.util.ArrayList&lt;&gt;();</span>
+<span class="nc" id="L1038">        List&lt;Object&gt; values = new java.util.ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L1039" title="All 6 branches missed.">        Function&lt;ValueVector[], Boolean&gt; probe = (vs) -&gt; (vs.length == 2 &amp;&amp; vs[0].getField().getName().equalsIgnoreCase(&quot;key&quot;) &amp;&amp; vs[1].getField().getName().equalsIgnoreCase(&quot;value&quot;));</span>
+<span class="nc" id="L1040">        Consumer&lt;ValueVector[]&gt; populate = (vs) -&gt; {</span>
+<span class="nc bnc" id="L1041" title="All 2 branches missed.">            if (probe.apply(vs)) {</span>
+<span class="nc" id="L1042">                l.forEach(e -&gt; {</span>
+<span class="nc" id="L1043">                    JsonStringHashMap&lt;?, ?&gt; entry = (JsonStringHashMap&lt;?, ?&gt;) e;</span>
+<span class="nc" id="L1044">                    keys.add(ArrowConversion.translate.apply(mt.getKeyType(), entry.get(&quot;key&quot;), vs[0]));</span>
+<span class="nc" id="L1045">                    values.add(ArrowConversion.translate.apply(mt.getValueType(), entry.get(&quot;value&quot;), vs[1]));</span>
+<span class="nc" id="L1046">                });</span>
+            }
+<span class="nc" id="L1048">        };</span>
+<span class="nc" id="L1049">        ValueVector[] fields = mv.getChildrenFromFields().toArray(new ValueVector[0]);</span>
+<span class="nc bnc" id="L1050" title="All 4 branches missed.">        populate.accept((fields.length == 1 &amp;&amp; fields[0] instanceof StructVector) ? ((StructVector) fields[0]).getChildrenFromFields().toArray(new ValueVector[0]) : fields);</span>
+<span class="nc" id="L1051">        return new ArrayBasedMapData(ArrayData.toArrayData(keys.toArray()), ArrayData.toArrayData(values.toArray()));</span>
+    };
+<span class="nc" id="L1053">    private static final ConvertFrom&lt;List&lt;?&gt;, ListVector, FieldType.ListType, ArrayData&gt; translateList = (l, v, t) -&gt; ArrayData.toArrayData(l.stream().map(e -&gt; ArrowConversion.translate.apply(t.getChildType(), e, v.getDataVector())).toArray());</span>
+<span class="nc" id="L1054">    private static final Function&lt;Long, Long&gt; microsToNanos = (micros) -&gt; ArrowConversion.microsToMillis.apply(micros) * 1000L;</span>
+<span class="nc" id="L1055">    private static final Function&lt;Long, Long&gt; microsToMillis = DateTimeUtils::microsToMillis;</span>
+<span class="nc" id="L1056">    private static final Function&lt;Long, Long&gt; microsToSecs = (micros) -&gt; ArrowConversion.microsToMillis.apply(micros) / 1000L;</span>
+<span class="nc" id="L1057">    private static final BiFunction&lt;Integer, ZoneId, Long&gt; daysToMicros = (days, zone) -&gt; DateTimeUtils.daysToMicros(days, ZoneId.systemDefault());</span>
+<span class="nc" id="L1058">    private static final Function&lt;Long, Long&gt; microsToEpochNanos = (micros) -&gt; {</span>
+<span class="nc" id="L1059">        Instant t = DateTimeUtils.microsToLocalDateTime(micros).withYear(1970).withMonth(1).withDayOfMonth(1).atZone(ZoneId.systemDefault()).toInstant();</span>
+<span class="nc" id="L1060">        return t.toEpochMilli() * 1000000L + (long) t.getNano();</span>
+    };
+<span class="nc" id="L1062">    private static final Function&lt;String, Long&gt; timestrToNanos = (ts) -&gt; {</span>
+<span class="nc" id="L1063">        Instant t = LocalDateTime.of(LocalDate.of(1970, 1, 1), LocalTime.parse(ts)).atZone(ZoneId.systemDefault()).toInstant();</span>
+<span class="nc" id="L1064">        return t.toEpochMilli() * 1000000L + (long) t.getNano();</span>
+    };
+<span class="nc bnc" id="L1066" title="All 2 branches missed.">    private static final BiFunction&lt;Object, Object, Object&gt; o1ElseO2 = (o1, o2) -&gt; (o1 != null) ? o1 : o2;</span>
+
+    //the singleton instance
+<span class="nc" id="L1069">    private static ArrowConversion inst = null;</span>
+    /**
+     * Get or create an instance of Vector
+     * @return - the singleton instance of Vector
+     */
+    public static synchronized ArrowConversion getOrCreate() {
+<span class="nc bnc" id="L1075" title="All 2 branches missed.">        if (ArrowConversion.inst == null) {</span>
+<span class="nc" id="L1076">            ArrowConversion.inst = new ArrowConversion();</span>
+        }
+<span class="nc" id="L1078">        return ArrowConversion.inst;</span>
+    }
+
+    /**
+     * Returns the singleton instance on deserialization.
+     * @return singleton ArrowConversion instance
+     */
+    private Object readResolve() {
+<span class="nc" id="L1086">        return getOrCreate();</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>
