@@ -18,17 +18,17 @@ public class QueryEndpoints implements Serializable {
      * @param schema - the schema of the query result
      * @param endpoints - end end-points exposed on the remote flight-service for fetching data
      */
-<span class="nc" id="L21">    public QueryEndpoints(Schema schema, Endpoint[] endpoints) {</span>
-<span class="nc" id="L22">        this.schema = schema;</span>
-<span class="nc" id="L23">        this.endpoints = endpoints;</span>
-<span class="nc" id="L24">    }</span>
+<span class="fc" id="L21">    public QueryEndpoints(Schema schema, Endpoint[] endpoints) {</span>
+<span class="fc" id="L22">        this.schema = schema;</span>
+<span class="fc" id="L23">        this.endpoints = endpoints;</span>
+<span class="fc" id="L24">    }</span>
 
     /**
      * Get the Schema
      * @return - the schema of the QueryEndpoints
      */
     public Schema getSchema() {
-<span class="nc" id="L31">        return this.schema;</span>
+<span class="fc" id="L31">        return this.schema;</span>
     }
 
     /**
@@ -36,14 +36,14 @@ public class QueryEndpoints implements Serializable {
      * @return - the end-points of the QueryEndpoints
      */
     public Endpoint[] getEndpoints() {
-<span class="nc" id="L39">        return this.endpoints;</span>
+<span class="fc" id="L39">        return this.endpoints;</span>
     }
 
     @Override
     public String toString() {
-<span class="nc" id="L44">        return &quot;QueryEndpoints{&quot; +</span>
+<span class="fc" id="L44">        return &quot;QueryEndpoints{&quot; +</span>
                 &quot;schema=&quot; + schema +
-<span class="nc" id="L46">                &quot;, endpoints=&quot; + Arrays.toString(endpoints) +</span>
+<span class="fc" id="L46">                &quot;, endpoints=&quot; + Arrays.toString(endpoints) +</span>
                 '}';
     }
 }

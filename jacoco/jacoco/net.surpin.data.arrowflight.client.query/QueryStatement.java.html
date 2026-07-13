@@ -30,10 +30,10 @@ public class QueryStatement implements Serializable {
     public boolean different(QueryStatement rs) {
 <span class="fc bfc" id="L31" title="All 4 branches covered.">        boolean changed = (rs == null || !rs.stmt.equalsIgnoreCase(this.stmt));</span>
 <span class="fc bfc" id="L32" title="All 2 branches covered.">        if (!changed) {</span>
-<span class="pc bpc" id="L33" title="4 of 6 branches missed.">            changed = (rs.where != null) ? !rs.where.equalsIgnoreCase(this.where) : this.where != null;</span>
+<span class="pc bpc" id="L33" title="1 of 6 branches missed.">            changed = (rs.where != null) ? !rs.where.equalsIgnoreCase(this.where) : this.where != null;</span>
         }
 <span class="fc bfc" id="L35" title="All 2 branches covered.">        if (!changed) {</span>
-<span class="pc bpc" id="L36" title="4 of 6 branches missed.">            changed = (rs.groupBy != null) ? !rs.groupBy.equalsIgnoreCase(this.groupBy) : this.groupBy != null;</span>
+<span class="pc bpc" id="L36" title="1 of 6 branches missed.">            changed = (rs.groupBy != null) ? !rs.groupBy.equalsIgnoreCase(this.groupBy) : this.groupBy != null;</span>
         }
 <span class="fc" id="L38">        return changed;</span>
     }
@@ -44,8 +44,8 @@ public class QueryStatement implements Serializable {
      */
     public String getStatement() {
 <span class="fc" id="L46">        return String.format(&quot;%s %s %s&quot;, this.stmt,</span>
-<span class="pc bpc" id="L47" title="1 of 4 branches missed.">            (this.where != null &amp;&amp; this.where.length() &gt; 0) ? String.format(&quot;where %s&quot;, this.where) : &quot;&quot;,</span>
-<span class="pc bpc" id="L48" title="1 of 4 branches missed.">            (this.groupBy != null &amp;&amp; this.groupBy.length() &gt; 0) ? String.format(&quot;group by %s&quot;, this.groupBy) : &quot;&quot;</span>
+<span class="fc bfc" id="L47" title="All 4 branches covered.">            (this.where != null &amp;&amp; this.where.length() &gt; 0) ? String.format(&quot;where %s&quot;, this.where) : &quot;&quot;,</span>
+<span class="fc bfc" id="L48" title="All 4 branches covered.">            (this.groupBy != null &amp;&amp; this.groupBy.length() &gt; 0) ? String.format(&quot;group by %s&quot;, this.groupBy) : &quot;&quot;</span>
         );
     }
 }

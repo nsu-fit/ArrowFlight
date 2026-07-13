@@ -18,19 +18,19 @@ Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.adapters,Fligh
 Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.adapters,AceroAdapter,482,0,40,0,121,0,26,0,6,0
 Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.adapters,DuckDbAdapter.new InputFile() {...},22,0,0,0,3,0,3,0,3,0
 Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.adapters,DuckDbAdapter.new InputFile() {...},22,0,0,0,3,0,3,0,3,0
-Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.adapters,ConfigAdapter,438,0,74,0,84,0,46,0,9,0
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.adapters,ConfigAdapter,49,389,33,41,7,77,28,18,0,9
 Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.adapters,FilterConverter.new ConverterProvider() {...},0,28,0,0,0,5,0,2,0,2
 Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.adapters,ParquetAdapter.new InputFile() {...},23,0,0,0,3,0,3,0,3,0
 Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.adapters,FilterConverter,31,29,4,0,12,7,3,2,1,2
 Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client,Client,937,0,82,0,154,0,75,0,34,0
 Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client,Configuration,125,272,7,15,40,56,24,19,19,13
-Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.query,QueryEndpoints,23,0,0,0,8,0,4,0,4,0
-Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.query,Endpoint,68,0,4,0,16,0,6,0,4,0
-Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.query,QueryStatement,20,102,10,18,0,14,8,9,0,3
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.query,QueryEndpoints,0,23,0,0,0,8,0,4,0,4
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.query,Endpoint,0,68,1,3,0,16,1,5,0,4
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.query,QueryStatement,4,118,2,26,0,14,2,15,0,3
 Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.query,PushAggregation,0,25,0,0,0,10,0,4,0,4
 Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.spark,FlightTable,328,0,20,0,38,0,33,0,23,0
 Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.spark,FlightSource,224,0,26,0,38,0,18,0,5,0
-Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.model,HandleState,31,0,0,0,3,0,3,0,3,0
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.model,HandleState,0,31,0,0,0,3,0,3,0,3
 Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.model,AppConfig,0,66,0,0,0,1,0,1,0,1
 Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.model,FileAssignment,0,9,0,0,0,1,0,1,0,1
 Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.write,WriteProtocol,15,0,0,0,3,0,1,0,1,0
@@ -46,20 +46,20 @@ Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.services,Parqu
 Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.services,ParquetQueryParser,454,462,63,31,106,102,38,25,3,13
 Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.services,QueryPlanner,579,27,41,1,113,5,32,2,11,2
 Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.services,ClusterService,297,0,18,0,69,0,26,0,17,0
-Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.model,FieldType.ListType,21,0,0,0,8,0,4,0,4,0
-Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.model,RowSet.Row,20,0,0,0,6,0,3,0,3,0
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.model,FieldType.ListType,0,21,0,0,0,8,0,4,0,4
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.model,RowSet.Row,0,20,0,0,0,6,0,3,0,3
 Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.model,Table,984,169,69,19,82,37,53,13,15,7
-Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.model,Field,85,0,6,0,17,0,13,0,10,0
-Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.model,FieldType.BinaryType,10,0,0,0,4,0,2,0,2,0
-Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.model,FieldType.DecimalType,16,0,0,0,6,0,3,0,3,0
-Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.model,FieldType.MapType,16,0,0,0,6,0,3,0,3,0
-Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.model,FieldVector,25,0,0,0,7,0,4,0,4,0
-Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.model,FieldType,605,0,98,0,92,0,79,0,13,0
-Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.model,FieldType.IDs,135,0,0,0,23,0,1,0,1,0
-Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.model,FieldType.UnionType,4,0,0,0,2,0,1,0,1,0
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.model,Field,23,63,0,6,1,16,3,10,3,7
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.model,FieldType.BinaryType,0,10,0,0,0,4,0,2,0,2
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.model,FieldType.DecimalType,0,16,0,0,0,6,0,3,0,3
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.model,FieldType.MapType,0,16,0,0,0,6,0,3,0,3
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.model,FieldVector,6,19,0,0,1,6,1,3,1,3
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.model,FieldType,587,18,98,0,84,8,76,3,10,3
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.model,FieldType.IDs,0,135,0,0,0,23,0,1,0,1
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.model,FieldType.UnionType,0,4,0,0,0,2,0,1,0,1
 Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.model,ArrowConversion,7155,0,475,0,737,0,513,0,270,0
-Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.model,FieldType.StructType,10,0,0,0,4,0,2,0,2,0
-Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.model,RowSet,44,0,2,0,12,0,6,0,5,0
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.model,FieldType.StructType,0,10,0,0,0,4,0,2,0,2
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.model,RowSet,0,44,0,2,0,12,0,6,0,5
 Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server,DaggerServerComponent.Builder,17,0,0,0,4,0,2,0,2,0
 Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server,DaggerServerComponent.ServerComponentImpl,149,0,0,0,22,0,5,0,5,0
 Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server,ServerModule,206,0,6,0,48,0,20,0,17,0
