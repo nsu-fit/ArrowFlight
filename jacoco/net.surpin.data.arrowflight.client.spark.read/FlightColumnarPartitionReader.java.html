@@ -6,7 +6,6 @@ import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.arrow.vector.types.pojo.Schema;
 import org.apache.spark.sql.connector.read.InputPartition;
 import org.apache.spark.sql.connector.read.PartitionReader;
-import org.apache.spark.sql.vectorized.ArrowColumnVector;
 import org.apache.spark.sql.vectorized.ColumnVector;
 import org.apache.spark.sql.vectorized.ColumnarBatch;
 
@@ -24,82 +23,82 @@ public final class FlightColumnarPartitionReader implements PartitionReader&lt;C
     private ColumnarBatch current;
     private boolean schemaValidated;
 
-<span class="nc" id="L27">    public FlightColumnarPartitionReader(Configuration configuration, InputPartition partition) {</span>
-<span class="nc bnc" id="L28" title="All 2 branches missed.">        if (!(partition instanceof FlightInputPartition flightPartition)) {</span>
-<span class="nc" id="L29">            throw new IllegalArgumentException(&quot;Unsupported Flight input partition: &quot; + partition);</span>
+<span class="nc" id="L26">    public FlightColumnarPartitionReader(Configuration configuration, InputPartition partition) {</span>
+<span class="nc bnc" id="L27" title="All 2 branches missed.">        if (!(partition instanceof FlightInputPartition flightPartition)) {</span>
+<span class="nc" id="L28">            throw new IllegalArgumentException(&quot;Unsupported Flight input partition: &quot; + partition);</span>
         }
         try {
-<span class="nc" id="L32">            this.expectedSchema = flightPartition.getSchema();</span>
-<span class="nc" id="L33">        } catch (IOException e) {</span>
-<span class="nc" id="L34">            throw new IllegalArgumentException(&quot;Invalid Flight partition schema&quot;, e);</span>
-<span class="nc" id="L35">        }</span>
-<span class="nc" id="L36">        this.streamReader = new FlightPartitionReader(configuration, partition);</span>
-<span class="nc" id="L37">    }</span>
+<span class="nc" id="L31">            this.expectedSchema = flightPartition.getSchema();</span>
+<span class="nc" id="L32">        } catch (IOException e) {</span>
+<span class="nc" id="L33">            throw new IllegalArgumentException(&quot;Invalid Flight partition schema&quot;, e);</span>
+<span class="nc" id="L34">        }</span>
+<span class="nc" id="L35">        this.streamReader = new FlightPartitionReader(configuration, partition);</span>
+<span class="nc" id="L36">    }</span>
 
     @Override
     public boolean next() throws IOException {
-<span class="nc" id="L41">        this.current = null;</span>
-<span class="nc" id="L42">        boolean hasBatch = this.streamReader.nextBatch();</span>
-<span class="nc bnc" id="L43" title="All 4 branches missed.">        if (hasBatch &amp;&amp; !this.schemaValidated) {</span>
-<span class="nc" id="L44">            Schema actualSchema = this.streamReader.currentBatch().getSchema();</span>
-<span class="nc bnc" id="L45" title="All 2 branches missed.">            if (!compatible(this.expectedSchema, actualSchema)) {</span>
-<span class="nc" id="L46">                this.streamReader.close();</span>
-<span class="nc" id="L47">                throw new IOException(&quot;FlightInfo schema differs from Flight stream schema. Expected &quot;</span>
+<span class="nc" id="L40">        this.current = null;</span>
+<span class="nc" id="L41">        boolean hasBatch = this.streamReader.nextBatch();</span>
+<span class="nc bnc" id="L42" title="All 4 branches missed.">        if (hasBatch &amp;&amp; !this.schemaValidated) {</span>
+<span class="nc" id="L43">            Schema actualSchema = this.streamReader.currentBatch().getSchema();</span>
+<span class="nc bnc" id="L44" title="All 2 branches missed.">            if (!compatible(this.expectedSchema, actualSchema)) {</span>
+<span class="nc" id="L45">                this.streamReader.close();</span>
+<span class="nc" id="L46">                throw new IOException(&quot;FlightInfo schema differs from Flight stream schema. Expected &quot;</span>
                         + this.expectedSchema + &quot;, got &quot; + actualSchema);
             }
-<span class="nc" id="L50">            this.schemaValidated = true;</span>
+<span class="nc" id="L49">            this.schemaValidated = true;</span>
         }
-<span class="nc" id="L52">        return hasBatch;</span>
+<span class="nc" id="L51">        return hasBatch;</span>
     }
 
     @Override
     public ColumnarBatch get() {
-<span class="nc bnc" id="L57" title="All 2 branches missed.">        if (this.current == null) {</span>
-<span class="nc" id="L58">            VectorSchemaRoot root = this.streamReader.currentBatch();</span>
-<span class="nc" id="L59">            ColumnVector[] columns = root.getFieldVectors().stream()</span>
-<span class="nc" id="L60">                    .map(ArrowColumnVector::new)</span>
-<span class="nc" id="L61">                    .toArray(ColumnVector[]::new);</span>
-<span class="nc" id="L62">            this.current = new FlightOwnedColumnarBatch(columns, root.getRowCount());</span>
+<span class="nc bnc" id="L56" title="All 2 branches missed.">        if (this.current == null) {</span>
+<span class="nc" id="L57">            VectorSchemaRoot root = this.streamReader.currentBatch();</span>
+<span class="nc" id="L58">            ColumnVector[] columns = root.getFieldVectors().stream()</span>
+<span class="nc" id="L59">                    .map(FlightArrowColumnVector::new)</span>
+<span class="nc" id="L60">                    .toArray(ColumnVector[]::new);</span>
+<span class="nc" id="L61">            this.current = new FlightOwnedColumnarBatch(columns, root.getRowCount());</span>
         }
-<span class="nc" id="L64">        return this.current;</span>
+<span class="nc" id="L63">        return this.current;</span>
     }
 
     @Override
     public void close() {
-<span class="nc" id="L69">        this.current = null;</span>
-<span class="nc" id="L70">        this.streamReader.close();</span>
-<span class="nc" id="L71">    }</span>
+<span class="nc" id="L68">        this.current = null;</span>
+<span class="nc" id="L69">        this.streamReader.close();</span>
+<span class="nc" id="L70">    }</span>
 
     private static boolean compatible(Schema expected, Schema actual) {
-<span class="nc" id="L74">        List&lt;Field&gt; expectedFields = expected.getFields();</span>
-<span class="nc" id="L75">        List&lt;Field&gt; actualFields = actual.getFields();</span>
-<span class="nc bnc" id="L76" title="All 2 branches missed.">        if (expectedFields.size() != actualFields.size()) {</span>
-<span class="nc" id="L77">            return false;</span>
+<span class="nc" id="L73">        List&lt;Field&gt; expectedFields = expected.getFields();</span>
+<span class="nc" id="L74">        List&lt;Field&gt; actualFields = actual.getFields();</span>
+<span class="nc bnc" id="L75" title="All 2 branches missed.">        if (expectedFields.size() != actualFields.size()) {</span>
+<span class="nc" id="L76">            return false;</span>
         }
-<span class="nc bnc" id="L79" title="All 2 branches missed.">        for (int i = 0; i &lt; expectedFields.size(); i++) {</span>
-<span class="nc bnc" id="L80" title="All 2 branches missed.">            if (!compatible(expectedFields.get(i), actualFields.get(i))) {</span>
-<span class="nc" id="L81">                return false;</span>
+<span class="nc bnc" id="L78" title="All 2 branches missed.">        for (int i = 0; i &lt; expectedFields.size(); i++) {</span>
+<span class="nc bnc" id="L79" title="All 2 branches missed.">            if (!compatible(expectedFields.get(i), actualFields.get(i))) {</span>
+<span class="nc" id="L80">                return false;</span>
             }
         }
-<span class="nc" id="L84">        return true;</span>
+<span class="nc" id="L83">        return true;</span>
     }
 
     private static boolean compatible(Field expected, Field actual) {
-<span class="nc bnc" id="L88" title="All 2 branches missed.">        if (!expected.getName().equalsIgnoreCase(actual.getName())</span>
-<span class="nc bnc" id="L89" title="All 2 branches missed.">                || !expected.getType().equals(actual.getType())) {</span>
-<span class="nc" id="L90">            return false;</span>
+<span class="nc bnc" id="L87" title="All 2 branches missed.">        if (!expected.getName().equalsIgnoreCase(actual.getName())</span>
+<span class="nc bnc" id="L88" title="All 2 branches missed.">                || !expected.getType().equals(actual.getType())) {</span>
+<span class="nc" id="L89">            return false;</span>
         }
-<span class="nc" id="L92">        List&lt;Field&gt; expectedChildren = expected.getChildren();</span>
-<span class="nc" id="L93">        List&lt;Field&gt; actualChildren = actual.getChildren();</span>
-<span class="nc bnc" id="L94" title="All 2 branches missed.">        if (expectedChildren.size() != actualChildren.size()) {</span>
-<span class="nc" id="L95">            return false;</span>
+<span class="nc" id="L91">        List&lt;Field&gt; expectedChildren = expected.getChildren();</span>
+<span class="nc" id="L92">        List&lt;Field&gt; actualChildren = actual.getChildren();</span>
+<span class="nc bnc" id="L93" title="All 2 branches missed.">        if (expectedChildren.size() != actualChildren.size()) {</span>
+<span class="nc" id="L94">            return false;</span>
         }
-<span class="nc bnc" id="L97" title="All 2 branches missed.">        for (int i = 0; i &lt; expectedChildren.size(); i++) {</span>
-<span class="nc bnc" id="L98" title="All 2 branches missed.">            if (!compatible(expectedChildren.get(i), actualChildren.get(i))) {</span>
-<span class="nc" id="L99">                return false;</span>
+<span class="nc bnc" id="L96" title="All 2 branches missed.">        for (int i = 0; i &lt; expectedChildren.size(); i++) {</span>
+<span class="nc bnc" id="L97" title="All 2 branches missed.">            if (!compatible(expectedChildren.get(i), actualChildren.get(i))) {</span>
+<span class="nc" id="L98">                return false;</span>
             }
         }
-<span class="nc" id="L102">        return true;</span>
+<span class="nc" id="L101">        return true;</span>
     }
 
     /**
@@ -108,13 +107,13 @@ public final class FlightColumnarPartitionReader implements PartitionReader&lt;C
      */
     private static final class FlightOwnedColumnarBatch extends ColumnarBatch {
         private FlightOwnedColumnarBatch(ColumnVector[] columns, int numRows) {
-<span class="nc" id="L111">            super(columns, numRows);</span>
-<span class="nc" id="L112">        }</span>
+<span class="nc" id="L110">            super(columns, numRows);</span>
+<span class="nc" id="L111">        }</span>
 
         @Override
         public void close() {
             // Ownership remains with FlightPartitionReader/FlightStream.
-<span class="nc" id="L117">        }</span>
+<span class="nc" id="L116">        }</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

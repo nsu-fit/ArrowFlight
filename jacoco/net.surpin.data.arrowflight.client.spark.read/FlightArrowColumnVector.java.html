@@ -1,0 +1,241 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>FlightArrowColumnVector.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Hadoop Arrow Flight SQL Server</a> &gt; <a href="index.source.html" class="el_package">net.surpin.data.arrowflight.client.spark.read</a> &gt; <span class="el_source">FlightArrowColumnVector.java</span></div><h1>FlightArrowColumnVector.java</h1><pre class="source lang-java linenums">package net.surpin.data.arrowflight.client.spark.read;
+
+import net.surpin.data.arrowflight.client.model.FieldType;
+import org.apache.arrow.vector.BigIntVector;
+import org.apache.arrow.vector.BitVector;
+import org.apache.arrow.vector.DateDayVector;
+import org.apache.arrow.vector.DecimalVector;
+import org.apache.arrow.vector.FieldVector;
+import org.apache.arrow.vector.Float4Vector;
+import org.apache.arrow.vector.Float8Vector;
+import org.apache.arrow.vector.IntVector;
+import org.apache.arrow.vector.LargeVarBinaryVector;
+import org.apache.arrow.vector.LargeVarCharVector;
+import org.apache.arrow.vector.NullVector;
+import org.apache.arrow.vector.SmallIntVector;
+import org.apache.arrow.vector.TimeStampMicroTZVector;
+import org.apache.arrow.vector.TinyIntVector;
+import org.apache.arrow.vector.VarBinaryVector;
+import org.apache.arrow.vector.VarCharVector;
+import org.apache.arrow.vector.types.DateUnit;
+import org.apache.arrow.vector.types.FloatingPointPrecision;
+import org.apache.arrow.vector.types.TimeUnit;
+import org.apache.arrow.vector.types.pojo.ArrowType;
+import org.apache.spark.sql.types.DataType;
+import org.apache.spark.sql.types.Decimal;
+import org.apache.spark.sql.vectorized.ColumnarArray;
+import org.apache.spark.sql.vectorized.ColumnarMap;
+import org.apache.spark.sql.vectorized.ColumnVector;
+import org.apache.spark.unsafe.types.UTF8String;
+
+import java.math.BigDecimal;
+
+/**
+ * Spark column adapter backed by the Arrow vectors owned by a Flight stream.
+ *
+ * &lt;p&gt;This deliberately does not use Spark's {@code ArrowColumnVector}. Spark
+ * 3.5.1 was compiled against Arrow 12, while this connector and Flight use
+ * Arrow 18. Passing an Arrow 18 {@code ValueVector} into Spark's adapter crosses
+ * class-loader/version boundaries and fails at runtime even though the source
+ * compiles. This adapter keeps every Arrow type on the connector side and
+ * exposes only Spark's stable scalar {@link ColumnVector} API.&lt;/p&gt;
+ */
+final class FlightArrowColumnVector extends ColumnVector {
+    private final FieldVector vector;
+
+    FlightArrowColumnVector(FieldVector vector) {
+<span class="nc" id="L47">        super(toSparkType(vector));</span>
+<span class="nc" id="L48">        this.vector = vector;</span>
+<span class="nc" id="L49">    }</span>
+
+    /**
+     * The FlightStream owns the vector and releases it after the batch is consumed.
+     */
+    @Override
+    public void close() {
+        // no-op
+<span class="nc" id="L57">    }</span>
+
+    @Override
+    public boolean hasNull() {
+<span class="nc bnc" id="L61" title="All 2 branches missed.">        return this.vector.getNullCount() &gt; 0;</span>
+    }
+
+    @Override
+    public int numNulls() {
+<span class="nc" id="L66">        return this.vector.getNullCount();</span>
+    }
+
+    @Override
+    public boolean isNullAt(int rowId) {
+<span class="nc" id="L71">        return this.vector.isNull(rowId);</span>
+    }
+
+    @Override
+    public boolean getBoolean(int rowId) {
+<span class="nc bnc" id="L76" title="All 2 branches missed.">        return require(BitVector.class).get(rowId) != 0;</span>
+    }
+
+    @Override
+    public byte getByte(int rowId) {
+<span class="nc" id="L81">        return require(TinyIntVector.class).get(rowId);</span>
+    }
+
+    @Override
+    public short getShort(int rowId) {
+<span class="nc" id="L86">        return require(SmallIntVector.class).get(rowId);</span>
+    }
+
+    @Override
+    public int getInt(int rowId) {
+<span class="nc bnc" id="L91" title="All 2 branches missed.">        if (this.vector instanceof IntVector intVector) {</span>
+<span class="nc" id="L92">            return intVector.get(rowId);</span>
+        }
+<span class="nc bnc" id="L94" title="All 2 branches missed.">        if (this.vector instanceof DateDayVector dateVector) {</span>
+<span class="nc" id="L95">            return dateVector.get(rowId);</span>
+        }
+<span class="nc" id="L97">        throw unsupported(&quot;getInt&quot;);</span>
+    }
+
+    @Override
+    public long getLong(int rowId) {
+<span class="nc bnc" id="L102" title="All 2 branches missed.">        if (this.vector instanceof BigIntVector longVector) {</span>
+<span class="nc" id="L103">            return longVector.get(rowId);</span>
+        }
+<span class="nc bnc" id="L105" title="All 2 branches missed.">        if (this.vector instanceof TimeStampMicroTZVector timestampVector) {</span>
+<span class="nc" id="L106">            return timestampVector.get(rowId);</span>
+        }
+<span class="nc" id="L108">        throw unsupported(&quot;getLong&quot;);</span>
+    }
+
+    @Override
+    public float getFloat(int rowId) {
+<span class="nc" id="L113">        return require(Float4Vector.class).get(rowId);</span>
+    }
+
+    @Override
+    public double getDouble(int rowId) {
+<span class="nc" id="L118">        return require(Float8Vector.class).get(rowId);</span>
+    }
+
+    @Override
+    public Decimal getDecimal(int rowId, int precision, int scale) {
+<span class="nc bnc" id="L123" title="All 2 branches missed.">        if (this.isNullAt(rowId)) {</span>
+<span class="nc" id="L124">            return null;</span>
+        }
+<span class="nc" id="L126">        BigDecimal value = require(DecimalVector.class).getObject(rowId);</span>
+<span class="nc" id="L127">        return Decimal.apply(value, precision, scale);</span>
+    }
+
+    @Override
+    public UTF8String getUTF8String(int rowId) {
+<span class="nc bnc" id="L132" title="All 2 branches missed.">        if (this.isNullAt(rowId)) {</span>
+<span class="nc" id="L133">            return null;</span>
+        }
+<span class="nc bnc" id="L135" title="All 2 branches missed.">        if (this.vector instanceof VarCharVector stringVector) {</span>
+<span class="nc" id="L136">            return UTF8String.fromBytes(stringVector.get(rowId));</span>
+        }
+<span class="nc bnc" id="L138" title="All 2 branches missed.">        if (this.vector instanceof LargeVarCharVector stringVector) {</span>
+<span class="nc" id="L139">            return UTF8String.fromBytes(stringVector.get(rowId));</span>
+        }
+<span class="nc" id="L141">        throw unsupported(&quot;getUTF8String&quot;);</span>
+    }
+
+    @Override
+    public byte[] getBinary(int rowId) {
+<span class="nc bnc" id="L146" title="All 2 branches missed.">        if (this.isNullAt(rowId)) {</span>
+<span class="nc" id="L147">            return null;</span>
+        }
+<span class="nc bnc" id="L149" title="All 2 branches missed.">        if (this.vector instanceof VarBinaryVector binaryVector) {</span>
+<span class="nc" id="L150">            return binaryVector.get(rowId);</span>
+        }
+<span class="nc bnc" id="L152" title="All 2 branches missed.">        if (this.vector instanceof LargeVarBinaryVector binaryVector) {</span>
+<span class="nc" id="L153">            return binaryVector.get(rowId);</span>
+        }
+<span class="nc" id="L155">        throw unsupported(&quot;getBinary&quot;);</span>
+    }
+
+    @Override
+    public ColumnarArray getArray(int rowId) {
+<span class="nc" id="L160">        throw unsupported(&quot;getArray&quot;);</span>
+    }
+
+    @Override
+    public ColumnarMap getMap(int rowId) {
+<span class="nc" id="L165">        throw unsupported(&quot;getMap&quot;);</span>
+    }
+
+    @Override
+    public ColumnVector getChild(int ordinal) {
+<span class="nc" id="L170">        throw unsupported(&quot;getChild&quot;);</span>
+    }
+
+    private static DataType toSparkType(FieldVector vector) {
+<span class="nc bnc" id="L174" title="All 4 branches missed.">        if (vector == null || !matchesArrowType(vector)) {</span>
+<span class="nc bnc" id="L175" title="All 2 branches missed.">            String actual = vector == null ? &quot;null&quot; : vector.getClass().getName();</span>
+<span class="nc" id="L176">            throw new IllegalArgumentException(&quot;Unsupported Arrow vector for Spark columnar read: &quot;</span>
+                    + actual);
+        }
+<span class="nc" id="L179">        return FieldType.toSpark(FieldType.fromArrow(</span>
+<span class="nc" id="L180">                vector.getField().getType(), vector.getField().getChildren()));</span>
+    }
+
+    private static boolean matchesArrowType(FieldVector vector) {
+<span class="nc" id="L184">        ArrowType type = vector.getField().getType();</span>
+<span class="nc bnc" id="L185" title="All 12 branches missed.">        return switch (type.getTypeID()) {</span>
+<span class="nc" id="L186">            case Bool -&gt; vector instanceof BitVector;</span>
+<span class="nc" id="L187">            case Utf8 -&gt; vector instanceof VarCharVector;</span>
+<span class="nc" id="L188">            case LargeUtf8 -&gt; vector instanceof LargeVarCharVector;</span>
+<span class="nc" id="L189">            case Binary -&gt; vector instanceof VarBinaryVector;</span>
+<span class="nc" id="L190">            case LargeBinary -&gt; vector instanceof LargeVarBinaryVector;</span>
+<span class="nc" id="L191">            case Null -&gt; vector instanceof NullVector;</span>
+            case FloatingPoint -&gt; {
+<span class="nc" id="L193">                FloatingPointPrecision precision = ((ArrowType.FloatingPoint) type).getPrecision();</span>
+<span class="nc bnc" id="L194" title="All 8 branches missed.">                yield (precision == FloatingPointPrecision.SINGLE &amp;&amp; vector instanceof Float4Vector)</span>
+                        || (precision == FloatingPointPrecision.DOUBLE
+                        &amp;&amp; vector instanceof Float8Vector);
+            }
+            case Int -&gt; {
+<span class="nc" id="L199">                ArrowType.Int integer = (ArrowType.Int) type;</span>
+<span class="nc bnc" id="L200" title="All 7 branches missed.">                yield integer.getIsSigned() &amp;&amp; switch (integer.getBitWidth()) {</span>
+<span class="nc bnc" id="L201" title="All 2 branches missed.">                    case 8 -&gt; vector instanceof TinyIntVector;</span>
+<span class="nc bnc" id="L202" title="All 2 branches missed.">                    case 16 -&gt; vector instanceof SmallIntVector;</span>
+<span class="nc bnc" id="L203" title="All 2 branches missed.">                    case 32 -&gt; vector instanceof IntVector;</span>
+<span class="nc bnc" id="L204" title="All 2 branches missed.">                    case 64 -&gt; vector instanceof BigIntVector;</span>
+<span class="nc" id="L205">                    default -&gt; false;</span>
+                };
+            }
+            case Decimal -&gt; {
+<span class="nc" id="L209">                ArrowType.Decimal decimal = (ArrowType.Decimal) type;</span>
+<span class="nc" id="L210">                int precision = decimal.getPrecision();</span>
+<span class="nc" id="L211">                int scale = decimal.getScale();</span>
+<span class="nc bnc" id="L212" title="All 12 branches missed.">                yield decimal.getBitWidth() == 128</span>
+                        &amp;&amp; precision &gt;= 1 &amp;&amp; precision &lt;= 38
+                        &amp;&amp; scale &gt;= 0 &amp;&amp; scale &lt;= precision
+                        &amp;&amp; vector instanceof DecimalVector;
+            }
+<span class="nc bnc" id="L217" title="All 4 branches missed.">            case Date -&gt; ((ArrowType.Date) type).getUnit() == DateUnit.DAY</span>
+                    &amp;&amp; vector instanceof DateDayVector;
+            case Timestamp -&gt; {
+<span class="nc" id="L220">                ArrowType.Timestamp timestamp = (ArrowType.Timestamp) type;</span>
+<span class="nc bnc" id="L221" title="All 2 branches missed.">                yield timestamp.getUnit() == TimeUnit.MICROSECOND</span>
+<span class="nc bnc" id="L222" title="All 4 branches missed.">                        &amp;&amp; timestamp.getTimezone() != null</span>
+                        &amp;&amp; vector instanceof TimeStampMicroTZVector;
+            }
+<span class="nc" id="L225">            default -&gt; false;</span>
+        };
+    }
+
+    private &lt;T extends FieldVector&gt; T require(Class&lt;T&gt; expectedType) {
+<span class="nc bnc" id="L230" title="All 2 branches missed.">        if (!expectedType.isInstance(this.vector)) {</span>
+<span class="nc" id="L231">            throw unsupported(expectedType.getSimpleName());</span>
+        }
+<span class="nc" id="L233">        return expectedType.cast(this.vector);</span>
+    }
+
+    private UnsupportedOperationException unsupported(String operation) {
+<span class="nc" id="L237">        return new UnsupportedOperationException(operation + &quot; is not supported for Arrow vector &quot;</span>
+<span class="nc" id="L238">                + this.vector.getClass().getName());</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

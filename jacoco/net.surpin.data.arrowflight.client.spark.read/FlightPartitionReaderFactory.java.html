@@ -64,28 +64,40 @@ public class FlightPartitionReaderFactory implements PartitionReaderFactory {
     }
 
     private static boolean isColumnarType(Field field) {
-<span class="nc" id="L67">        ArrowType type = field.getType();</span>
-<span class="nc bnc" id="L68" title="All 7 branches missed.">        return switch (type.getTypeID()) {</span>
-<span class="nc" id="L69">            case Bool, Utf8, LargeUtf8, Binary, LargeBinary, Null -&gt; true;</span>
+<span class="nc bnc" id="L67" title="All 2 branches missed.">        if (field.getDictionary() != null) {</span>
+<span class="nc" id="L68">            return false;</span>
+        }
+<span class="nc" id="L70">        ArrowType type = field.getType();</span>
+<span class="nc bnc" id="L71" title="All 7 branches missed.">        return switch (type.getTypeID()) {</span>
+<span class="nc" id="L72">            case Bool, Utf8, LargeUtf8, Binary, LargeBinary, Null -&gt; true;</span>
             case FloatingPoint -&gt; {
-<span class="nc" id="L71">                FloatingPointPrecision precision = ((ArrowType.FloatingPoint) type).getPrecision();</span>
-<span class="nc bnc" id="L72" title="All 4 branches missed.">                yield precision == FloatingPointPrecision.SINGLE</span>
+<span class="nc" id="L74">                FloatingPointPrecision precision = ((ArrowType.FloatingPoint) type).getPrecision();</span>
+<span class="nc bnc" id="L75" title="All 4 branches missed.">                yield precision == FloatingPointPrecision.SINGLE</span>
                         || precision == FloatingPointPrecision.DOUBLE;
             }
-<span class="nc" id="L75">            case Int -&gt; ((ArrowType.Int) type).getIsSigned();</span>
-            case Decimal -&gt; {
-<span class="nc" id="L77">                ArrowType.Decimal decimal = (ArrowType.Decimal) type;</span>
-<span class="nc bnc" id="L78" title="All 4 branches missed.">                yield decimal.getBitWidth() == 128 &amp;&amp; decimal.getPrecision() &lt;= 38;</span>
+            case Int -&gt; {
+<span class="nc" id="L79">                ArrowType.Int integer = (ArrowType.Int) type;</span>
+<span class="nc" id="L80">                int bitWidth = integer.getBitWidth();</span>
+<span class="nc bnc" id="L81" title="All 10 branches missed.">                yield integer.getIsSigned()</span>
+                        &amp;&amp; (bitWidth == 8 || bitWidth == 16 || bitWidth == 32 || bitWidth == 64);
             }
-<span class="nc bnc" id="L80" title="All 2 branches missed.">            case Date -&gt; ((ArrowType.Date) type).getUnit() == DateUnit.DAY;</span>
+            case Decimal -&gt; {
+<span class="nc" id="L85">                ArrowType.Decimal decimal = (ArrowType.Decimal) type;</span>
+<span class="nc" id="L86">                int precision = decimal.getPrecision();</span>
+<span class="nc" id="L87">                int scale = decimal.getScale();</span>
+<span class="nc bnc" id="L88" title="All 10 branches missed.">                yield decimal.getBitWidth() == 128</span>
+                        &amp;&amp; precision &gt;= 1 &amp;&amp; precision &lt;= 38
+                        &amp;&amp; scale &gt;= 0 &amp;&amp; scale &lt;= precision;
+            }
+<span class="nc bnc" id="L92" title="All 2 branches missed.">            case Date -&gt; ((ArrowType.Date) type).getUnit() == DateUnit.DAY;</span>
             case Timestamp -&gt; {
-<span class="nc" id="L82">                ArrowType.Timestamp timestamp = (ArrowType.Timestamp) type;</span>
+<span class="nc" id="L94">                ArrowType.Timestamp timestamp = (ArrowType.Timestamp) type;</span>
                 // FieldType currently maps timestamps to Spark TimestampType, while
                 // Arrow timestamps without a zone map to TimestampNTZType.
-<span class="nc bnc" id="L85" title="All 2 branches missed.">                yield timestamp.getUnit() == TimeUnit.MICROSECOND</span>
-<span class="nc bnc" id="L86" title="All 2 branches missed.">                        &amp;&amp; timestamp.getTimezone() != null;</span>
+<span class="nc bnc" id="L97" title="All 2 branches missed.">                yield timestamp.getUnit() == TimeUnit.MICROSECOND</span>
+<span class="nc bnc" id="L98" title="All 2 branches missed.">                        &amp;&amp; timestamp.getTimezone() != null;</span>
             }
-<span class="nc" id="L88">            default -&gt; false;</span>
+<span class="nc" id="L100">            default -&gt; false;</span>
         };
     }
 }
