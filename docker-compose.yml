@@ -30,6 +30,7 @@ services:
       - spark-master
     volumes:
       - spark-warehouse:/spark-warehouse
+      - direct-parquet-data:/direct-data
     ports:
       - "8081:8081"
 
@@ -44,6 +45,7 @@ services:
       - spark-master
     volumes:
       - spark-warehouse:/spark-warehouse
+      - direct-parquet-data:/direct-data
     ports:
       - "8082:8082"
 
@@ -56,15 +58,22 @@ services:
       SPARK_DRIVER_HOST: spark-benchmark-publisher
       BENCHMARK_DATASET: "${BENCHMARK_DATASET:-tpch}"
       BENCHMARK_SCHEMA: "${BENCHMARK_SCHEMA:-tpch}"
+      BENCHMARK_SOURCE_SCHEMA: "${BENCHMARK_SOURCE_SCHEMA:-tpch}"
+      BENCHMARK_PUBLISH_MODE: "${BENCHMARK_PUBLISH_MODE:-flight}"
+      SPARK_PUBLISH_SCHEMA: "${SPARK_PUBLISH_SCHEMA:-}"
+      FLIGHT_PUBLISH_SCHEMA: "${FLIGHT_PUBLISH_SCHEMA:-tpch_flight}"
+      DIRECT_PUBLISH_SCHEMA: "${DIRECT_PUBLISH_SCHEMA:-tpch_direct}"
       FLIGHT_SOURCE_HOST: "${FLIGHT_SOURCE_HOST:-flight-server-1}"
       FLIGHT_SOURCE_PORT: "${FLIGHT_SOURCE_PORT:-32010}"
       FLIGHT_SERVER_DATA_DIRS: "${FLIGHT_SERVER_DATA_DIRS:-/server-data/flight-server-1,/server-data/flight-server-2,/server-data/flight-server-3}"
+      DIRECT_PARQUET_DIR: "${DIRECT_PARQUET_DIR:-/direct-data}"
       SPARK_WAREHOUSE_DIR: /spark-warehouse
       SPARK_METASTORE_DB: /spark-warehouse/metastore_db
     volumes:
       - flight-server-1-data:/server-data/flight-server-1
       - flight-server-2-data:/server-data/flight-server-2
       - flight-server-3-data:/server-data/flight-server-3
+      - direct-parquet-data:/direct-data
       - spark-warehouse:/spark-warehouse
     restart: "no"
 
@@ -77,11 +86,18 @@ services:
       BENCHMARK_DATASET: "${BENCHMARK_DATASET:-tpch}"
       BENCHMARK_SCHEMA: "${BENCHMARK_SCHEMA:-tpch}"
       BENCHMARK_SCALE_FACTOR: "${BENCHMARK_SCALE_FACTOR:-0.01}"
+      BENCHMARK_QUERY_SET: "${BENCHMARK_QUERY_SET:-}"
+      BENCHMARK_METADATA_OUT: "${BENCHMARK_METADATA_OUT:-}"
       FLIGHT_SERVER_DATA_DIRS: "${FLIGHT_SERVER_DATA_DIRS:-/server-data/flight-server-1,/server-data/flight-server-2,/server-data/flight-server-3}"
+      GENERATE_DIRECT_PARQUET: "${GENERATE_DIRECT_PARQUET:-false}"
+      DIRECT_PARQUET_DIR: "${DIRECT_PARQUET_DIR:-/direct-data}"
+      DIRECT_PARQUET_PARTITIONS: "${DIRECT_PARQUET_PARTITIONS:-}"
     volumes:
       - flight-server-1-data:/server-data/flight-server-1
       - flight-server-2-data:/server-data/flight-server-2
       - flight-server-3-data:/server-data/flight-server-3
+      - direct-parquet-data:/direct-data
+      - ./benchmarks/benchbase-spark/results:/benchbase/results
     restart: "no"
 
   spark-thrift-server:
@@ -100,6 +116,8 @@ services:
       - "4040:4040"
     volumes:
       - spark-warehouse:/spark-warehouse
+      - direct-parquet-data:/direct-data
+      - ./benchmarks/benchbase-spark/results:/benchbase/results
     healthcheck:
       test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/10000'"]
       interval: 5s
@@ -173,4 +191,5 @@ volumes:
   flight-server-1-data:
   flight-server-2-data:
   flight-server-3-data:
+  direct-parquet-data:
   spark-warehouse:

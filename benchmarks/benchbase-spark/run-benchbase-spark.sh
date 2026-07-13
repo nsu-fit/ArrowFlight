@@ -13,11 +13,15 @@ RESULTS_DIR="${RESULTS_ROOT}"
 CONFIG_DIR="${SCRIPT_DIR}/config"
 RESULTS_IN_CONTAINER="/benchbase/results"
 GENERATED_CONFIG_LOCAL=""
+GENERATED_CONFIGS=()
 EXEC_CONFIG_IN_CONTAINER="/benchbase/config/custom/${BENCHMARK}.xml"
 FLIGHT_SERVER_SERVICES=()
+COMPARE_PARENT_RUN_ID=""
 BENCHBASE_TIME_SECONDS="${BENCHBASE_TIME_SECONDS:-}"
 BENCHBASE_TERMINALS="${BENCHBASE_TERMINALS:-}"
 BENCHBASE_RATE="${BENCHBASE_RATE:-unlimited}"
+BENCHBASE_DB_SCHEMA="${BENCHBASE_DB_SCHEMA:-}"
+PYTHON_CMD=()
 
 usage() {
   cat >&2 <<'EOF'
@@ -30,9 +34,16 @@ Benchmarks:
 Modes:
   smoke    reset volumes, DuckDB generate Parquet, register Flight, verify Spark, execute small query set
   graph    reset volumes, run a timed TPC-H query set so the HTML report has chart points
+  compare  reset volumes, register Flight and direct Parquet tables, execute both
   fresh    reset volumes, DuckDB generate Parquet, register Flight, verify Spark, execute benchmark
   prepare  reset volumes, DuckDB generate Parquet, register Flight, verify Spark, start Spark Thrift
+  prepare-compare
+           reset volumes, generate Flight/direct data, register both schemas, start Spark Thrift
   run      execute BenchBase against already prepared Spark Flight tables
+  run-flight
+           execute BenchBase against <benchmark>_flight on an already prepared compare stack
+  run-direct
+           execute BenchBase against <benchmark>_direct on an already prepared compare stack
   report   build latest HTML report
   down     stop stack and remove Docker volumes
   logs     follow compose logs
@@ -43,7 +54,42 @@ EOF
 }
 
 compose() {
-  docker compose -f "${COMPOSE_FILE}" "$@"
+  local compose_file="${COMPOSE_FILE}"
+  if command -v cygpath >/dev/null 2>&1; then
+    compose_file="$(cygpath -w "${COMPOSE_FILE}")"
+    MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' docker compose -f "${compose_file}" "$@"
+  else
+    docker compose -f "${compose_file}" "$@"
+  fi
+}
+
+try_python() {
+  local -a candidate=("$@")
+  if command -v "${candidate[0]}" >/dev/null 2>&1 && "${candidate[@]}" --version >/dev/null 2>&1; then
+    PYTHON_CMD=("${candidate[@]}")
+    return 0
+  fi
+  return 1
+}
+
+detect_python() {
+  if try_python python3; then
+    return
+  elif try_python python; then
+    return
+  elif try_python py -3; then
+    return
+  else
+    echo "Python is required to generate BenchBase HTML reports." >&2
+    exit 2
+  fi
+}
+
+run_python() {
+  if (( ${#PYTHON_CMD[@]} == 0 )); then
+    detect_python
+  fi
+  "${PYTHON_CMD[@]}" "$@"
 }
 
 reset_stack() {
@@ -99,7 +145,11 @@ configure_cluster() {
   export FLIGHT_SOURCE_PORT="32010"
   export BENCHMARK_DATASET="${BENCHMARK}"
   export BENCHMARK_SCHEMA="${BENCHMARK}"
+  export BENCHMARK_SOURCE_SCHEMA="${BENCHMARK}"
+  export BENCHMARK_QUERY_SET="${QUERY_SET}"
   export BENCHMARK_SCALE_FACTOR="${BENCHMARK_SCALE_FACTOR:-0.01}"
+  export DIRECT_PARQUET_DIR="${DIRECT_PARQUET_DIR:-/direct-data}"
+  export DIRECT_PARQUET_PARTITIONS="${DIRECT_PARQUET_PARTITIONS:-${nodes}}"
 
   FLIGHT_HOSTS="$(join_by_comma "${hosts[@]}")"
   FLIGHT_SERVERS="$(join_by_comma "${servers[@]}")"
@@ -125,10 +175,15 @@ prepare_results_dir() {
   echo "Results directory: ${RESULTS_DIR}"
 }
 
+prepare_metadata_output() {
+  export BENCHMARK_METADATA_OUT="${RESULTS_IN_CONTAINER}/benchmark-metadata.json"
+}
+
 cleanup_generated_config() {
-  if [[ -n "${GENERATED_CONFIG_LOCAL}" && -f "${GENERATED_CONFIG_LOCAL}" ]]; then
-    rm -f "${GENERATED_CONFIG_LOCAL}"
-  fi
+  local file
+  for file in "${GENERATED_CONFIGS[@]}"; do
+    [[ -f "${file}" ]] && rm -f "${file}"
+  done
 }
 
 tpch_query_weights() {
@@ -176,8 +231,9 @@ tpch_query_weights() {
 
 prepare_execute_config() {
   EXEC_CONFIG_IN_CONTAINER="/benchbase/config/custom/${BENCHMARK}.xml"
+  local db_schema="${BENCHBASE_DB_SCHEMA:-${BENCHMARK}}"
 
-  if [[ -z "${QUERY_SET}" && -z "${BENCHBASE_TIME_SECONDS}" && -z "${BENCHBASE_TERMINALS}" ]]; then
+  if [[ -z "${QUERY_SET}" && -z "${BENCHBASE_TIME_SECONDS}" && -z "${BENCHBASE_TERMINALS}" && "${db_schema}" == "${BENCHMARK}" ]]; then
     return
   fi
 
@@ -187,16 +243,23 @@ prepare_execute_config() {
   fi
 
   local base_config="${CONFIG_DIR}/${BENCHMARK}.xml"
+  local safe_schema="${db_schema,,}"
+  safe_schema="${safe_schema//[^a-z0-9_]/-}"
   local safe_selector="${QUERY_SET:-all}"
   safe_selector="${safe_selector,,}"
   safe_selector="${safe_selector//[^a-z0-9,]/-}"
-  GENERATED_CONFIG_LOCAL="${CONFIG_DIR}/.${BENCHMARK}-${safe_selector}-${BENCHBASE_TIME_SECONDS:-serial}.xml"
+  GENERATED_CONFIG_LOCAL="${CONFIG_DIR}/.${BENCHMARK}-${safe_schema}-${safe_selector}-${BENCHBASE_TIME_SECONDS:-serial}.xml"
   cp "${base_config}" "${GENERATED_CONFIG_LOCAL}"
+  GENERATED_CONFIGS+=("${GENERATED_CONFIG_LOCAL}")
 
   if [[ -n "${QUERY_SET}" ]]; then
     local weights
     weights="$(tpch_query_weights)"
     sed -i "s#<weights>.*</weights>#      <weights>${weights}</weights>#" "${GENERATED_CONFIG_LOCAL}"
+  fi
+
+  if [[ "${db_schema}" != "${BENCHMARK}" ]]; then
+    sed -i "s#jdbc:hiveexec:hive2://spark-thrift-server:10000/[^<]*#jdbc:hiveexec:hive2://spark-thrift-server:10000/${db_schema}#" "${GENERATED_CONFIG_LOCAL}"
   fi
 
   if [[ -n "${BENCHBASE_TERMINALS}" ]]; then
@@ -263,15 +326,34 @@ wait_flight_servers() {
 register_flight_tables() {
   compose --profile benchbase run --rm --entrypoint bash spark-benchmark-publisher \
     -c "rm -rf /spark-warehouse/metastore_db && echo 'Cleaned stale Derby metastore'"
-  compose --profile benchbase run --rm spark-benchmark-publisher
+  compose --profile benchbase run --use-aliases --rm \
+    -e BENCHMARK_PUBLISH_MODE=flight \
+    -e BENCHMARK_SOURCE_SCHEMA="${BENCHMARK}" \
+    -e SPARK_PUBLISH_SCHEMA="${BENCHMARK}" \
+    spark-benchmark-publisher
+}
+
+register_compare_tables() {
+  compose --profile benchbase run --rm --entrypoint bash spark-benchmark-publisher \
+    -c "rm -rf /spark-warehouse/metastore_db && echo 'Cleaned stale Derby metastore'"
+  compose --profile benchbase run --use-aliases --rm \
+    -e BENCHMARK_PUBLISH_MODE=both \
+    -e BENCHMARK_SOURCE_SCHEMA="${BENCHMARK}" \
+    -e FLIGHT_PUBLISH_SCHEMA="${BENCHMARK}_flight" \
+    -e DIRECT_PUBLISH_SCHEMA="${BENCHMARK}_direct" \
+    spark-benchmark-publisher
 }
 
 generate_parquet_data() {
+  local direct="${1:-false}"
+  export GENERATE_DIRECT_PARQUET="${direct}"
   compose --profile benchbase build duckdb-benchmark-generator
   compose --profile benchbase run --rm duckdb-benchmark-generator
 }
 
-verify_spark_flight() {
+verify_spark_schema() {
+  local schema="$1"
+  local label="${2:-${schema}}"
   local table
   case "${BENCHMARK}" in
     tpch) table="nation" ;;
@@ -283,9 +365,18 @@ verify_spark_flight() {
     return
   fi
 
-  echo "Verifying Spark Thrift can read ${BENCHMARK}.${table} through Flight"
+  echo "Verifying Spark Thrift can read ${schema}.${table} (${label})"
   compose --profile benchbase exec -T spark-thrift-server bash -lc \
-    "printf '%s\n' 'SELECT COUNT(*) AS row_count FROM ${BENCHMARK}.${table};' > /tmp/verify-flight.sql && /opt/spark/bin/beeline -u 'jdbc:hive2://127.0.0.1:10000/${BENCHMARK}' -n benchbase -f /tmp/verify-flight.sql"
+    "printf '%s\n' 'SELECT COUNT(*) AS row_count FROM ${schema}.${table};' > /tmp/verify-${schema}.sql && /opt/spark/bin/beeline -u 'jdbc:hive2://127.0.0.1:10000/${schema}' -n benchbase -f /tmp/verify-${schema}.sql"
+}
+
+verify_spark_flight() {
+  verify_spark_schema "${BENCHMARK}" "Flight"
+}
+
+verify_compare_tables() {
+  verify_spark_schema "${BENCHMARK}_flight" "FlightSource"
+  verify_spark_schema "${BENCHMARK}_direct" "direct Parquet"
 }
 
 fail_on_benchbase_sql_errors() {
@@ -301,11 +392,92 @@ fail_on_benchbase_sql_errors() {
   fi
 }
 
+prune_inactive_query_csv() {
+  if [[ "${BENCHMARK}" != "tpch" || -z "${QUERY_SET}" ]]; then
+    return
+  fi
+
+  local normalized="${QUERY_SET,,}"
+  normalized="${normalized// /}"
+  local -A active_queries=()
+  local token
+  IFS=',' read -ra tokens <<< "${normalized}"
+  for token in "${tokens[@]}"; do
+    token="${token#q}"
+    if [[ "${token}" =~ ^[0-9]+$ ]]; then
+      active_queries[$((10#${token}))]=1
+    fi
+  done
+
+  local file name query_id pruned=0
+  shopt -s nullglob
+  for file in "${RESULTS_DIR}"/*.results.Q*.csv; do
+    name="$(basename "${file}")"
+    query_id="${name##*.results.Q}"
+    query_id="${query_id%.csv}"
+    if [[ "${query_id}" =~ ^[0-9]+$ && -z "${active_queries[$((10#${query_id}))]+x}" ]]; then
+      rm -f "${file}"
+      pruned=$((pruned + 1))
+    fi
+  done
+  shopt -u nullglob
+
+  if (( pruned > 0 )); then
+    echo "Removed ${pruned} inactive per-query CSV file(s) from ${RESULTS_DIR}"
+  fi
+}
+
+metadata_file_for_results() {
+  if [[ -f "${RESULTS_DIR}/benchmark-metadata.json" ]]; then
+    echo "${RESULTS_DIR}/benchmark-metadata.json"
+  elif [[ -f "$(dirname "${RESULTS_DIR}")/benchmark-metadata.json" ]]; then
+    echo "$(dirname "${RESULTS_DIR}")/benchmark-metadata.json"
+  else
+    echo ""
+  fi
+}
+
+capture_query_results() {
+  local metadata_file
+  metadata_file="$(metadata_file_for_results)"
+  if [[ -z "${metadata_file}" ]]; then
+    return
+  fi
+
+  run_python "${SCRIPT_DIR}/capture-query-results.py" \
+    --metadata "${metadata_file}" \
+    --results "${RESULTS_DIR}" >/dev/null
+
+  local db_schema="${BENCHBASE_DB_SCHEMA:-${BENCHMARK}}"
+  local sql_file name sql_in_container out_in_container
+  shopt -s nullglob
+  for sql_file in "${RESULTS_DIR}"/query-q*.sql; do
+    name="$(basename "${sql_file}")"
+    sql_in_container="${RESULTS_IN_CONTAINER}/${name}"
+    out_in_container="${RESULTS_IN_CONTAINER}/${name%.sql}.actual.csv"
+    if ! compose --profile benchbase exec -T spark-thrift-server bash -lc \
+      "/opt/spark/bin/beeline --silent=true --showHeader=true --outputformat=csv2 -u 'jdbc:hive2://127.0.0.1:10000/${db_schema}' -n benchbase -f '${sql_in_container}' > '${out_in_container}'"; then
+      echo "Could not capture actual result for ${name} in schema ${db_schema}" >&2
+    fi
+  done
+  shopt -u nullglob
+}
+
+build_html_report() {
+  run_python "${SCRIPT_DIR}/visualize-results.py" --results "${RESULTS_DIR}"
+}
+
+build_compare_html_report() {
+  run_python "${SCRIPT_DIR}/visualize-results.py" --compare --results "${RESULTS_DIR}"
+}
+
 benchbase_execute() {
+  prepare_execute_config
   prepare_results_dir
   compose --profile benchbase build benchbase-spark
 
-  local log_file="${RESULTS_DIR}/last-${BENCHMARK}.log"
+  local db_schema="${BENCHBASE_DB_SCHEMA:-${BENCHMARK}}"
+  local log_file="${RESULTS_DIR}/last-${BENCHMARK}-${db_schema}.log"
   set +e
   compose --profile benchbase run --rm benchbase-spark \
     -b "${BENCHMARK}" \
@@ -321,16 +493,58 @@ benchbase_execute() {
     exit "${benchbase_status}"
   fi
   fail_on_benchbase_sql_errors "${log_file}"
+  prune_inactive_query_csv
+  capture_query_results
+  build_html_report
 }
 
 prepare_stack() {
-  generate_parquet_data
+  generate_parquet_data false
   start_flight_servers
   wait_flight_servers
   start_spark
   register_flight_tables
   start_thrift
   verify_spark_flight
+}
+
+prepare_compare_stack() {
+  generate_parquet_data true
+  start_flight_servers
+  wait_flight_servers
+  start_spark
+  register_compare_tables
+  start_thrift
+  verify_compare_tables
+}
+
+compare_execute() {
+  local parent_run_id="${COMPARE_PARENT_RUN_ID}"
+
+  BENCHBASE_DB_SCHEMA="${BENCHMARK}_flight"
+  RESULTS_RUN_ID="${parent_run_id}/flight"
+  benchbase_execute
+
+  BENCHBASE_DB_SCHEMA="${BENCHMARK}_direct"
+  RESULTS_RUN_ID="${parent_run_id}/direct"
+  benchbase_execute
+
+  RESULTS_RUN_ID="${parent_run_id}"
+  RESULTS_DIR="${RESULTS_ROOT}/${RESULTS_RUN_ID}"
+  RESULTS_IN_CONTAINER="/benchbase/results/${RESULTS_RUN_ID}"
+  build_compare_html_report
+
+  echo "Compare results written under ${RESULTS_ROOT}/${parent_run_id}"
+}
+
+init_compare_run() {
+  local query_label="${QUERY_SET:-all}"
+  query_label="${query_label,,}"
+  query_label="${query_label//[^a-z0-9,]/-}"
+  COMPARE_PARENT_RUN_ID="${BENCHMARK}-compare-${query_label}-$(date +%Y%m%d-%H%M%S)"
+  RESULTS_RUN_ID="${COMPARE_PARENT_RUN_ID}"
+  prepare_results_dir
+  prepare_metadata_output
 }
 
 normalize_benchmark
@@ -349,36 +563,64 @@ if [[ "${MODE}" == "smoke" && "${BENCHMARK}" == "tpch" && -z "${QUERY_SET}" ]]; 
   QUERY_SET="q6"
 fi
 
-if [[ "${MODE}" == "graph" ]]; then
+if [[ "${MODE}" == "graph" || "${MODE}" == "compare" ]]; then
   if [[ "${BENCHMARK}" != "tpch" ]]; then
-    echo "graph mode is currently supported only for TPC-H." >&2
+    echo "${MODE} mode is currently supported only for TPC-H." >&2
     exit 2
   fi
   QUERY_SET="${QUERY_SET:-q6}"
-  BENCHBASE_TIME_SECONDS="${BENCHBASE_TIME_SECONDS:-30}"
+  BENCHBASE_TIME_SECONDS="${BENCHBASE_TIME_SECONDS:-60}"
   BENCHBASE_TERMINALS="${BENCHBASE_TERMINALS:-1}"
 fi
 
 configure_cluster
-prepare_execute_config
 
 case "${MODE}" in
   smoke|fresh|graph)
+    prepare_results_dir
+    prepare_metadata_output
     reset_stack
     prepare_stack
     benchbase_execute
     ;;
   prepare)
+    prepare_results_dir
+    prepare_metadata_output
     reset_stack
     prepare_stack
     ;;
+  compare)
+    init_compare_run
+    reset_stack
+    prepare_compare_stack
+    compare_execute
+    ;;
+  prepare-compare)
+    init_compare_run
+    reset_stack
+    prepare_compare_stack
+    ;;
   run)
+    BENCHBASE_DB_SCHEMA="${BENCHMARK}"
     start_thrift
     verify_spark_flight
     benchbase_execute
     ;;
+  run-flight)
+    BENCHBASE_DB_SCHEMA="${BENCHMARK}_flight"
+    start_thrift
+    verify_spark_schema "${BENCHBASE_DB_SCHEMA}" "FlightSource"
+    benchbase_execute
+    ;;
+  run-direct)
+    BENCHBASE_DB_SCHEMA="${BENCHMARK}_direct"
+    start_thrift
+    verify_spark_schema "${BENCHBASE_DB_SCHEMA}" "direct Parquet"
+    benchbase_execute
+    ;;
   report)
-    python3 "${SCRIPT_DIR}/visualize-results.py"
+    RESULTS_DIR="${RESULTS_ROOT}"
+    build_html_report
     ;;
   down)
     reset_stack
