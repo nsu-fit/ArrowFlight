@@ -24,7 +24,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     environment:
-      name: github-pages
+      name: ${{ github.ref_name == 'main' && 'github-pages' || 'benchmark-pages' }}
       url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
