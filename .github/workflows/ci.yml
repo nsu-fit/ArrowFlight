@@ -114,16 +114,14 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./target/site
+          publish_dir: ./target/site/jacoco
           destination_dir: jacoco
-          keep_files: true
 
       - name: Deploy JaCoCo report to gh-pages (PR)
         uses: peaceiris/actions-gh-pages@v4
         if: github.event_name == 'pull_request'
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./target/site
+          publish_dir: ./target/site/jacoco
           destination_dir: pr-${{ github.event.number }}
-          keep_files: true
 
