@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>FlightInputPartition.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Hadoop Arrow Flight SQL Server</a> &gt; <a href="index.source.html" class="el_package">net.surpin.data.arrowflight.client.spark.read</a> &gt; <span class="el_source">FlightInputPartition.java</span></div><h1>FlightInputPartition.java</h1><pre class="source lang-java linenums">package net.surpin.data.arrowflight.client.spark.read;
+
+import net.surpin.data.arrowflight.client.query.Endpoint;
+import org.apache.arrow.vector.types.pojo.Schema;
+import org.apache.spark.sql.connector.read.InputPartition;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.io.Serializable;
+
+/**
+ * Describes the data-structure of flight input-partitions
+ */
+public class FlightInputPartition implements InputPartition, Serializable {
+<span class="nc" id="L16">    private static final Logger LOGGER = LoggerFactory.getLogger(FlightInputPartition.class);</span>
+
+    /**
+     * The input-partition with end-points
+     */
+    public static class FlightEndpointInputPartition extends FlightInputPartition {
+        private final Endpoint ep;
+
+        /**
+         * Construct a flight end-point input-partition
+         * @param schema - the schema of the partition
+         * @param ep - the end-point of the partition
+         */
+        public FlightEndpointInputPartition(Schema schema, Endpoint ep) {
+<span class="nc" id="L30">            super(schema);</span>
+<span class="nc" id="L31">            this.ep = ep;</span>
+<span class="nc" id="L32">        }</span>
+
+        /**
+         * Get the end-point of the input-partition
+         * @return - the end-point of the input partition
+         */
+        public Endpoint getEndpoint() {
+<span class="nc" id="L39">            return this.ep;</span>
+        }
+    }
+
+    /**
+     * The input-partition with query
+     */
+    public static class FlightQueryInputPartition extends FlightInputPartition {
+        private final String query;
+
+        /**
+         * Construct a flight query input-partition
+         * @param schema - the schema of the partition
+         * @param query - the query for the partition
+         */
+        public FlightQueryInputPartition(Schema schema, String query) {
+<span class="nc" id="L55">            super(schema);</span>
+<span class="nc" id="L56">            this.query = query;</span>
+<span class="nc" id="L57">        }</span>
+
+        /**
+         * Get the query of the input-partition
+         * @return - the query of the input-partition
+         */
+        public String getQuery() {
+<span class="nc" id="L64">            return this.query;</span>
+        }
+    }
+
+    //the schema of the input partition
+    private final String schema;
+
+    /**
+     * Construct a flight-input-partition
+     * @param schema - the schema of the partition
+     */
+<span class="nc" id="L75">    protected FlightInputPartition(Schema schema) {</span>
+<span class="nc" id="L76">        this.schema = schema.toJson();</span>
+<span class="nc" id="L77">    }</span>
+
+    /**
+     * Get the schema of the partition
+     * @return - the schema of the partition
+     * @throws IOException - thrown when the schema is in invalid json format.
+     */
+    public Schema getSchema() throws IOException {
+<span class="nc" id="L85">        return Schema.fromJSON(this.schema);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>
