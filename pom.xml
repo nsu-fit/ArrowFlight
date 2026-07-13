@@ -367,6 +367,9 @@
                     <failsOnError>true</failsOnError>
                     <failOnViolation>${checkstyle.failOnViolation}</failOnViolation>
                     <includeTestSourceDirectory>false</includeTestSourceDirectory>
+                    <sourceDirectories>
+                        <sourceDirectory>${project.basedir}/src/main/java</sourceDirectory>
+                    </sourceDirectories>
                     <violationSeverity>warning</violationSeverity>
                 </configuration>
 
