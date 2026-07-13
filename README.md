@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/nsu-fit/ArrowFlight/actions/workflows/ci.yml/badge.svg)](https://github.com/nsu-fit/ArrowFlight/actions/workflows/ci.yml)
 [![Coveralls](https://coveralls.io/repos/github/nsu-fit/ArrowFlight/badge.svg)](https://coveralls.io/github/nsu-fit/ArrowFlight)
-[![Jacoco Report](https://nsu-fit.github.io/ArrowFlight/jacoco/badge.svg)](https://nsu-fit.github.io/ArrowFlight/jacoco/)
+[![Jacoco Report](https://nsu-fit.github.io/ArrowFlight/jacoco/jacoco.svg)](https://nsu-fit.github.io/ArrowFlight/jacoco/)
 [![Benchmark Pages](https://github.com/nsu-fit/ArrowFlight/actions/workflows/benchmark-pages.yml/badge.svg)](https://github.com/nsu-fit/ArrowFlight/actions/workflows/benchmark-pages.yml)
 [![Benchmark Dashboard](https://img.shields.io/badge/Benchmarks-GitHub_Pages-blue)](https://nsu-fit.github.io/ArrowFlight/)
 

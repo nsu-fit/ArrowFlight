@@ -78,6 +78,7 @@ jobs:
         with:
           generate-branches-badge: true
           badges-directory: target/site/jacoco
+          coverage-label: JaCoCo
         if: always()
 
       - name: Upload JaCoCo report
