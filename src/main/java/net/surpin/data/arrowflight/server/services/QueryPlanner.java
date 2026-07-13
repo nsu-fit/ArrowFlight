@@ -11,6 +11,7 @@ import com.google.protobuf.ByteString;
 import org.apache.arrow.flight.sql.impl.FlightSql;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -52,11 +53,16 @@ public final class QueryPlanner {
     public QueryPlanner(ParquetAdapter parquetAdapter, ClusterService clusterService) {
         this.parquetAdapter = parquetAdapter;
         this.clusterService = clusterService;
+        try {
+            this.clusterService.registerLocalFiles(this.parquetAdapter.localFileInventory());
+        } catch (IOException e) {
+            throw new UncheckedIOException("Unable to publish local Parquet inventory", e);
+        }
     }
 
     /**
      * Determines Flight endpoints for a SQL query, distributing files across live servers.
-     * Handles JOIN queries specially — single-server if all files are local, per-table split otherwise.
+     * Handles JOIN queries only when one node owns every required shard.
      *
      * @param query SQL query
      * @return list of Flight endpoints
@@ -64,18 +70,16 @@ public final class QueryPlanner {
      */
     public List<FlightEndpoint> determineEndpoints(String query)
             throws IOException {
-        Map<String, FileAssignment> pathLocations = parquetAdapter.locationsForQuery(query);
+        ParquetQueryParser parsed = ParquetQueryParser.parse(query);
 
         Set<String> allServerUris = new LinkedHashSet<>(clusterService.allServerLoads().keySet());
         if (allServerUris.isEmpty()) {
-            LOGGER.info("Server registry is empty, falling back to self");
-            allServerUris = Set.of(clusterService.serverUri());
+            throw new IOException("Flight server registry is empty");
         }
 
         allServerUris = clusterService.filterLiveServers(allServerUris);
         if (allServerUris.isEmpty()) {
-            LOGGER.info("No live servers found, falling back to self");
-            allServerUris = Set.of(clusterService.serverUri());
+            throw new IOException("No live Flight servers are registered");
         }
 
         Map<String, Long> serverLoad = new HashMap<>(
@@ -84,7 +88,25 @@ public final class QueryPlanner {
             serverLoad.putIfAbsent(uri, 0L);
         }
 
-        ParquetQueryParser parsed = ParquetQueryParser.parse(query);
+        Set<String> missingInventories = allServerUris.stream()
+                .filter(uri -> !clusterService.hasFileInventory(uri))
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        if (!missingInventories.isEmpty()) {
+            throw new IOException("Flight nodes have not published file inventories: " + missingInventories);
+        }
+
+        Map<String, FileAssignment> pathLocations = filterForQuery(
+                clusterService.fileLocations(), parsed);
+        if (pathLocations.isEmpty()) {
+            throw new IOException("No distributed Parquet files found for query: " + query);
+        }
+        for (Map.Entry<String, FileAssignment> file : pathLocations.entrySet()) {
+            boolean hasLiveOwner = file.getValue().hosts().stream().anyMatch(allServerUris::contains);
+            if (!hasLiveOwner) {
+                throw new IOException("No live Flight node owns required shard: " + file.getKey());
+            }
+        }
+        requireShardCoverage(pathLocations, parsed, allServerUris);
 
         if (parsed.isJoin) {
             String allFilesServer = findServerWithAllFiles(pathLocations, allServerUris);
@@ -96,29 +118,9 @@ public final class QueryPlanner {
                 clusterService.addLoad(allFilesServer, addedBytes);
                 return List.of(ep);
             }
-            LOGGER.info("Join query spans multiple servers; splitting into per-table reads");
-            List<FlightEndpoint> endpoints = new ArrayList<>();
-            Map<String, Set<String>> seenTables = new LinkedHashMap<>();
-            for (String path : pathLocations.keySet()) {
-                String table = extractTableFromPath(path);
-                seenTables.computeIfAbsent(table, k -> new LinkedHashSet<>()).add(path);
-            }
-            for (Map.Entry<String, Set<String>> entry : seenTables.entrySet()) {
-                String perTableQuery = "SELECT * FROM " + entry.getKey();
-                Map<String, FileAssignment> tableLocations = new LinkedHashMap<>();
-                for (String tablePath : entry.getValue()) {
-                    tableLocations.put(tablePath, pathLocations.get(tablePath));
-                }
-                Map<String, List<String>> byServer = groupFilesByServer(tableLocations, serverLoad);
-                for (Map.Entry<String, List<String>> e : byServer.entrySet()) {
-                    long addedBytes = e.getValue().stream()
-                            .mapToLong(p -> tableLocations.get(p).size())
-                            .sum();
-                    endpoints.add(createEndpoint(e.getKey(), e.getValue(), perTableQuery, addedBytes));
-                    clusterService.addLoad(e.getKey(), addedBytes);
-                }
-            }
-            return endpoints;
+            throw new IOException(
+                    "Server-side joins require all input shards on one Flight node; "
+                            + "Spark must execute this distributed join");
         }
 
         Map<String, List<String>> serverToFiles = new LinkedHashMap<>();
@@ -143,6 +145,64 @@ public final class QueryPlanner {
         return endpoints;
     }
 
+    private static Map<String, FileAssignment> filterForQuery(
+            Map<String, FileAssignment> inventory, ParquetQueryParser query) {
+        Map<String, FileAssignment> result = new LinkedHashMap<>();
+        for (Map.Entry<String, FileAssignment> file : inventory.entrySet()) {
+            boolean matches;
+            if (query.isJoin) {
+                matches = query.joinTables.stream().anyMatch(table ->
+                        belongsToTable(file.getKey(), table.schema(), table.table()));
+            } else {
+                matches = belongsToTable(file.getKey(), query.schema, query.table);
+            }
+            if (matches) {
+                result.put(file.getKey(), file.getValue());
+            }
+        }
+        return result;
+    }
+
+    private static boolean belongsToTable(String path, String schema, String table) {
+        String normalized = path.replace('\\', '/');
+        if (schema == null || schema.isEmpty()) {
+            String parent = extractTableFromPath(normalized);
+            return parent.equalsIgnoreCase(table)
+                    || parent.toLowerCase().endsWith("." + table.toLowerCase());
+        }
+        String prefix = schema + "/" + table + "/";
+        return normalized.regionMatches(true, 0, prefix, 0, prefix.length());
+    }
+
+    /**
+     * The benchmark generator writes one shard (possibly empty) for every table
+     * on every configured node. Requiring that coverage prevents an empty or
+     * incomplete inventory from being mistaken for a complete distributed table.
+     */
+    private static void requireShardCoverage(Map<String, FileAssignment> files,
+            ParquetQueryParser query, Set<String> liveServers) throws IOException {
+        for (String server : liveServers) {
+            if (query.isJoin) {
+                for (ParquetQueryParser.JoinTable table : query.joinTables) {
+                    if (!ownsTableShard(files, server, table.schema(), table.table())) {
+                        throw new IOException("Flight node " + server
+                                + " has no shard for required table " + table.table());
+                    }
+                }
+            } else if (!ownsTableShard(files, server, query.schema, query.table)) {
+                throw new IOException("Flight node " + server
+                        + " has no shard for required table " + query.table);
+            }
+        }
+    }
+
+    private static boolean ownsTableShard(Map<String, FileAssignment> files,
+            String server, String schema, String table) {
+        return files.entrySet().stream().anyMatch(file ->
+                file.getValue().hosts().contains(server)
+                        && belongsToTable(file.getKey(), schema, table));
+    }
+
     /**
      * Creates a Flight endpoint for a set of files assigned to a server.
      *
@@ -155,7 +215,10 @@ public final class QueryPlanner {
     public FlightEndpoint createEndpoint(String serverUri, List<String> filePaths,
             String query, long bytes) {
         URI parsedUri = URI.create(serverUri);
-        Location serverLoc = Location.forGrpcInsecure(parsedUri.getHost(), parsedUri.getPort());
+        // Preserve the registered URI (including grpc+tls). Reconstructing every
+        // location as insecure both loses transport information and can cause the
+        // client to send a ticket to the wrong connection.
+        Location serverLoc = new Location(parsedUri);
         ByteString serverHandle = ByteString.copyFrom(
                 randomUUID().toString().getBytes(StandardCharsets.UTF_8));
         clusterService.storeHandle(serverHandle.toStringUtf8(),

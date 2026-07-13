@@ -15,8 +15,13 @@ import org.apache.spark.sql.types.StructType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.io.Serializable;
+import java.sql.Date;
+import java.sql.Time;
+import java.sql.Timestamp;
+import java.time.temporal.TemporalAccessor;
 import java.util.Arrays;
 import java.util.Hashtable;
+import java.util.Optional;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 
@@ -92,6 +97,17 @@ public final class Table implements Serializable {
     }
 
     /**
+     * Seeds schema metadata restored from Spark's persisted catalog entry.
+     * No Flight query is submitted; the actual scan still obtains its Arrow
+     * schema and endpoints after pushdown has been applied.
+     *
+     * @param sparkSchema persisted Spark schema
+     */
+    public void setSparkSchema(StructType sparkSchema) {
+        this.sparkSchema = sparkSchema;
+    }
+
+    /**
      * Get the end-points
      * @return - end-points exposed by the remote flight service upon submitted query
      */
@@ -116,6 +132,21 @@ public final class Table implements Serializable {
     }
 
     /**
+     * Creates an independent table state for one Spark scan.
+     *
+     * <p>Projection and filter pushdown mutate the physical statement, schema and
+     * endpoints. A relation may be planned more than once, so sharing that mutable
+     * state between scans can reuse endpoints for an older query.</p>
+     *
+     * @return a table with the same source and quoting rules and a fresh scan state
+     */
+    public Table newScan() {
+        Table scan = new Table(this.name, this.columnQuote);
+        scan.sparkSchema = this.sparkSchema;
+        return scan;
+    }
+
+    /**
      * Initialize the schema and end-points by submitting the physical query
      * @param config - the connection configuration
      */
@@ -129,6 +160,29 @@ public final class Table implements Serializable {
             this.sparkSchema = new StructType(Arrays.stream(Field.from(eps.getSchema())).map(fs -> new StructField(fs.getName(), FieldType.toSpark(fs.getType()), true, Metadata.empty())).toArray(StructField[]::new));
             this.schema = eps.getSchema();
             this.endpoints = eps.getEndpoints();
+        } catch (Exception e) {
+            LOGGER.error(e.getMessage(), e);
+            throw new RuntimeException(e);
+        }
+    }
+
+    /**
+     * Initializes result schema without allocating endpoints or server handles.
+     * Used during Spark catalog/table schema inference; the real scan is planned
+     * only after pushdown is known.
+     *
+     * @param config connection configuration
+     */
+    public void initializeSchema(Configuration config) {
+        LOGGER.info("Table.initializeSchema(): config: {}", config);
+        try {
+            Schema resultSchema = Client.getOrCreate(config).getQuerySchema(this.getQueryStatement());
+            this.sparkSchema = new StructType(Arrays.stream(Field.from(resultSchema))
+                    .map(fs -> new StructField(fs.getName(), FieldType.toSpark(fs.getType()),
+                            true, Metadata.empty()))
+                    .toArray(StructField[]::new));
+            this.schema = resultSchema;
+            this.endpoints = new Endpoint[0];
         } catch (Exception e) {
             LOGGER.error(e.getMessage(), e);
             throw new RuntimeException(e);
@@ -169,9 +223,8 @@ public final class Table implements Serializable {
             this.stmt = stmt;
         }
 
-        if (aggMode == 1) {
-            this.partitionStmts.clear();
-        } else if (partitionBehavior != null && partitionBehavior.enabled()) {
+        this.partitionStmts.clear();
+        if (aggMode != 1 && partitionBehavior != null && partitionBehavior.enabled()) {
             String where = (filter != null && !filter.isEmpty()) ? String.format("(%s) and ", filter) : "";
             BiFunction<StructField[], StructField[], StructField[]> merge = (s1, s2) -> {
                 Hashtable<String, StructField> s = new Hashtable<String, StructField>();
@@ -200,57 +253,151 @@ public final class Table implements Serializable {
      * @return SQL WHERE clause string
      */
     public String toWhereClause(Filter filter) {
-        StringBuilder sb = new StringBuilder();
-        if (filter instanceof EqualTo) {
-            EqualTo et = (EqualTo) filter;
-            sb.append((et.value() instanceof Number)
-                ? String.format("%s%s%s = %s", this.columnQuote, et.attribute(), this.columnQuote, et.value().toString())
-                : String.format("%s%s%s = '%s'", this.columnQuote, et.attribute(), this.columnQuote, et.value().toString())
-            );
-        } else if (filter instanceof EqualNullSafe) {
-            EqualNullSafe ens = (EqualNullSafe) filter;
-            sb.append(String.format("((%s%s%s is null and %s is null) or (%s%s%s is not null and %s is not null))", this.columnQuote, ens.attribute(), this.columnQuote, ens.value(), this.columnQuote, ens.attribute(), this.columnQuote, ens.value()));
-        } else if (filter instanceof LessThan) {
-            LessThan lt = (LessThan) filter;
-            sb.append((lt.value() instanceof Number) ? String.format("%s%s%s < %s", this.columnQuote, lt.attribute(), this.columnQuote, lt.value()) : String.format("%s%s%s < '%s'", this.columnQuote, lt.attribute(), this.columnQuote, lt.value()));
-        } else if (filter instanceof LessThanOrEqual) {
-            LessThanOrEqual lt = (LessThanOrEqual) filter;
-            sb.append((lt.value() instanceof Number) ? String.format("%s%s%s <= %s", this.columnQuote, lt.attribute(), this.columnQuote, lt.value()) : String.format("%s%s%s <= '%s'", this.columnQuote, lt.attribute(), this.columnQuote, lt.value()));
-        } else if (filter instanceof GreaterThan) {
-            GreaterThan gt = (GreaterThan) filter;
-            sb.append((gt.value() instanceof Number) ? String.format("%s%s%s > %s", this.columnQuote, gt.attribute(), this.columnQuote, gt.value()) : String.format("%s%s%s > '%s'", this.columnQuote, gt.attribute(), this.columnQuote, gt.value()));
-        } else if (filter instanceof GreaterThanOrEqual) {
-            GreaterThanOrEqual gt = (GreaterThanOrEqual) filter;
-            sb.append((gt.value() instanceof Number) ? String.format("%s%s%s >= %s", this.columnQuote, gt.attribute(), this.columnQuote, gt.value()) : String.format("%s%s%s >= '%s'", this.columnQuote, gt.attribute(), this.columnQuote, gt.value()));
-        } else if (filter instanceof And) {
-            And and = (And) filter;
-            sb.append(String.format("(%s and %s)", toWhereClause(and.left()), toWhereClause(and.right())));
-        } else if (filter instanceof Or) {
-            Or or = (Or) filter;
-            sb.append(String.format("(%s or %s)", toWhereClause(or.left()), toWhereClause(or.right())));
-        } else if (filter instanceof IsNull) {
-            IsNull in = (IsNull) filter;
-            sb.append(String.format("%s%s%s is null", this.columnQuote, in.attribute(), this.columnQuote));
-        } else if (filter instanceof IsNotNull) {
-            IsNotNull in = (IsNotNull) filter;
-            sb.append(String.format("%s%s%s is not null", this.columnQuote, in.attribute(), this.columnQuote));
-        } else if (filter instanceof StringStartsWith) {
-            StringStartsWith ss = (StringStartsWith) filter;
-            sb.append(String.format("%s%s%s like '%s%s'", this.columnQuote, ss.attribute(), this.columnQuote, ss.value(), "%"));
-        } else if (filter instanceof StringContains) {
-            StringContains sc = (StringContains) filter;
-            sb.append(String.format("%s%s%s like '%s%s%s'", this.columnQuote, sc.attribute(), this.columnQuote, "%", sc.value(), "%"));
-        } else if (filter instanceof StringEndsWith) {
-            StringEndsWith se = (StringEndsWith) filter;
-            sb.append(String.format("%s%s%s like '%s%s'", this.columnQuote, se.attribute(), this.columnQuote, "%", se.value()));
-        } else if (filter instanceof Not) {
-            Not not = (Not) filter;
-            sb.append(String.format("not (%s)", toWhereClause(not.child())));
-        } else if (filter instanceof In) {
-            In in = (In) filter;
-            sb.append(String.format("%s%s%s in (%s)", this.columnQuote, in.attribute(), this.columnQuote, String.join(",", Arrays.stream(in.values()).map(v -> (v instanceof Number) ? v.toString() : String.format("'%s'", v.toString())).toArray(String[]::new))));
+        return toWhereClauseIfSupported(filter).orElseThrow(() ->
+                new IllegalArgumentException("Unsupported Spark filter: " + filter));
+    }
+
+    /**
+     * Returns whether a Spark filter can be translated without changing its semantics.
+     * Composite filters are accepted only when every child is accepted.
+     *
+     * @param filter Spark filter
+     * @return true when the complete filter can be evaluated by the Flight server
+     */
+    public boolean canPushFilter(Filter filter) {
+        return toWhereClauseIfSupported(filter).isPresent();
+    }
+
+    private Optional<String> toWhereClauseIfSupported(Filter filter) {
+        if (filter == null) {
+            return Optional.empty();
         }
-        return sb.toString();
+        if (filter instanceof EqualTo equalTo) {
+            return comparison(equalTo.attribute(), "=", equalTo.value());
+        }
+        if (filter instanceof EqualNullSafe equalNullSafe) {
+            if (equalNullSafe.value() == null) {
+                return Optional.of(quoteIdentifier(equalNullSafe.attribute()) + " is null");
+            }
+            Optional<String> equality = comparison(
+                    equalNullSafe.attribute(), "=", equalNullSafe.value());
+            String identifier = quoteIdentifier(equalNullSafe.attribute());
+            // Spark's null-safe equality is a two-valued predicate. Preserve that
+            // property inside NOT/OR as well as in a top-level WHERE clause.
+            return equality.map(sql -> "(" + identifier + " is not null and " + sql + ")");
+        }
+        if (filter instanceof LessThan lessThan) {
+            return comparison(lessThan.attribute(), "<", lessThan.value());
+        }
+        if (filter instanceof LessThanOrEqual lessThanOrEqual) {
+            return comparison(lessThanOrEqual.attribute(), "<=", lessThanOrEqual.value());
+        }
+        if (filter instanceof GreaterThan greaterThan) {
+            return comparison(greaterThan.attribute(), ">", greaterThan.value());
+        }
+        if (filter instanceof GreaterThanOrEqual greaterThanOrEqual) {
+            return comparison(greaterThanOrEqual.attribute(), ">=", greaterThanOrEqual.value());
+        }
+        if (filter instanceof And and) {
+            return combine(and.left(), "and", and.right());
+        }
+        if (filter instanceof Or or) {
+            return combine(or.left(), "or", or.right());
+        }
+        if (filter instanceof Not not) {
+            return toWhereClauseIfSupported(not.child()).map(sql -> "not (" + sql + ")");
+        }
+        if (filter instanceof IsNull isNull) {
+            return Optional.of(quoteIdentifier(isNull.attribute()) + " is null");
+        }
+        if (filter instanceof IsNotNull isNotNull) {
+            return Optional.of(quoteIdentifier(isNotNull.attribute()) + " is not null");
+        }
+        if (filter instanceof StringStartsWith startsWith) {
+            return Optional.of(like(startsWith.attribute(), escapeLike(startsWith.value()) + "%"));
+        }
+        if (filter instanceof StringContains contains) {
+            return Optional.of(like(contains.attribute(), "%" + escapeLike(contains.value()) + "%"));
+        }
+        if (filter instanceof StringEndsWith endsWith) {
+            return Optional.of(like(endsWith.attribute(), "%" + escapeLike(endsWith.value())));
+        }
+        if (filter instanceof In in) {
+            Object[] values = in.values();
+            if (values == null || values.length == 0) {
+                return Optional.of("(1 = 0)");
+            }
+            String[] literals = new String[values.length];
+            for (int i = 0; i < values.length; i++) {
+                Optional<String> literal = sqlLiteral(values[i], true);
+                if (literal.isEmpty()) {
+                    return Optional.empty();
+                }
+                literals[i] = literal.get();
+            }
+            return Optional.of(String.format("%s in (%s)", quoteIdentifier(in.attribute()), String.join(",", literals)));
+        }
+        return Optional.empty();
+    }
+
+    private Optional<String> comparison(String attribute, String operator, Object value) {
+        if (value == null) {
+            return Optional.empty();
+        }
+        return sqlLiteral(value, false).map(literal ->
+                String.format("%s %s %s", quoteIdentifier(attribute), operator, literal));
+    }
+
+    private Optional<String> combine(Filter left, String operator, Filter right) {
+        Optional<String> leftSql = toWhereClauseIfSupported(left);
+        Optional<String> rightSql = toWhereClauseIfSupported(right);
+        if (leftSql.isEmpty() || rightSql.isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.of(String.format("(%s %s %s)", leftSql.get(), operator, rightSql.get()));
+    }
+
+    private Optional<String> sqlLiteral(Object value, boolean allowNull) {
+        if (value == null) {
+            return allowNull ? Optional.of("null") : Optional.empty();
+        }
+        if (value instanceof Double number && !Double.isFinite(number)) {
+            return Optional.empty();
+        }
+        if (value instanceof Float number && !Float.isFinite(number)) {
+            return Optional.empty();
+        }
+        if (value instanceof Number) {
+            return Optional.of(value.toString());
+        }
+        if (value instanceof Boolean) {
+            return Optional.of(value.toString());
+        }
+        if (value instanceof CharSequence || value instanceof Character
+                || value instanceof Date || value instanceof Time || value instanceof Timestamp
+                || value instanceof TemporalAccessor) {
+            return Optional.of(quoteString(value.toString()));
+        }
+        return Optional.empty();
+    }
+
+    private String quoteIdentifier(String identifier) {
+        if (this.columnQuote == null || this.columnQuote.isEmpty()) {
+            return identifier;
+        }
+        return this.columnQuote + identifier.replace(this.columnQuote, this.columnQuote + this.columnQuote) + this.columnQuote;
+    }
+
+    private static String quoteString(String value) {
+        return "'" + value.replace("'", "''") + "'";
+    }
+
+    private String like(String attribute, String pattern) {
+        return quoteIdentifier(attribute) + " like " + quoteString(pattern) + " escape '\\'";
+    }
+
+    private static String escapeLike(String value) {
+        return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
     }
 
     /**

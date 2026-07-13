@@ -111,6 +111,11 @@ public class FlightTable implements org.apache.spark.sql.connector.catalog.Table
      */
     @Override
     public ScanBuilder newScanBuilder(CaseInsensitiveStringMap options) {
+        // ScanBuilder pushdown mutates Table's statement/schema/endpoints. Keep that
+        // state private to this scan so concurrent Thrift queries cannot overwrite
+        // one another's tickets or projected schemas.
+        Table scanTable = this.table.newScan();
+
         //the partitioning behavior
         PartitionBehavior partitionBehavior = new PartitionBehavior(
             options.getOrDefault(FlightTable.PARTITION_HASH_FUN, "hash"), options.getOrDefault(FlightTable.PARTITION_BY_COLUMN, ""),
@@ -125,7 +130,7 @@ public class FlightTable implements org.apache.spark.sql.connector.catalog.Table
                 options.containsKey(FlightTable.PARTITION_PREDICATES) ? options.get(FlightTable.PARTITION_PREDICATES).split("[;|,]") : new String[0]
             )
         );
-        return new FlightScanBuilder(this.configuration, this.table, partitionBehavior);
+        return new FlightScanBuilder(this.configuration, scanTable, partitionBehavior);
     }
 
     /**
@@ -135,6 +140,9 @@ public class FlightTable implements org.apache.spark.sql.connector.catalog.Table
      */
     @Override
     public WriteBuilder newWriteBuilder(LogicalWriteInfo logicalWriteInfo) {
+        if (this.table.getSchema() == null) {
+            this.table.initializeSchema(this.configuration);
+        }
         //validate the schema - fields being written must be in the table schema
         Function<String, Boolean> exists = (field) -> this.table.getSparkSchema().exists(sf -> sf.name().equalsIgnoreCase(field));
         if (!Arrays.stream(logicalWriteInfo.schema().fields()).map(sf -> exists.apply(sf.name())).reduce((x, y) -> x & y).orElse(false)) {

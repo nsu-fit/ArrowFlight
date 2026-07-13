@@ -5,6 +5,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.Serializable;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
@@ -16,6 +17,7 @@ import com.hazelcast.core.HazelcastInstance;
 
 import net.surpin.data.arrowflight.server.adapters.HazelcastAdapter;
 import net.surpin.data.arrowflight.server.model.AppConfig;
+import net.surpin.data.arrowflight.server.model.FileAssignment;
 import net.surpin.data.arrowflight.server.model.HandleState;
 
 /**
@@ -92,7 +94,8 @@ public final class ClusterService implements AutoCloseable {
         for (String uri : serverUris) {
             Long lastHb = heartbeats.get(uri);
             if (lastHb == null) {
-                live.add(uri);
+                LOGGER.warn("Server {} has no heartbeat, removing from pool", uri);
+                hazelcast.serverRegistry().remove(uri);
             } else if (lastHb >= deadline) {
                 live.add(uri);
             } else {
@@ -122,6 +125,55 @@ public final class ClusterService implements AutoCloseable {
      */
     public Map<String, Long> getLoads(Set<String> serverUris) {
         return hazelcast.serverRegistry().getAll(serverUris);
+    }
+
+    /**
+     * Publishes the files stored on this node. Every path is relative to the node's
+     * configured data directory.
+     *
+     * @param files relative file path to byte size
+     */
+    public void registerLocalFiles(Map<String, Long> files) {
+        hazelcast.serverFiles().put(this.serverUri, new LinkedHashMap<>(files));
+        LOGGER.info("Registered {} local Parquet file(s) for {}", files.size(), this.serverUri);
+    }
+
+    /**
+     * Merges all published node inventories into planner file assignments.
+     * Duplicate relative paths are treated as replicas and retain every owner.
+     *
+     * @return relative path to size and owning servers
+     */
+    public Map<String, FileAssignment> fileLocations() {
+        Set<String> inventoryServers = hazelcast.serverFiles().keySet();
+        Map<String, Map<String, Long>> inventories = hazelcast.serverFiles().getAll(inventoryServers);
+        Map<String, FileAssignment> result = new LinkedHashMap<>();
+        for (Map.Entry<String, Map<String, Long>> server : inventories.entrySet()) {
+            String serverUri = server.getKey();
+            for (Map.Entry<String, Long> file : server.getValue().entrySet()) {
+                result.compute(file.getKey(), (path, current) -> {
+                    Set<String> owners = new LinkedHashSet<>();
+                    long size = file.getValue();
+                    if (current != null) {
+                        if (current.size() != size) {
+                            throw new IllegalStateException(
+                                    "Conflicting sizes for replicated file " + path);
+                        }
+                        owners.addAll(current.hosts());
+                    }
+                    owners.add(serverUri);
+                    return new FileAssignment(size, owners);
+                });
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Checks whether a server published its local inventory, including an empty one.
+     */
+    public boolean hasFileInventory(String serverUri) {
+        return hazelcast.serverFiles().containsKey(serverUri);
     }
 
     /**

@@ -303,6 +303,33 @@ public class ParquetAdapter {
     }
 
     /**
+     * Lists every Parquet file physically visible to this server. Paths are relative
+     * to the server data root so the same ticket can be resolved against the target
+     * node's own local root.
+     *
+     * @return relative Parquet path to file size
+     * @throws IOException on file-system access failure
+     */
+    public Map<String, Long> localFileInventory() throws IOException {
+        Map<String, Long> result = new LinkedHashMap<>();
+        Path root = new Path(this.dataDirectory);
+        if (!this.fileSystem.exists(root)) {
+            return result;
+        }
+
+        URI rootUri = this.fileSystem.getFileStatus(root).getPath().toUri();
+        RemoteIterator<LocatedFileStatus> files = this.fileSystem.listFiles(root, true);
+        while (files.hasNext()) {
+            LocatedFileStatus file = files.next();
+            if (file.isFile() && file.getPath().getName().toLowerCase().endsWith(".parquet")) {
+                String relativePath = rootUri.relativize(file.getPath().toUri()).toString();
+                result.put(relativePath, file.getLen());
+            }
+        }
+        return result;
+    }
+
+    /**
      * Returns block locality for a file, mapping host to block count.
      *
      * @param locatedFileStatus file status

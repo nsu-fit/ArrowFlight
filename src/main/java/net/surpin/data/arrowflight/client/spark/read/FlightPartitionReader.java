@@ -3,6 +3,7 @@ package net.surpin.data.arrowflight.client.spark.read;
 import net.surpin.data.arrowflight.client.Client;
 import net.surpin.data.arrowflight.client.Configuration;
 import net.surpin.data.arrowflight.client.model.Field;
+import net.surpin.data.arrowflight.client.model.FieldType;
 import net.surpin.data.arrowflight.client.query.Endpoint;
 import net.surpin.data.arrowflight.client.query.QueryEndpoints;
 import org.apache.arrow.flight.FlightStream;
@@ -12,6 +13,7 @@ import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.catalyst.expressions.GenericInternalRow;
 import org.apache.spark.sql.connector.read.InputPartition;
 import org.apache.spark.sql.connector.read.PartitionReader;
+import org.apache.spark.sql.types.Decimal;
 import org.apache.spark.unsafe.types.UTF8String;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -54,6 +56,9 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
 
     // whether we have a valid current row
     private boolean hasCurrent = false;
+    // batch iteration is a separate PartitionReader mode and must not mix with rows
+    private boolean columnarMode = false;
+    private boolean firstColumnarBatch = true;
 
     // retry state
     private int openRetryCount = 0;
@@ -76,6 +81,9 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
     @Override
     public boolean next() throws IOException {
         LOGGER.debug("FlightPartitionReader.next()");
+        if (this.columnarMode) {
+            throw new IllegalStateException("Cannot mix row and columnar iteration");
+        }
         try {
             if (stream == null) {
                 if (!openStream()) {
@@ -130,6 +138,55 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
             closeStream();
             throw new IOException(e);
         }
+    }
+
+    /**
+     * Advances by one non-empty Arrow record batch without materializing rows.
+     * Used by the DataSource V2 columnar reader.
+     *
+     * @return true when {@link #currentBatch()} contains a batch
+     * @throws IOException on Flight stream failure
+     */
+    public boolean nextBatch() throws IOException {
+        this.columnarMode = true;
+        try {
+            if (this.stream == null && !openStream()) {
+                return false;
+            }
+
+            if (this.firstColumnarBatch) {
+                this.firstColumnarBatch = false;
+                if (this.batchRowCount > 0) {
+                    return true;
+                }
+            }
+
+            while (this.stream.next()) {
+                this.root = this.stream.getRoot();
+                this.batchRowCount = this.root.getRowCount();
+                this.fields = Field.from(this.stream.getSchema());
+                if (this.batchRowCount > 0) {
+                    return true;
+                }
+            }
+
+            closeStream();
+            return false;
+        } catch (Exception e) {
+            closeStream();
+            throw new IOException("Error reading Arrow batch from Flight stream", e);
+        }
+    }
+
+    /**
+     * Returns the current Flight-owned batch. It remains valid until the next call
+     * to {@link #nextBatch()} or {@link #close()}.
+     */
+    public VectorSchemaRoot currentBatch() {
+        if (!this.columnarMode || this.root == null || this.batchRowCount <= 0) {
+            throw new IllegalStateException("No current Arrow batch. Call nextBatch() first.");
+        }
+        return this.root;
     }
 
     @Override
@@ -434,11 +491,11 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
         // Decimal
         if (vector instanceof DecimalVector) {
             BigDecimal bd = ((DecimalVector) vector).getObject(rowIndex);
-            return bd != null ? bd.toPlainString() : null; // Spark expects string for decimal
+            return toSparkDecimal(bd, field);
         }
         if (vector instanceof Decimal256Vector) {
             BigDecimal bd = ((Decimal256Vector) vector).getObject(rowIndex);
-            return bd != null ? bd.toPlainString() : null;
+            return toSparkDecimal(bd, field);
         }
 
         // String
@@ -464,7 +521,8 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
             return ((DateDayVector) vector).get(rowIndex);
         }
         if (vector instanceof DateMilliVector) {
-            return ((DateMilliVector) vector).get(rowIndex);
+            long millis = ((DateMilliVector) vector).get(rowIndex);
+            return Math.toIntExact(Math.floorDiv(millis, 86_400_000L));
         }
 
         // Time
@@ -482,19 +540,29 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
         }
 
         // Timestamp
-        if (vector instanceof TimeStampMilliVector || vector instanceof TimeStampMilliTZVector
-                || vector instanceof TimeStampMicroVector || vector instanceof TimeStampMicroTZVector
-                || vector instanceof TimeStampNanoVector || vector instanceof TimeStampNanoTZVector
-                || vector instanceof TimeStampSecVector || vector instanceof TimeStampSecTZVector) {
-            Object someTimestamp = vector.getObject(rowIndex);
-            if (someTimestamp instanceof Timestamp) {
-                return ((Timestamp) vector.getObject(rowIndex)).getTime() / 1000; // Spark expects seconds
-            } else if (someTimestamp instanceof LocalDateTime) {
-                return ((LocalDateTime) vector.getObject(rowIndex)).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli() / 1000; // Spark expects seconds
-            } else {
-                throw new UnsupportedOperationException("Unsupported timestamp format: " + someTimestamp.getClass());
-            }
-
+        if (vector instanceof TimeStampSecVector) {
+            return Math.multiplyExact(((TimeStampSecVector) vector).get(rowIndex), 1_000_000L);
+        }
+        if (vector instanceof TimeStampSecTZVector) {
+            return Math.multiplyExact(((TimeStampSecTZVector) vector).get(rowIndex), 1_000_000L);
+        }
+        if (vector instanceof TimeStampMilliVector) {
+            return Math.multiplyExact(((TimeStampMilliVector) vector).get(rowIndex), 1_000L);
+        }
+        if (vector instanceof TimeStampMilliTZVector) {
+            return Math.multiplyExact(((TimeStampMilliTZVector) vector).get(rowIndex), 1_000L);
+        }
+        if (vector instanceof TimeStampMicroVector) {
+            return ((TimeStampMicroVector) vector).get(rowIndex);
+        }
+        if (vector instanceof TimeStampMicroTZVector) {
+            return ((TimeStampMicroTZVector) vector).get(rowIndex);
+        }
+        if (vector instanceof TimeStampNanoVector) {
+            return Math.floorDiv(((TimeStampNanoVector) vector).get(rowIndex), 1_000L);
+        }
+        if (vector instanceof TimeStampNanoTZVector) {
+            return Math.floorDiv(((TimeStampNanoTZVector) vector).get(rowIndex), 1_000L);
         }
 
         // Binary
@@ -540,5 +608,15 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
 
         // Default fallback — getObject
         return vector.getObject(rowIndex);
+    }
+
+    private static Decimal toSparkDecimal(BigDecimal value, Field field) {
+        if (value == null) {
+            return null;
+        }
+        if (field != null && field.getType() instanceof FieldType.DecimalType decimalType) {
+            return Decimal.apply(value, decimalType.getPrecision(), decimalType.getScale());
+        }
+        return Decimal.apply(value);
     }
 }

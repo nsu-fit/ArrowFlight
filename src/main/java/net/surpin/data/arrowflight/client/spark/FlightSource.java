@@ -59,7 +59,7 @@ public class FlightSource implements TableProvider, DataSourceRegister, Relation
      */
     @Override
     public StructType inferSchema(CaseInsensitiveStringMap options) {
-        this.probeOptions(options);
+        this.probeOptions(options, true);
         return this.table.getSparkSchema();
     }
 
@@ -67,7 +67,7 @@ public class FlightSource implements TableProvider, DataSourceRegister, Relation
      * Extract and validate connection options from the provided options map
      * @param options - the case-insensitive options map
      */
-    private void probeOptions(CaseInsensitiveStringMap options) {
+    private void probeOptions(CaseInsensitiveStringMap options, boolean initialize) {
         //host & port
         String host = options.getOrDefault(FlightSource.HOST, "");
         int port = Integer.parseInt(options.getOrDefault(FlightSource.PORT, "32010"));
@@ -115,7 +115,9 @@ public class FlightSource implements TableProvider, DataSourceRegister, Relation
         }
         //set up the flight-table with the column quote-character. By default, columns are not quoted
         this.table = Table.forTable(tableName, options.getOrDefault(FlightSource.COLUMN_QUOTE, ""));
-        this.table.initialize(this.configuration);
+        if (initialize) {
+            this.table.initializeSchema(this.configuration);
+        }
     }
 
     /**
@@ -131,12 +133,23 @@ public class FlightSource implements TableProvider, DataSourceRegister, Relation
     }
 
     /**
+     * Restores a persisted Flight table from Spark's session catalog without
+     * issuing a schema-only SELECT * request. The real query is planned once,
+     * after Spark has supplied projection/filter/aggregate pushdown.
+     */
+    FlightTable getTableFromCatalog(CaseInsensitiveStringMap options, StructType schema) {
+        this.probeOptions(options, false);
+        this.table.setSparkSchema(schema);
+        return new FlightTable(this.configuration, this.table);
+    }
+
+    /**
      * Spark Thrift Server resolves persisted Hive data-source tables through DataSource V1.
      */
     @Override
     public BaseRelation createRelation(SQLContext sqlContext, scala.collection.immutable.Map<String, String> parameters) {
         Map<String, String> options = new HashMap<>(JavaConverters.mapAsJavaMap(parameters));
-        this.probeOptions(new CaseInsensitiveStringMap(options));
+        this.probeOptions(new CaseInsensitiveStringMap(options), true);
         return new FlightRelation(sqlContext, this.configuration, this.table);
     }
 

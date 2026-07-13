@@ -150,7 +150,7 @@ def write_metadata(
     dataset,
     schema,
     scale_factor,
-    flight_root,
+    flight_roots,
     flight_hosts,
     direct_root,
     direct_partitions,
@@ -170,7 +170,7 @@ def write_metadata(
         "cluster_nodes": len(flight_hosts),
         "flight_hosts": os.environ.get("FLIGHT_HOSTS", ""),
         "flight_servers": os.environ.get("FLIGHT_SERVERS", ""),
-        "flight_server_data_dirs": [str(flight_root)],
+        "flight_server_data_dirs": [str(root) for root in flight_roots],
         "flight_source_host": os.environ.get("FLIGHT_SOURCE_HOST", "flight-server-1"),
         "flight_source_port": os.environ.get("FLIGHT_SOURCE_PORT", "32010"),
         "direct_parquet_dir": str(direct_root),
@@ -180,10 +180,10 @@ def write_metadata(
             {
                 "server_index": index + 1,
                 "host": host,
-                "root": str(flight_root),
-                "schema_path": str(flight_root / schema),
-                "tables": owner_table_stats(flight_root, schema, host),
-                **owner_directory_stats(flight_root / schema, host),
+                "root": str(flight_roots[index]),
+                "schema_path": str(flight_roots[index] / schema),
+                "tables": table_stats(flight_roots[index], schema),
+                **directory_stats(flight_roots[index] / schema),
             }
             for index, host in enumerate(flight_hosts)
         ],
@@ -225,13 +225,9 @@ def export_table_shard(connection, table, target, shard_count, shard):
     table_name = quote_identifier(table)
     query = f"""
         COPY (
-          WITH numbered AS (
-            SELECT {columns}, row_number() OVER () AS __duckdb_row_number
-            FROM {table_name}
-          )
           SELECT {columns}
-          FROM numbered
-          WHERE ((__duckdb_row_number - 1) % {shard_count}) = {shard}
+          FROM {table_name}
+          WHERE (hash({columns}) % {shard_count}) = {shard}
         )
         TO {sql_string(target)}
         (FORMAT PARQUET)
@@ -239,16 +235,17 @@ def export_table_shard(connection, table, target, shard_count, shard):
     connection.execute(query)
 
 
-def export_table_to_flight_root(connection, table, schema, flight_root, flight_hosts):
+def export_table_to_flight_roots(connection, table, schema, flight_roots, flight_hosts):
     shard_count = len(flight_hosts)
-    table_dir = flight_root / schema / table
-    clean_dir(table_dir)
+    for flight_root in flight_roots:
+        clean_dir(flight_root / schema / table)
 
-    for shard, host in enumerate(flight_hosts):
+    for shard, (host, flight_root) in enumerate(zip(flight_hosts, flight_roots)):
+        table_dir = flight_root / schema / table
         target = table_dir / f"part-{host}-{shard:05d}.parquet"
         export_table_shard(connection, table, target, shard_count, shard)
 
-    print(f"Generated {schema}.{table} into {flight_root} across {len(flight_hosts)} flight shard owner(s)")
+    print(f"Generated {schema}.{table} across {len(flight_hosts)} node-local Flight root(s)")
 
 
 def export_table_to_direct_root(connection, table, schema, direct_root, shard_count):
@@ -273,7 +270,8 @@ def main():
     server_roots = [
         Path(item)
         for item in os.environ.get(
-            "FLIGHT_SERVER_DATA_DIRS", "/server-data/all",
+            "FLIGHT_SERVER_DATA_DIRS",
+            "/server-data/flight-server-1,/server-data/flight-server-2,/server-data/flight-server-3",
         ).split(",")
         if item
     ]
@@ -291,6 +289,11 @@ def main():
         raise RuntimeError("FLIGHT_SERVER_DATA_DIRS is empty")
     if not flight_hosts:
         raise RuntimeError("FLIGHT_HOSTS is empty")
+    if len(server_roots) != len(flight_hosts):
+        raise RuntimeError(
+            "FLIGHT_SERVER_DATA_DIRS must contain exactly one node-local directory "
+            "for every FLIGHT_HOSTS entry"
+        )
 
     for root in server_roots:
         clean_dir(root / schema)
@@ -310,7 +313,7 @@ def main():
         connection.execute(f"CALL dsdgen(sf={scale_factor})")
 
     for table in table_names(connection, dataset):
-        export_table_to_flight_root(connection, table, schema, server_roots[0], flight_hosts)
+        export_table_to_flight_roots(connection, table, schema, server_roots, flight_hosts)
         if generate_direct:
             export_table_to_direct_root(connection, table, schema, direct_root, direct_partitions)
 
@@ -323,7 +326,7 @@ def main():
         dataset,
         schema,
         scale_factor,
-        server_roots[0],
+        server_roots,
         flight_hosts,
         direct_root,
         direct_partitions,

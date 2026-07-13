@@ -12,6 +12,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.Serializable;
+import java.util.Map;
 
 import net.surpin.data.arrowflight.server.model.AppConfig;
 
@@ -25,11 +26,13 @@ public final class HazelcastAdapter implements AutoCloseable {
     private static final String SERVER_REGISTRY_MAP = "server-registry";
     private static final String STATEMENT_CACHE_MAP = "statement-cache";
     private static final String SERVER_HEARTBEAT_MAP = "server-heartbeats";
+    private static final String SERVER_FILES_MAP = "server-files";
 
     private final HazelcastInstance instance;
     private final IMap<String, Long> serverRegistry;
     private final IMap<String, Serializable> statementCache;
     private final IMap<String, Long> serverHeartbeats;
+    private final IMap<String, Map<String, Long>> serverFiles;
 
     /**
      * Creates a new Hazelcast instance using TCP/IP join on the given hosts.
@@ -54,6 +57,7 @@ public final class HazelcastAdapter implements AutoCloseable {
         this.serverRegistry = instance.getMap(SERVER_REGISTRY_MAP);
         this.statementCache = instance.getMap(STATEMENT_CACHE_MAP);
         this.serverHeartbeats = instance.getMap(SERVER_HEARTBEAT_MAP);
+        this.serverFiles = instance.getMap(SERVER_FILES_MAP);
     }
 
     /**
@@ -75,6 +79,13 @@ public final class HazelcastAdapter implements AutoCloseable {
      */
     public IMap<String, Long> serverHeartbeats() {
         return serverHeartbeats;
+    }
+
+    /**
+     * Returns the distributed local-file inventory (server URI → relative path/size).
+     */
+    public IMap<String, Map<String, Long>> serverFiles() {
+        return serverFiles;
     }
 
     /**

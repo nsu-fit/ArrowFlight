@@ -4,30 +4,21 @@ import net.surpin.data.arrowflight.client.Configuration;
 import net.surpin.data.arrowflight.client.model.Table;
 import net.surpin.data.arrowflight.client.spark.read.FlightBatch;
 import net.surpin.data.arrowflight.client.spark.read.FlightPartitionReader;
+import org.apache.spark.TaskContext;
 import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.rdd.RDD;
 import org.apache.spark.sql.Row;
-import org.apache.spark.sql.RowFactory;
 import org.apache.spark.sql.SQLContext;
 import org.apache.spark.sql.catalyst.InternalRow;
-import org.apache.spark.sql.catalyst.expressions.GenericInternalRow;
 import org.apache.spark.sql.connector.read.InputPartition;
 import org.apache.spark.sql.sources.BaseRelation;
-import org.apache.spark.sql.sources.TableScan;
-import org.apache.spark.sql.types.DataType;
-import org.apache.spark.sql.types.DataTypes;
-import org.apache.spark.sql.types.Decimal;
-import org.apache.spark.sql.types.DecimalType;
+import org.apache.spark.sql.sources.Filter;
+import org.apache.spark.sql.sources.PrunedFilteredScan;
 import org.apache.spark.sql.types.StructField;
 import org.apache.spark.sql.types.StructType;
-import org.apache.spark.unsafe.types.UTF8String;
 
 import java.io.IOException;
-import java.math.BigDecimal;
-import java.sql.Date;
-import java.sql.Timestamp;
-import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
@@ -35,7 +26,7 @@ import java.util.NoSuchElementException;
 /**
  * Spark DataSource V1 bridge used by Spark Thrift Server for persisted Hive tables.
  */
-public final class FlightRelation extends BaseRelation implements TableScan {
+public final class FlightRelation extends BaseRelation implements PrunedFilteredScan {
     private final SQLContext sqlContext;
     private final Configuration configuration;
     private final Table table;
@@ -58,35 +49,109 @@ public final class FlightRelation extends BaseRelation implements TableScan {
         return this.schema;
     }
 
+    /**
+     * The scan already produces Catalyst {@link InternalRow}s. Telling Spark not to
+     * convert them avoids materializing a second Object[] and external Row per record.
+     */
     @Override
-    public RDD<Row> buildScan() {
-        InputPartition[] partitions = new FlightBatch(this.configuration, this.table).planInputPartitions();
+    public boolean needConversion() {
+        return false;
+    }
+
+    @Override
+    public Filter[] unhandledFilters(Filter[] filters) {
+        if (filters == null || filters.length == 0) {
+            return new Filter[0];
+        }
+        return Arrays.stream(filters)
+                .filter(filter -> !this.table.canPushFilter(filter))
+                .toArray(Filter[]::new);
+    }
+
+    @Override
+    public RDD<Row> buildScan(String[] requiredColumns, Filter[] filters) {
+        StructField[] projectedFields = resolveRequiredFields(requiredColumns);
+        StructField[] queryFields = projectedFields;
+        if (queryFields.length == 0 && this.schema.fields().length > 0) {
+            // A zero-column Spark scan (for example COUNT(*)) still needs one remote
+            // value per source row to preserve cardinality.
+            queryFields = new StructField[] { this.schema.fields()[0] };
+        }
+
+        Filter[] scanFilters = filters == null ? new Filter[0] : filters;
+        String where = String.join(" and ", Arrays.stream(scanFilters)
+                .filter(this.table::canPushFilter)
+                .map(this.table::toWhereClause)
+                .toArray(String[]::new));
+
+        // Table contains mutable statement/schema/endpoint state. Give every Spark
+        // scan an independent instance so concurrent or repeated plans cannot reuse
+        // endpoints created for an older projection/filter.
+        Table scanTable = this.table.newScan();
+        scanTable.probe(where, queryFields, null, null);
+        scanTable.initialize(this.configuration);
+
+        InputPartition[] partitions = new FlightBatch(this.configuration, scanTable).planInputPartitions();
         JavaSparkContext sparkContext = JavaSparkContext.fromSparkContext(this.sqlContext.sparkContext());
         if (partitions.length == 0) {
-            JavaRDD<Row> empty = sparkContext.emptyRDD();
-            return empty.rdd();
+            return asRowRdd(sparkContext.<InternalRow>emptyRDD());
         }
 
         Configuration scanConfiguration = this.configuration;
-        StructType scanSchema = this.schema;
         JavaRDD<InputPartition> partitionRdd = sparkContext.parallelize(Arrays.asList(partitions), partitions.length);
-        JavaRDD<Row> rows = partitionRdd.mapPartitions(partitionIterator ->
-                new FlightRowIterator(scanConfiguration, scanSchema, partitionIterator));
-        return rows.rdd();
+        JavaRDD<InternalRow> rows = partitionRdd.mapPartitions(partitionIterator -> {
+            FlightRowIterator iterator = new FlightRowIterator(scanConfiguration, partitionIterator);
+            TaskContext taskContext = TaskContext.get();
+            if (taskContext != null) {
+                taskContext.addTaskCompletionListener(
+                        (org.apache.spark.util.TaskCompletionListener) context -> iterator.close());
+            }
+            return iterator;
+        });
+        return asRowRdd(rows);
     }
 
-    private static final class FlightRowIterator implements Iterator<Row> {
+    private StructField[] resolveRequiredFields(String[] requiredColumns) {
+        if (requiredColumns == null) {
+            return this.schema.fields();
+        }
+        StructField[] fields = new StructField[requiredColumns.length];
+        StructField[] relationFields = this.schema.fields();
+        for (int i = 0; i < requiredColumns.length; i++) {
+            String required = requiredColumns[i];
+            StructField match = Arrays.stream(relationFields)
+                    .filter(field -> field.name().equals(required))
+                    .findFirst()
+                    .orElseGet(() -> Arrays.stream(relationFields)
+                            .filter(field -> field.name().equalsIgnoreCase(required))
+                            .findFirst()
+                            .orElseThrow(() -> new IllegalArgumentException(
+                                    "Required column is absent from Flight schema: " + required)));
+            fields[i] = match;
+        }
+        return fields;
+    }
+
+    /**
+     * Spark's V1 interface is typed as RDD&lt;Row&gt;, while needConversion=false means
+     * the physical scan consumes the contained InternalRows directly (the same
+     * convention used by Spark's JDBC V1 relation).
+     */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private static RDD<Row> asRowRdd(JavaRDD<InternalRow> rows) {
+        return (RDD) rows.rdd();
+    }
+
+    private static final class FlightRowIterator implements Iterator<InternalRow>, AutoCloseable {
         private final Configuration configuration;
-        private final StructType schema;
         private final Iterator<InputPartition> partitions;
 
         private FlightPartitionReader reader;
-        private Row nextRow;
+        private InternalRow nextRow;
         private boolean loaded;
 
-        private FlightRowIterator(Configuration configuration, StructType schema, Iterator<InputPartition> partitions) {
+        private FlightRowIterator(Configuration configuration, Iterator<InputPartition> partitions) {
             this.configuration = configuration;
-            this.schema = schema;
             this.partitions = partitions;
         }
 
@@ -99,11 +164,11 @@ public final class FlightRelation extends BaseRelation implements TableScan {
         }
 
         @Override
-        public Row next() {
+        public InternalRow next() {
             if (!this.hasNext()) {
                 throw new NoSuchElementException();
             }
-            Row current = this.nextRow;
+            InternalRow current = this.nextRow;
             this.nextRow = null;
             this.loaded = false;
             return current;
@@ -116,7 +181,7 @@ public final class FlightRelation extends BaseRelation implements TableScan {
             while (true) {
                 try {
                     if (this.reader != null && this.reader.next()) {
-                        this.nextRow = toExternalRow(this.reader.get(), this.schema);
+                        this.nextRow = this.reader.get();
                         return;
                     }
                     this.closeReader();
@@ -131,6 +196,11 @@ public final class FlightRelation extends BaseRelation implements TableScan {
             }
         }
 
+        @Override
+        public void close() {
+            this.closeReader();
+        }
+
         private void closeReader() {
             if (this.reader != null) {
                 try {
@@ -140,98 +210,5 @@ public final class FlightRelation extends BaseRelation implements TableScan {
                 }
             }
         }
-    }
-
-    private static Row toExternalRow(InternalRow internalRow, StructType schema) {
-        StructField[] fields = schema.fields();
-        Object[] values = new Object[fields.length];
-        for (int i = 0; i < fields.length; i++) {
-            values[i] = toExternalValue(rawValue(internalRow, i, fields[i].dataType()), fields[i].dataType());
-        }
-        return RowFactory.create(values);
-    }
-
-    private static Object rawValue(InternalRow row, int ordinal, DataType dataType) {
-        if (row.isNullAt(ordinal)) {
-            return null;
-        }
-        if (row instanceof GenericInternalRow genericRow) {
-            return genericRow.genericGet(ordinal);
-        }
-        return row.get(ordinal, dataType);
-    }
-
-    private static Object toExternalValue(Object raw, DataType dataType) {
-        if (raw == null) {
-            return null;
-        }
-        if (dataType instanceof DecimalType) {
-            return toBigDecimal(raw);
-        }
-        if (DataTypes.StringType.equals(dataType) && raw instanceof UTF8String utf8) {
-            return utf8.toString();
-        }
-        if (DataTypes.DateType.equals(dataType)) {
-            return toDate(raw);
-        }
-        if (DataTypes.TimestampType.equals(dataType) || DataTypes.TimestampNTZType.equals(dataType)) {
-            return toTimestamp(raw);
-        }
-        if (raw instanceof Decimal decimal) {
-            return decimal.toJavaBigDecimal();
-        }
-        if (raw instanceof UTF8String utf8) {
-            return utf8.toString();
-        }
-        return raw;
-    }
-
-    private static BigDecimal toBigDecimal(Object raw) {
-        if (raw instanceof BigDecimal decimal) {
-            return decimal;
-        }
-        if (raw instanceof Decimal decimal) {
-            return decimal.toJavaBigDecimal();
-        }
-        if (raw instanceof scala.math.BigDecimal decimal) {
-            return decimal.bigDecimal();
-        }
-        return new BigDecimal(raw.toString());
-    }
-
-    private static Date toDate(Object raw) {
-        if (raw instanceof Date date) {
-            return date;
-        }
-        if (raw instanceof LocalDate date) {
-            return Date.valueOf(date);
-        }
-        if (raw instanceof Integer days) {
-            return Date.valueOf(LocalDate.ofEpochDay(days));
-        }
-        if (raw instanceof Long millis) {
-            return new Date(millis);
-        }
-        return Date.valueOf(raw.toString());
-    }
-
-    private static Timestamp toTimestamp(Object raw) {
-        if (raw instanceof Timestamp timestamp) {
-            return timestamp;
-        }
-        if (raw instanceof Number number) {
-            long value = number.longValue();
-            long abs = Math.abs(value);
-            long millis;
-            if (abs > 100_000_000_000_000L) {
-                millis = value / 1_000L;
-            } else if (abs > 100_000_000_000L) {
-                millis = value;
-            } else {
-                millis = value * 1_000L;
-            }
-            return new Timestamp(millis);
-        }
-        return Timestamp.valueOf(raw.toString());
     }
 }

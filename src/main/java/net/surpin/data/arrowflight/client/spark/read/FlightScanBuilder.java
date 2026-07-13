@@ -5,20 +5,21 @@ import net.surpin.data.arrowflight.client.write.PartitionBehavior;
 import net.surpin.data.arrowflight.client.query.PushAggregation;
 import net.surpin.data.arrowflight.client.model.Table;
 import org.apache.spark.sql.connector.expressions.Expression;
+import org.apache.spark.sql.connector.expressions.NamedReference;
 import org.apache.spark.sql.connector.expressions.aggregate.Aggregation;
 import org.apache.spark.sql.connector.expressions.aggregate.*;
 import org.apache.spark.sql.connector.read.*;
 import org.apache.spark.sql.sources.*;
 import org.apache.spark.sql.types.StructField;
 import org.apache.spark.sql.types.StructType;
+import org.apache.spark.sql.types.DataTypes;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Objects;
-import java.util.function.Function;
+import java.util.Optional;
 
 /**
  * Build flight scans which supports pushed-down filter, fields & aggregates
@@ -60,40 +61,93 @@ public final class FlightScanBuilder implements ScanBuilder, SupportsPushDownFil
     public boolean pushAggregation(Aggregation aggregation) {
         LOGGER.info("{}.pushAggregation()", this.getClass().getName());
 
-        Function<String, String> quote = (s) -> String.format("%s%s%s", this.table.getColumnQuote(), s, this.table.getColumnQuote());
-        Function<String[], String> mks = (ss) -> String.join(",", Arrays.stream(ss).map(quote).toArray(String[]::new));
-        Function<Expression, String> e2s = (e) -> String.join(",", Arrays.stream(e.references()).map(r -> mks.apply(r.fieldNames())).toArray(String[]::new));
-
         List<String> pdAggregateColumns = new ArrayList<>();
-        boolean push = true;
         for (AggregateFunc agg : aggregation.aggregateExpressions()) {
             if (agg instanceof CountStar) {
-                pdAggregateColumns.add(agg.toString().toLowerCase());
+                pdAggregateColumns.add("count(*)");
             } else if (agg instanceof Count) {
                 Count c = (Count) agg;
-                pdAggregateColumns.add(c.isDistinct() ? String.format("count(distinct(%s))", e2s.apply(c.column())) : String.format("count(%s)", e2s.apply(c.column())));
+                Optional<String> column = simpleColumn(c.column());
+                if (c.isDistinct() || column.isEmpty()) {
+                    this.pdAggregation = null;
+                    return false;
+                }
+                pdAggregateColumns.add(String.format("count(%s)", quote(column.get())));
             } else if (agg instanceof Min) {
                 Min m = (Min) agg;
-                pdAggregateColumns.add(String.format("min(%s)", e2s.apply(m.column())));
+                Optional<String> column = simpleColumn(m.column());
+                if (column.isEmpty()) {
+                    this.pdAggregation = null;
+                    return false;
+                }
+                pdAggregateColumns.add(String.format("min(%s)", quote(column.get())));
             } else if (agg instanceof Max) {
                 Max m = (Max) agg;
-                pdAggregateColumns.add(String.format("max(%s)", e2s.apply(m.column())));
+                Optional<String> column = simpleColumn(m.column());
+                if (column.isEmpty()) {
+                    this.pdAggregation = null;
+                    return false;
+                }
+                pdAggregateColumns.add(String.format("max(%s)", quote(column.get())));
             } else if (agg instanceof Sum) {
                 Sum s = (Sum) agg;
-                pdAggregateColumns.add(s.isDistinct() ? String.format("sum(distinct(%s))", e2s.apply(s.column())) : String.format("sum(%s)", e2s.apply(s.column())));
+                Optional<String> column = simpleColumn(s.column());
+                if (s.isDistinct() || column.isEmpty() || !safeSumType(column.get())) {
+                    this.pdAggregation = null;
+                    return false;
+                }
+                // The server currently emits Float8 for SUM. That exactly matches
+                // Spark only for Float/Double inputs; integer/decimal SUM must stay
+                // in Spark to preserve overflow and decimal precision semantics.
+                pdAggregateColumns.add(String.format("sum(%s)", quote(column.get())));
             } else {
-                push = false;
-                break;
+                this.pdAggregation = null;
+                return false;
             }
         }
-        if (push) {
-            String[] pdGroupByColumns = Arrays.stream(aggregation.groupByExpressions()).flatMap(e -> Arrays.stream(e.references()).flatMap(r -> Arrays.stream(r.fieldNames()).map(quote))).toArray(String[]::new);
-            pdAggregateColumns.addAll(0, Arrays.asList(pdGroupByColumns));
-            this.pdAggregation = pdGroupByColumns.length > 0 ? new PushAggregation(pdAggregateColumns.toArray(new String[0]), pdGroupByColumns) : new PushAggregation(pdAggregateColumns.toArray(new String[0]));
-        } else {
-            this.pdAggregation = null;
+
+        String[] pdGroupByColumns = new String[aggregation.groupByExpressions().length];
+        for (int i = 0; i < aggregation.groupByExpressions().length; i++) {
+            Optional<String> column = simpleColumn(aggregation.groupByExpressions()[i]);
+            if (column.isEmpty()) {
+                this.pdAggregation = null;
+                return false;
+            }
+            pdGroupByColumns[i] = quote(column.get());
         }
-        return this.pdAggregation != null;
+        pdAggregateColumns.addAll(0, Arrays.asList(pdGroupByColumns));
+        this.pdAggregation = pdGroupByColumns.length > 0
+                ? new PushAggregation(pdAggregateColumns.toArray(new String[0]), pdGroupByColumns)
+                : new PushAggregation(pdAggregateColumns.toArray(new String[0]));
+        return true;
+    }
+
+    private Optional<String> simpleColumn(Expression expression) {
+        if (!(expression instanceof NamedReference reference)
+                || reference.fieldNames().length != 1) {
+            return Optional.empty();
+        }
+        String name = reference.fieldNames()[0];
+        return Arrays.stream(this.table.getSparkSchema().fields())
+                .map(StructField::name)
+                .filter(field -> field.equalsIgnoreCase(name))
+                .findFirst();
+    }
+
+    private boolean safeSumType(String column) {
+        return Arrays.stream(this.table.getSparkSchema().fields())
+                .filter(field -> field.name().equalsIgnoreCase(column))
+                .map(StructField::dataType)
+                .anyMatch(type -> type.equals(DataTypes.FloatType)
+                        || type.equals(DataTypes.DoubleType));
+    }
+
+    private String quote(String column) {
+        String delimiter = this.table.getColumnQuote();
+        if (delimiter == null || delimiter.isEmpty()) {
+            return column;
+        }
+        return delimiter + column.replace(delimiter, delimiter + delimiter) + delimiter;
     }
 
     /**
@@ -105,26 +159,17 @@ public final class FlightScanBuilder implements ScanBuilder, SupportsPushDownFil
     public Filter[] pushFilters(Filter[] filters) {
         LOGGER.info("{}.pushFilters()", this.getClass().getName());
 
-        Function<Filter, Boolean> isValid = (filter) -> (filter instanceof IsNotNull || filter instanceof IsNull
-            || filter instanceof EqualTo || filter instanceof EqualNullSafe
-            || filter instanceof LessThan || filter instanceof LessThanOrEqual || filter instanceof GreaterThan || filter instanceof GreaterThanOrEqual
-            || filter instanceof StringStartsWith || filter instanceof StringContains || filter instanceof StringEndsWith
-            || filter instanceof And || filter instanceof Or || filter instanceof Not || filter instanceof In
-        );
-
         List<Filter> pushed = new ArrayList<>();
-        try {
-            return Arrays.stream(filters).map(filter -> {
-                if (isValid.apply(filter)) {
-                    pushed.add(filter);
-                    return null;
-                } else {
-                    return filter;
-                }
-            }).filter(Objects::nonNull).toArray(Filter[]::new);
-        } finally {
-            this.pdFilters = pushed.toArray(new Filter[0]);
+        List<Filter> unhandled = new ArrayList<>();
+        for (Filter filter : filters) {
+            if (this.table.canPushFilter(filter)) {
+                pushed.add(filter);
+            } else {
+                unhandled.add(filter);
+            }
         }
+        this.pdFilters = pushed.toArray(new Filter[0]);
+        return unhandled.toArray(new Filter[0]);
     }
 
     /**
@@ -155,9 +200,11 @@ public final class FlightScanBuilder implements ScanBuilder, SupportsPushDownFil
 
         //adjust flight-table upon pushed filters & columns
         String where = String.join(" and ", Arrays.stream(this.pdFilters).map(this.table::toWhereClause).toArray(String[]::new));
-        if (this.table.probe(where, this.pdColumns, this.pdAggregation, this.partitionBehavior)) {
-            this.table.initialize(this.configuration);
-        }
+        this.table.probe(where, this.pdColumns, this.pdAggregation, this.partitionBehavior);
+        // Plan exactly once, after Spark has supplied every accepted pushdown.
+        // Earlier schema-only planning creates unused server handles and makes
+        // Flight latency look worse than the actual scan.
+        this.table.initialize(this.configuration);
         return new FlightScan(this.configuration, this.table);
     }
 }

@@ -25,6 +25,11 @@ import org.slf4j.LoggerFactory;
 import java.io.ByteArrayInputStream;
 import java.net.URI;
 import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Locale;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -40,6 +45,8 @@ public final class Client implements AutoCloseable {
 
     //the flight client
     private final FlightClient client;
+    //clients for locations advertised by FlightEndpoint (one connection per URI)
+    private final ConcurrentMap<URI, FlightClient> endpointClients = new ConcurrentHashMap<>();
     //the flight-sql client
     private final FlightSqlClient sqlClient;
     //the token for calls
@@ -120,6 +127,19 @@ public final class Client implements AutoCloseable {
     }
 
     /**
+     * Fetches only the result schema for a statement. Unlike getInfo/execute,
+     * this does not create stream tickets or reserve per-node load.
+     *
+     * @param query SQL statement
+     * @return Arrow result schema
+     */
+    public Schema getQuerySchema(String query) {
+        return retryWithBackoff(
+                () -> this.sqlClient.getExecuteSchema(query, callOptions()).getSchema(),
+                "getQuerySchema");
+    }
+
+    /**
      * Fetch rows from the end-point
      * @param ep - the end-point
      * @param schema - the schema of rows from the end-point
@@ -130,7 +150,7 @@ public final class Client implements AutoCloseable {
             RowSet rs = new RowSet(schema);
             Field[] fields = Field.from(schema);
             FlightEndpoint fep = new FlightEndpoint(new Ticket(ep.getTicket()), Arrays.stream(ep.getURIs()).map(Location::new).toArray(Location[]::new));
-            try (FlightStream stream = this.client.getStream(fep.getTicket(), callOptions())) {
+            try (FlightStream stream = this.openStream(fep)) {
                 VectorSchemaRoot root = stream.getRoot();
                 while (stream.next()) {
                     FieldVector[] fs = root.getFieldVectors().stream().map(fv -> FieldVector.fromArrow(fv, Field.find(fields, fv.getName()), root.getRowCount())).toArray(FieldVector[]::new);
@@ -167,7 +187,7 @@ public final class Client implements AutoCloseable {
         retryWithBackoff(() -> {
             Field[] fields = Field.from(schema);
             FlightEndpoint fep = new FlightEndpoint(new Ticket(ep.getTicket()), Arrays.stream(ep.getURIs()).map(Location::new).toArray(Location[]::new));
-            try (FlightStream stream = this.client.getStream(fep.getTicket(), callOptions())) {
+            try (FlightStream stream = this.openStream(fep)) {
                 VectorSchemaRoot root = stream.getRoot();
                 while (stream.next()) {
                     boolean shouldContinue = callback.onBatch(root, fields);
@@ -213,7 +233,7 @@ public final class Client implements AutoCloseable {
             LOGGER.info("Client.execute('{}'): got endpoints \n{}", stmt, fi.getEndpoints());
             long count = 0;
             for (FlightEndpoint endpoint: fi.getEndpoints()) {
-                try (FlightStream stream = this.client.getStream(endpoint.getTicket(), callOptions())) {
+                try (FlightStream stream = this.openStream(endpoint)) {
                     while (stream.next()) {
                         VectorSchemaRoot root = stream.getRoot();
                         count += root.getRowCount();
@@ -255,12 +275,22 @@ public final class Client implements AutoCloseable {
      */
     @Override
     public void close() {
-        try {
-            synchronized (Client.clients) {
-                Client.clients.remove(this.connectionString);
-            }
-            this.client.close();
+        synchronized (Client.class) {
+            Client.clients.remove(this.connectionString);
+        }
 
+        Set<FlightClient> routedClients = new HashSet<>(this.endpointClients.values());
+        this.endpointClients.clear();
+        for (FlightClient routedClient : routedClients) {
+            try {
+                routedClient.close();
+            } catch (Exception ex) {
+                LOGGER.warn("Error closing routed Flight client: {}", ex.getMessage());
+            }
+        }
+
+        try {
+            this.client.close();
             this.allocator.getChildAllocators().forEach(BufferAllocator::close);
             AutoCloseables.close(this.allocator);
         } catch (Exception ex) {
@@ -314,17 +344,43 @@ public final class Client implements AutoCloseable {
      * @return FlightClient
      */
     private static FlightClient create(Configuration config, BufferAllocator allocator) {
-        FlightClient.Builder builder = FlightClient.builder().allocator(allocator);
-        if (config.getTlsEnabled()) {
+        Location location = config.getTlsEnabled()
+                ? Location.forGrpcTls(config.getFlightHost(), config.getFlightPort())
+                : Location.forGrpcInsecure(config.getFlightHost(), config.getFlightPort());
+        return create(config, allocator, location, config.getPassword() != null && !config.getPassword().isEmpty());
+    }
+
+    /**
+     * Builds a client for an endpoint-advertised location. Authentication is not
+     * repeated: the credential obtained from the coordinator is attached to the
+     * routed getStream call via {@link #callOptions()}.
+     */
+    private static FlightClient create(Configuration config, BufferAllocator allocator,
+            Location location, boolean captureBearerToken) {
+        URI uri = location.getUri();
+        String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
+        FlightClient.Builder builder = FlightClient.builder().allocator(allocator).location(location);
+
+        if ("grpc+tls".equals(scheme)) {
+            builder.useTls();
             if (config.getTruststoreJks() == null || config.getTruststoreJks().isEmpty()) {
-                builder.location(Location.forGrpcTls(config.getFlightHost(), config.getFlightPort())).useTls().verifyServer(config.verifyServer());
+                builder.verifyServer(config.verifyServer());
             } else {
-                builder.location(Location.forGrpcTls(config.getFlightHost(), config.getFlightPort())).useTls().trustedCertificates(new ByteArrayInputStream(config.getCertificateBytes()));
+                builder.trustedCertificates(new ByteArrayInputStream(config.getCertificateBytes()));
+            }
+        } else if ("grpc+tcp".equals(scheme) || "grpc+unix".equals(scheme)) {
+            if (config.getTlsEnabled()) {
+                throw new IllegalArgumentException(
+                        "Refusing to forward Flight credentials from TLS to plaintext endpoint " + uri);
             }
         } else {
-            builder.location(Location.forGrpcInsecure(config.getFlightHost(), config.getFlightPort()));
+            throw new IllegalArgumentException("Unsupported Flight endpoint location: " + uri);
         }
-        return (config.getPassword() != null && !config.getPassword().isEmpty()) ? builder.intercept(Client.factory).build() : builder.build();
+
+        if (captureBearerToken) {
+            builder.intercept(Client.factory);
+        }
+        return builder.build();
     }
 
     /**
@@ -431,7 +487,38 @@ public final class Client implements AutoCloseable {
      * @throws Exception on stream open failure
      */
     public FlightStream openStream(FlightEndpoint fep) throws Exception {
-        return this.client.getStream(fep.getTicket(), callOptions());
+        if (fep.getLocations().isEmpty()) {
+            return this.client.getStream(fep.getTicket(), callOptions());
+        }
+
+        IllegalArgumentException unsupported = null;
+        for (Location location : fep.getLocations()) {
+            if (Location.reuseConnection().equals(location) || isPrimaryLocation(location)) {
+                return this.client.getStream(fep.getTicket(), callOptions());
+            }
+            try {
+                FlightClient routedClient = this.endpointClients.computeIfAbsent(
+                        location.getUri(), uri -> create(this.config, this.allocator, location, false));
+                LOGGER.info("Client.openStream(): routing ticket to {}", location.getUri());
+                return routedClient.getStream(fep.getTicket(), callOptions());
+            } catch (IllegalArgumentException ex) {
+                unsupported = ex;
+            }
+        }
+
+        if (unsupported != null) {
+            throw unsupported;
+        }
+        throw new IllegalArgumentException("Flight endpoint has no usable location: " + fep);
+    }
+
+    private boolean isPrimaryLocation(Location location) {
+        URI uri = location.getUri();
+        String expectedScheme = this.config.getTlsEnabled() ? "grpc+tls" : "grpc+tcp";
+        return expectedScheme.equalsIgnoreCase(uri.getScheme())
+                && this.config.getFlightPort() == uri.getPort()
+                && uri.getHost() != null
+                && uri.getHost().equalsIgnoreCase(this.config.getFlightHost());
     }
 
     /**
