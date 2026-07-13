@@ -65,11 +65,12 @@ services:
       DIRECT_PUBLISH_SCHEMA: "${DIRECT_PUBLISH_SCHEMA:-tpch_direct}"
       FLIGHT_SOURCE_HOST: "${FLIGHT_SOURCE_HOST:-flight-server-1}"
       FLIGHT_SOURCE_PORT: "${FLIGHT_SOURCE_PORT:-32010}"
-      FLIGHT_SERVER_DATA_DIRS: "${FLIGHT_SERVER_DATA_DIRS:-/server-data/flight-server-1,/server-data/flight-server-2,/server-data/flight-server-3}"
+      FLIGHT_SERVER_DATA_DIRS: "${FLIGHT_SERVER_DATA_DIRS:-/server-data/all}"
       DIRECT_PARQUET_DIR: "${DIRECT_PARQUET_DIR:-/direct-data}"
       SPARK_WAREHOUSE_DIR: /spark-warehouse
       SPARK_METASTORE_DB: /spark-warehouse/metastore_db
     volumes:
+      - flight-server-all-data:/server-data/all
       - flight-server-1-data:/server-data/flight-server-1
       - flight-server-2-data:/server-data/flight-server-2
       - flight-server-3-data:/server-data/flight-server-3
@@ -88,11 +89,12 @@ services:
       BENCHMARK_SCALE_FACTOR: "${BENCHMARK_SCALE_FACTOR:-0.01}"
       BENCHMARK_QUERY_SET: "${BENCHMARK_QUERY_SET:-}"
       BENCHMARK_METADATA_OUT: "${BENCHMARK_METADATA_OUT:-}"
-      FLIGHT_SERVER_DATA_DIRS: "${FLIGHT_SERVER_DATA_DIRS:-/server-data/flight-server-1,/server-data/flight-server-2,/server-data/flight-server-3}"
+      FLIGHT_SERVER_DATA_DIRS: "${FLIGHT_SERVER_DATA_DIRS:-/server-data/all}"
       GENERATE_DIRECT_PARQUET: "${GENERATE_DIRECT_PARQUET:-false}"
       DIRECT_PARQUET_DIR: "${DIRECT_PARQUET_DIR:-/direct-data}"
       DIRECT_PARQUET_PARTITIONS: "${DIRECT_PARQUET_PARTITIONS:-}"
     volumes:
+      - flight-server-all-data:/server-data/all
       - flight-server-1-data:/server-data/flight-server-1
       - flight-server-2-data:/server-data/flight-server-2
       - flight-server-3-data:/server-data/flight-server-3
@@ -146,7 +148,7 @@ services:
       <<: *server-env
       FLIGHT_LOCALHOST: flight-server-1
     volumes:
-      - flight-server-1-data:/data/parquet
+      - flight-server-all-data:/data/parquet
     ports:
       - "32010:32010"
     healthcheck:
@@ -162,7 +164,7 @@ services:
       <<: *server-env
       FLIGHT_LOCALHOST: flight-server-2
     volumes:
-      - flight-server-2-data:/data/parquet
+      - flight-server-all-data:/data/parquet
     ports:
       - "32011:32010"
     healthcheck:
@@ -178,7 +180,7 @@ services:
       <<: *server-env
       FLIGHT_LOCALHOST: flight-server-3
     volumes:
-      - flight-server-3-data:/data/parquet
+      - flight-server-all-data:/data/parquet
     ports:
       - "32012:32010"
     healthcheck:
@@ -188,6 +190,7 @@ services:
       retries: 60
 
 volumes:
+  flight-server-all-data:
   flight-server-1-data:
   flight-server-2-data:
   flight-server-3-data:

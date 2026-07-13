@@ -134,9 +134,9 @@ configure_cluster() {
   for index in $(seq 1 "${nodes}"); do
     hosts+=("flight-server-${index}")
     servers+=("flight-server-${index}:32010")
-    data_dirs+=("/server-data/flight-server-${index}")
     FLIGHT_SERVER_SERVICES+=("flight-server-${index}")
   done
+  data_dirs+=("/server-data/all")
 
   export FLIGHT_HOSTS
   export FLIGHT_SERVERS

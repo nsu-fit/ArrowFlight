@@ -75,12 +75,42 @@ def directory_stats(path):
     return {"path": str(path), "bytes": total_bytes, "files": len(files), "file_details": files}
 
 
+def owner_directory_stats(path, owner):
+    files = []
+    total_bytes = 0
+    if path.exists():
+        for file in sorted(path.rglob("*.parquet")):
+            if owner not in file.name:
+                continue
+            size = file.stat().st_size
+            total_bytes += size
+            files.append(
+                {
+                    "path": str(file),
+                    "bytes": size,
+                    "relative_path": str(file.relative_to(path)),
+                }
+            )
+    return {"path": str(path), "bytes": total_bytes, "files": len(files), "file_details": files}
+
+
 def table_stats(root, schema):
     schema_dir = root / schema
     tables = []
     if schema_dir.exists():
         for table_dir in sorted(path for path in schema_dir.iterdir() if path.is_dir()):
             stats = directory_stats(table_dir)
+            stats["table"] = table_dir.name
+            tables.append(stats)
+    return tables
+
+
+def owner_table_stats(root, schema, owner):
+    schema_dir = root / schema
+    tables = []
+    if schema_dir.exists():
+        for table_dir in sorted(path for path in schema_dir.iterdir() if path.is_dir()):
+            stats = owner_directory_stats(table_dir, owner)
             stats["table"] = table_dir.name
             tables.append(stats)
     return tables
@@ -120,7 +150,8 @@ def write_metadata(
     dataset,
     schema,
     scale_factor,
-    server_roots,
+    flight_root,
+    flight_hosts,
     direct_root,
     direct_partitions,
     generate_direct,
@@ -136,10 +167,10 @@ def write_metadata(
         "dataset": dataset,
         "schema": schema,
         "scale_factor": scale_factor,
-        "cluster_nodes": len(server_roots),
+        "cluster_nodes": len(flight_hosts),
         "flight_hosts": os.environ.get("FLIGHT_HOSTS", ""),
         "flight_servers": os.environ.get("FLIGHT_SERVERS", ""),
-        "flight_server_data_dirs": [str(root) for root in server_roots],
+        "flight_server_data_dirs": [str(flight_root)],
         "flight_source_host": os.environ.get("FLIGHT_SOURCE_HOST", "flight-server-1"),
         "flight_source_port": os.environ.get("FLIGHT_SOURCE_PORT", "32010"),
         "direct_parquet_dir": str(direct_root),
@@ -148,12 +179,13 @@ def write_metadata(
         "flight_data": [
             {
                 "server_index": index + 1,
-                "root": str(root),
-                "schema_path": str(root / schema),
-                "tables": table_stats(root, schema),
-                **directory_stats(root / schema),
+                "host": host,
+                "root": str(flight_root),
+                "schema_path": str(flight_root / schema),
+                "tables": owner_table_stats(flight_root, schema, host),
+                **owner_directory_stats(flight_root / schema, host),
             }
-            for index, root in enumerate(server_roots)
+            for index, host in enumerate(flight_hosts)
         ],
         "direct_data": {
             "root": str(direct_root),
@@ -207,15 +239,16 @@ def export_table_shard(connection, table, target, shard_count, shard):
     connection.execute(query)
 
 
-def export_table_to_flight_roots(connection, table, schema, server_roots):
-    shard_count = len(server_roots)
-    for shard, root in enumerate(server_roots):
-        table_dir = root / schema / table
-        clean_dir(table_dir)
-        target = table_dir / f"part-{shard:05d}.parquet"
+def export_table_to_flight_root(connection, table, schema, flight_root, flight_hosts):
+    shard_count = len(flight_hosts)
+    table_dir = flight_root / schema / table
+    clean_dir(table_dir)
+
+    for shard, host in enumerate(flight_hosts):
+        target = table_dir / f"part-{host}-{shard:05d}.parquet"
         export_table_shard(connection, table, target, shard_count, shard)
 
-    print(f"Generated {schema}.{table} across {len(server_roots)} flight server volume(s)")
+    print(f"Generated {schema}.{table} into {flight_root} across {len(flight_hosts)} flight shard owner(s)")
 
 
 def export_table_to_direct_root(connection, table, schema, direct_root, shard_count):
@@ -240,16 +273,24 @@ def main():
     server_roots = [
         Path(item)
         for item in os.environ.get(
-            "FLIGHT_SERVER_DATA_DIRS",
-            "/server-data/flight-server-1,/server-data/flight-server-2,/server-data/flight-server-3",
+            "FLIGHT_SERVER_DATA_DIRS", "/server-data/all",
         ).split(",")
         if item
+    ]
+    flight_hosts = [
+        item.strip()
+        for item in os.environ.get(
+            "FLIGHT_HOSTS", "flight-server-1,flight-server-2,flight-server-3",
+        ).split(",")
+        if item.strip()
     ]
 
     if dataset not in {"tpch", "tpcds"}:
         raise RuntimeError("BENCHMARK_DATASET must be tpch or tpcds")
     if not server_roots:
         raise RuntimeError("FLIGHT_SERVER_DATA_DIRS is empty")
+    if not flight_hosts:
+        raise RuntimeError("FLIGHT_HOSTS is empty")
 
     for root in server_roots:
         clean_dir(root / schema)
@@ -269,7 +310,7 @@ def main():
         connection.execute(f"CALL dsdgen(sf={scale_factor})")
 
     for table in table_names(connection, dataset):
-        export_table_to_flight_roots(connection, table, schema, server_roots)
+        export_table_to_flight_root(connection, table, schema, server_roots[0], flight_hosts)
         if generate_direct:
             export_table_to_direct_root(connection, table, schema, direct_root, direct_partitions)
 
@@ -282,7 +323,8 @@ def main():
         dataset,
         schema,
         scale_factor,
-        server_roots,
+        server_roots[0],
+        flight_hosts,
         direct_root,
         direct_partitions,
         generate_direct,

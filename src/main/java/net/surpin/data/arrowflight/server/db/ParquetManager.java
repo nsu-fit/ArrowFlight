@@ -61,6 +61,8 @@ import java.util.Set;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
@@ -71,6 +73,7 @@ import java.util.stream.Stream;
  */
 public final class ParquetManager {
     private static final Logger LOGGER = LoggerFactory.getLogger(ParquetManager.class);
+    private static final Pattern FLIGHT_SERVER_IN_PATH = Pattern.compile("flight-server-\\d+");
 
     // Daemon thread pool for parallel per-file I/O (footer reads + Acero scans).
     private static final int IO_PARALLELISM = RuntimeSettings.ioParallelism();
@@ -1672,6 +1675,12 @@ public final class ParquetManager {
 
     public LinkedHashMap<String, Long> fileLocality(LocatedFileStatus locatedFileStatus) {
         Objects.requireNonNull(locatedFileStatus);
+        Matcher owner = FLIGHT_SERVER_IN_PATH.matcher(locatedFileStatus.getPath().toString());
+        if (owner.find()) {
+            LinkedHashMap<String, Long> explicitOwner = new LinkedHashMap<>();
+            explicitOwner.put(owner.group(), 1L);
+            return explicitOwner;
+        }
         return Arrays.stream(locatedFileStatus.getBlockLocations())
                 .flatMap(bl -> {
                     try {
