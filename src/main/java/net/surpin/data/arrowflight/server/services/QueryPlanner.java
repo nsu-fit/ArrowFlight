@@ -181,18 +181,31 @@ public final class QueryPlanner {
      */
     private static void requireShardCoverage(Map<String, FileAssignment> files,
             ParquetQueryParser query, Set<String> liveServers) throws IOException {
+        boolean anyHasShard = false;
         for (String server : liveServers) {
             if (query.isJoin) {
+                boolean serverHasAll = true;
                 for (ParquetQueryParser.JoinTable table : query.joinTables) {
                     if (!ownsTableShard(files, server, table.schema(), table.table())) {
-                        throw new IOException("Flight node " + server
-                                + " has no shard for required table " + table.table());
+                        serverHasAll = false;
+                        break;
                     }
                 }
-            } else if (!ownsTableShard(files, server, query.schema, query.table)) {
-                throw new IOException("Flight node " + server
-                        + " has no shard for required table " + query.table);
+                if (serverHasAll) {
+                    anyHasShard = true;
+                } else {
+                    LOGGER.warn("Flight node {} missing shard for join tables; other nodes may serve", server);
+                }
+            } else {
+                if (ownsTableShard(files, server, query.schema, query.table)) {
+                    anyHasShard = true;
+                } else {
+                    LOGGER.warn("Flight node {} has no shard for table {}", server, query.table);
+                }
             }
+        }
+        if (!anyHasShard) {
+            throw new IOException("No Flight node has shards for required table in query: " + query);
         }
     }
 

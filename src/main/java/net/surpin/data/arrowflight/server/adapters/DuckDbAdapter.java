@@ -177,11 +177,12 @@ public final class DuckDbAdapter {
             boolean startListener) throws Exception {
         LOGGER.info("Executing DuckDB SQL with Arrow batch size {}: {}", batchSize, duckSql);
         Connection conn = threadConn.get();
-        try (Statement stmt = conn.createStatement();
-                org.duckdb.DuckDBResultSet drs = (org.duckdb.DuckDBResultSet) stmt.executeQuery(duckSql);
-                ArrowReader reader = (ArrowReader) drs.arrowExportStream(allocator, batchSize);
-                VectorSchemaRoot flightRoot = VectorSchemaRoot.create(
-                        reader.getVectorSchemaRoot().getSchema(), allocator)) {
+        try (Statement stmt = conn.createStatement()) {
+            stmt.setQueryTimeout(60);
+            try (org.duckdb.DuckDBResultSet drs = (org.duckdb.DuckDBResultSet) stmt.executeQuery(duckSql);
+                    ArrowReader reader = (ArrowReader) drs.arrowExportStream(allocator, batchSize);
+                    VectorSchemaRoot flightRoot = VectorSchemaRoot.create(
+                            reader.getVectorSchemaRoot().getSchema(), allocator)) {
             VectorSchemaRoot duckRoot = reader.getVectorSchemaRoot();
 
             if (startListener) {

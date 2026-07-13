@@ -42,6 +42,8 @@ public final class HazelcastAdapter implements AutoCloseable {
      */
     public HazelcastAdapter(AppConfig appConfig, String... hosts) {
         Config config = new Config();
+        config.setProperty("hazelcast.operation.call.timeout.millis", "10000");
+        config.setProperty("hazelcast.invocation.timeout.seconds", "10");
         NetworkConfig network = config.getNetworkConfig();
         network.setPort(appConfig.hazelcastPort());
         network.setPortAutoIncrement(false);

@@ -35,6 +35,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
 
 import net.surpin.data.arrowflight.server.adapters.AceroAdapter;
@@ -167,8 +169,14 @@ public final class ExecutionService {
                         parquetAdapter.fileSystem(), file)));
             }
             long total = 0;
-            for (Future<Long> f : futs) {
-                total += f.get();
+            try {
+                for (Future<Long> f : futs) {
+                    total += f.get(60, TimeUnit.SECONDS);
+                }
+            } catch (TimeoutException e) {
+                LOGGER.error("Timeout reading Parquet footer row counts");
+                futs.forEach(f -> f.cancel(true));
+                throw new IOException("Timeout reading Parquet footer row counts", e);
             }
             LOGGER.debug("COUNT(*) footer fast-path: {} file(s), total={}", parquetFiles.size(), total);
             int n = pq.selectExprs.size();
@@ -197,17 +205,23 @@ public final class ExecutionService {
             }
             Object[] merged = null;
             boolean allHaveStats = true;
-            for (Future<Optional<Object[]>> f : futs) {
-                Optional<Object[]> opt = f.get();
-                if (opt.isEmpty()) {
-                    allHaveStats = false;
-                    break;
+            try {
+                for (Future<Optional<Object[]>> f : futs) {
+                    Optional<Object[]> opt = f.get(60, TimeUnit.SECONDS);
+                    if (opt.isEmpty()) {
+                        allHaveStats = false;
+                        break;
+                    }
+                    if (merged == null) {
+                        merged = opt.get().clone();
+                    } else {
+                        mergeAggCols(pq.selectExprs, merged, opt.get(), 0);
+                    }
                 }
-                if (merged == null) {
-                    merged = opt.get().clone();
-                } else {
-                    mergeAggCols(pq.selectExprs, merged, opt.get(), 0);
-                }
+            } catch (TimeoutException e) {
+                LOGGER.error("Timeout reading Parquet footer statistics");
+                futs.forEach(f -> f.cancel(true));
+                throw new IOException("Timeout reading Parquet footer statistics", e);
             }
             if (allHaveStats) {
                 LOGGER.debug("MIN/MAX footer stats fast-path: {} file(s)", parquetFiles.size());
