@@ -11,7 +11,9 @@ ADD https://repo1.maven.org/maven2/org/apache/hive/hive-jdbc/${HIVE_JDBC_VERSION
 RUN chmod 0644 /benchbase/lib/hive-jdbc-${HIVE_JDBC_VERSION}-standalone.jar
 COPY shim /benchbase/shim
 RUN mkdir -p /benchbase/classes \
-    && javac -cp "/benchbase/lib/*" -d /benchbase/classes $(find /benchbase/shim -name '*.java')
+    && javac -cp "/benchbase/lib/*" -d /benchbase/classes $(find /benchbase/shim -name '*.java') \
+    && java -cp "/benchbase/classes:/benchbase/lib/*" net.surpin.benchbase.HiveExecuteDriverSelfTest \
+    && rm /benchbase/classes/net/surpin/benchbase/HiveExecuteDriverSelfTest.class
 
 FROM ${BENCHBASE_IMAGE}
 

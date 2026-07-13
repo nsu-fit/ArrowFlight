@@ -192,6 +192,9 @@ public final class HiveExecuteDriver implements Driver {
             result = result.replaceAll("(?i)'(\\d{4}-\\d{2}-\\d{2})'\\s*::\\s*date", "DATE '$1'");
             result = result.replaceAll("(?i)\\?\\s*::\\s*decimal(?:\\s*\\(\\s*\\d+\\s*(?:,\\s*\\d+\\s*)?\\))?", "CAST(? AS DECIMAL)");
             result = result.replaceAll("(?i)'(\\d+\\.?\\d*)'\\s*::\\s*decimal(?:\\s*\\(\\s*\\d+\\s*(?:,\\s*\\d+\\s*)?\\))?", "$1");
+            result = result.replaceAll(
+                    "(?i)concat\\(\\s*(\\?|'-?\\d+')\\s*,\\s*'\\s*(year|month|day|hour|minute|second)s?\\s*'\\s*\\)\\s*::\\s*interval",
+                    "INTERVAL $1 $2");
             result = result.replaceAll("(?i)interval\\s+'([^']+)'\\s+(year|month|day|hour|minute|second)s?", "INTERVAL '$1' $2");
             return result;
         }
