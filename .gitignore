@@ -25,12 +25,16 @@ surefire-reports/
 failsafe-reports/
 checkstyle-result.xml
 spotbugsXml.xml
+__pycache__/
+*.py[cod]
 
 # Logs and runtime dumps
 *.log
 *.pid
 hs_err_pid*
 replay_pid*
+benchmarks/benchbase-spark/results/
+benchmarks/benchbase-spark/config/.*.xml
 
 # Local environment/configuration
 .env

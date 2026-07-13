@@ -2,17 +2,24 @@ package net.surpin.data.arrowflight.client.spark;
 
 import net.surpin.data.arrowflight.client.Configuration;
 import net.surpin.data.arrowflight.client.model.Table;
+import org.apache.spark.sql.SQLContext;
 import org.apache.spark.sql.connector.catalog.TableProvider;
 import org.apache.spark.sql.connector.expressions.Transform;
+import org.apache.spark.sql.sources.BaseRelation;
 import org.apache.spark.sql.sources.DataSourceRegister;
+import org.apache.spark.sql.sources.RelationProvider;
 import org.apache.spark.sql.types.StructType;
 import org.apache.spark.sql.util.CaseInsensitiveStringMap;
+
+import scala.collection.JavaConverters;
+
+import java.util.HashMap;
 import java.util.Map;
 
 /**
  * Define the flight-source which supports both read from and write to remote flight-service
  */
-public class FlightSource implements TableProvider, DataSourceRegister {
+public class FlightSource implements TableProvider, DataSourceRegister, RelationProvider {
     //the option keys for connection
     private static final String HOST = "host";
     private static final String PORT = "port";
@@ -121,6 +128,16 @@ public class FlightSource implements TableProvider, DataSourceRegister {
     @Override
     public org.apache.spark.sql.connector.catalog.Table getTable(StructType schema, Transform[] partitioning, Map<String, String> properties) {
         return new FlightTable(this.configuration, this.table);
+    }
+
+    /**
+     * Spark Thrift Server resolves persisted Hive data-source tables through DataSource V1.
+     */
+    @Override
+    public BaseRelation createRelation(SQLContext sqlContext, scala.collection.immutable.Map<String, String> parameters) {
+        Map<String, String> options = new HashMap<>(JavaConverters.mapAsJavaMap(parameters));
+        this.probeOptions(new CaseInsensitiveStringMap(options));
+        return new FlightRelation(sqlContext, this.configuration, this.table);
     }
 
     /**
