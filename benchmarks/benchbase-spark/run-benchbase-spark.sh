@@ -8,6 +8,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 COMPOSE_FILE="${REPO_ROOT}/docker-compose.yml"
 RESULTS_ROOT="${SCRIPT_DIR}/results"
+PAGES_DIR="${REPO_ROOT}/pages"
 RESULTS_RUN_ID="${BENCHBASE_RESULTS_ID:-}"
 RESULTS_DIR="${RESULTS_ROOT}"
 CONFIG_DIR="${SCRIPT_DIR}/config"
@@ -21,6 +22,7 @@ BENCHBASE_TIME_SECONDS="${BENCHBASE_TIME_SECONDS:-}"
 BENCHBASE_TERMINALS="${BENCHBASE_TERMINALS:-}"
 BENCHBASE_RATE="${BENCHBASE_RATE:-unlimited}"
 BENCHBASE_DB_SCHEMA="${BENCHBASE_DB_SCHEMA:-}"
+BENCHBASE_UPDATE_PAGES="${BENCHBASE_UPDATE_PAGES:-true}"
 PYTHON_CMD=()
 
 usage() {
@@ -45,6 +47,7 @@ Modes:
   run-direct
            execute BenchBase against <benchmark>_direct on an already prepared compare stack
   report   build latest HTML report
+  pages    rebuild GitHub Pages dashboard from local results
   down     stop stack and remove Docker volumes
   logs     follow compose logs
 
@@ -465,10 +468,19 @@ capture_query_results() {
 
 build_html_report() {
   run_python "${SCRIPT_DIR}/visualize-results.py" --results "${RESULTS_DIR}"
+  build_pages_site
 }
 
 build_compare_html_report() {
   run_python "${SCRIPT_DIR}/visualize-results.py" --compare --results "${RESULTS_DIR}"
+  build_pages_site
+}
+
+build_pages_site() {
+  if [[ "${BENCHBASE_UPDATE_PAGES}" != "true" ]]; then
+    return
+  fi
+  run_python "${SCRIPT_DIR}/build-pages-site.py" --results "${RESULTS_ROOT}" --out "${PAGES_DIR}"
 }
 
 benchbase_execute() {
@@ -621,6 +633,9 @@ case "${MODE}" in
   report)
     RESULTS_DIR="${RESULTS_ROOT}"
     build_html_report
+    ;;
+  pages)
+    build_pages_site
     ;;
   down)
     reset_stack

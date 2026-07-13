@@ -8,6 +8,6 @@
   <reconnectOnConnectionFailure>false</reconnectOnConnectionFailure>
   <isolation>TRANSACTION_NONE</isolation>
   <batchsize>1024</batchsize>
-  <scalefactor>0.1</scalefactor>
+  <scalefactor>0.01</scalefactor>
   <terminals>1</terminals>
 </parameters>

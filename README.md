@@ -1,68 +1,118 @@
-# Hadoop Arrow Flight SQL Server Overview
+# Hadoop Arrow Flight SQL Server
 
-[![Java tests and JaCoCo coverage](https://github.com/nsu-fit/ArrowFlight/actions/workflows/coverage.yml/badge.svg)](https://github.com/nsu-fit/ArrowFlight/actions/workflows/coverage.yml)
-[![JaCoCo Coverage Report](https://img.shields.io/badge/JaCoCo-Coverage_Report-brightgreen)](https://nsu-fit.github.io/ArrowFlight/jacoco/)
+[![CI](https://github.com/nsu-fit/ArrowFlight/actions/workflows/ci.yml/badge.svg)](https://github.com/nsu-fit/ArrowFlight/actions/workflows/ci.yml)
+[![Coverage Status](https://coveralls.io/repos/github/nsu-fit/ArrowFlight/badge.svg)](https://coveralls.io/github/nsu-fit/ArrowFlight)
+[![Benchmark Pages](https://github.com/nsu-fit/ArrowFlight/actions/workflows/benchmark-pages.yml/badge.svg)](https://github.com/nsu-fit/ArrowFlight/actions/workflows/benchmark-pages.yml)
+[![Benchmark Dashboard](https://img.shields.io/badge/Benchmarks-GitHub_Pages-blue)](https://nsu-fit.github.io/ArrowFlight/)
 
-Provides high-performance Parquet access via **Arrow Flight SQL**. Enables analytical queries with distributed processing, data locality, and optimizations (fast-path, C++ filtering, DuckDB for aggregations). Runs in cluster mode coordinated by Hazelcast.
+High-performance **Arrow Flight SQL** server for analytical queries on Parquet data. Built for teams running SQL over large Parquet datasets in distributed environments (HDFS, S3, local FS).
+
+- **GA**: `SELECT` with `WHERE`, `GROUP BY`, `INNER JOIN`, aggregations (`COUNT`, `SUM`, `MIN`, `MAX`), distributed processing with data locality.
+- **Experimental**: Cross-type join auto-coercion (e.g. `INT32 = INT64`, `BOOL = INT8`), Spark DataSource V2 writer path.
 
 ---
-## Helper Scripts
 
-Located in `src/main/shell/`:
-- **`start_server.sh`**: Launches the Flight SQL server.
-- **`start_generator.sh`**: Generates test Parquet datasets.
-- **`spark_submit_client.sh`**: Submits the Spark client to query the server.
-- **`generate_data.log`**: Log output from the data generation process.
+## Quick Start (Local)
 
-Root helper:
-- **`run.sh`**: Safely fetches, fast-forwards, builds, and runs selected tests. Destructive reset requires `--force-reset` and dirty-worktree confirmation.
+```bash
+git clone https://github.com/nsu-fit/ArrowFlight.git
+cd ArrowFlight
 
-## Server Parameters
+# Build (Java 21 required, Maven Wrapper included — no Maven install needed)
+./mvnw package -DskipTests
 
-When launching the server (via `start_server.sh` or `java -jar`), use the following arguments:
+# Start a single-node server with test data
+java -jar target/hadoop-arrow-flight-1.0-SNAPSHOT.jar \
+    --data-dir src/test/resources/test_db \
+    --localhost 127.0.0.1 \
+    --port 32010 \
+    --hosts 127.0.0.1
+```
 
-| Parameter | Description | Example |
+The server is now listening on `grpc://127.0.0.1:32010`. Verify with the Spark client:
+
+```scala
+spark.read
+  .format("flight")
+  .option("host", "127.0.0.1")
+  .option("port", "32010")
+  .option("table", "SELECT count(*) FROM test_schema.test_table")
+  .load()
+  .show()
+```
+
+Full build and test instructions: **[User Guide — Build and Test](docs/user_guides/build-test-and-scripts.md)**.
+
+---
+
+## Docker Quick Start
+
+A full 8-service cluster orchestrated via `docker-compose.yml` — Spark master, 2 workers, 3 Flight servers, data generator, and a test client.
+
+```bash
+# Start the cluster (generates test data automatically)
+docker compose up -d
+
+# Run a test query
+docker compose --profile test up spark-client
+```
+
+| Service | Port | Role |
 | :--- | :--- | :--- |
-| `--data-dir` | Directory containing Parquet files. | `/mnt/data/parquet` |
-| `--port` | Flight SQL server port. | `32010` |
-| `--hosts` | Comma-separated list of Hazelcast cluster node IPs. | `192.168.1.10,192.168.1.11` |
-| `--localhost` | Local IP address to bind the server to. | `192.168.1.10` |
-| `--hazelcast-port` | Port for Hazelcast cluster communication. | `5701` |
+| `flight-server-1` | 32010 | Flight SQL node 1 |
+| `flight-server-2` | 32011 → 32010 | Flight SQL node 2 |
+| `flight-server-3` | 32012 → 32010 | Flight SQL node 3 |
+| `spark-master` | 7077, 8080 | Spark cluster master |
+| `spark-worker-1` | 8081 | Spark worker |
+| `spark-worker-2` | 8082 | Spark worker |
+| `data-generator` | — | Generates and distributes test Parquet files |
+| `spark-client` | — | Profiled (`--profile test`), runs `query_flight.py` |
 
-*(Note: The server blocks startup until all nodes specified in `--hosts` join the Hazelcast cluster).*
-
----
-## Tech Stack
-
-| Technology                | Role                                                          |
-| ------------------------- | ------------------------------------------------------------- |
-| **Arrow Flight SQL**      | Transport protocol and client API                             |
-| **jOOQ**                  | SQL parsing (query structure extraction)                      |
-| **Hazelcast**             | Distributed cache, node registry, locks                       |
-| **Hadoop FileSystem**     | HDFS / S3 / local FS access                                   |
-| **Parquet**               | On-disk storage format                                        |
-| **Acero (Arrow Dataset)** | Parquet scanning, filtering, projection (C++)                 |
-| **DuckDB**                | Aggregation execution (GROUP BY, SUM, COUNT) on file groups   |
-| **Substrait / Isthmus**   | SQL filter to Acero plan conversion                           |
-
----
-## Architecture
-
-![architect.jpg](architect.jpg)
+**Dockerfile**: Multi-stage — `maven:3.9.9-eclipse-temurin-21` build, `eclipse-temurin:21-jre-jammy` runtime with Spark 3.5.1 bundled.
 
 ---
 
-## Component Details
+## Usage
 
-- **Flight SQL Server Adapter**: Handles Arrow Flight requests (`GetFlightInfo`, `DoGet`). Parses SQL via `ParquetQueryParser`, distributes files across nodes (via Hazelcast), and generates client `Ticket`s.
-- **Query Parser**: Uses jOOQ to extract schema, table, columns, WHERE, aggregations, and GROUP BY.
-- **Coordinator (Hazelcast)**: Provides distributed query context cache (`statementCache`), node registry (`serverRegistry`), and locks for atomic file acquisition.
-- **Parquet Execution Adapter**: Core execution engine. Dispatches queries:
-  - *Non-aggregations*: Scans via Acero with Substrait filter (if WHERE exists).
-  - *Aggregations*: Uses fast-path (footer read) or passes file groups to DuckDB via Acero (Arrow C Stream).
-- **Acero**: C++ Arrow Dataset engine for projection, filtering, and partial aggregations (data source for DuckDB).
-- **DuckDB**: Executes full aggregations (`GROUP BY`, `SUM`, `COUNT`, etc.) over file groups via Arrow C Stream.
-- **Hadoop FS**: Abstraction for Parquet file access (HDFS, S3, local FS).
+### Server Parameters
+
+| Parameter | Description | Default |
+| :--- | :--- | :--- |
+| `--data-dir` | Directory containing Parquet files | `/data/parquet` |
+| `--port` | Flight SQL server port | `32010` |
+| `--hosts` | Comma-separated Hazelcast cluster node IPs | `0.0.0.0` |
+| `--localhost` | Local IP to bind the server | `localhost` |
+| `--hazelcast-port` | Hazelcast communication port | `5701` |
+
+The server waits up to `hazelcastClusterJoinTimeoutSec` (default 60 s) for all `--hosts` nodes to join, then fails with an error. Single-node mode (`--hosts` with one host) skips the wait.
+
+### Spark Connector
+
+Register as the `flight` format:
+
+```scala
+val df = spark.read
+  .format("flight")
+  .option("host", "localhost")
+  .option("port", "32010")
+  .option("user", "test-user")
+  .option("bearerToken", "test-token")
+  .option("table", "SELECT * FROM test_schema.test_table")
+  .load()
+```
+
+Additional options: `tls.*` for TLS, `default.schema`, `routing.tag`/`routing.queue` for workload management, `partition.*` for parallel reads.
+
+### Java Client API
+
+`Client.java` provides a low-level Flight SQL client:
+
+- `fetch(query)` — execute and materialize result
+- `fetchStreaming(query, callback)` — stream via `BatchCallback`
+- `getQueryEndpoints(query)` — get Flight endpoints
+- `execute(sql)` / `executeUpdate(sql)` — arbitrary statements
+
+Supports exponential backoff retry, connection pooling, TLS, BasicAuth and Bearer token authentication.
 
 ---
 
@@ -78,16 +128,98 @@ When launching the server (via `start_server.sh` or `java -jar`), use the follow
 
 ---
 
-## Supported Features
+## CI / CD
 
-- `SELECT` with projection, filtering (`WHERE`), aggregations (`COUNT`, `SUM`, `MIN`, `MAX`, `GROUP BY`).
-- Info commands (schemas, tables, types, server properties).
-- Distributed processing, data locality, parallelism.
-- Optimizations: fast-path (footer read), C++ filtering (Substrait), DuckDB for aggregations.
+PR checks (`.github/workflows/ci.yml`) enforce on every pull request:
+- `build-server` / `build-client` — compilation via `mvn compile -P server` / `-P client`
+- `lint` — Checkstyle violations and SpotBugs errors via `mvn validate spotbugs:check`
+- `test` — unit tests via `mvn test` (excludes `integration` and `perf` tags)
+- `integration` — integration tests via `mvn test -P integration`
+- `smoke` — smoke tests via `mvn test -P smoke`
+- `coverage` — JaCoCo coverage with per-file table in PR comments and detailed HTML report on GitHub Pages
+
+**Run locally**:
+```bash
+./mvnw test                  # unit (default)
+./mvnw test -P smoke         # smoke tests
+./mvnw test -P integration   # integration tests
+./mvnw test -P perf          # performance benchmarks
+```
+
+### GitLab CI
+
+Two-stage pipeline (`.gitlab-ci.yml`): build server/client separately → test with JUnit report upload.
+
+---
+
+## Configuration
+
+Configuration resolves from three tiers: **JVM property** → **`arrowflight.properties`** → **default**. DuckDB HDFS settings additionally support environment variables.
+
+Key properties (see `RuntimeSettings.java` for the full list):
+
+| Area | Key Properties |
+| :--- | :--- |
+| DuckDB | `batchSize`, `duckDbThreads`, `duckDbGroups`, `duckDbWarmConnections` |
+| DuckDB HDFS | `duckDbHdfsExtension`, `duckDbHdfsDefaultNamenode`, `duckDbHdfsHaNamenodes` |
+| I/O | `ioParallelism`, `ioParallelismMinThreads`, `ioFileBufferSize` |
+| gRPC | `grpcMaxInboundMessageSize`, `flightListenerReadyTimeoutMs` |
+| Client | `client.maxRetries`, `client.retryBackoffMs`, `client.connectTimeoutMs` |
+| Hazelcast | `hazelcastClusterJoinTimeoutSec` |
+
+---
+
+## Features
+
+| Feature | Status |
+| :--- | :--- |
+| `SELECT` with projection | Supported |
+| `WHERE` filtering (server-side via Substrait C++) | Supported |
+| `COUNT`, `SUM`, `MIN`, `MAX` | Supported |
+| `COUNT(DISTINCT col)` | Supported |
+| `GROUP BY` | Supported (requires client-side merge) |
+| `INNER JOIN` | Supported (DuckDB server-side + Spark fallback) |
+| Cross-type join coercion (INT32/INT64, FLOAT/DOUBLE, BOOL/INT8) | Experimental |
+| `ORDER BY` | Not supported (server); Supported (Spark client-side) |
+| `LIMIT` / `OFFSET` | Not supported (server); Supported (Spark client-side) |
+| Subqueries | Not supported |
+| Window functions | Not supported |
+| Write (`INSERT` / `TRUNCATE`) | Experimental (Spark-side only) |
+| Info commands (schemas, tables, types) | Supported |
+| Distributed processing with data locality | Supported |
 
 ## Limitations
 
-- `SELECT` only (read-only).
-- Single table in `FROM` (no JOINs).
-- No `ORDER BY`, `LIMIT`, subqueries, or window functions.
-- `GROUP BY` aggregations require client-side partial result merging.
+**Server-side (Flight SQL):**
+- No `ORDER BY`, `LIMIT`, `OFFSET`, subqueries, or window functions.
+- `GROUP BY` results require client-side merging across nodes.
+
+**Spark-side (DataSource V2 connector):**
+- `ORDER BY` and `LIMIT` work — Spark applies them after reading from Flight.
+- Write support (`INSERT`, `TRUNCATE`) is experimental, limited to Spark DataSource V2 writer path.
+
+---
+
+## Tech Stack
+
+| Technology | Role |
+| :--- | :--- |
+| **Arrow Flight SQL** | Transport protocol and client API |
+| **Apache Spark** | Client-side join execution, data generation |
+| **jOOQ** | SQL parsing |
+| **Hazelcast** | Distributed cache, node registry, coordination |
+| **Hadoop FileSystem** | HDFS / S3 / local FS access |
+| **Acero (Arrow Dataset)** | C++ Parquet scanning, filtering, projection |
+| **DuckDB** | Aggregation and server-side join execution |
+| **Substrait / Isthmus** | SQL filter to Acero plan conversion |
+
+---
+
+## Documentation
+
+| Document | Description |
+| :--- | :--- |
+| **[Architecture — Query Execution](docs/architecture/sql-query-execution-flow.md)** | Full query lifecycle: parsing, endpoint routing, two-phase execution, DuckDB/Acero dispatch |
+| **[Architecture — Parquet Storage](docs/architecture/hadoop-parquet-storage.md)** | Storage model, Hadoop FS abstraction, block locality, file discovery |
+| **[ADR](docs/adr/)** | Architecture Decision Records (query engine selection, file distribution scheduler) |
+| **[User Guide — Build & Test](docs/user_guides/build-test-and-scripts.md)** | Build profiles, unit/integration/perf test commands, `run.sh` usage, DuckDB HDFS extension setup |
