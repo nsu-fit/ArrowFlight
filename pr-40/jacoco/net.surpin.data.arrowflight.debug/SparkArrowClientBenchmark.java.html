@@ -157,7 +157,7 @@ import static org.apache.arrow.memory.DefaultAllocationManagerOption.ALLOCATION_
 
             // The server prints &quot;READY port=N&quot; on stdout when it is accepting connections.
 <span class="nc" id="L159">            try (BufferedReader br = new BufferedReader(</span>
-<span class="nc" id="L160">                    new InputStreamReader(serverProc.getInputStream()))) {</span>
+<span class="nc" id="L160">                    new InputStreamReader(serverProc.getInputStream(), java.nio.charset.StandardCharsets.UTF_8))) {</span>
                 String line;
 <span class="nc bnc" id="L162" title="All 2 branches missed.">                while ((line = br.readLine()) != null) {</span>
 <span class="nc" id="L163">                    System.out.println(&quot;[server] &quot; + line);</span>
@@ -466,15 +466,17 @@ import static org.apache.arrow.memory.DefaultAllocationManagerOption.ALLOCATION_
 <span class="nc" id="L466">                .redirectError(ProcessBuilder.Redirect.DISCARD)</span>
 <span class="nc" id="L467">                .start();</span>
 <span class="nc" id="L468">        long resultRows = 0;</span>
-<span class="nc" id="L469">        try (BufferedReader br = new BufferedReader(new InputStreamReader(proc.getInputStream()))) {</span>
-<span class="nc bnc" id="L470" title="All 2 branches missed.">            while (br.readLine() != null) {</span>
-<span class="nc" id="L471">                resultRows++;</span>
+<span class="nc" id="L469">        try (BufferedReader br = new BufferedReader(</span>
+<span class="nc" id="L470">                new InputStreamReader(proc.getInputStream(), java.nio.charset.StandardCharsets.UTF_8))) {</span>
+            String line;
+<span class="nc bnc" id="L472" title="All 2 branches missed.">            while ((line = br.readLine()) != null) {</span>
+<span class="nc" id="L473">                resultRows++;</span>
             }
         }
-<span class="nc" id="L474">        proc.waitFor();</span>
-<span class="nc" id="L475">        long ms = (System.nanoTime() - start) / 1_000_000;</span>
-<span class="nc" id="L476">        System.out.printf(&quot;  ClickHouse Local: %s  (%,d result rows)%n&quot;, formatDuration(ms), resultRows);</span>
-<span class="nc" id="L477">        return ms;</span>
+<span class="nc" id="L476">        proc.waitFor();</span>
+<span class="nc" id="L477">        long ms = (System.nanoTime() - start) / 1_000_000;</span>
+<span class="nc" id="L478">        System.out.printf(&quot;  ClickHouse Local: %s  (%,d result rows)%n&quot;, formatDuration(ms), resultRows);</span>
+<span class="nc" id="L479">        return ms;</span>
     }
 
     /**
@@ -484,26 +486,26 @@ import static org.apache.arrow.memory.DefaultAllocationManagerOption.ALLOCATION_
      * @return elapsed time in milliseconds
      */
     private static long timeSpark(SparkSession spark, String query) {
-<span class="nc" id="L487">        long start = System.nanoTime();</span>
-<span class="nc" id="L488">        List&lt;Row&gt; rows = spark.sql(query).collectAsList();</span>
-<span class="nc" id="L489">        long ms = (System.nanoTime() - start) / 1_000_000;</span>
-<span class="nc" id="L490">        System.out.printf(&quot;  Spark Parquet : %s  (%,d result rows)%n&quot;, formatDuration(ms), rows.size());</span>
-<span class="nc" id="L491">        return ms;</span>
+<span class="nc" id="L489">        long start = System.nanoTime();</span>
+<span class="nc" id="L490">        List&lt;Row&gt; rows = spark.sql(query).collectAsList();</span>
+<span class="nc" id="L491">        long ms = (System.nanoTime() - start) / 1_000_000;</span>
+<span class="nc" id="L492">        System.out.printf(&quot;  Spark Parquet : %s  (%,d result rows)%n&quot;, formatDuration(ms), rows.size());</span>
+<span class="nc" id="L493">        return ms;</span>
     }
 
     /** Executes query via FlightSqlClient, consumes all result batches, returns number of result rows. */
     private static long runArrow(FlightSqlClient sql, FlightClient client, String query) throws Exception {
-<span class="nc" id="L496">        FlightInfo info = sql.execute(query);</span>
-<span class="nc" id="L497">        long resultRows = 0;</span>
-<span class="nc bnc" id="L498" title="All 2 branches missed.">        for (FlightEndpoint ep : info.getEndpoints()) {</span>
-<span class="nc" id="L499">            try (FlightStream stream = client.getStream(ep.getTicket())) {</span>
-<span class="nc bnc" id="L500" title="All 2 branches missed.">                while (stream.next()) {</span>
-<span class="nc" id="L501">                    VectorSchemaRoot root = stream.getRoot();</span>
-<span class="nc" id="L502">                    resultRows += root.getRowCount();</span>
-<span class="nc" id="L503">                }</span>
+<span class="nc" id="L498">        FlightInfo info = sql.execute(query);</span>
+<span class="nc" id="L499">        long resultRows = 0;</span>
+<span class="nc bnc" id="L500" title="All 2 branches missed.">        for (FlightEndpoint ep : info.getEndpoints()) {</span>
+<span class="nc" id="L501">            try (FlightStream stream = client.getStream(ep.getTicket())) {</span>
+<span class="nc bnc" id="L502" title="All 2 branches missed.">                while (stream.next()) {</span>
+<span class="nc" id="L503">                    VectorSchemaRoot root = stream.getRoot();</span>
+<span class="nc" id="L504">                    resultRows += root.getRowCount();</span>
+<span class="nc" id="L505">                }</span>
             }
-<span class="nc" id="L505">        }</span>
-<span class="nc" id="L506">        return resultRows;</span>
+<span class="nc" id="L507">        }</span>
+<span class="nc" id="L508">        return resultRows;</span>
     }
 
     // ── original cluster-mode helper ──────────────────────────────────────────
@@ -514,9 +516,9 @@ import static org.apache.arrow.memory.DefaultAllocationManagerOption.ALLOCATION_
      * @return formatted duration string
      */
     private static String timeOf(Runnable task) {
-<span class="nc" id="L517">        long start = System.nanoTime();</span>
-<span class="nc" id="L518">        task.run();</span>
-<span class="nc" id="L519">        return formatDuration((System.nanoTime() - start) / 1_000_000);</span>
+<span class="nc" id="L519">        long start = System.nanoTime();</span>
+<span class="nc" id="L520">        task.run();</span>
+<span class="nc" id="L521">        return formatDuration((System.nanoTime() - start) / 1_000_000);</span>
     }
 
     // ── formatting / infra ────────────────────────────────────────────────────
@@ -527,15 +529,15 @@ import static org.apache.arrow.memory.DefaultAllocationManagerOption.ALLOCATION_
      * @return formatted string (ms, s, or m s)
      */
     private static String formatDuration(long ms) {
-<span class="nc bnc" id="L530" title="All 2 branches missed.">        if (ms &lt; 1_000) {</span>
-<span class="nc" id="L531">            return ms + &quot; ms&quot;;</span>
+<span class="nc bnc" id="L532" title="All 2 branches missed.">        if (ms &lt; 1_000) {</span>
+<span class="nc" id="L533">            return ms + &quot; ms&quot;;</span>
         }
-<span class="nc bnc" id="L533" title="All 2 branches missed.">        if (ms &lt; 60_000) {</span>
-<span class="nc" id="L534">            return String.format(&quot;%.2f s&quot;, ms / 1_000.0);</span>
+<span class="nc bnc" id="L535" title="All 2 branches missed.">        if (ms &lt; 60_000) {</span>
+<span class="nc" id="L536">            return String.format(&quot;%.2f s&quot;, ms / 1_000.0);</span>
         }
-<span class="nc" id="L536">        long min = ms / 60_000;</span>
-<span class="nc" id="L537">        double sec = (ms % 60_000) / 1_000.0;</span>
-<span class="nc" id="L538">        return String.format(&quot;%d m %.2f s&quot;, min, sec);</span>
+<span class="nc" id="L538">        long min = ms / 60_000;</span>
+<span class="nc" id="L539">        double sec = (ms % 60_000) / 1_000.0;</span>
+<span class="nc" id="L540">        return String.format(&quot;%d m %.2f s&quot;, min, sec);</span>
     }
 
     /**
@@ -544,9 +546,9 @@ import static org.apache.arrow.memory.DefaultAllocationManagerOption.ALLOCATION_
      * @throws IOException on failure
      */
     private static LocalFileSystem newLocalFs() throws IOException {
-<span class="nc" id="L547">        LocalFileSystem fs = new LocalFileSystem();</span>
-<span class="nc" id="L548">        fs.initialize(URI.create(&quot;file:///&quot;), new Configuration());</span>
-<span class="nc" id="L549">        return fs;</span>
+<span class="nc" id="L549">        LocalFileSystem fs = new LocalFileSystem();</span>
+<span class="nc" id="L550">        fs.initialize(URI.create(&quot;file:///&quot;), new Configuration());</span>
+<span class="nc" id="L551">        return fs;</span>
     }
 
     /**
@@ -555,8 +557,8 @@ import static org.apache.arrow.memory.DefaultAllocationManagerOption.ALLOCATION_
      * @throws IOException on socket error
      */
     private static int freePort() throws IOException {
-<span class="nc" id="L558">        try (ServerSocket s = new ServerSocket(0)) {</span>
-<span class="nc" id="L559">            return s.getLocalPort();</span>
+<span class="nc" id="L560">        try (ServerSocket s = new ServerSocket(0)) {</span>
+<span class="nc" id="L561">            return s.getLocalPort();</span>
         }
     }
 
@@ -566,18 +568,18 @@ import static org.apache.arrow.memory.DefaultAllocationManagerOption.ALLOCATION_
      * @throws IOException on filesystem error
      */
     private static void deleteTree(Path dir) throws IOException {
-<span class="nc bnc" id="L569" title="All 2 branches missed.">        if (!Files.exists(dir)) {</span>
-<span class="nc" id="L570">            return;</span>
+<span class="nc bnc" id="L571" title="All 2 branches missed.">        if (!Files.exists(dir)) {</span>
+<span class="nc" id="L572">            return;</span>
         }
-<span class="nc" id="L572">        Files.walk(dir)</span>
-<span class="nc" id="L573">                .sorted(Comparator.reverseOrder())</span>
-<span class="nc" id="L574">                .forEach(p -&gt; {</span>
+<span class="nc" id="L574">        Files.walk(dir)</span>
+<span class="nc" id="L575">                .sorted(Comparator.reverseOrder())</span>
+<span class="nc" id="L576">                .forEach(p -&gt; {</span>
                     try {
-<span class="nc" id="L576">                        Files.delete(p);</span>
-<span class="nc" id="L577">                    } catch (IOException ignored) {</span>
-<span class="nc" id="L578">                    }</span>
-<span class="nc" id="L579">                });</span>
-<span class="nc" id="L580">    }</span>
+<span class="nc" id="L578">                        Files.delete(p);</span>
+<span class="nc" id="L579">                    } catch (IOException ignored) {</span>
+<span class="nc" id="L580">                    }</span>
+<span class="nc" id="L581">                });</span>
+<span class="nc" id="L582">    }</span>
 
     /**
      * Gets the value of a named CLI argument.
@@ -587,12 +589,12 @@ import static org.apache.arrow.memory.DefaultAllocationManagerOption.ALLOCATION_
      * @return argument value or default
      */
     private static String arg(String[] args, String key, String def) {
-<span class="nc bnc" id="L590" title="All 2 branches missed.">        for (int i = 0; i &lt; args.length - 1; i++) {</span>
-<span class="nc bnc" id="L591" title="All 2 branches missed.">            if (args[i].equals(key)) {</span>
-<span class="nc" id="L592">                return args[i + 1];</span>
+<span class="nc bnc" id="L592" title="All 2 branches missed.">        for (int i = 0; i &lt; args.length - 1; i++) {</span>
+<span class="nc bnc" id="L593" title="All 2 branches missed.">            if (args[i].equals(key)) {</span>
+<span class="nc" id="L594">                return args[i + 1];</span>
             }
         }
-<span class="nc" id="L595">        return def;</span>
+<span class="nc" id="L597">        return def;</span>
     }
 
     /**
@@ -602,12 +604,12 @@ import static org.apache.arrow.memory.DefaultAllocationManagerOption.ALLOCATION_
      * @return true if flag is present
      */
     private static boolean flag(String[] args, String key) {
-<span class="nc bnc" id="L605" title="All 2 branches missed.">        for (String a : args) {</span>
-<span class="nc bnc" id="L606" title="All 2 branches missed.">            if (a.equals(key)) {</span>
-<span class="nc" id="L607">                return true;</span>
+<span class="nc bnc" id="L607" title="All 2 branches missed.">        for (String a : args) {</span>
+<span class="nc bnc" id="L608" title="All 2 branches missed.">            if (a.equals(key)) {</span>
+<span class="nc" id="L609">                return true;</span>
             }
         }
-<span class="nc" id="L610">        return false;</span>
+<span class="nc" id="L612">        return false;</span>
     }
 
     /**
@@ -617,12 +619,12 @@ import static org.apache.arrow.memory.DefaultAllocationManagerOption.ALLOCATION_
      * @return true if key is found
      */
     private static boolean has(String[] args, String key) {
-<span class="nc bnc" id="L620" title="All 2 branches missed.">        for (String a : args) {</span>
-<span class="nc bnc" id="L621" title="All 2 branches missed.">            if (a.equals(key)) {</span>
-<span class="nc" id="L622">                return true;</span>
+<span class="nc bnc" id="L622" title="All 2 branches missed.">        for (String a : args) {</span>
+<span class="nc bnc" id="L623" title="All 2 branches missed.">            if (a.equals(key)) {</span>
+<span class="nc" id="L624">                return true;</span>
             }
         }
-<span class="nc" id="L625">        return false;</span>
+<span class="nc" id="L627">        return false;</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

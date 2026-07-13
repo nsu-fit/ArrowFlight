@@ -17,29 +17,29 @@ public class FieldType implements Serializable {
     /**
      * The ID of each type
      */
-<span class="nc" id="L20">    public enum IDs {</span>
-<span class="nc" id="L21">        NULL,                           //Null object</span>
-<span class="nc" id="L22">        BOOLEAN,                        //Boolean</span>
-<span class="nc" id="L23">        BYTE,                           //Byte</span>
-<span class="nc" id="L24">        CHAR,                           //Character</span>
-<span class="nc" id="L25">        SHORT,                          //Short</span>
-<span class="nc" id="L26">        INT,                            //Integer</span>
-<span class="nc" id="L27">        LONG,                           //Long</span>
-<span class="nc" id="L28">        BIGINT,                         //Big Integer</span>
-<span class="nc" id="L29">        FLOAT,                          //Float</span>
-<span class="nc" id="L30">        DOUBLE,                         //Double</span>
-<span class="nc" id="L31">        DECIMAL,                        //BidDecimal</span>
-<span class="nc" id="L32">        VARCHAR,                        //String</span>
-<span class="nc" id="L33">        BYTES,                          //byte[]</span>
-<span class="nc" id="L34">        DATE,                           //LocalDate</span>
-<span class="nc" id="L35">        TIME,                           //LocalTime</span>
-<span class="nc" id="L36">        TIMESTAMP,                      //TimeStamp</span>
-<span class="nc" id="L37">        PERIOD_YEAR_MONTH,              //Period - year with month</span>
-<span class="nc" id="L38">        DURATION_DAY_TIME,              //Period - day with time</span>
-<span class="nc" id="L39">        PERIOD_DURATION_MONTH_DAY_TIME, //Period - month with day</span>
-<span class="nc" id="L40">        LIST,                           //List&lt;?&gt;</span>
-<span class="nc" id="L41">        MAP,                            //Map&lt;String, ?&gt;</span>
-<span class="nc" id="L42">        STRUCT                          //Struct</span>
+<span class="fc" id="L20">    public enum IDs {</span>
+<span class="fc" id="L21">        NULL,                           //Null object</span>
+<span class="fc" id="L22">        BOOLEAN,                        //Boolean</span>
+<span class="fc" id="L23">        BYTE,                           //Byte</span>
+<span class="fc" id="L24">        CHAR,                           //Character</span>
+<span class="fc" id="L25">        SHORT,                          //Short</span>
+<span class="fc" id="L26">        INT,                            //Integer</span>
+<span class="fc" id="L27">        LONG,                           //Long</span>
+<span class="fc" id="L28">        BIGINT,                         //Big Integer</span>
+<span class="fc" id="L29">        FLOAT,                          //Float</span>
+<span class="fc" id="L30">        DOUBLE,                         //Double</span>
+<span class="fc" id="L31">        DECIMAL,                        //BidDecimal</span>
+<span class="fc" id="L32">        VARCHAR,                        //String</span>
+<span class="fc" id="L33">        BYTES,                          //byte[]</span>
+<span class="fc" id="L34">        DATE,                           //LocalDate</span>
+<span class="fc" id="L35">        TIME,                           //LocalTime</span>
+<span class="fc" id="L36">        TIMESTAMP,                      //TimeStamp</span>
+<span class="fc" id="L37">        PERIOD_YEAR_MONTH,              //Period - year with month</span>
+<span class="fc" id="L38">        DURATION_DAY_TIME,              //Period - day with time</span>
+<span class="fc" id="L39">        PERIOD_DURATION_MONTH_DAY_TIME, //Period - month with day</span>
+<span class="fc" id="L40">        LIST,                           //List&lt;?&gt;</span>
+<span class="fc" id="L41">        MAP,                            //Map&lt;String, ?&gt;</span>
+<span class="fc" id="L42">        STRUCT                          //Struct</span>
     }
 
     /**
@@ -55,24 +55,24 @@ public class FieldType implements Serializable {
          * @param scale decimal scale
          */
         public DecimalType(int precision, int scale) {
-<span class="nc" id="L58">            super(IDs.DECIMAL);</span>
-<span class="nc" id="L59">            this.precision = precision;</span>
-<span class="nc" id="L60">            this.scale = scale;</span>
-<span class="nc" id="L61">        }</span>
+<span class="fc" id="L58">            super(IDs.DECIMAL);</span>
+<span class="fc" id="L59">            this.precision = precision;</span>
+<span class="fc" id="L60">            this.scale = scale;</span>
+<span class="fc" id="L61">        }</span>
 
         /**
          * Gets the decimal precision.
          * @return precision
          */
         public int getPrecision() {
-<span class="nc" id="L68">            return this.precision;</span>
+<span class="fc" id="L68">            return this.precision;</span>
         }
         /**
          * Gets the decimal scale.
          * @return scale
          */
         public int getScale() {
-<span class="nc" id="L75">            return this.scale;</span>
+<span class="fc" id="L75">            return this.scale;</span>
         }
     }
 
@@ -87,16 +87,16 @@ public class FieldType implements Serializable {
          * @param byteWidth byte width (-1 for variable)
          */
         public BinaryType(int byteWidth) {
-<span class="nc" id="L90">            super(IDs.BYTES);</span>
-<span class="nc" id="L91">            this.byteWidth = byteWidth;</span>
-<span class="nc" id="L92">        }</span>
+<span class="fc" id="L90">            super(IDs.BYTES);</span>
+<span class="fc" id="L91">            this.byteWidth = byteWidth;</span>
+<span class="fc" id="L92">        }</span>
 
         /**
          * Gets the byte width of the binary type.
          * @return byte width
          */
         public int getByteWidth() {
-<span class="nc" id="L99">            return this.byteWidth;</span>
+<span class="fc" id="L99">            return this.byteWidth;</span>
         }
     }
 
@@ -113,32 +113,32 @@ public class FieldType implements Serializable {
          * @param childType element type
          */
         public ListType(int length, FieldType childType) {
-<span class="nc" id="L116">            super(IDs.LIST);</span>
-<span class="nc" id="L117">            this.length = length;</span>
-<span class="nc" id="L118">            this.childType = childType;</span>
-<span class="nc" id="L119">        }</span>
+<span class="fc" id="L116">            super(IDs.LIST);</span>
+<span class="fc" id="L117">            this.length = length;</span>
+<span class="fc" id="L118">            this.childType = childType;</span>
+<span class="fc" id="L119">        }</span>
         /**
          * Constructs a dynamic-size ListType.
          * @param childType element type
          */
         public ListType(FieldType childType) {
             //dynamic size of list
-<span class="nc" id="L126">            this(-1, childType);</span>
-<span class="nc" id="L127">        }</span>
+<span class="fc" id="L126">            this(-1, childType);</span>
+<span class="fc" id="L127">        }</span>
 
         /**
          * Gets the fixed length of the list.
          * @return length (-1 if dynamic)
          */
         public int getLength() {
-<span class="nc" id="L134">            return this.length;</span>
+<span class="fc" id="L134">            return this.length;</span>
         }
         /**
          * Gets the element type of the list.
          * @return child field type
          */
         public FieldType getChildType() {
-<span class="nc" id="L141">            return this.childType;</span>
+<span class="fc" id="L141">            return this.childType;</span>
         }
     }
 
@@ -155,24 +155,24 @@ public class FieldType implements Serializable {
          * @param valueType value field type
          */
         public MapType(FieldType keyType, FieldType valueType) {
-<span class="nc" id="L158">            super(IDs.MAP);</span>
-<span class="nc" id="L159">            this.keyType = keyType;</span>
-<span class="nc" id="L160">            this.valueType = valueType;</span>
-<span class="nc" id="L161">        }</span>
+<span class="fc" id="L158">            super(IDs.MAP);</span>
+<span class="fc" id="L159">            this.keyType = keyType;</span>
+<span class="fc" id="L160">            this.valueType = valueType;</span>
+<span class="fc" id="L161">        }</span>
 
         /**
          * Gets the key type of the map.
          * @return key field type
          */
         public FieldType getKeyType() {
-<span class="nc" id="L168">            return this.keyType;</span>
+<span class="fc" id="L168">            return this.keyType;</span>
         }
         /**
          * Gets the value type of the map.
          * @return value field type
          */
         public FieldType getValueType() {
-<span class="nc" id="L175">            return this.valueType;</span>
+<span class="fc" id="L175">            return this.valueType;</span>
         }
     }
 
@@ -187,16 +187,16 @@ public class FieldType implements Serializable {
          * @param childrenType map of field name to field type
          */
         public StructType(Map&lt;String, FieldType&gt; childrenType) {
-<span class="nc" id="L190">            super(IDs.STRUCT);</span>
-<span class="nc" id="L191">            this.childrenType = childrenType;</span>
-<span class="nc" id="L192">        }</span>
+<span class="fc" id="L190">            super(IDs.STRUCT);</span>
+<span class="fc" id="L191">            this.childrenType = childrenType;</span>
+<span class="fc" id="L192">        }</span>
 
         /**
          * Gets the child field types.
          * @return map of field name to field type
          */
         public Map&lt;String, FieldType&gt; getChildrenType() {
-<span class="nc" id="L199">            return this.childrenType;</span>
+<span class="fc" id="L199">            return this.childrenType;</span>
         }
     }
 
@@ -209,8 +209,8 @@ public class FieldType implements Serializable {
          * @param childrenType map of field name to field type
          */
         public UnionType(Map&lt;String, FieldType&gt; childrenType) {
-<span class="nc" id="L212">            super(childrenType);</span>
-<span class="nc" id="L213">        }</span>
+<span class="fc" id="L212">            super(childrenType);</span>
+<span class="fc" id="L213">        }</span>
     }
 
     //the type value
@@ -220,16 +220,16 @@ public class FieldType implements Serializable {
      * Construct a FieldType object
      * @param typeId - the id of the type
      */
-<span class="nc" id="L223">    public FieldType(IDs typeId) {</span>
-<span class="nc" id="L224">        this.typeId = typeId;</span>
-<span class="nc" id="L225">    }</span>
+<span class="fc" id="L223">    public FieldType(IDs typeId) {</span>
+<span class="fc" id="L224">        this.typeId = typeId;</span>
+<span class="fc" id="L225">    }</span>
 
     /**
      * Get the Type ID
      * @return - the type ID
      */
     public IDs getTypeID() {
-<span class="nc" id="L232">        return this.typeId;</span>
+<span class="fc" id="L232">        return this.typeId;</span>
     }
 
     /**
@@ -336,11 +336,11 @@ public class FieldType implements Serializable {
     }
 
     //Convert to Spark DecimalType
-<span class="nc" id="L339">    private static final Function&lt;FieldType, org.apache.spark.sql.types.DecimalType&gt; toDecimalType = t -&gt; {</span>
+<span class="fc" id="L339">    private static final Function&lt;FieldType, org.apache.spark.sql.types.DecimalType&gt; toDecimalType = t -&gt; {</span>
 <span class="nc" id="L340">        DecimalType dt = (DecimalType) t;</span>
 <span class="nc" id="L341">        return new org.apache.spark.sql.types.DecimalType(dt.getPrecision(), dt.getScale());</span>
     };
-<span class="nc" id="L343">    private static final Function&lt;StructType, org.apache.spark.sql.types.DataType&gt; toStructType = t -&gt; {</span>
+<span class="fc" id="L343">    private static final Function&lt;StructType, org.apache.spark.sql.types.DataType&gt; toStructType = t -&gt; {</span>
 <span class="nc" id="L344">        org.apache.spark.sql.types.MapType mt = null;</span>
 <span class="nc" id="L345">        java.util.List&lt;Map.Entry&lt;String, FieldType&gt;&gt; entries = new java.util.ArrayList&lt;&gt;(t.getChildrenType().entrySet());</span>
 <span class="nc bnc" id="L346" title="All 6 branches missed.">        if (entries.size() == 1 &amp;&amp; entries.get(0).getKey().equals(&quot;map&quot;) &amp;&amp; entries.get(0).getValue().getTypeID() == IDs.LIST) {</span>
@@ -358,9 +358,9 @@ public class FieldType implements Serializable {
 <span class="nc bnc" id="L358" title="All 2 branches missed.">        return (mt != null) ? mt : new org.apache.spark.sql.types.StructType(t.getChildrenType().entrySet().stream().map(e -&gt; new org.apache.spark.sql.types.StructField(e.getKey(), FieldType.toSpark(e.getValue()), true, Metadata.empty())).toArray(org.apache.spark.sql.types.StructField[]::new));</span>
     };
     //convert to Spark ListType
-<span class="nc" id="L361">    private static final Function&lt;ListType, org.apache.spark.sql.types.ArrayType&gt; toListType = t -&gt; org.apache.spark.sql.types.ArrayType.apply(FieldType.toSpark(t.getChildType()));</span>
+<span class="pc" id="L361">    private static final Function&lt;ListType, org.apache.spark.sql.types.ArrayType&gt; toListType = t -&gt; org.apache.spark.sql.types.ArrayType.apply(FieldType.toSpark(t.getChildType()));</span>
     //convert to Spark MapType
-<span class="nc" id="L363">    private static final Function&lt;MapType, org.apache.spark.sql.types.MapType&gt; toMapType = t -&gt; org.apache.spark.sql.types.MapType.apply(FieldType.toSpark(t.getKeyType()), FieldType.toSpark(t.getValueType()));</span>
+<span class="pc" id="L363">    private static final Function&lt;MapType, org.apache.spark.sql.types.MapType&gt; toMapType = t -&gt; org.apache.spark.sql.types.MapType.apply(FieldType.toSpark(t.getKeyType()), FieldType.toSpark(t.getValueType()));</span>
 
     /**
      * Converts a FieldType to a Spark DataType.
