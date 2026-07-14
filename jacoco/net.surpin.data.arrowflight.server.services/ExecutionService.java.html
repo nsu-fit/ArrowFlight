@@ -49,7 +49,7 @@ import net.surpin.data.arrowflight.server.model.AppConfig;
  */
 public final class ExecutionService {
 
-<span class="nc" id="L52">    private static final Logger LOGGER = LoggerFactory.getLogger(ExecutionService.class);</span>
+<span class="fc" id="L52">    private static final Logger LOGGER = LoggerFactory.getLogger(ExecutionService.class);</span>
 
     private final ParquetAdapter parquetAdapter;
     private final DuckDbAdapter duckDbAdapter;
@@ -471,19 +471,19 @@ public final class ExecutionService {
      * @param uris fully-qualified URIs
      * @return DuckDB-compatible paths
      */
-    private static List&lt;String&gt; ducksDbPaths(List&lt;String&gt; uris) {
-<span class="nc" id="L475">        return uris.stream().map(u -&gt; {</span>
-<span class="nc bnc" id="L476" title="All 2 branches missed.">            if (u.startsWith(&quot;file:&quot;)) {</span>
-<span class="nc" id="L477">                int colon = u.indexOf(':');</span>
+    static List&lt;String&gt; ducksDbPaths(List&lt;String&gt; uris) {
+<span class="fc" id="L475">        return uris.stream().map(u -&gt; {</span>
+<span class="fc bfc" id="L476" title="All 2 branches covered.">            if (u.startsWith(&quot;file:&quot;)) {</span>
+<span class="fc" id="L477">                int colon = u.indexOf(':');</span>
                 // file:///path → /path,  file:/path → /path
-<span class="nc" id="L479">                String stripped = u.substring(colon + 1);</span>
-<span class="nc bnc" id="L480" title="All 2 branches missed.">                while (stripped.startsWith(&quot;/&quot;)) {</span>
-<span class="nc" id="L481">                    stripped = stripped.substring(1);</span>
+<span class="fc" id="L479">                String stripped = u.substring(colon + 1);</span>
+<span class="fc bfc" id="L480" title="All 2 branches covered.">                while (stripped.startsWith(&quot;/&quot;)) {</span>
+<span class="fc" id="L481">                    stripped = stripped.substring(1);</span>
                 }
-<span class="nc" id="L483">                return &quot;/&quot; + stripped;</span>
+<span class="fc" id="L483">                return &quot;/&quot; + stripped;</span>
             }
-<span class="nc" id="L485">            return u;</span>
-<span class="nc" id="L486">        }).toList();</span>
+<span class="fc" id="L485">            return u;</span>
+<span class="fc" id="L486">        }).toList();</span>
     }
 
     /**
@@ -518,12 +518,12 @@ public final class ExecutionService {
      * @param p Hadoop path
      * @return quoted DuckDB path
      */
-    private static String duckDbPath(org.apache.hadoop.fs.Path p) {
-<span class="nc" id="L522">        java.net.URI uri = p.toUri();</span>
-<span class="nc bnc" id="L523" title="All 2 branches missed.">        String path = &quot;file&quot;.equals(uri.getScheme())</span>
-<span class="nc" id="L524">                ? uri.getPath()</span>
-<span class="nc" id="L525">                : uri.toString();</span>
-<span class="nc" id="L526">        return &quot;'&quot; + path.replace(&quot;'&quot;, &quot;''&quot;) + &quot;'&quot;;</span>
+    static String duckDbPath(org.apache.hadoop.fs.Path p) {
+<span class="fc" id="L522">        java.net.URI uri = p.toUri();</span>
+<span class="pc bpc" id="L523" title="1 of 2 branches missed.">        String path = &quot;file&quot;.equals(uri.getScheme())</span>
+<span class="fc" id="L524">                ? uri.getPath()</span>
+<span class="pc" id="L525">                : uri.toString();</span>
+<span class="fc" id="L526">        return &quot;'&quot; + path.replace(&quot;'&quot;, &quot;''&quot;) + &quot;'&quot;;</span>
     }
 
     /**
@@ -532,10 +532,10 @@ public final class ExecutionService {
      * @param p Hadoop path
      * @return unquoted DuckDB path
      */
-    private static String plainDuckDbPath(org.apache.hadoop.fs.Path p) {
-<span class="nc" id="L536">        java.net.URI uri = p.toUri();</span>
-<span class="nc bnc" id="L537" title="All 2 branches missed.">        return &quot;file&quot;.equals(uri.getScheme())</span>
-<span class="nc" id="L538">                ? uri.getPath()</span>
+    static String plainDuckDbPath(org.apache.hadoop.fs.Path p) {
+<span class="fc" id="L536">        java.net.URI uri = p.toUri();</span>
+<span class="pc bpc" id="L537" title="1 of 2 branches missed.">        return &quot;file&quot;.equals(uri.getScheme())</span>
+<span class="fc" id="L538">                ? uri.getPath()</span>
 <span class="nc" id="L539">                : uri.toString();</span>
     }
 
@@ -841,7 +841,7 @@ public final class ExecutionService {
      * @return merged rows
      * @throws Exception on future resolution or merge failure
      */
-    private static List&lt;Object[]&gt; mergePartialRows(
+    static List&lt;Object[]&gt; mergePartialRows(
             List&lt;ParquetQueryParser.SelectExpr&gt; exprs,
             List&lt;String&gt; groupByColumnNames,
             List&lt;Future&lt;List&lt;Object[]&gt;&gt;&gt; futures) throws Exception {
@@ -887,7 +887,7 @@ public final class ExecutionService {
      * @param from      source row
      * @param numGbCols number of group-by columns
      */
-    private static void mergeAggCols(List&lt;ParquetQueryParser.SelectExpr&gt; exprs,
+    static void mergeAggCols(List&lt;ParquetQueryParser.SelectExpr&gt; exprs,
             Object[] into, Object[] from, int numGbCols) {
 <span class="nc" id="L892">        int aggIdx = 0;</span>
 <span class="nc bnc" id="L893" title="All 2 branches missed.">        for (ParquetQueryParser.SelectExpr expr : exprs) {</span>
@@ -912,7 +912,7 @@ public final class ExecutionService {
      * @param index row index
      * @return long value
      */
-    private static long toLong(FieldVector vec, int index) {
+    static long toLong(FieldVector vec, int index) {
 <span class="nc bnc" id="L916" title="All 2 branches missed.">        if (vec instanceof BigIntVector v) {</span>
 <span class="nc" id="L917">            return v.get(index);</span>
         }
@@ -935,7 +935,7 @@ public final class ExecutionService {
      * @param index row index
      * @return double value
      */
-    private static double toDouble(FieldVector vec, int index) {
+    static double toDouble(FieldVector vec, int index) {
 <span class="nc bnc" id="L939" title="All 2 branches missed.">        if (vec instanceof Float8Vector v) {</span>
 <span class="nc" id="L940">            return v.get(index);</span>
         }
@@ -953,14 +953,14 @@ public final class ExecutionService {
      * @return minimum value
      */
     @SuppressWarnings(&quot;unchecked&quot;)
-    private static Object minOf(Object a, Object b) {
-<span class="nc bnc" id="L957" title="All 2 branches missed.">        if (a == null) {</span>
-<span class="nc" id="L958">            return b;</span>
+    static Object minOf(Object a, Object b) {
+<span class="fc bfc" id="L957" title="All 2 branches covered.">        if (a == null) {</span>
+<span class="fc" id="L958">            return b;</span>
         }
-<span class="nc bnc" id="L960" title="All 2 branches missed.">        if (b == null) {</span>
-<span class="nc" id="L961">            return a;</span>
+<span class="fc bfc" id="L960" title="All 2 branches covered.">        if (b == null) {</span>
+<span class="fc" id="L961">            return a;</span>
         }
-<span class="nc bnc" id="L963" title="All 2 branches missed.">        return ((Comparable&lt;Object&gt;) a).compareTo(b) &lt;= 0 ? a : b;</span>
+<span class="pc bpc" id="L963" title="1 of 2 branches missed.">        return ((Comparable&lt;Object&gt;) a).compareTo(b) &lt;= 0 ? a : b;</span>
     }
 
     /**
@@ -971,14 +971,14 @@ public final class ExecutionService {
      * @return maximum value
      */
     @SuppressWarnings(&quot;unchecked&quot;)
-    private static Object maxOf(Object a, Object b) {
-<span class="nc bnc" id="L975" title="All 2 branches missed.">        if (a == null) {</span>
-<span class="nc" id="L976">            return b;</span>
+    static Object maxOf(Object a, Object b) {
+<span class="fc bfc" id="L975" title="All 2 branches covered.">        if (a == null) {</span>
+<span class="fc" id="L976">            return b;</span>
         }
-<span class="nc bnc" id="L978" title="All 2 branches missed.">        if (b == null) {</span>
-<span class="nc" id="L979">            return a;</span>
+<span class="fc bfc" id="L978" title="All 2 branches covered.">        if (b == null) {</span>
+<span class="fc" id="L979">            return a;</span>
         }
-<span class="nc bnc" id="L981" title="All 2 branches missed.">        return ((Comparable&lt;Object&gt;) a).compareTo(b) &gt;= 0 ? a : b;</span>
+<span class="fc bfc" id="L981" title="All 2 branches covered.">        return ((Comparable&lt;Object&gt;) a).compareTo(b) &gt;= 0 ? a : b;</span>
     }
 
     /**
@@ -988,14 +988,14 @@ public final class ExecutionService {
      * @param b second accumulator
      * @return sum as Long
      */
-    private static Object addLongs(Object a, Object b) {
-<span class="nc bnc" id="L992" title="All 2 branches missed.">        if (a == null) {</span>
-<span class="nc bnc" id="L993" title="All 2 branches missed.">            return b == null ? 0L : ((Number) b).longValue();</span>
+    static Object addLongs(Object a, Object b) {
+<span class="fc bfc" id="L992" title="All 2 branches covered.">        if (a == null) {</span>
+<span class="fc bfc" id="L993" title="All 2 branches covered.">            return b == null ? 0L : ((Number) b).longValue();</span>
         }
-<span class="nc bnc" id="L995" title="All 2 branches missed.">        if (b == null) {</span>
-<span class="nc" id="L996">            return ((Number) a).longValue();</span>
+<span class="fc bfc" id="L995" title="All 2 branches covered.">        if (b == null) {</span>
+<span class="fc" id="L996">            return ((Number) a).longValue();</span>
         }
-<span class="nc" id="L998">        return ((Number) a).longValue() + ((Number) b).longValue();</span>
+<span class="fc" id="L998">        return ((Number) a).longValue() + ((Number) b).longValue();</span>
     }
 
     /**
@@ -1005,14 +1005,14 @@ public final class ExecutionService {
      * @param b second accumulator
      * @return sum as Double
      */
-    private static Object addDoubles(Object a, Object b) {
-<span class="nc bnc" id="L1009" title="All 2 branches missed.">        if (a == null) {</span>
-<span class="nc bnc" id="L1010" title="All 2 branches missed.">            return b == null ? 0.0 : ((Number) b).doubleValue();</span>
+    static Object addDoubles(Object a, Object b) {
+<span class="fc bfc" id="L1009" title="All 2 branches covered.">        if (a == null) {</span>
+<span class="fc bfc" id="L1010" title="All 2 branches covered.">            return b == null ? 0.0 : ((Number) b).doubleValue();</span>
         }
-<span class="nc bnc" id="L1012" title="All 2 branches missed.">        if (b == null) {</span>
-<span class="nc" id="L1013">            return ((Number) a).doubleValue();</span>
+<span class="fc bfc" id="L1012" title="All 2 branches covered.">        if (b == null) {</span>
+<span class="fc" id="L1013">            return ((Number) a).doubleValue();</span>
         }
-<span class="nc" id="L1015">        return ((Number) a).doubleValue() + ((Number) b).doubleValue();</span>
+<span class="fc" id="L1015">        return ((Number) a).doubleValue() + ((Number) b).doubleValue();</span>
     }
 
     /**
@@ -1023,7 +1023,7 @@ public final class ExecutionService {
      * @param value value to set
      */
     @SuppressWarnings(&quot;unchecked&quot;)
-    private static void setVectorValue(FieldVector vec, int index, Object value) {
+    static void setVectorValue(FieldVector vec, int index, Object value) {
 <span class="nc bnc" id="L1027" title="All 2 branches missed.">        if (value == null) {</span>
 <span class="nc" id="L1028">            vec.setNull(index);</span>
 <span class="nc" id="L1029">            return;</span>
@@ -1057,15 +1057,15 @@ public final class ExecutionService {
      * @param numGroups number of groups
      * @return partitioned lists
      */
-    private static &lt;T&gt; List&lt;List&lt;T&gt;&gt; partitionIntoGroups(List&lt;T&gt; items, int numGroups) {
-<span class="nc" id="L1061">        List&lt;List&lt;T&gt;&gt; groups = new ArrayList&lt;&gt;(numGroups);</span>
-<span class="nc bnc" id="L1062" title="All 2 branches missed.">        for (int i = 0; i &lt; numGroups; i++) {</span>
-<span class="nc" id="L1063">            groups.add(new ArrayList&lt;&gt;());</span>
+    static &lt;T&gt; List&lt;List&lt;T&gt;&gt; partitionIntoGroups(List&lt;T&gt; items, int numGroups) {
+<span class="fc" id="L1061">        List&lt;List&lt;T&gt;&gt; groups = new ArrayList&lt;&gt;(numGroups);</span>
+<span class="fc bfc" id="L1062" title="All 2 branches covered.">        for (int i = 0; i &lt; numGroups; i++) {</span>
+<span class="fc" id="L1063">            groups.add(new ArrayList&lt;&gt;());</span>
         }
-<span class="nc bnc" id="L1065" title="All 2 branches missed.">        for (int i = 0; i &lt; items.size(); i++) {</span>
-<span class="nc" id="L1066">            groups.get(i % numGroups).add(items.get(i));</span>
+<span class="fc bfc" id="L1065" title="All 2 branches covered.">        for (int i = 0; i &lt; items.size(); i++) {</span>
+<span class="fc" id="L1066">            groups.get(i % numGroups).add(items.get(i));</span>
         }
-<span class="nc" id="L1068">        return groups;</span>
+<span class="fc" id="L1068">        return groups;</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>
