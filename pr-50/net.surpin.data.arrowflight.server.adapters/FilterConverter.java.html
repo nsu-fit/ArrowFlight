@@ -75,7 +75,7 @@ public final class FilterConverter {
 <span class="nc" id="L75">            LocalDate date = LocalDate.parse(RexLiteral.stringValue(literal));</span>
 <span class="nc" id="L76">            return Optional.of(ExpressionCreator.date(</span>
 <span class="nc" id="L77">                    call.getType().isNullable(), Math.toIntExact(date.toEpochDay())));</span>
-<span class="nc" id="L78">        } catch (DateTimeParseException | ClassCastException | NullPointerException exception) {</span>
+<span class="nc" id="L78">        } catch (DateTimeParseException | ClassCastException exception) {</span>
 <span class="nc" id="L79">            return Optional.empty();</span>
         }
     }
