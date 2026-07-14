@@ -7,6 +7,7 @@ import net.surpin.data.arrowflight.server.services.MetadataService;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.RootAllocator;
 import org.apache.arrow.vector.VectorSchemaRoot;
+import org.apache.arrow.vector.types.pojo.Schema;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.RawLocalFileSystem;
@@ -14,6 +15,7 @@ import org.junit.jupiter.api.Test;
 
 import java.net.URI;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Predicate;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -183,6 +185,45 @@ class MetadataUtilsTest {
             assertTrue(prev <= curr,
                     "Types should be sorted by dataType: " + types.get(i - 1).typeName()
                             + "(" + prev + ") > " + types.get(i).typeName() + "(" + curr + ")");
+        }
+    }
+
+    // ─── getTablesRoot ────────────────────────────────────────────────────
+
+    @Test
+    void getTablesRootReturnsRows() {
+        Schema dummySchema = new Schema(List.of(), null);
+        Map<String, Map<String, Schema>> tables = Map.of(
+                "schema1", Map.of(
+                        "table_a", dummySchema,
+                        "table_b", dummySchema));
+
+        try (BufferAllocator allocator = new RootAllocator();
+             VectorSchemaRoot root = metadataService().getTablesRoot(
+                     tables, allocator, false, null, null)) {
+            assertEquals(2, root.getRowCount());
+        }
+    }
+
+    @Test
+    void getTablesRootWithPatterns() {
+        Schema dummySchema = new Schema(List.of(), null);
+        Map<String, Map<String, Schema>> tables = Map.of(
+                "s", Map.of("a", dummySchema, "b", dummySchema));
+
+        try (BufferAllocator allocator = new RootAllocator();
+             VectorSchemaRoot root = metadataService().getTablesRoot(
+                     tables, allocator, false, "s", "a")) {
+            assertEquals(1, root.getRowCount());
+        }
+    }
+
+    @Test
+    void getTablesRootEmptyInput() {
+        try (BufferAllocator allocator = new RootAllocator();
+             VectorSchemaRoot root = metadataService().getTablesRoot(
+                     Map.of(), allocator, false, null, null)) {
+            assertEquals(0, root.getRowCount());
         }
     }
 }

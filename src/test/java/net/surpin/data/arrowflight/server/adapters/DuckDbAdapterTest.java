@@ -1,13 +1,13 @@
 package net.surpin.data.arrowflight.server.adapters;
 
+import net.surpin.data.arrowflight.server.model.AppConfig;
+import net.surpin.data.arrowflight.server.services.ParquetQueryParser;
 import org.junit.jupiter.api.Test;
 
 import java.sql.Connection;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-
-import net.surpin.data.arrowflight.server.model.AppConfig;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -75,5 +75,127 @@ class DuckDbAdapterTest {
         } finally {
             ioPool.shutdownNow();
         }
+    }
+
+    // ── buildDuckSql / buildDuckSqlWithFilter ─────────────────────────────
+
+    @Test
+    void buildDuckSqlWithColumnSelect() {
+        ParquetQueryParser pq = ParquetQueryParser.parse(
+                "SELECT id, name FROM s.t WHERE id > 0");
+        String sql = DuckDbAdapter.buildDuckSql(pq, "my_from");
+        assertTrue(sql.contains("SELECT \"id\", \"name\" FROM my_from"));
+        assertTrue(sql.contains("\"id\" > 0"));
+    }
+
+    @Test
+    void buildDuckSqlWithCountStar() {
+        ParquetQueryParser pq = ParquetQueryParser.parse(
+                "SELECT count(*) FROM s.t");
+        String sql = DuckDbAdapter.buildDuckSql(pq, "t0");
+        assertTrue(sql.contains("count(*)"));
+        assertTrue(sql.contains("FROM t0"), "Got: " + sql);
+    }
+
+    @Test
+    void buildDuckSqlWithGroupBy() {
+        ParquetQueryParser pq = ParquetQueryParser.parse(
+                "SELECT bool_col, count(*) FROM s.t GROUP BY bool_col");
+        String sql = DuckDbAdapter.buildDuckSql(pq, "t0");
+        assertTrue(sql.contains("GROUP BY \"bool_col\""), "Got: " + sql);
+    }
+
+    @Test
+    void buildDuckSqlWithFilter() {
+        ParquetQueryParser pq = ParquetQueryParser.parse(
+                "SELECT id FROM s.t WHERE id > 10");
+        String sql = DuckDbAdapter.buildDuckSql(pq, "t0");
+        assertTrue(sql.contains("WHERE"), "Got: " + sql);
+    }
+
+    @Test
+    void buildDuckSqlWithFilterAppliedSkipsWhere() {
+        ParquetQueryParser pq = ParquetQueryParser.parse(
+                "SELECT id FROM s.t WHERE id > 10");
+        String sql = DuckDbAdapter.buildDuckSqlWithFilter(pq, "t0", true);
+        assertFalse(sql.contains("WHERE"), "Got: " + sql);
+    }
+
+    @Test
+    void buildDuckSqlWithSumMinMax() {
+        ParquetQueryParser pq = ParquetQueryParser.parse(
+                "SELECT sum(amount), min(id), max(id) FROM s.t");
+        String sql = DuckDbAdapter.buildDuckSql(pq, "t0");
+        assertTrue(sql.contains("sum(\"amount\")"), "Got: " + sql);
+        assertTrue(sql.contains("min(\"id\")"), "Got: " + sql);
+        assertTrue(sql.contains("max(\"id\")"), "Got: " + sql);
+    }
+
+    @Test
+    void buildDuckSqlWithCountColumn() {
+        ParquetQueryParser pq = ParquetQueryParser.parse(
+                "SELECT count(id) FROM s.t");
+        String sql = DuckDbAdapter.buildDuckSql(pq, "t0");
+        assertTrue(sql.contains("count(\"id\")"), "Got: " + sql);
+    }
+
+    // ── buildGroupedDuckSql ───────────────────────────────────────────────
+
+    @Test
+    void buildGroupedDuckSqlSingleFile() {
+        ParquetQueryParser pq = ParquetQueryParser.parse(
+                "SELECT count(*) FROM s.t");
+        String sql = DuckDbAdapter.buildGroupedDuckSql(pq, 1, false);
+        assertTrue(sql.contains("FROM \"t0\""), "Got: " + sql);
+        assertFalse(sql.contains("UNION ALL"), "Got: " + sql);
+    }
+
+    @Test
+    void buildGroupedDuckSqlMultipleFiles() {
+        ParquetQueryParser pq = ParquetQueryParser.parse(
+                "SELECT count(*) FROM s.t");
+        String sql = DuckDbAdapter.buildGroupedDuckSql(pq, 3, false);
+        assertTrue(sql.contains("UNION ALL"), "Got: " + sql);
+        assertTrue(sql.contains("\"t0\""), "Got: " + sql);
+        assertTrue(sql.contains("\"t1\""), "Got: " + sql);
+        assertTrue(sql.contains("\"t2\""), "Got: " + sql);
+        assertTrue(sql.startsWith("SELECT count(*) FROM ("), "Got: " + sql);
+    }
+
+    // ── buildSelectSql ────────────────────────────────────────────────────
+
+    @Test
+    void buildSelectSqlSelectStar() {
+        ParquetQueryParser pq = ParquetQueryParser.parse(
+                "SELECT * FROM s.t");
+        String sql = DuckDbAdapter.buildSelectSql(pq,
+                DuckDbAdapter.readParquetFromClause(List.of("/data/f.parquet")));
+        assertTrue(sql.contains("SELECT *"), "Got: " + sql);
+        assertTrue(sql.contains("read_parquet"), "Got: " + sql);
+    }
+
+    @Test
+    void buildSelectSqlWithColumns() {
+        ParquetQueryParser pq = ParquetQueryParser.parse(
+                "SELECT id, name FROM s.t");
+        String sql = DuckDbAdapter.buildSelectSql(pq, "t0");
+        assertTrue(sql.contains("\"id\", \"name\""), "Got: " + sql);
+    }
+
+    @Test
+    void buildSelectSqlWithFilter() {
+        ParquetQueryParser pq = ParquetQueryParser.parse(
+                "SELECT * FROM s.t WHERE id = 1");
+        String sql = DuckDbAdapter.buildSelectSql(pq, "t0");
+        assertTrue(sql.contains("WHERE"), "Got: " + sql);
+    }
+
+    @Test
+    void buildSelectSqlWithAggregation() {
+        ParquetQueryParser pq = ParquetQueryParser.parse(
+                "SELECT count(*) FROM s.t WHERE id > 0");
+        String sql = DuckDbAdapter.buildSelectSql(pq, "t0");
+        assertTrue(sql.contains("count(*)"), "Got: " + sql);
+        assertTrue(sql.contains("WHERE"), "Got: " + sql);
     }
 }

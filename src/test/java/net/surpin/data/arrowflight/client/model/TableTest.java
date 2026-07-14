@@ -143,6 +143,141 @@ class TableTest {
         assertTrue(clause.startsWith("\"col\" in ("));
     }
 
+    @Test
+    void inFilterEmptyArray() {
+        In f = new In("id", new Object[0]);
+        assertEquals("(1 = 0)", newTable().toWhereClause(f));
+    }
+
+    // ── Edge cases ────────────────────────────────────────────────────────
+
+    @Test
+    void equalToNullValueThrows() {
+        EqualTo f = new EqualTo("col", null);
+        assertThrows(IllegalArgumentException.class,
+                () -> newTable().toWhereClause(f));
+    }
+
+    @Test
+    void equalNullSafeWithNullValue() {
+        EqualNullSafe f = new EqualNullSafe("col", null);
+        String clause = newTable().toWhereClause(f);
+        assertEquals("\"col\" is null", clause);
+    }
+
+    @Test
+    void canPushFilterReturnsTrueForSupported() {
+        assertTrue(newTable().canPushFilter(new EqualTo("id", 1)));
+        assertTrue(newTable().canPushFilter(new And(
+                new EqualTo("a", 1), new EqualTo("b", 2))));
+    }
+
+    @Test
+    void canPushFilterReturnsFalseForUnsupported() {
+        assertFalse(newTable().canPushFilter(new AlwaysTrue()));
+    }
+
+    @Test
+    void notWithUnsupportedChildThrows() {
+        Not f = new Not(new AlwaysTrue());
+        assertThrows(IllegalArgumentException.class,
+                () -> newTable().toWhereClause(f));
+    }
+
+    @Test
+    void sqlLiteralRejectsNaN() {
+        EqualTo f = new EqualTo("col", Double.NaN);
+        assertThrows(IllegalArgumentException.class,
+                () -> newTable().toWhereClause(f));
+    }
+
+    @Test
+    void sqlLiteralRejectsPositiveInfinity() {
+        GreaterThan f = new GreaterThan("col", Double.POSITIVE_INFINITY);
+        assertThrows(IllegalArgumentException.class,
+                () -> newTable().toWhereClause(f));
+    }
+
+    @Test
+    void sqlLiteralRejectsFloatNaN() {
+        EqualTo f = new EqualTo("col", Float.NaN);
+        assertThrows(IllegalArgumentException.class,
+                () -> newTable().toWhereClause(f));
+    }
+
+    @Test
+    void likePatternEscapesPercent() {
+        StringStartsWith f = new StringStartsWith("name", "100%");
+        String clause = newTable().toWhereClause(f);
+        assertTrue(clause.contains("100\\%%"),
+                "Pattern % must be escaped in LIKE, got: " + clause);
+    }
+
+    @Test
+    void likePatternEscapesUnderscore() {
+        StringContains f = new StringContains("name", "test_value");
+        String clause = newTable().toWhereClause(f);
+        assertTrue(clause.contains("test\\_value"),
+                "Underscore must be escaped in LIKE, got: " + clause);
+    }
+
+    @Test
+    void likePatternEscapesBackslash() {
+        StringStartsWith f = new StringStartsWith("path", "C:\\Users");
+        String clause = newTable().toWhereClause(f);
+        assertTrue(clause.contains("C:\\\\Users"),
+                "Backslash must be escaped in LIKE, got: " + clause);
+    }
+
+    @Test
+    void sqlLiteralBooleanTrue() {
+        EqualTo f = new EqualTo("active", true);
+        assertEquals("\"active\" = true", newTable().toWhereClause(f));
+    }
+
+    @Test
+    void sqlLiteralBooleanFalse() {
+        EqualTo f = new EqualTo("active", false);
+        assertEquals("\"active\" = false", newTable().toWhereClause(f));
+    }
+
+    @Test
+    void filterWithQuoteInColumnName() {
+        Table t = Table.forTable("tab\"le", "\"");
+        EqualTo f = new EqualTo("na\"me", "val");
+        String clause = t.toWhereClause(f);
+        assertTrue(clause.contains("\"na\"\"me\""),
+                "Quote in column name must be doubled, got: " + clause);
+    }
+
+    @Test
+    void filterWithQuoteInStringLiteral() {
+        EqualTo f = new EqualTo("name", "it's");
+        String clause = newTable().toWhereClause(f);
+        assertTrue(clause.contains("'it''s'"),
+                "Quote in string literal must be doubled, got: " + clause);
+    }
+
+    @Test
+    void unsupportedFilterTypeThrows() {
+        assertThrows(IllegalArgumentException.class,
+                () -> newTable().toWhereClause(new AlwaysTrue()));
+    }
+
+    @Test
+    void andWithOneUnsupportedChildThrows() {
+        And f = new And(new EqualTo("id", 1), new AlwaysTrue());
+        assertThrows(IllegalArgumentException.class,
+                () -> newTable().toWhereClause(f));
+    }
+
+    @Test
+    void orWithOneUnsupportedChildThrows() {
+        Or f = new Or(new EqualTo("x", 1), new AlwaysTrue());
+        assertThrows(IllegalArgumentException.class,
+                () -> newTable().toWhereClause(f));
+    }
+
     // ── forTable ────────────────────────────────────────────────────────────
 
     @Test

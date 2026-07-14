@@ -1,9 +1,22 @@
 package net.surpin.data.arrowflight.server.services;
 
+import org.apache.arrow.memory.BufferAllocator;
+import org.apache.arrow.memory.RootAllocator;
+import org.apache.arrow.vector.BigIntVector;
+import org.apache.arrow.vector.BitVector;
+import org.apache.arrow.vector.Float4Vector;
+import org.apache.arrow.vector.Float8Vector;
+import org.apache.arrow.vector.IntVector;
+import org.apache.arrow.vector.SmallIntVector;
+import org.apache.arrow.vector.TinyIntVector;
+import org.apache.arrow.vector.VarCharVector;
+import org.apache.arrow.vector.types.pojo.ArrowType;
+import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.hadoop.fs.Path;
 import org.junit.jupiter.api.Test;
 
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -182,5 +195,161 @@ class ExecutionServiceTest {
         String result = ExecutionService.plainDuckDbPath(
                 new Path(URI.create("file:/data/file.parquet")));
         assertEquals("/data/file.parquet", result);
+    }
+
+    // ── toLong ────────────────────────────────────────────────────────────
+
+    @Test
+    void toLongFromBigIntVector() {
+        try (BufferAllocator alloc = new RootAllocator();
+             BigIntVector v = new BigIntVector("x", alloc)) {
+            v.allocateNew(1);
+            v.set(0, 42L);
+            assertEquals(42L, ExecutionService.toLong(v, 0));
+        }
+    }
+
+    @Test
+    void toLongFromIntVector() {
+        try (BufferAllocator alloc = new RootAllocator();
+             IntVector v = new IntVector("x", alloc)) {
+            v.allocateNew(1);
+            v.set(0, 7);
+            assertEquals(7L, ExecutionService.toLong(v, 0));
+        }
+    }
+
+    @Test
+    void toLongFromSmallIntVector() {
+        try (BufferAllocator alloc = new RootAllocator();
+             SmallIntVector v = new SmallIntVector("x", alloc)) {
+            v.allocateNew(1);
+            v.set(0, (short) 3);
+            assertEquals(3L, ExecutionService.toLong(v, 0));
+        }
+    }
+
+    @Test
+    void toLongFromTinyIntVector() {
+        try (BufferAllocator alloc = new RootAllocator();
+             TinyIntVector v = new TinyIntVector("x", alloc)) {
+            v.allocateNew(1);
+            v.set(0, (byte) 1);
+            assertEquals(1L, ExecutionService.toLong(v, 0));
+        }
+    }
+
+    // ── toDouble ──────────────────────────────────────────────────────────
+
+    @Test
+    void toDoubleFromFloat8Vector() {
+        try (BufferAllocator alloc = new RootAllocator();
+             Float8Vector v = new Float8Vector("x", alloc)) {
+            v.allocateNew(1);
+            v.set(0, 3.14);
+            assertEquals(3.14, ExecutionService.toDouble(v, 0));
+        }
+    }
+
+    @Test
+    void toDoubleFromFloat4Vector() {
+        try (BufferAllocator alloc = new RootAllocator();
+             Float4Vector v = new Float4Vector("x", alloc)) {
+            v.allocateNew(1);
+            v.set(0, 2.5f);
+            assertEquals(2.5f, ExecutionService.toDouble(v, 0), 0.0001);
+        }
+    }
+
+    // ── setVectorValue ────────────────────────────────────────────────────
+
+    @Test
+    void setVectorValueNullSetsNull() {
+        try (BufferAllocator alloc = new RootAllocator();
+             BigIntVector v = new BigIntVector("x", alloc)) {
+            v.allocateNew(1);
+            ExecutionService.setVectorValue(v, 0, null);
+            assertTrue(v.isNull(0));
+        }
+    }
+
+    @Test
+    void setVectorValueBigInt() {
+        try (BufferAllocator alloc = new RootAllocator();
+             BigIntVector v = new BigIntVector("x", alloc)) {
+            v.allocateNew(1);
+            ExecutionService.setVectorValue(v, 0, 42L);
+            assertEquals(42L, v.get(0));
+        }
+    }
+
+    @Test
+    void setVectorValueInt() {
+        try (BufferAllocator alloc = new RootAllocator();
+             IntVector v = new IntVector("x", alloc)) {
+            v.allocateNew(1);
+            ExecutionService.setVectorValue(v, 0, 7);
+            assertEquals(7, v.get(0));
+        }
+    }
+
+    @Test
+    void setVectorValueSmallInt() {
+        try (BufferAllocator alloc = new RootAllocator();
+             SmallIntVector v = new SmallIntVector("x", alloc)) {
+            v.allocateNew(1);
+            ExecutionService.setVectorValue(v, 0, (short) 3);
+            assertEquals((short) 3, v.get(0));
+        }
+    }
+
+    @Test
+    void setVectorValueTinyInt() {
+        try (BufferAllocator alloc = new RootAllocator();
+             TinyIntVector v = new TinyIntVector("x", alloc)) {
+            v.allocateNew(1);
+            ExecutionService.setVectorValue(v, 0, (byte) 1);
+            assertEquals((byte) 1, v.get(0));
+        }
+    }
+
+    @Test
+    void setVectorValueFloat8() {
+        try (BufferAllocator alloc = new RootAllocator();
+             Float8Vector v = new Float8Vector("x", alloc)) {
+            v.allocateNew(1);
+            ExecutionService.setVectorValue(v, 0, 3.14);
+            assertEquals(3.14, v.get(0));
+        }
+    }
+
+    @Test
+    void setVectorValueFloat4() {
+        try (BufferAllocator alloc = new RootAllocator();
+             Float4Vector v = new Float4Vector("x", alloc)) {
+            v.allocateNew(1);
+            ExecutionService.setVectorValue(v, 0, 2.5f);
+            assertEquals(2.5f, v.get(0), 0.0001);
+        }
+    }
+
+    @Test
+    void setVectorValueBit() {
+        try (BufferAllocator alloc = new RootAllocator();
+             BitVector v = new BitVector("x", alloc)) {
+            v.allocateNew(1);
+            ExecutionService.setVectorValue(v, 0, true);
+            assertEquals(1, v.get(0));
+        }
+    }
+
+    @Test
+    void setVectorValueVarChar() {
+        try (BufferAllocator alloc = new RootAllocator();
+             VarCharVector v = new VarCharVector("x", alloc)) {
+            v.allocateNew(16);
+            ExecutionService.setVectorValue(v, 0, "hello");
+            assertEquals("hello", new String(v.get(0), StandardCharsets.UTF_8));
+        }
     }
 }
