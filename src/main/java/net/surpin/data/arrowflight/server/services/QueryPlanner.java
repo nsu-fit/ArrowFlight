@@ -32,6 +32,8 @@ import net.surpin.data.arrowflight.server.model.HandleState;
 
 import static java.util.UUID.randomUUID;
 
+import net.surpin.data.arrowflight.server.LogUtil;
+
 /**
  * Plans query execution across cluster nodes.
  * Determines file locations, assigns files to servers based on data locality and load,
@@ -140,9 +142,15 @@ public final class QueryPlanner {
             long addedBytes = serverAdditions.getOrDefault(entry.getKey(), 0L);
             endpoints.add(createEndpoint(entry.getKey(), entry.getValue(), query, addedBytes));
             clusterService.addLoad(entry.getKey(), addedBytes);
+            List<String> fileList = entry.getValue();
+            LOGGER.info("qid={} node={} planning=endpoint server={} files={} bytes={} paths={}",
+                    LogUtil.qid(), LogUtil.node(), entry.getKey(),
+                    fileList.size(), addedBytes, fileList);
         }
-        LOGGER.info("determineEndpoints: {} server(s), {} endpoint(s) for {} file(s), query: {}",
-                allServerUris.size(), endpoints.size(), pathLocations.size(), query);
+        LOGGER.info("qid={} node={} planning=complete servers={} endpoints={} files={} totalBytes={} query='{}'",
+                LogUtil.qid(), LogUtil.node(),
+                allServerUris.size(), endpoints.size(), pathLocations.size(),
+                pathLocations.values().stream().mapToLong(FileAssignment::size).sum(), query);
         return endpoints;
     }
 
@@ -215,6 +223,8 @@ public final class QueryPlanner {
      */
     public FlightEndpoint createEndpoint(String serverUri, List<String> filePaths,
             String query, long bytes) {
+        LOGGER.debug("qid={} node={} planning=createEndpoint server={} files={} bytes={} query='{}'",
+                LogUtil.qid(), LogUtil.node(), serverUri, filePaths.size(), bytes, query);
         URI parsedUri = URI.create(serverUri);
         // Preserve the registered URI (including grpc+tls). Reconstructing every
         // location as insecure both loses transport information and can cause the

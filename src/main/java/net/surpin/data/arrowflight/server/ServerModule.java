@@ -4,6 +4,9 @@ import dagger.Module;
 import dagger.Provides;
 import javax.inject.Singleton;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.apache.arrow.flight.Location;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.RootAllocator;
@@ -15,11 +18,14 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Function;
+import java.util.concurrent.TimeUnit;
 
+import net.surpin.data.arrowflight.server.LogUtil;
 import net.surpin.data.arrowflight.server.adapters.AceroAdapter;
 import net.surpin.data.arrowflight.server.adapters.ConfigAdapter;
 import net.surpin.data.arrowflight.server.adapters.DuckDbAdapter;
@@ -40,6 +46,8 @@ import net.surpin.data.arrowflight.server.services.QueryPlanner;
  */
 @Module
 public final class ServerModule {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(ServerModule.class);
 
     private final String[] hazelcastHosts;
     private final String serverUri;
@@ -106,11 +114,62 @@ public final class ServerModule {
     @Provides
     @Singleton
     ExecutorService ioPool(AppConfig config) {
-        return Executors.newFixedThreadPool(config.ioParallelism(), r -> {
-            Thread t = new Thread(r, "parquet-io");
-            t.setDaemon(true);
-            return t;
-        });
+        int parallelism = config.ioParallelism();
+        LOGGER.info("node={} pool=create threads={}", LogUtil.node(), parallelism);
+        return new java.util.concurrent.AbstractExecutorService() {
+            private final ExecutorService delegate = Executors.newFixedThreadPool(parallelism, r -> {
+                Thread t = new Thread(r, "parquet-io");
+                t.setDaemon(true);
+                return t;
+            });
+            private final java.util.concurrent.atomic.AtomicInteger activeTasks = new java.util.concurrent.atomic.AtomicInteger(0);
+            private final java.util.concurrent.atomic.AtomicLong submittedTasks = new java.util.concurrent.atomic.AtomicLong(0);
+
+            @Override
+            public void execute(Runnable command) {
+                long submitTime = System.nanoTime();
+                long taskId = submittedTasks.incrementAndGet();
+                int active = activeTasks.incrementAndGet();
+                if (active > parallelism) {
+                    LOGGER.warn("node={} pool=queueGrowth active={} max={} queued={}",
+                            LogUtil.node(), active, parallelism, active - parallelism);
+                }
+                delegate.execute(() -> {
+                    long queueDelay = System.nanoTime() - submitTime;
+                    if (queueDelay > 1_000_000_000L) {
+                        LOGGER.warn("qid={} node={} pool=starvation taskId={} queueDelay={} active={}",
+                                LogUtil.qid(), LogUtil.node(), taskId,
+                                LogUtil.elapsedNanos(submitTime), activeTasks.get());
+                    }
+                    try {
+                        command.run();
+                    } finally {
+                        activeTasks.decrementAndGet();
+                    }
+                });
+            }
+
+            @Override
+            public void shutdown() {
+                delegate.shutdown();
+            }
+            @Override
+            public List<Runnable> shutdownNow() {
+                return delegate.shutdownNow();
+            }
+            @Override
+            public boolean isShutdown() {
+                return delegate.isShutdown();
+            }
+            @Override
+            public boolean isTerminated() {
+                return delegate.isTerminated();
+            }
+            @Override
+            public boolean awaitTermination(long timeout, TimeUnit unit) throws InterruptedException {
+                return delegate.awaitTermination(timeout, unit);
+            }
+        };
     }
 
     /**

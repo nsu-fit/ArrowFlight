@@ -33,6 +33,7 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
+import net.surpin.data.arrowflight.server.LogUtil;
 import net.surpin.data.arrowflight.server.model.AppConfig;
 import net.surpin.data.arrowflight.server.model.FileAssignment;
 import net.surpin.data.arrowflight.server.services.ParquetQueryParser;
@@ -136,10 +137,13 @@ public class ParquetAdapter {
      * @return Arrow schema
      */
     public Schema getTableSchema(String schema, String table, List<String> columns) {
+        long startNanos = System.nanoTime();
         validateName(schema);
         validateName(table);
         try {
             Path tableDirectoryPath = new Path(dataDirectory, schema + "/" + table);
+            LOGGER.debug("node={} parquet=schemaReadStart table={}.{} path={}",
+                    LogUtil.node(), schema, table, tableDirectoryPath);
             RemoteIterator<LocatedFileStatus> it = fileSystem.listFiles(tableDirectoryPath, true);
 
             Path parquetPath = null;
@@ -152,6 +156,8 @@ public class ParquetAdapter {
             }
 
             if (parquetPath == null) {
+                LOGGER.warn("node={} parquet=schemaNotFound table={}.{} path={}",
+                        LogUtil.node(), schema, table, tableDirectoryPath);
                 return new Schema(Collections.emptyList(), null);
             }
 
@@ -171,6 +177,9 @@ public class ParquetAdapter {
                 }
             })) {
                 parquetSchema = reader.getFooter().getFileMetaData().getSchema();
+                LOGGER.debug("node={} parquet=schemaRead table={}.{} file={} size={} fields={} elapsed={}",
+                        LogUtil.node(), schema, table, parquetPath.getName(), fileLen,
+                        parquetSchema.getFieldCount(), LogUtil.elapsedNanos(startNanos));
             }
 
             return SchemaConverter.convert(
@@ -257,15 +266,21 @@ public class ParquetAdapter {
      * @throws IOException on HDFS read failure
      */
     public Map<String, FileAssignment> locationsForQuery(String query) throws IOException {
+        long startNanos = System.nanoTime();
         ParquetQueryParser parsedQuery = ParquetQueryParser.parse(query);
         Map<String, FileAssignment> result = new HashMap<>();
         URI dataDirectoryURI = fileSystem.getFileStatus(new Path(dataDirectory)).getPath().toUri();
+
+        int fileCount = 0;
+        long totalBytes = 0;
 
         if (parsedQuery.isJoin) {
             for (ParquetQueryParser.JoinTable jt : parsedQuery.joinTables) {
                 validateName(jt.schema());
                 validateName(jt.table());
                 Path parquetPath = new Path(dataDirectory, jt.schema() + "/" + jt.table());
+                LOGGER.debug("node={} parquet=discover table={}.{} path={}",
+                        LogUtil.node(), jt.schema(), jt.table(), parquetPath);
                 RemoteIterator<LocatedFileStatus> filesIter = fileSystem.listFiles(parquetPath, true);
                 while (filesIter.hasNext()) {
                     LocatedFileStatus file = filesIter.next();
@@ -274,7 +289,12 @@ public class ParquetAdapter {
                     }
                     String relativePath = dataDirectoryURI.relativize(file.getPath().toUri()).toString();
                     result.putIfAbsent(relativePath, new FileAssignment(file.getLen(), fileLocality(file).keySet()));
+                    fileCount++;
+                    totalBytes += file.getLen();
                 }
+                LOGGER.info("node={} parquet=filesForTable table={}.{} files={} bytes={} elapsed={}",
+                        LogUtil.node(), jt.schema(), jt.table(), fileCount, totalBytes,
+                        LogUtil.elapsedNanos(startNanos));
             }
             return result;
         }
@@ -282,6 +302,8 @@ public class ParquetAdapter {
         validateName(parsedQuery.schema);
         validateName(parsedQuery.table);
         Path parquetPath = new Path(dataDirectory, parsedQuery.schema + "/" + parsedQuery.table);
+        LOGGER.debug("node={} parquet=discover table={}.{} path={}",
+                LogUtil.node(), parsedQuery.schema, parsedQuery.table, parquetPath);
         RemoteIterator<LocatedFileStatus> filesIter = fileSystem.listFiles(parquetPath, true);
         while (filesIter.hasNext()) {
             LocatedFileStatus file = filesIter.next();
@@ -290,7 +312,12 @@ public class ParquetAdapter {
             }
             String relativePath = dataDirectoryURI.relativize(file.getPath().toUri()).toString();
             result.put(relativePath, new FileAssignment(file.getLen(), fileLocality(file).keySet()));
+            fileCount++;
+            totalBytes += file.getLen();
         }
+        LOGGER.info("node={} parquet=locationsFound table={}.{} files={} bytes={} elapsed={}",
+                LogUtil.node(), parsedQuery.schema, parsedQuery.table,
+                fileCount, totalBytes, LogUtil.elapsedNanos(startNanos));
         return result;
     }
 
@@ -303,16 +330,21 @@ public class ParquetAdapter {
      * @throws IOException on file-system access failure
      */
     public Map<String, Long> localFileInventory() throws IOException {
+        long startNanos = System.nanoTime();
         Map<String, Long> result = new LinkedHashMap<>();
         Path root = new Path(this.dataDirectory);
         if (!this.fileSystem.exists(root)) {
+            LOGGER.warn("node={} parquet=inventoryDataDirNotFound path={}",
+                    LogUtil.node(), this.dataDirectory);
             return result;
         }
 
         URI rootUri = this.fileSystem.getFileStatus(root).getPath().toUri();
         RemoteIterator<LocatedFileStatus> files = this.fileSystem.listFiles(root, true);
+        int scanned = 0;
         while (files.hasNext()) {
             LocatedFileStatus file = files.next();
+            scanned++;
             if (file.isFile()
                     && file.getPath().getName().toLowerCase().endsWith(".parquet")
                     && hasLocalBlock(fileLocality(file).keySet(), localhost)) {
@@ -320,6 +352,10 @@ public class ParquetAdapter {
                 result.put(relativePath, file.getLen());
             }
         }
+        long totalBytes = result.values().stream().mapToLong(Long::longValue).sum();
+        LOGGER.info("node={} parquet=inventoryComplete localFiles={} bytes={} scanned={} elapsed={}",
+                LogUtil.node(), result.size(), totalBytes, scanned,
+                LogUtil.elapsedNanos(startNanos));
         return result;
     }
 

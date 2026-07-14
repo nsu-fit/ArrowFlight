@@ -20,6 +20,8 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.time.*;
 import java.util.Arrays;
 import java.util.List;
@@ -33,6 +35,18 @@ import java.util.List;
  */
 public class FlightPartitionReader implements PartitionReader<InternalRow> {
     private static final Logger LOGGER = LoggerFactory.getLogger(FlightPartitionReader.class);
+
+    private static final String NODE;
+
+    static {
+        String n;
+        try {
+            n = InetAddress.getLocalHost().getHostName();
+        } catch (UnknownHostException e) {
+            n = "unknown";
+        }
+        NODE = n;
+    }
 
     private final Client client;
     private final Configuration configuration;
@@ -66,6 +80,11 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
     private static final long BACKOFF_BASE_MS = 1000;
     private static final int MAX_NEXT_RETRIES = 2;
 
+    // performance tracking
+    private long readStartNanos;
+    private int totalBatches;
+    private long totalRows;
+
     /**
      * Construct a streaming partition reader
      * @param configuration - the configuration of remote flight service
@@ -75,24 +94,28 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
         this.configuration = configuration;
         this.inputPartition = inputPartition;
         this.client = Client.getOrCreate(configuration);
+        LOGGER.info("node={} spark=readerCreate partition={} class={}",
+                NODE, inputPartition, inputPartition.getClass().getSimpleName());
     }
 
     @Override
     public boolean next() throws IOException {
-        LOGGER.debug("FlightPartitionReader.next()");
+        LOGGER.debug("node={} spark=readerNext", NODE);
         if (this.columnarMode) {
             throw new IllegalStateException("Cannot mix row and columnar iteration");
         }
         try {
             if (stream == null) {
+                readStartNanos = System.nanoTime();
+                totalBatches = 0;
+                totalRows = 0;
                 if (!openStream()) {
-                    LOGGER.info("FlightPartitionReader.next(): openStream() returned false");
+                    LOGGER.info("node={} spark=readerNoData partition={}", NODE, inputPartition);
                     return false;
                 }
                 nextRetryCount = 0;
             }
 
-            LOGGER.debug("FlightPartitionReader.next(): rowIdx = {}, batchRowCount = {}", rowIdx, batchRowCount);
             // move to next row in current batch
             rowIdx++;
             if (rowIdx < batchRowCount) {
@@ -100,7 +123,7 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
                 return true;
             }
 
-            LOGGER.info("FlightPartitionReader.next(): try to read next batch");
+            LOGGER.debug("node={} spark=readerNextBatch", NODE);
             // current batch exhausted, try next batch
             while (true) {
                 try {
@@ -111,7 +134,16 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
                     batchRowCount = root.getRowCount();
                     fields = Field.from(stream.getSchema());
                     rowIdx = 0;
-                    LOGGER.info("FlightPartitionReader.next(): started new batch rowIdx = {}, batchRowCount = {}", rowIdx, batchRowCount);
+                    totalBatches++;
+                    totalRows += batchRowCount;
+                    if (totalBatches == 1) {
+                        LOGGER.info("node={} spark=ttfB batchRowCount={} elapsed={}",
+                                NODE, batchRowCount, elapsedNanos(readStartNanos));
+                    }
+                    if (totalBatches % 10 == 0) {
+                        LOGGER.debug("node={} spark=readerProgress batches={} rows={} elapsed={}",
+                                NODE, totalBatches, totalRows, elapsedNanos(readStartNanos));
+                    }
                     nextRetryCount = 0;
 
                     if (batchRowCount > 0) {
@@ -121,19 +153,22 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
                 } catch (Exception midStreamError) {
                     // Restarting this stream here would replay rows already returned from
                     // the partition. Let Spark retry the whole task with the retained ticket.
-                    LOGGER.warn("Mid-stream read error: {}", midStreamError.getMessage());
+                    LOGGER.warn("node={} spark=readerMidStreamError batches={} rows={} error='{}'",
+                            NODE, totalBatches, totalRows, midStreamError.getMessage());
                     throw midStreamError;
                 }
             }
 
-            LOGGER.info("FlightPartitionReader.next(): no more batches");
+            LOGGER.info("node={} spark=readerCompleted batches={} rows={} elapsed={}",
+                    NODE, totalBatches, totalRows, elapsedNanos(readStartNanos));
             // no more batches
             hasCurrent = false;
             closeStream();
             return false;
 
         } catch (Exception e) {
-            LOGGER.error("Error reading from Flight stream: " + e.getMessage(), e);
+            LOGGER.error("node={} spark=readerFailed batches={} rows={} error='{}'",
+                    NODE, totalBatches, totalRows, e.getMessage(), e);
             closeStream();
             throw new IOException(e);
         }
@@ -149,13 +184,22 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
     public boolean nextBatch() throws IOException {
         this.columnarMode = true;
         try {
-            if (this.stream == null && !openStream()) {
-                return false;
+            if (this.stream == null) {
+                readStartNanos = System.nanoTime();
+                totalBatches = 0;
+                totalRows = 0;
+                if (!openStream()) {
+                    return false;
+                }
             }
 
             if (this.firstColumnarBatch) {
                 this.firstColumnarBatch = false;
                 if (this.batchRowCount > 0) {
+                    totalBatches++;
+                    totalRows += this.batchRowCount;
+                    LOGGER.info("node={} spark=ttfB columnarBatchRowCount={} elapsed={}",
+                            NODE, this.batchRowCount, elapsedNanos(readStartNanos));
                     return true;
                 }
             }
@@ -164,14 +208,24 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
                 this.root = this.stream.getRoot();
                 this.batchRowCount = this.root.getRowCount();
                 this.fields = Field.from(this.stream.getSchema());
+                totalBatches++;
+                totalRows += this.batchRowCount;
+                if (totalBatches % 10 == 0) {
+                    LOGGER.debug("node={} spark=columnarProgress batches={} rows={} elapsed={}",
+                            NODE, totalBatches, totalRows, elapsedNanos(readStartNanos));
+                }
                 if (this.batchRowCount > 0) {
                     return true;
                 }
             }
 
+            LOGGER.info("node={} spark=columnarCompleted batches={} rows={} elapsed={}",
+                    NODE, totalBatches, totalRows, elapsedNanos(readStartNanos));
             closeStream();
             return false;
         } catch (Exception e) {
+            LOGGER.error("node={} spark=columnarFailed batches={} rows={} error='{}'",
+                    NODE, totalBatches, totalRows, e.getMessage(), e);
             closeStream();
             throw new IOException("Error reading Arrow batch from Flight stream", e);
         }
@@ -371,10 +425,13 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
      * @throws Exception - if stream opening fails
      */
     private boolean openEndpointStream(FlightInputPartition.FlightEndpointInputPartition dePartition) throws Exception {
-        LOGGER.info("FlightPartitionReader.openEndpointStream(): partition: {}", dePartition);
-
         Endpoint endpoint = dePartition.getEndpoint();
         Schema schema = dePartition.getSchema();
+        String ticketHex = bytesToHex(endpoint.getTicket());
+        String uris = Arrays.toString(endpoint.getURIs());
+        LOGGER.info("node={} spark=openEndpointStream ticket={} uris={}",
+                NODE, ticketHex, uris);
+
         org.apache.arrow.flight.FlightEndpoint fep = new org.apache.arrow.flight.FlightEndpoint(
                 new org.apache.arrow.flight.Ticket(endpoint.getTicket()),
                 Arrays.stream(endpoint.getURIs())
@@ -382,14 +439,10 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
                         .toArray(org.apache.arrow.flight.Location[]::new)
         );
 
-        LOGGER.info("FlightPartitionReader.openEndpointStream(): endpoint: {}", fep);
         this.stream = this.client.openStream(fep);
-        LOGGER.info("FlightPartitionReader.openEndpointStream(): stream: {}", stream);
         this.root = stream.getRoot();
-        LOGGER.info("FlightPartitionReader.openEndpointStream(): vector schema root: {}", root);
         this.fields = Field.from(schema);
         this.sparkFields = this.fields;  // FlightInfo schema = what Spark's codegen expects
-        LOGGER.info("FlightPartitionReader.openEndpointStream(): fields: {}", fields);
         this.rowIdx = -1;
         this.batchRowCount = 0;
 
@@ -398,7 +451,8 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
             batchRowCount = root.getRowCount();
         }
 
-        LOGGER.info("FlightPartitionReader.openEndpointStream(): first batch row count: {}", batchRowCount);
+        LOGGER.info("node={} spark=endpointStreamOpened ticket={} firstBatchRowCount={}",
+                NODE, ticketHex, batchRowCount);
         return true;
     }
 
@@ -617,5 +671,40 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
             return Decimal.apply(value, decimalType.getPrecision(), decimalType.getScale());
         }
         return Decimal.apply(value);
+    }
+
+    /**
+     * Formats elapsed nanoseconds as a human-readable duration.
+     */
+    private static String elapsedNanos(long startNanos) {
+        long nanos = System.nanoTime() - startNanos;
+        if (nanos < 1_000) {
+            return nanos + "ns";
+        }
+        if (nanos < 1_000_000) {
+            return String.format("%.1fµs", nanos / 1000.0);
+        }
+        if (nanos < 1_000_000_000) {
+            return String.format("%.2fms", nanos / 1_000_000.0);
+        }
+        return String.format("%.3fs", nanos / 1_000_000_000.0);
+    }
+
+    /**
+     * Converts byte array to hex string for ticket logging.
+     */
+    private static String bytesToHex(byte[] bytes) {
+        if (bytes == null || bytes.length == 0) {
+            return "empty";
+        }
+        int len = Math.min(bytes.length, 8);
+        StringBuilder sb = new StringBuilder(len * 2);
+        for (int i = 0; i < len; i++) {
+            sb.append(String.format("%02x", bytes[i]));
+        }
+        if (bytes.length > 8) {
+            sb.append("..");
+        }
+        return sb.toString();
     }
 }

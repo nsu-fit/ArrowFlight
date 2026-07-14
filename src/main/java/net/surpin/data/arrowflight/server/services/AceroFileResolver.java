@@ -18,6 +18,7 @@ import java.nio.file.StandardCopyOption;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import net.surpin.data.arrowflight.server.LogUtil;
 
 /**
  * Resolves Hadoop files to local URIs that Arrow Dataset JNI can open.
@@ -65,17 +66,22 @@ final class AceroFileResolver {
      * @throws IOException if the source cannot be mapped or copied
      */
     String resolve(FileStatus status) throws IOException {
+        long startNanos = System.nanoTime();
+        String qid = LogUtil.qid();
         String relative = relativePath(status.getPath());
 
         if (localDataRoot != null) {
             java.nio.file.Path local = safeResolve(localDataRoot, relative);
             if (isExpectedFile(local, status.getLen())) {
-                LOGGER.debug("Using local mirror for Acero: {} -> {}", status.getPath(), local);
+                LOGGER.debug("qid={} node={} resolve=localMirror source={} localPath={} size={} elapsed={}",
+                        qid, LogUtil.node(), status.getPath(), local,
+                        status.getLen(), LogUtil.elapsedNanos(startNanos));
                 return local.toUri().toString();
             }
             if (Files.exists(local)) {
-                LOGGER.warn("Ignoring stale local mirror {} (expected {} bytes, found {} bytes)",
-                        local, status.getLen(), Files.size(local));
+                LOGGER.warn("qid={} node={} resolve=staleMirror source={} localPath={} expected={} found={}",
+                        qid, LogUtil.node(), status.getPath(), local,
+                        status.getLen(), Files.size(local));
             }
         }
 
@@ -88,6 +94,10 @@ final class AceroFileResolver {
                 copyToCache(status, cached);
             }
         }
+        LOGGER.debug("qid={} node={} resolve=cached source={} cached={} size={} modTime={} elapsed={}",
+                qid, LogUtil.node(), status.getPath(), cached,
+                status.getLen(), status.getModificationTime(),
+                LogUtil.elapsedNanos(startNanos));
         return cached.toUri().toString();
     }
 
@@ -100,7 +110,8 @@ final class AceroFileResolver {
         Files.createDirectories(destinationParent);
         java.nio.file.Path temporary = Files.createTempFile(
                 destinationParent, ".arrowflight-", ".part");
-        LOGGER.info("Materializing HDFS file for Acero: {} -> {}", status.getPath(), destination);
+        LOGGER.info("qid={} node={} resolve=materializing source={} destination={} size={}",
+                LogUtil.qid(), LogUtil.node(), status.getPath(), destination, status.getLen());
         try {
             try (InputStream input = fileSystem.open(status.getPath(), bufferSize);
                     OutputStream output = new BufferedOutputStream(

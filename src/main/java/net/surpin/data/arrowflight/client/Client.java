@@ -23,7 +23,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.ByteArrayInputStream;
+import java.net.InetAddress;
 import java.net.URI;
+import java.net.UnknownHostException;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Locale;
@@ -37,6 +39,18 @@ import java.util.concurrent.TimeUnit;
  */
 public final class Client implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger(Client.class);
+
+    private static final String NODE;
+
+    static {
+        String n;
+        try {
+            n = InetAddress.getLocalHost().getHostName();
+        } catch (UnknownHostException e) {
+            n = "unknown";
+        }
+        NODE = n;
+    }
 
     //the factory
     private static final ClientIncomingAuthHeaderMiddleware.Factory factory = new ClientIncomingAuthHeaderMiddleware.Factory(new ClientBearerHeaderHandler());
@@ -147,14 +161,20 @@ public final class Client implements AutoCloseable {
      */
     public RowSet fetch(Endpoint ep, Schema schema) {
         return retryWithBackoff(() -> {
+            long startNanos = System.nanoTime();
             RowSet rs = new RowSet(schema);
             Field[] fields = Field.from(schema);
             FlightEndpoint fep = new FlightEndpoint(new Ticket(ep.getTicket()), Arrays.stream(ep.getURIs()).map(Location::new).toArray(Location[]::new));
+            int batches = 0;
+            long rows = 0;
             try (FlightStream stream = this.openStream(fep)) {
                 VectorSchemaRoot root = stream.getRoot();
                 while (stream.next()) {
-                    FieldVector[] fs = root.getFieldVectors().stream().map(fv -> FieldVector.fromArrow(fv, Field.find(fields, fv.getName()), root.getRowCount())).toArray(FieldVector[]::new);
-                    for (int i = 0; i < root.getRowCount(); i++) {
+                    batches++;
+                    int rowCount = root.getRowCount();
+                    rows += rowCount;
+                    FieldVector[] fs = root.getFieldVectors().stream().map(fv -> FieldVector.fromArrow(fv, Field.find(fields, fv.getName()), rowCount)).toArray(FieldVector[]::new);
+                    for (int i = 0; i < rowCount; i++) {
                         RowSet.Row row = new RowSet.Row();
                         for (FieldVector f : fs) {
                             row.add((f.getValues())[i]);
@@ -163,6 +183,8 @@ public final class Client implements AutoCloseable {
                     }
                 }
             }
+            LOGGER.info("node={} client=fetchCompleted batches={} rows={} elapsed={}",
+                    NODE, batches, rows, elapsedNanos(startNanos));
             return rs;
         }, "fetch");
     }
@@ -185,17 +207,28 @@ public final class Client implements AutoCloseable {
      */
     public void fetchStreaming(Endpoint ep, Schema schema, BatchCallback callback) {
         retryWithBackoff(() -> {
+            long startNanos = System.nanoTime();
             Field[] fields = Field.from(schema);
             FlightEndpoint fep = new FlightEndpoint(new Ticket(ep.getTicket()), Arrays.stream(ep.getURIs()).map(Location::new).toArray(Location[]::new));
+            int batches = 0;
+            long rows = 0;
             try (FlightStream stream = this.openStream(fep)) {
                 VectorSchemaRoot root = stream.getRoot();
                 while (stream.next()) {
+                    batches++;
+                    rows += root.getRowCount();
+                    if (batches == 1) {
+                        LOGGER.info("node={} client=ttfB batchRowCount={} elapsed={}",
+                                NODE, root.getRowCount(), elapsedNanos(startNanos));
+                    }
                     boolean shouldContinue = callback.onBatch(root, fields);
                     if (!shouldContinue) {
                         break;
                     }
                 }
             }
+            LOGGER.info("node={} client=fetchStreamingCompleted batches={} rows={} elapsed={}",
+                    NODE, batches, rows, elapsedNanos(startNanos));
             return null;
         }, "fetchStreaming");
     }
@@ -229,17 +262,26 @@ public final class Client implements AutoCloseable {
      */
     public long execute(String stmt) {
         return retryWithBackoff(() -> {
+            long startNanos = System.nanoTime();
             FlightInfo fi = this.sqlClient.execute(stmt, callOptions());
-            LOGGER.info("Client.execute('{}'): got endpoints \n{}", stmt, fi.getEndpoints());
+            LOGGER.info("node={} client=execute endpoints={} stmt='{}'",
+                    NODE, fi.getEndpoints().size(), stmt);
             long count = 0;
+            int endpointIdx = 0;
             for (FlightEndpoint endpoint: fi.getEndpoints()) {
+                int batches = 0;
                 try (FlightStream stream = this.openStream(endpoint)) {
                     while (stream.next()) {
+                        batches++;
                         VectorSchemaRoot root = stream.getRoot();
                         count += root.getRowCount();
                     }
                 }
+                LOGGER.debug("node={} client=executeEndpoint idx={} batches={} rows={}",
+                        NODE, endpointIdx++, batches, count);
             }
+            LOGGER.info("node={} client=executeCompleted totalRows={} endpoints={} elapsed={}",
+                    NODE, count, fi.getEndpoints().size(), elapsedNanos(startNanos));
             return count;
         }, "execute");
     }
@@ -487,19 +529,27 @@ public final class Client implements AutoCloseable {
      * @throws Exception on stream open failure
      */
     public FlightStream openStream(FlightEndpoint fep) throws Exception {
+        String ticketHex = ticketHex(fep.getTicket());
+        LOGGER.debug("node={} client=openStream ticket={} locations={}",
+                NODE, ticketHex, fep.getLocations());
+
         if (fep.getLocations().isEmpty()) {
+            LOGGER.debug("node={} client=openStreamPrimary ticket={}", NODE, ticketHex);
             return this.client.getStream(fep.getTicket(), callOptions());
         }
 
         IllegalArgumentException unsupported = null;
         for (Location location : fep.getLocations()) {
             if (Location.reuseConnection().equals(location) || isPrimaryLocation(location)) {
+                LOGGER.debug("node={} client=openStreamPrimary ticket={} location={}",
+                        NODE, ticketHex, location.getUri());
                 return this.client.getStream(fep.getTicket(), callOptions());
             }
             try {
+                LOGGER.info("node={} client=routeStream ticket={} location={}",
+                        NODE, ticketHex, location.getUri());
                 FlightClient routedClient = this.endpointClients.computeIfAbsent(
                         location.getUri(), uri -> create(this.config, this.allocator, location, false));
-                LOGGER.info("Client.openStream(): routing ticket to {}", location.getUri());
                 return routedClient.getStream(fep.getTicket(), callOptions());
             } catch (IllegalArgumentException ex) {
                 unsupported = ex;
@@ -528,5 +578,47 @@ public final class Client implements AutoCloseable {
      */
     public Configuration getConfig() {
         return this.config;
+    }
+
+    /**
+     * Formats elapsed nanoseconds as human-readable duration.
+     */
+    private static String elapsedNanos(long startNanos) {
+        long nanos = System.nanoTime() - startNanos;
+        if (nanos < 1_000) {
+            return nanos + "ns";
+        }
+        if (nanos < 1_000_000) {
+            return String.format("%.1fµs", nanos / 1000.0);
+        }
+        if (nanos < 1_000_000_000) {
+            return String.format("%.2fms", nanos / 1_000_000.0);
+        }
+        return String.format("%.3fs", nanos / 1_000_000_000.0);
+    }
+
+    /**
+     * Converts a Flight ticket to hex string for logging.
+     */
+    private static String ticketHex(Ticket ticket) {
+        if (ticket == null) {
+            return "null";
+        }
+        byte[] bytes = ticket.getBytes();
+        if (bytes == null || bytes.length == 0) {
+            return "empty";
+        }
+        int len = Math.min(bytes.length, 8);
+        StringBuilder sb = new StringBuilder(len * 2);
+        for (byte b : bytes) {
+            sb.append(String.format("%02x", b & 0xFF));
+            if (sb.length() >= 16) {
+                break;
+            }
+        }
+        if (bytes.length > 8) {
+            sb.append("..");
+        }
+        return sb.toString();
     }
 }

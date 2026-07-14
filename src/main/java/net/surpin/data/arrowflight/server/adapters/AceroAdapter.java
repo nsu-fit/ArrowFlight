@@ -27,6 +27,7 @@ import java.util.Optional;
 
 import net.surpin.data.arrowflight.server.services.ParquetQueryParser;
 import net.surpin.data.arrowflight.server.model.AppConfig;
+import net.surpin.data.arrowflight.server.LogUtil;
 
 /**
  * Wraps Arrow Acero (Dataset/Sanner) for Parquet scanning with optional Substrait filter pushdown.
@@ -81,6 +82,14 @@ public final class AceroAdapter {
             ParquetQueryParser parsedQuery, List<String> parquetUris, byte[] filterBytes,
             FlightProducer.ServerStreamListener listener, boolean startListener) throws Exception {
         List<String> selectedColumns = parsedQuery.columns;
+        String qid = LogUtil.qid();
+        long startNanos = System.nanoTime();
+        int numFiles = parquetUris.size();
+
+        LOGGER.info("qid={} node={} acero=start files={} columns={} hasFilter={} query='{}'",
+                qid, LogUtil.node(), numFiles,
+                selectedColumns.isEmpty() ? "*" : String.join(",", selectedColumns),
+                filterBytes != null, query);
 
         try (FileSystemDatasetFactory factory = new FileSystemDatasetFactory(
                 allocator, NativeMemoryPool.getDefault(), FileFormat.PARQUET,
@@ -90,13 +99,18 @@ public final class AceroAdapter {
              ArrowReader reader = scanner.scanBatches()) {
 
             Schema aceroSchema = scanner.schema();
-            LOGGER.info("Executing Acero scan for query: {} with schema: {}", query, aceroSchema);
+            LOGGER.info("qid={} node={} acero=schema schema={} files={}",
+                    qid, LogUtil.node(), aceroSchema, numFiles);
 
             VectorSchemaRoot vsr = reader.getVectorSchemaRoot();
             if (startListener) {
                 listener.start(vsr);
             }
 
+            int batchesSent = 0;
+            long rowsSent = 0;
+            long backpressureNanos = 0;
+            boolean cancelled = false;
             while (true) {
                 if (!reader.loadNextBatch()) {
                     break;
@@ -106,15 +120,32 @@ public final class AceroAdapter {
                     vsr.clear();
                     continue;
                 }
+                long bpStart = System.nanoTime();
                 if (!DuckDbAdapter.awaitListenerReady(
                         listener, listenerReadyTimeoutMillis)) {
-                    LOGGER.warn("Flight listener cancelled during Acero scan");
+                    backpressureNanos += System.nanoTime() - bpStart;
+                    LOGGER.warn("qid={} node={} acero=cancelled batch={} rows={}",
+                            qid, LogUtil.node(), batchesSent, rowsSent);
                     vsr.clear();
+                    cancelled = true;
                     break;
                 }
+                backpressureNanos += System.nanoTime() - bpStart;
                 listener.putNext();
+                batchesSent++;
+                rowsSent += rowCount;
+                if (batchesSent % 10 == 0) {
+                    LOGGER.debug("qid={} node={} acero=progress batches={} rows={} elapsed={} throughput={}rows/s",
+                            qid, LogUtil.node(), batchesSent, rowsSent,
+                            LogUtil.elapsedNanos(startNanos),
+                            rowsSent * 1_000_000_000L / Math.max(1, System.nanoTime() - startNanos));
+                }
                 vsr.clear();
             }
+            LOGGER.info("qid={} node={} acero=completed files={} batches={} rows={} backpressureMs={} elapsed={} cancelled={}",
+                    qid, LogUtil.node(), numFiles, batchesSent, rowsSent,
+                    backpressureNanos / 1_000_000,
+                    LogUtil.elapsedNanos(startNanos), cancelled);
         }
     }
 
@@ -144,6 +175,10 @@ public final class AceroAdapter {
     public List<Object[]> aggregateFile(BufferAllocator allocator, String fileUri,
             byte[] filterBytes, Optional<String[]> cols,
             int numCountStarCols) throws Exception {
+        long startNanos = System.nanoTime();
+        String qid = LogUtil.qid();
+        LOGGER.debug("qid={} node={} acero=aggregateFile start file={} hasFilter={}",
+                qid, LogUtil.node(), fileUri, filterBytes != null);
 
         try (FileSystemDatasetFactory factory = new FileSystemDatasetFactory(
                 allocator, NativeMemoryPool.getDefault(), FileFormat.PARQUET,
@@ -162,6 +197,8 @@ public final class AceroAdapter {
                     count += reader.getVectorSchemaRoot().getRowCount();
                 }
             }
+            LOGGER.debug("qid={} node={} acero=aggregateFile completed file={} count={} elapsed={}",
+                    qid, LogUtil.node(), fileUri, count, LogUtil.elapsedNanos(startNanos));
             Object[] row = new Object[numCountStarCols];
             java.util.Arrays.fill(row, count);
             return Collections.singletonList(row);
@@ -183,6 +220,10 @@ public final class AceroAdapter {
     public RegisteredArrowStreams exportToDuckDb(BufferAllocator allocator, List<String> fileUris,
             byte[] filterBytes, Optional<String[]> cols, DuckDBConnection duckConn)
             throws Exception {
+        long startNanos = System.nanoTime();
+        String qid = LogUtil.qid();
+        LOGGER.debug("qid={} node={} acero=exportToDuckDb start files={}",
+                qid, LogUtil.node(), fileUris.size());
 
         int n = fileUris.size();
         List<FileSystemDatasetFactory> factories = new ArrayList<>(n);
@@ -223,6 +264,9 @@ public final class AceroAdapter {
                 duckConn.registerArrowStream(alias, cStream);
                 aliases.add(alias);
             }
+            LOGGER.debug("qid={} node={} acero=exportToDuckDb completed files={} aliases={} elapsed={}",
+                    qid, LogUtil.node(), fileUris.size(), aliases,
+                    LogUtil.elapsedNanos(startNanos));
             success = true;
             return registered;
         } finally {

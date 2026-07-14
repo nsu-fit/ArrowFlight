@@ -22,10 +22,12 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 
 import net.surpin.data.arrowflight.server.services.ParquetQueryParser;
 import net.surpin.data.arrowflight.server.model.AppConfig;
+import net.surpin.data.arrowflight.server.LogUtil;
 
 /**
  * Manages DuckDB connection pool and SQL execution.
@@ -34,8 +36,6 @@ import net.surpin.data.arrowflight.server.model.AppConfig;
 public final class DuckDbAdapter {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(DuckDbAdapter.class);
-    private static final long LISTENER_READY_POLL_MILLIS = 5L;
-
     private final ThreadLocal<Connection> threadConn;
     private final ExecutorService ioPool;
 
@@ -182,8 +182,12 @@ public final class DuckDbAdapter {
     public void streamSql(BufferAllocator allocator, String duckSql,
             org.apache.arrow.flight.FlightProducer.ServerStreamListener listener,
             boolean startListener) throws Exception {
-        LOGGER.info("Executing DuckDB SQL with Arrow batch size {}: {}", batchSize, duckSql);
+        String qid = LogUtil.qid();
+        long startNanos = System.nanoTime();
+        LOGGER.info("qid={} node={} thread={} duckdb=start batchSize={} sql='{}'",
+                qid, LogUtil.node(), Thread.currentThread().getName(), batchSize, duckSql);
         Connection conn = threadConn.get();
+        long ttfB = -1;
         try (Statement stmt = conn.createStatement();
                 org.duckdb.DuckDBResultSet drs = (org.duckdb.DuckDBResultSet) stmt.executeQuery(duckSql);
                 ArrowReader reader = (ArrowReader) drs.arrowExportStream(allocator, batchSize)) {
@@ -192,29 +196,42 @@ public final class DuckDbAdapter {
             if (startListener) {
                 listener.start(root);
             }
+            ttfB = System.nanoTime();
 
             int batchesSent = 0;
             long rowsSent = 0;
+            long backpressureNanos = 0;
             boolean cancelled = false;
             while (!cancelled && reader.loadNextBatch()) {
                 if (root.getRowCount() == 0) {
                     root.clear();
                     continue;
                 }
+                long bpStart = System.nanoTime();
                 if (!awaitListenerReady(
                         listener, appConfig.flightListenerReadyTimeoutMillis())) {
+                    backpressureNanos += System.nanoTime() - bpStart;
                     cancelled = true;
                     root.clear();
                     break;
                 }
+                backpressureNanos += System.nanoTime() - bpStart;
                 listener.putNext();
                 batchesSent++;
                 rowsSent += root.getRowCount();
+                if (batchesSent % 10 == 0) {
+                    LOGGER.debug("qid={} node={} duckdb=progress batches={} rows={} elapsed={} throughput={}rows/s",
+                            qid, LogUtil.node(), batchesSent, rowsSent,
+                            LogUtil.elapsedNanos(startNanos),
+                            rowsSent * 1_000_000_000L / Math.max(1, System.nanoTime() - startNanos));
+                }
                 root.clear();
             }
-            LOGGER.info("DuckDB sent {} Flight batch(es), {} row(s){}",
-                    batchesSent, rowsSent,
-                    cancelled ? " before cancellation" : "");
+            LOGGER.info("qid={} node={} duckdb=completed batches={} rows={} ttfB={} backpressureMs={} elapsed={} cancelled={}",
+                    qid, LogUtil.node(), batchesSent, rowsSent,
+                    ttfB > 0 ? LogUtil.elapsedNanos(ttfB) : "N/A",
+                    backpressureNanos / 1_000_000,
+                    LogUtil.elapsedNanos(startNanos), cancelled);
         }
     }
 
@@ -521,16 +538,32 @@ public final class DuckDbAdapter {
                     "Flight listener readiness timeout must be positive: " + timeoutMillis);
         }
 
+        Semaphore stateChanged = new Semaphore(0);
+        Runnable stateChangeHandler = stateChanged::release;
+        listener.setOnReadyHandler(stateChangeHandler);
+        listener.setOnCancelHandler(stateChangeHandler);
+
         long deadlineNanos = System.nanoTime()
                 + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
+        long waitStart = System.nanoTime();
         while (!listener.isCancelled() && !listener.isReady()) {
-            if (System.nanoTime() >= deadlineNanos) {
-                LOGGER.warn("Listener readiness timeout after {}ms", timeoutMillis);
+            long remainingNanos = deadlineNanos - System.nanoTime();
+            if (remainingNanos <= 0
+                    || !stateChanged.tryAcquire(remainingNanos, TimeUnit.NANOSECONDS)) {
+                LOGGER.warn("qid={} node={} backpressure=timeout timeoutMs={} waited={}",
+                        LogUtil.qid(), LogUtil.node(), timeoutMillis,
+                        LogUtil.elapsedNanos(waitStart));
                 return false;
             }
-            Thread.sleep(LISTENER_READY_POLL_MILLIS);
         }
-        return !listener.isCancelled() && listener.isReady();
+        long totalWaitNanos = System.nanoTime() - waitStart;
+        boolean ready = !listener.isCancelled() && listener.isReady();
+        if (totalWaitNanos > 100_000_000) { // >100ms
+            LOGGER.debug("qid={} node={} backpressure=waited waitMs={} ready={} cancelled={}",
+                    LogUtil.qid(), LogUtil.node(), totalWaitNanos / 1_000_000,
+                    ready, listener.isCancelled());
+        }
+        return ready;
     }
 
     /**

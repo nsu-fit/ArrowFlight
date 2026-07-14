@@ -20,6 +20,7 @@ import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.arrow.vector.types.pojo.Schema;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import net.surpin.data.arrowflight.server.LogUtil;
 import org.slf4j.MDC;
 
 import java.io.IOException;
@@ -115,28 +116,34 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
         String serverUri = state.serverUri() != null ? state.serverUri() : "local";
         long bytes = state.bytes();
         long started = System.currentTimeMillis();
+        LogUtil.setQid(qid);
+        long startNanos = System.nanoTime();
 
-        LOGGER.info("qid={} execution=start server={} files={} bytes={} query='{}'",
-                qid, serverUri, filePaths.length, bytes, query);
+        LOGGER.info("qid={} node={} thread={} execution=start server={} files={} bytes={} endpoint={} query='{}'",
+                qid, LogUtil.node(), Thread.currentThread().getName(),
+                serverUri, filePaths.length, bytes, qid, query);
 
         MDC.put("qid", qid);
         try {
             executionService.readParquet(allocator, query, filePaths, listener, true);
             listener.completed();
             long elapsed = System.currentTimeMillis() - started;
-            LOGGER.info("qid={} execution=completed server={} elapsedMs={} files={} query='{}'",
-                    qid, serverUri, elapsed, filePaths.length, query);
+            LOGGER.info("qid={} node={} thread={} execution=completed server={} elapsedMs={} files={} result=completed query='{}'",
+                    qid, LogUtil.node(), Thread.currentThread().getName(),
+                    serverUri, elapsed, filePaths.length, query);
         } catch (Exception e) {
             long elapsed = System.currentTimeMillis() - started;
             String failure = failureDescription(e);
-            LOGGER.error("qid={} execution=failed server={} elapsedMs={} error='{}'",
-                    qid, serverUri, elapsed, failure, e);
+            LOGGER.error("qid={} node={} thread={} execution=failed server={} elapsedMs={} files={} result=failed error='{}'",
+                    qid, LogUtil.node(), Thread.currentThread().getName(),
+                    serverUri, elapsed, filePaths.length, failure, e);
             listener.error(CallStatus.INTERNAL
                     .withDescription(failure)
                     .withCause(e)
                     .toRuntimeException());
         } finally {
             MDC.remove("qid");
+            LogUtil.setQid(null);
             if (state.serverUri() != null) {
                 // Spark may retry a failed task with the same Flight ticket. Keep the
                 // ticket readable until its TTL, but clear its accounted load once.

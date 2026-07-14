@@ -42,6 +42,7 @@ import net.surpin.data.arrowflight.server.adapters.DuckDbAdapter;
 import net.surpin.data.arrowflight.server.adapters.ParquetAdapter;
 import net.surpin.data.arrowflight.server.services.ParquetQueryParser;
 import net.surpin.data.arrowflight.server.model.AppConfig;
+import net.surpin.data.arrowflight.server.LogUtil;
 
 /**
  * Orchestrates query execution across DuckDB and Acero engines.
@@ -101,6 +102,26 @@ public final class ExecutionService {
     public void readParquet(BufferAllocator allocator, String query, String[] fileUris,
             FlightProducer.ServerStreamListener listener, boolean startListener) throws Exception {
         ParquetQueryParser parsedQuery = ParquetQueryParser.parse(query);
+        int numFiles = fileUris != null ? fileUris.length : 0;
+        boolean hasFilter = parsedQuery.filter != null && !parsedQuery.filter.isBlank();
+        boolean hasGroupBy = !parsedQuery.groupByColumnNames.isEmpty();
+        boolean hasAggregation = parsedQuery.hasAggregation;
+        String path;
+        if (parsedQuery.isJoin) {
+            path = "join";
+        } else if (hasAggregation && hasGroupBy) {
+            path = "aggregation+groupby";
+        } else if (hasAggregation) {
+            path = "aggregation";
+        } else if (hasFilter) {
+            path = "filtered-scan";
+        } else {
+            path = "full-scan";
+        }
+        LOGGER.info("qid={} node={} execution=plan path={} projection={} filter={} groupBy={} files={} isJoin={} query='{}'",
+                LogUtil.qid(), LogUtil.node(), path,
+                parsedQuery.columns.isEmpty() ? "*" : String.join(",", parsedQuery.columns),
+                hasFilter, hasGroupBy, numFiles, parsedQuery.isJoin, query);
 
         if (parsedQuery.isJoin) {
             executeJoin(allocator, parsedQuery, fileUris, listener, startListener);
@@ -119,8 +140,13 @@ public final class ExecutionService {
         }
 
         List<String> resolvedUris = resolveUris(fileUris);
+        LOGGER.debug("qid={} node={} execution=filesResolved files={} paths={}",
+                LogUtil.qid(), LogUtil.node(), resolvedUris.size(), resolvedUris);
 
         if (parsedQuery.hasAggregation) {
+            LOGGER.info("qid={} node={} execution=engine engine=aggregation hasGroupBy={} isHdfs={} files={}",
+                    LogUtil.qid(), LogUtil.node(), !parsedQuery.groupByColumnNames.isEmpty(),
+                    isHdfsData(), parquetFiles.size());
             executeAggregation(allocator, parsedQuery, parquetFiles, resolvedUris,
                     fileUris, listener, startListener);
             return;
@@ -129,21 +155,29 @@ public final class ExecutionService {
         if (parsedQuery.filter != null && !parsedQuery.filter.isBlank()) {
             byte[] filterBytes = filterBuilder.apply(parsedQuery);
             if (isHdfsData() && filterBytes != null) {
+                LOGGER.info("qid={} node={} execution=engine engine=Acero+SubstraitFilter files={}",
+                        LogUtil.qid(), LogUtil.node(), resolvedUris.size());
                 aceroAdapter.scanBatches(allocator, query, parsedQuery,
                         resolvedUris, filterBytes, listener, startListener);
                 return;
             }
             if (isHdfsData()) {
+                LOGGER.info("qid={} node={} execution=engine engine=Acero+DuckDB(hdfs-filter) files={}",
+                        LogUtil.qid(), LogUtil.node(), resolvedUris.size());
                 streamHdfsFilterViaArrow(allocator, parsedQuery, resolvedUris,
                         listener, startListener);
                 return;
             }
+            LOGGER.info("qid={} node={} execution=engine engine=DuckDB files={}",
+                    LogUtil.qid(), LogUtil.node(), resolvedUris.size());
             String duckSql = DuckDbAdapter.buildSelectSql(parsedQuery,
                     DuckDbAdapter.readParquetFromClause(ducksDbPaths(resolvedUris)));
             duckDbAdapter.streamSql(allocator, duckSql, listener, startListener);
             return;
         }
 
+        LOGGER.info("qid={} node={} execution=engine engine=Acero(full-scan) files={}",
+                LogUtil.qid(), LogUtil.node(), resolvedUris.size());
         aceroAdapter.scanBatches(allocator, query, parsedQuery,
                 resolvedUris, listener, startListener);
     }
@@ -198,6 +232,7 @@ public final class ExecutionService {
             List<Path> parquetFiles, List<String> resolvedUris, String[] fileUris,
             FlightProducer.ServerStreamListener listener,
             boolean startListener) throws Exception {
+        long aggStartNanos = System.nanoTime();
 
         if (parquetFiles.isEmpty()) {
             emitRowsAsArrow(allocator, pq, Collections.emptyList(), listener, startListener);
@@ -221,7 +256,9 @@ public final class ExecutionService {
             for (Future<Long> f : futs) {
                 total += f.get();
             }
-            LOGGER.debug("COUNT(*) footer fast-path: {} file(s), total={}", parquetFiles.size(), total);
+            LOGGER.info("qid={} node={} execution=engine engine=footer-count files={} total={} elapsed={}",
+                    LogUtil.qid(), LogUtil.node(), parquetFiles.size(), total,
+                    LogUtil.elapsedNanos(aggStartNanos));
             int n = pq.selectExprs.size();
             Object[] row = new Object[n];
             Arrays.fill(row, total);
@@ -261,13 +298,17 @@ public final class ExecutionService {
                 }
             }
             if (allHaveStats) {
-                LOGGER.debug("MIN/MAX footer stats fast-path: {} file(s)", parquetFiles.size());
+                LOGGER.debug("qid={} node={} execution=engine engine=footer-stats files={} elapsed={}",
+                        LogUtil.qid(), LogUtil.node(), parquetFiles.size(),
+                        LogUtil.elapsedNanos(aggStartNanos));
                 List<Object[]> rows = merged != null
                         ? Collections.singletonList(merged) : Collections.emptyList();
                 emitRowsAsArrow(allocator, pq, rows, listener, startListener);
                 return;
             }
-            LOGGER.debug("MIN/MAX stats missing; falling back to DuckDB");
+            LOGGER.info("qid={} node={} execution=engine engine=DuckDB(fallback) reason=statsMissing files={} elapsed={}",
+                    LogUtil.qid(), LogUtil.node(), parquetFiles.size(),
+                    LogUtil.elapsedNanos(aggStartNanos));
         }
 
         if (isHdfsData()) {
