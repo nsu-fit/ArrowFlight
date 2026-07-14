@@ -1,7 +1,5 @@
 package net.surpin.data.arrowflight.server;
 
-import com.hazelcast.config.Config;
-import com.hazelcast.core.Hazelcast;
 import net.surpin.data.arrowflight.server.adapters.AceroAdapter;
 import net.surpin.data.arrowflight.server.adapters.ConfigAdapter;
 import net.surpin.data.arrowflight.server.adapters.DuckDbAdapter;
@@ -30,7 +28,6 @@ import java.net.URI;
 import java.nio.ByteBuffer;
 import java.nio.file.Paths;
 import java.util.List;
-import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.function.Function;
 
@@ -63,15 +60,6 @@ public class TestFlightServerHelper implements AutoCloseable {
         allocator = b.allocator != null ? b.allocator : new RootAllocator(Long.MAX_VALUE);
 
         int hazelcastPort = b.hazelcastPort != 0 ? b.hazelcastPort : findFreePort();
-        int flightPort = b.flightPort != 0 ? b.flightPort : findFreePort();
-
-        // Create standalone Hazelcast cluster (no networking to other nodes)
-        Config hzConfig = new Config();
-        hzConfig.setClusterName("test-" + UUID.randomUUID());
-        hzConfig.getNetworkConfig().setPort(hazelcastPort);
-        hzConfig.getNetworkConfig().setPortAutoIncrement(false);
-        hzConfig.getNetworkConfig().getJoin().getMulticastConfig().setEnabled(false);
-        hzConfig.getNetworkConfig().getJoin().getTcpIpConfig().setEnabled(false);
 
         String defaultDataDir = Paths.get("src/test/resources/test_db").toAbsolutePath().toString();
         String dataDir = b.dataDir != null ? b.dataDir : defaultDataDir;
@@ -95,9 +83,12 @@ public class TestFlightServerHelper implements AutoCloseable {
 
         // Services
         metadataService = new MetadataService(parquetAdapter);
-        location = Location.forGrpcInsecure("localhost", flightPort);
 
         hazelcastAdapter = new HazelcastAdapter(appConfig);
+        // Pick the Flight port only after Hazelcast owns its port. Otherwise two
+        // consecutive ephemeral-port probes can return the same released port.
+        int flightPort = b.flightPort != 0 ? b.flightPort : findFreePort();
+        location = Location.forGrpcInsecure("localhost", flightPort);
         clusterService = new ClusterService(hazelcastAdapter, appConfig,
                 location.getUri().toString());
         queryPlanner = new QueryPlanner(parquetAdapter, clusterService);

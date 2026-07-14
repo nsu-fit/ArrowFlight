@@ -57,6 +57,7 @@ public final class ExecutionService {
     private final MetadataService metadataService;
     private final ExecutorService ioPool;
     private final AppConfig appConfig;
+    private final AceroFileResolver aceroFileResolver;
     private final Function<ParquetQueryParser, byte[]> filterBuilder;
 
     /**
@@ -80,6 +81,9 @@ public final class ExecutionService {
         this.metadataService = metadataService;
         this.appConfig = appConfig;
         this.ioPool = ioPool;
+        this.aceroFileResolver = new AceroFileResolver(
+                parquetAdapter.fileSystem(), new Path(parquetAdapter.dataDirectory()),
+                appConfig.localDataDir(), appConfig.ioFileBufferSize());
         this.filterBuilder = filterBuilder;
     }
 
@@ -419,7 +423,8 @@ public final class ExecutionService {
                     listener.start(merged);
                 }
                 if (merged.getRowCount() > 0) {
-                    if (DuckDbAdapter.awaitListenerReady(listener)) {
+                    if (DuckDbAdapter.awaitListenerReady(
+                            listener, appConfig.flightListenerReadyTimeoutMillis())) {
                         listener.putNext();
                     }
                 }
@@ -449,7 +454,9 @@ public final class ExecutionService {
     }
 
     /**
-     * Resolves relative file URIs to fully-qualified HDFS URIs.
+     * Resolves relative file URIs for the native execution engines.
+     * HDFS files are exposed as local URIs because the packaged Arrow Dataset
+     * JNI library has no native HDFS support.
      *
      * @param fileUris relative file paths
      * @return resolved URIs
@@ -458,11 +465,18 @@ public final class ExecutionService {
     private List<String> resolveUris(String[] fileUris) throws IOException {
         List<String> uris = new ArrayList<>(fileUris.length);
         for (String rel : fileUris) {
-            uris.add(parquetAdapter.fileSystem()
-                    .getFileStatus(new Path(parquetAdapter.dataDirectory(), rel))
-                    .getPath().toUri().toString());
+            org.apache.hadoop.fs.FileStatus status = parquetAdapter.fileSystem()
+                    .getFileStatus(new Path(parquetAdapter.dataDirectory(), rel));
+            uris.add(resolveEngineUri(status));
         }
         return uris;
+    }
+
+    private String resolveEngineUri(org.apache.hadoop.fs.FileStatus status) throws IOException {
+        if (isHdfsData()) {
+            return aceroFileResolver.resolve(status);
+        }
+        return status.getPath().toUri().toString();
     }
 
     /**
@@ -506,7 +520,9 @@ public final class ExecutionService {
         while (it.hasNext()) {
             org.apache.hadoop.fs.LocatedFileStatus f = it.next();
             if (f.isFile() && f.getPath().getName().endsWith(".parquet")) {
-                uris.add(plainDuckDbPath(f.getPath()));
+                uris.add(isHdfsData()
+                        ? ducksDbPaths(List.of(aceroFileResolver.resolve(f))).get(0)
+                        : plainDuckDbPath(f.getPath()));
             }
         }
         return uris;
@@ -646,7 +662,8 @@ public final class ExecutionService {
                 listener.start(root);
             }
             if (!rows.isEmpty()) {
-                if (DuckDbAdapter.awaitListenerReady(listener)) {
+                if (DuckDbAdapter.awaitListenerReady(
+                        listener, appConfig.flightListenerReadyTimeoutMillis())) {
                     listener.putNext();
                 }
             }

@@ -13,8 +13,10 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.Arrays;
 import java.util.Properties;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.IntSupplier;
 
 import net.surpin.data.arrowflight.server.adapters.ConfigAdapter;
 import net.surpin.data.arrowflight.server.model.AppConfig;
@@ -161,22 +163,33 @@ public class HadoopArrowFlightServer {
      */
     private void waitForCluster(String[] hosts, int timeoutSec) {
         HazelcastInstance hazelcast = component.clusterService().getHazelcastInstance();
-        long started = System.currentTimeMillis();
+        long started = System.nanoTime();
+        ReentrantLock membershipLock = new ReentrantLock();
+        Condition membershipChanged = membershipLock.newCondition();
 
         LOGGER.info("Waiting up to {}s for {} nodes to connect (hosts: {})",
                 timeoutSec, hosts.length, Arrays.toString(hosts));
 
-        CountDownLatch latch = new CountDownLatch(hosts.length);
-        hazelcast.getCluster().getMembers().forEach(m -> latch.countDown());
-        hazelcast.getCluster().addMembershipListener(new MembershipAdapter() {
-            @Override public void memberAdded(MembershipEvent e) {
-                latch.countDown();
-            }
-        });
+        java.util.UUID listenerId = hazelcast.getCluster().addMembershipListener(
+                new MembershipAdapter() {
+                    @Override
+                    public void memberAdded(MembershipEvent e) {
+                        membershipLock.lock();
+                        try {
+                            membershipChanged.signalAll();
+                        } finally {
+                            membershipLock.unlock();
+                        }
+                    }
+                });
 
         try {
-            if (!latch.await(timeoutSec, TimeUnit.SECONDS)) {
-                long elapsed = (System.currentTimeMillis() - started) / 1000;
+            boolean joined = awaitMemberCount(
+                    () -> hazelcast.getCluster().getMembers().size(),
+                    membershipLock, membershipChanged, hosts.length,
+                    TimeUnit.SECONDS.toMillis(timeoutSec));
+            if (!joined) {
+                long elapsed = TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - started);
                 int connected = hazelcast.getCluster().getMembers().size();
                 String msg = String.format(
                         "Cluster join timeout after %ds: only %d of %d nodes connected. "
@@ -188,10 +201,47 @@ public class HadoopArrowFlightServer {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Interrupted while waiting for cluster join", e);
+        } finally {
+            hazelcast.getCluster().removeMembershipListener(listenerId);
         }
 
-        long totalSec = (System.currentTimeMillis() - started) / 1000;
+        long totalSec = TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - started);
         LOGGER.info("All {} nodes connected in {}s. Initializing...", hosts.length, totalSec);
+    }
+
+    /**
+     * Waits until a changing member count reaches the expected value.
+     *
+     * @param memberCount current member-count supplier
+     * @param lock lock guarding membership-change signals
+     * @param membershipChanged condition signalled after membership changes
+     * @param expected expected member count
+     * @param timeoutMillis maximum wait time in milliseconds
+     * @return true when expected count is reached, false on timeout
+     * @throws InterruptedException if waiting is interrupted
+     * @throws IllegalArgumentException if expected count or timeout is not positive
+     */
+    static boolean awaitMemberCount(IntSupplier memberCount, ReentrantLock lock,
+            Condition membershipChanged, int expected, long timeoutMillis)
+            throws InterruptedException {
+        if (expected <= 0 || timeoutMillis <= 0) {
+            throw new IllegalArgumentException(
+                    "Expected member count and timeout must be positive");
+        }
+
+        long remainingNanos = TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
+        lock.lockInterruptibly();
+        try {
+            while (memberCount.getAsInt() < expected) {
+                if (remainingNanos <= 0) {
+                    return false;
+                }
+                remainingNanos = membershipChanged.awaitNanos(remainingNanos);
+            }
+            return true;
+        } finally {
+            lock.unlock();
+        }
     }
 
     /**

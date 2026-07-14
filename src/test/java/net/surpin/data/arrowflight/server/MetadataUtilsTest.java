@@ -24,7 +24,7 @@ class MetadataUtilsTest {
         TestableParquetAdapter() throws Exception {
             super(new AppConfig(
                 4096, 4, 65536, 2, 2, 2, "", false, "", "", "", "", 67108864, 30000L,
-                "/nonexistent-data-dir", 31001, 5701, 120, 3, 500, 3
+                "/nonexistent-data-dir", null, 31001, 5701, 120, 3, 500, 3
             ), new RawLocalFileSystem() {{
                 initialize(URI.create("file:///"), new Configuration());
             }});

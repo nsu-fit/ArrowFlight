@@ -101,7 +101,7 @@ BenchBase ожидает JDBC-подключение для выполнения
 | `'0.05'::decimal`                      | `0.05`                             |
 | `concat(?::varchar, ' days')::interval` | `INTERVAL ? day`                  |
 | `INTERVAL '1' year`                    | `INTERVAL '1' year`                |
-| `SHOW ALL`                             | `SET -v`                           |
+| `SHOW ALL`                             | BenchBase-compatible engine row    |
 
 ### Интеграция
 

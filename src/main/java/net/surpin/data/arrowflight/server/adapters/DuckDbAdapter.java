@@ -21,9 +21,10 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.ReentrantLock;
 
 import net.surpin.data.arrowflight.server.services.ParquetQueryParser;
 import net.surpin.data.arrowflight.server.model.AppConfig;
@@ -200,7 +201,8 @@ public final class DuckDbAdapter {
                     root.clear();
                     continue;
                 }
-                if (!awaitListenerReady(listener)) {
+                if (!awaitListenerReady(
+                        listener, appConfig.flightListenerReadyTimeoutMillis())) {
                     cancelled = true;
                     root.clear();
                     break;
@@ -504,29 +506,48 @@ public final class DuckDbAdapter {
     /**
      * Checks whether a Flight listener is ready to receive data.
      *
-     * @param listener Flight stream listener
-     * @return true if ready, false if canceled
+     * @param listener      Flight stream listener
+     * @param timeoutMillis maximum wait time in milliseconds
+     * @return true if ready, false if cancelled
      * @throws InterruptedException if waiting is interrupted
+     * @throws IllegalArgumentException if timeout is not positive
      */
     public static boolean awaitListenerReady(
-            org.apache.arrow.flight.FlightProducer.ServerStreamListener listener)
+            org.apache.arrow.flight.FlightProducer.ServerStreamListener listener,
+            long timeoutMillis)
             throws InterruptedException {
-        if (listener.isCancelled()) {
-            return false;
-        }
-        if (listener.isReady()) {
-            return true;
+        if (timeoutMillis <= 0) {
+            throw new IllegalArgumentException(
+                    "Flight listener readiness timeout must be positive: " + timeoutMillis);
         }
 
-        CountDownLatch readyLatch = new CountDownLatch(1);
-        listener.setOnReadyHandler(readyLatch::countDown);
+        ReentrantLock readinessLock = new ReentrantLock();
+        Condition stateChanged = readinessLock.newCondition();
+        Runnable stateChangeHandler = () -> {
+            readinessLock.lock();
+            try {
+                stateChanged.signalAll();
+            } finally {
+                readinessLock.unlock();
+            }
+        };
+        listener.setOnReadyHandler(stateChangeHandler);
+        listener.setOnCancelHandler(stateChangeHandler);
 
-        long timeout = 60_000;
-        if (!readyLatch.await(timeout, TimeUnit.MILLISECONDS)) {
-            LOGGER.warn("Listener readiness timeout after {}ms", timeout);
-            return false;
+        long remainingNanos = TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
+        readinessLock.lockInterruptibly();
+        try {
+            while (!listener.isCancelled() && !listener.isReady()) {
+                if (remainingNanos <= 0) {
+                    LOGGER.warn("Listener readiness timeout after {}ms", timeoutMillis);
+                    return false;
+                }
+                remainingNanos = stateChanged.awaitNanos(remainingNanos);
+            }
+            return !listener.isCancelled() && listener.isReady();
+        } finally {
+            readinessLock.unlock();
         }
-        return !listener.isCancelled();
     }
 
     /**

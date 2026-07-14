@@ -2,6 +2,7 @@ package net.surpin.data.arrowflight.server.adapters;
 
 import net.surpin.data.arrowflight.server.model.AppConfig;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashSet;
@@ -9,6 +10,8 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+/** Tests system-property and environment configuration mapping. */
+@Tag("unit")
 class ConfigAdapterTest {
 
     private static final Set<String> CLEARED = new HashSet<>();
@@ -35,6 +38,7 @@ class ConfigAdapterTest {
         assertTrue(cfg.ioParallelism() >= 1 && cfg.ioParallelism() <= 64);
         assertEquals(1, cfg.duckDbThreads());
         assertEquals("/data/parquet", cfg.dataDir());
+        assertNull(cfg.localDataDir());
         assertEquals(32010, cfg.port());
         assertEquals(5701, cfg.hazelcastPort());
         assertEquals(60, cfg.hazelcastClusterJoinTimeoutSec());
@@ -125,6 +129,14 @@ class ConfigAdapterTest {
     }
 
     @Test
+    void getConfigLocalDataDir() {
+        setProp("localDataDir", "/staging");
+
+        AppConfig cfg = ConfigAdapter.getConfig();
+        assertEquals("/staging", cfg.localDataDir());
+    }
+
+    @Test
     void getConfigPort() {
         setProp("port", "32020");
 
@@ -154,6 +166,16 @@ class ConfigAdapterTest {
 
         AppConfig cfg = ConfigAdapter.getConfig();
         assertEquals(30000, cfg.flightListenerReadyTimeoutMillis());
+    }
+
+    /** Verifies invalid readiness timeout configuration is rejected at startup. */
+    @Test
+    void getConfigRejectsNonPositiveFlightListenerReadyTimeout() {
+        setProp("flightListenerReadyTimeoutMs", "0");
+
+        IllegalArgumentException error = assertThrows(
+                IllegalArgumentException.class, ConfigAdapter::getConfig);
+        assertTrue(error.getMessage().contains("flightListenerReadyTimeoutMs"));
     }
 
     @Test

@@ -21,6 +21,9 @@ public final class HiveExecuteDriverSelfTest {
 
     public static void main(String[] args) throws Exception {
         assertRewrite(
+                "SELECT 'engine' AS name, 'Spark SQL' AS setting, 'BenchBase JDBC target' AS description",
+                "SHOW ALL");
+        assertRewrite(
                 "SELECT DATE '1998-12-01' - INTERVAL ? day",
                 "SELECT DATE '1998-12-01' - concat(?,' day')::interval");
         assertRewrite(

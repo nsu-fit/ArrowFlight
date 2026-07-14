@@ -23,6 +23,7 @@ BENCHBASE_TERMINALS="${BENCHBASE_TERMINALS:-}"
 BENCHBASE_RATE="${BENCHBASE_RATE:-unlimited}"
 BENCHBASE_DB_SCHEMA="${BENCHBASE_DB_SCHEMA:-}"
 BENCHBASE_UPDATE_PAGES="${BENCHBASE_UPDATE_PAGES:-true}"
+BENCHBASE_CAPTURE_TIMEOUT_SECONDS="${BENCHBASE_CAPTURE_TIMEOUT_SECONDS:-${BENCHBASE_QUERY_TIMEOUT_SECONDS:-120}}"
 PYTHON_CMD=()
 
 usage() {
@@ -464,7 +465,11 @@ benchbase_progress() {
 
   while sleep "${interval_seconds}"; do
     elapsed_seconds=$((elapsed_seconds + interval_seconds))
-    echo "[BenchBase] ${db_schema}: ${elapsed_seconds}s elapsed; measurement=${BENCHBASE_TIME_SECONDS:-serial}s, waiting for the current query before phase exit"
+    if (( elapsed_seconds < BENCHBASE_TIME_SECONDS )); then
+      echo "[BenchBase] ${db_schema}: ${elapsed_seconds}s elapsed; measurement running, $((BENCHBASE_TIME_SECONDS - elapsed_seconds))s remaining"
+    else
+      echo "[BenchBase] ${db_schema}: measurement window ended; waiting for the current query before phase exit"
+    fi
   done
 }
 
@@ -520,21 +525,36 @@ capture_query_results() {
     return
   fi
 
+  if [[ ! "${BENCHBASE_CAPTURE_TIMEOUT_SECONDS}" =~ ^[1-9][0-9]*$ ]]; then
+    echo "BENCHBASE_CAPTURE_TIMEOUT_SECONDS must be a positive integer: ${BENCHBASE_CAPTURE_TIMEOUT_SECONDS}" >&2
+    return 2
+  fi
+
   run_python "${SCRIPT_DIR}/capture-query-results.py" \
     --metadata "${metadata_file}" \
     --results "${RESULTS_DIR}" \
     --queries "${QUERY_SET}" >/dev/null
 
   local db_schema="${BENCHBASE_DB_SCHEMA:-${BENCHMARK}}"
-  local sql_file name sql_in_container out_in_container
+  local sql_file name sql_in_container out_in_container out_local capture_status
   shopt -s nullglob
   for sql_file in "${RESULTS_DIR}"/query-q*.sql; do
     name="$(basename "${sql_file}")"
     sql_in_container="${RESULTS_IN_CONTAINER}/${name}"
     out_in_container="${RESULTS_IN_CONTAINER}/${name%.sql}.actual.csv"
-    if ! compose --profile benchbase exec -T spark-thrift-server bash -lc \
-      "/opt/spark/bin/beeline --silent=true --showHeader=true --outputformat=csv2 -u 'jdbc:hive2://127.0.0.1:10000/${db_schema}' -n benchbase -f '${sql_in_container}' > '${out_in_container}'"; then
-      echo "Could not capture actual result for ${name} in schema ${db_schema}" >&2
+    out_local="${RESULTS_DIR}/${name%.sql}.actual.csv"
+    echo "[BenchBase] Capturing ${name} in schema ${db_schema}; timeout=${BENCHBASE_CAPTURE_TIMEOUT_SECONDS}s"
+    if compose --profile benchbase exec -T spark-thrift-server bash -lc \
+      "timeout --foreground --signal=TERM --kill-after=10s '${BENCHBASE_CAPTURE_TIMEOUT_SECONDS}s' /opt/spark/bin/beeline --silent=true --showHeader=true --outputformat=csv2 -u 'jdbc:hive2://127.0.0.1:10000/${db_schema}' -n benchbase -f '${sql_in_container}' > '${out_in_container}'"; then
+      echo "[BenchBase] Captured ${name} in schema ${db_schema}"
+    else
+      capture_status="$?"
+      rm -f "${out_local}"
+      if (( capture_status == 124 || capture_status == 137 )); then
+        echo "Reference capture timed out for ${name} in schema ${db_schema}; report will mark it not captured" >&2
+      else
+        echo "Could not capture actual result for ${name} in schema ${db_schema} (exit ${capture_status})" >&2
+      fi
     fi
   done
   shopt -u nullglob
