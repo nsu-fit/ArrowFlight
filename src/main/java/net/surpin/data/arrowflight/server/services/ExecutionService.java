@@ -423,7 +423,8 @@ public final class ExecutionService {
                     listener.start(merged);
                 }
                 if (merged.getRowCount() > 0) {
-                    if (DuckDbAdapter.awaitListenerReady(listener)) {
+                    if (DuckDbAdapter.awaitListenerReady(
+                            listener, appConfig.flightListenerReadyTimeoutMillis())) {
                         listener.putNext();
                     }
                 }
@@ -661,7 +662,8 @@ public final class ExecutionService {
                 listener.start(root);
             }
             if (!rows.isEmpty()) {
-                if (DuckDbAdapter.awaitListenerReady(listener)) {
+                if (DuckDbAdapter.awaitListenerReady(
+                        listener, appConfig.flightListenerReadyTimeoutMillis())) {
                     listener.putNext();
                 }
             }

@@ -52,6 +52,11 @@ public class ConfigAdapter {
                 "arrowflight.grpc.maxInboundMessageSize", Integer.MAX_VALUE, props);
         long flightListenerReadyTimeoutMillis = getLong("flightListenerReadyTimeoutMs",
                 "arrowflight.flight.listenerReadyTimeoutMs", 60_000L, props);
+        if (flightListenerReadyTimeoutMillis <= 0) {
+            throw new IllegalArgumentException(
+                    "flightListenerReadyTimeoutMs must be positive: "
+                            + flightListenerReadyTimeoutMillis);
+        }
         String dataDir = getString("dataDir", null, "/data/parquet", props);
         String localDataDir = getStringWithEnv("localDataDir", "arrowflight.localDataDir",
                 "FLIGHT_LOCAL_DATA_DIR", null, props);
