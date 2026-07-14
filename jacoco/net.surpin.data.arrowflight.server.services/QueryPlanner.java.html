@@ -50,16 +50,16 @@ public final class QueryPlanner {
      * @param parquetAdapter Parquet metadata adapter
      * @param clusterService cluster coordination service
      */
-<span class="nc" id="L53">    public QueryPlanner(ParquetAdapter parquetAdapter, ClusterService clusterService) {</span>
-<span class="nc" id="L54">        this.parquetAdapter = parquetAdapter;</span>
-<span class="nc" id="L55">        this.clusterService = clusterService;</span>
+<span class="fc" id="L53">    public QueryPlanner(ParquetAdapter parquetAdapter, ClusterService clusterService) {</span>
+<span class="fc" id="L54">        this.parquetAdapter = parquetAdapter;</span>
+<span class="fc" id="L55">        this.clusterService = clusterService;</span>
         try {
-<span class="nc" id="L57">            this.clusterService.registerLocalFiles(this.parquetAdapter.localFileInventory());</span>
-<span class="nc" id="L58">            this.parquetAdapter.initCatalogReader();</span>
+<span class="fc" id="L57">            this.clusterService.registerLocalFiles(this.parquetAdapter.localFileInventory());</span>
+<span class="fc" id="L58">            this.parquetAdapter.initCatalogReader();</span>
 <span class="nc" id="L59">        } catch (IOException e) {</span>
 <span class="nc" id="L60">            throw new UncheckedIOException(&quot;Unable to publish local Parquet inventory&quot;, e);</span>
-<span class="nc" id="L61">        }</span>
-<span class="nc" id="L62">    }</span>
+<span class="fc" id="L61">        }</span>
+<span class="fc" id="L62">    }</span>
 
     /**
      * Determines Flight endpoints for a SQL query, distributing files across live servers.
@@ -148,31 +148,31 @@ public final class QueryPlanner {
 
     private static Map&lt;String, FileAssignment&gt; filterForQuery(
             Map&lt;String, FileAssignment&gt; inventory, ParquetQueryParser query) {
-<span class="nc" id="L151">        Map&lt;String, FileAssignment&gt; result = new LinkedHashMap&lt;&gt;();</span>
-<span class="nc bnc" id="L152" title="All 2 branches missed.">        for (Map.Entry&lt;String, FileAssignment&gt; file : inventory.entrySet()) {</span>
+<span class="fc" id="L151">        Map&lt;String, FileAssignment&gt; result = new LinkedHashMap&lt;&gt;();</span>
+<span class="fc bfc" id="L152" title="All 2 branches covered.">        for (Map.Entry&lt;String, FileAssignment&gt; file : inventory.entrySet()) {</span>
             boolean matches;
-<span class="nc bnc" id="L154" title="All 2 branches missed.">            if (query.isJoin) {</span>
+<span class="pc bpc" id="L154" title="1 of 2 branches missed.">            if (query.isJoin) {</span>
 <span class="nc" id="L155">                matches = query.joinTables.stream().anyMatch(table -&gt;</span>
 <span class="nc" id="L156">                        belongsToTable(file.getKey(), table.schema(), table.table()));</span>
             } else {
-<span class="nc" id="L158">                matches = belongsToTable(file.getKey(), query.schema, query.table);</span>
+<span class="fc" id="L158">                matches = belongsToTable(file.getKey(), query.schema, query.table);</span>
             }
-<span class="nc bnc" id="L160" title="All 2 branches missed.">            if (matches) {</span>
-<span class="nc" id="L161">                result.put(file.getKey(), file.getValue());</span>
+<span class="fc bfc" id="L160" title="All 2 branches covered.">            if (matches) {</span>
+<span class="fc" id="L161">                result.put(file.getKey(), file.getValue());</span>
             }
-<span class="nc" id="L163">        }</span>
-<span class="nc" id="L164">        return result;</span>
+<span class="fc" id="L163">        }</span>
+<span class="fc" id="L164">        return result;</span>
     }
 
     private static boolean belongsToTable(String path, String schema, String table) {
-<span class="nc" id="L168">        String normalized = path.replace('\\', '/');</span>
-<span class="nc bnc" id="L169" title="All 4 branches missed.">        if (schema == null || schema.isEmpty()) {</span>
-<span class="nc" id="L170">            String parent = extractTableFromPath(normalized);</span>
-<span class="nc bnc" id="L171" title="All 2 branches missed.">            return parent.equalsIgnoreCase(table)</span>
-<span class="nc bnc" id="L172" title="All 2 branches missed.">                    || parent.toLowerCase().endsWith(&quot;.&quot; + table.toLowerCase());</span>
+<span class="fc" id="L168">        String normalized = path.replace('\\', '/');</span>
+<span class="pc bpc" id="L169" title="1 of 4 branches missed.">        if (schema == null || schema.isEmpty()) {</span>
+<span class="fc" id="L170">            String parent = extractTableFromPath(normalized);</span>
+<span class="pc bpc" id="L171" title="1 of 2 branches missed.">            return parent.equalsIgnoreCase(table)</span>
+<span class="fc bfc" id="L172" title="All 2 branches covered.">                    || parent.toLowerCase().endsWith(&quot;.&quot; + table.toLowerCase());</span>
         }
-<span class="nc" id="L174">        String prefix = schema + &quot;/&quot; + table + &quot;/&quot;;</span>
-<span class="nc" id="L175">        return normalized.regionMatches(true, 0, prefix, 0, prefix.length());</span>
+<span class="fc" id="L174">        String prefix = schema + &quot;/&quot; + table + &quot;/&quot;;</span>
+<span class="fc" id="L175">        return normalized.regionMatches(true, 0, prefix, 0, prefix.length());</span>
     }
 
     /**
@@ -199,9 +199,9 @@ public final class QueryPlanner {
 
     private static boolean ownsTableShard(Map&lt;String, FileAssignment&gt; files,
             String server, String schema, String table) {
-<span class="nc" id="L202">        return files.entrySet().stream().anyMatch(file -&gt;</span>
-<span class="nc bnc" id="L203" title="All 2 branches missed.">                file.getValue().hosts().contains(server)</span>
-<span class="nc bnc" id="L204" title="All 2 branches missed.">                        &amp;&amp; belongsToTable(file.getKey(), schema, table));</span>
+<span class="fc" id="L202">        return files.entrySet().stream().anyMatch(file -&gt;</span>
+<span class="fc bfc" id="L203" title="All 2 branches covered.">                file.getValue().hosts().contains(server)</span>
+<span class="fc bfc" id="L204" title="All 2 branches covered.">                        &amp;&amp; belongsToTable(file.getKey(), schema, table));</span>
     }
 
     /**
@@ -215,21 +215,21 @@ public final class QueryPlanner {
      */
     public FlightEndpoint createEndpoint(String serverUri, List&lt;String&gt; filePaths,
             String query, long bytes) {
-<span class="nc" id="L218">        URI parsedUri = URI.create(serverUri);</span>
+<span class="fc" id="L218">        URI parsedUri = URI.create(serverUri);</span>
         // Preserve the registered URI (including grpc+tls). Reconstructing every
         // location as insecure both loses transport information and can cause the
         // client to send a ticket to the wrong connection.
-<span class="nc" id="L222">        Location serverLoc = new Location(parsedUri);</span>
-<span class="nc" id="L223">        ByteString serverHandle = ByteString.copyFrom(</span>
-<span class="nc" id="L224">                randomUUID().toString().getBytes(StandardCharsets.UTF_8));</span>
-<span class="nc" id="L225">        clusterService.storeHandle(serverHandle.toStringUtf8(),</span>
-<span class="nc" id="L226">                HandleState.forServerFiles(query, filePaths.toArray(new String[0]),</span>
+<span class="fc" id="L222">        Location serverLoc = new Location(parsedUri);</span>
+<span class="fc" id="L223">        ByteString serverHandle = ByteString.copyFrom(</span>
+<span class="fc" id="L224">                randomUUID().toString().getBytes(StandardCharsets.UTF_8));</span>
+<span class="fc" id="L225">        clusterService.storeHandle(serverHandle.toStringUtf8(),</span>
+<span class="fc" id="L226">                HandleState.forServerFiles(query, filePaths.toArray(new String[0]),</span>
                         serverUri, bytes));
-<span class="nc" id="L228">        Ticket serverTicket = new Ticket(Any.pack(</span>
-<span class="nc" id="L229">                FlightSql.TicketStatementQuery.newBuilder()</span>
-<span class="nc" id="L230">                        .setStatementHandle(serverHandle).build())</span>
-<span class="nc" id="L231">                .toByteArray());</span>
-<span class="nc" id="L232">        return new FlightEndpoint(serverTicket, serverLoc);</span>
+<span class="fc" id="L228">        Ticket serverTicket = new Ticket(Any.pack(</span>
+<span class="fc" id="L229">                FlightSql.TicketStatementQuery.newBuilder()</span>
+<span class="fc" id="L230">                        .setStatementHandle(serverHandle).build())</span>
+<span class="fc" id="L231">                .toByteArray());</span>
+<span class="fc" id="L232">        return new FlightEndpoint(serverTicket, serverLoc);</span>
     }
 
     /**

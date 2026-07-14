@@ -64,12 +64,12 @@ public final class SchemaConverter {
     public static Field convert(String path, Type type) {
 <span class="fc bfc" id="L65" title="All 2 branches covered.">        boolean nullable = type.getRepetition() != Type.Repetition.REQUIRED;</span>
 
-<span class="pc bpc" id="L67" title="1 of 2 branches missed.">        if (type instanceof GroupType groupType) {</span>
-<span class="nc" id="L68">            List&lt;Field&gt; fields = new ArrayList&lt;&gt;();</span>
-<span class="nc bnc" id="L69" title="All 2 branches missed.">            for (int i = 0; i &lt; groupType.getFieldCount(); i++) {</span>
-<span class="nc" id="L70">                fields.add(convert(groupType.getFieldName(i), groupType.getType(i)));</span>
+<span class="fc bfc" id="L67" title="All 2 branches covered.">        if (type instanceof GroupType groupType) {</span>
+<span class="fc" id="L68">            List&lt;Field&gt; fields = new ArrayList&lt;&gt;();</span>
+<span class="fc bfc" id="L69" title="All 2 branches covered.">            for (int i = 0; i &lt; groupType.getFieldCount(); i++) {</span>
+<span class="fc" id="L70">                fields.add(convert(groupType.getFieldName(i), groupType.getType(i)));</span>
             }
-<span class="nc" id="L72">            return new Field(path, fieldType(nullable, new ArrowType.Struct()), fields);</span>
+<span class="fc" id="L72">            return new Field(path, fieldType(nullable, new ArrowType.Struct()), fields);</span>
         }
 
 <span class="fc" id="L75">        LogicalTypeAnnotation logicalType = type.getLogicalTypeAnnotation();</span>
@@ -278,9 +278,9 @@ public final class SchemaConverter {
          * @return row values
          */
         public Object[] toRow() {
-<span class="nc" id="L281">            return new Object[]{</span>
-<span class="nc" id="L282">                    typeName, dataType, precision, literalPrefix, literalSuffix, createParams, nullable, caseSensitive,</span>
-<span class="nc" id="L283">                    searchable, unsignedAttribute, fixedPrecScale, autoIncrement, localTypeName, minimumScale, maximumScale,</span>
+<span class="fc" id="L281">            return new Object[]{</span>
+<span class="fc" id="L282">                    typeName, dataType, precision, literalPrefix, literalSuffix, createParams, nullable, caseSensitive,</span>
+<span class="fc" id="L283">                    searchable, unsignedAttribute, fixedPrecScale, autoIncrement, localTypeName, minimumScale, maximumScale,</span>
                     sqlDataType, sqlDatetimeSub, numPrecRadix
             };
         }

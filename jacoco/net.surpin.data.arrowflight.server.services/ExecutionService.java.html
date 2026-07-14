@@ -940,17 +940,17 @@ public final class ExecutionService {
      * @return long value
      */
     static long toLong(FieldVector vec, int index) {
-<span class="nc bnc" id="L943" title="All 2 branches missed.">        if (vec instanceof BigIntVector v) {</span>
-<span class="nc" id="L944">            return v.get(index);</span>
+<span class="fc bfc" id="L943" title="All 2 branches covered.">        if (vec instanceof BigIntVector v) {</span>
+<span class="fc" id="L944">            return v.get(index);</span>
         }
-<span class="nc bnc" id="L946" title="All 2 branches missed.">        if (vec instanceof IntVector v) {</span>
-<span class="nc" id="L947">            return v.get(index);</span>
+<span class="fc bfc" id="L946" title="All 2 branches covered.">        if (vec instanceof IntVector v) {</span>
+<span class="fc" id="L947">            return v.get(index);</span>
         }
-<span class="nc bnc" id="L949" title="All 2 branches missed.">        if (vec instanceof SmallIntVector v) {</span>
-<span class="nc" id="L950">            return v.get(index);</span>
+<span class="fc bfc" id="L949" title="All 2 branches covered.">        if (vec instanceof SmallIntVector v) {</span>
+<span class="fc" id="L950">            return v.get(index);</span>
         }
-<span class="nc bnc" id="L952" title="All 2 branches missed.">        if (vec instanceof TinyIntVector v) {</span>
-<span class="nc" id="L953">            return v.get(index);</span>
+<span class="pc bpc" id="L952" title="1 of 2 branches missed.">        if (vec instanceof TinyIntVector v) {</span>
+<span class="fc" id="L953">            return v.get(index);</span>
         }
 <span class="nc" id="L955">        return ((Number) vec.getObject(index)).longValue();</span>
     }
@@ -963,11 +963,11 @@ public final class ExecutionService {
      * @return double value
      */
     static double toDouble(FieldVector vec, int index) {
-<span class="nc bnc" id="L966" title="All 2 branches missed.">        if (vec instanceof Float8Vector v) {</span>
-<span class="nc" id="L967">            return v.get(index);</span>
+<span class="fc bfc" id="L966" title="All 2 branches covered.">        if (vec instanceof Float8Vector v) {</span>
+<span class="fc" id="L967">            return v.get(index);</span>
         }
-<span class="nc bnc" id="L969" title="All 2 branches missed.">        if (vec instanceof Float4Vector v) {</span>
-<span class="nc" id="L970">            return v.get(index);</span>
+<span class="pc bpc" id="L969" title="1 of 2 branches missed.">        if (vec instanceof Float4Vector v) {</span>
+<span class="fc" id="L970">            return v.get(index);</span>
         }
 <span class="nc" id="L972">        return ((Number) vec.getObject(index)).doubleValue();</span>
     }
@@ -1051,31 +1051,31 @@ public final class ExecutionService {
      */
     @SuppressWarnings(&quot;unchecked&quot;)
     static void setVectorValue(FieldVector vec, int index, Object value) {
-<span class="nc bnc" id="L1054" title="All 2 branches missed.">        if (value == null) {</span>
-<span class="nc" id="L1055">            vec.setNull(index);</span>
-<span class="nc" id="L1056">            return;</span>
+<span class="fc bfc" id="L1054" title="All 2 branches covered.">        if (value == null) {</span>
+<span class="fc" id="L1055">            vec.setNull(index);</span>
+<span class="fc" id="L1056">            return;</span>
         }
-<span class="nc bnc" id="L1058" title="All 2 branches missed.">        if (vec instanceof BigIntVector) {</span>
-<span class="nc" id="L1059">            ((BigIntVector) vec).setSafe(index, ((Number) value).longValue());</span>
-<span class="nc bnc" id="L1060" title="All 2 branches missed.">        } else if (vec instanceof IntVector) {</span>
-<span class="nc" id="L1061">            ((IntVector) vec).setSafe(index, ((Number) value).intValue());</span>
-<span class="nc bnc" id="L1062" title="All 2 branches missed.">        } else if (vec instanceof SmallIntVector) {</span>
-<span class="nc" id="L1063">            ((SmallIntVector) vec).setSafe(index, ((Number) value).shortValue());</span>
-<span class="nc bnc" id="L1064" title="All 2 branches missed.">        } else if (vec instanceof TinyIntVector) {</span>
-<span class="nc" id="L1065">            ((TinyIntVector) vec).setSafe(index, ((Number) value).byteValue());</span>
-<span class="nc bnc" id="L1066" title="All 2 branches missed.">        } else if (vec instanceof Float8Vector) {</span>
-<span class="nc" id="L1067">            ((Float8Vector) vec).setSafe(index, ((Number) value).doubleValue());</span>
-<span class="nc bnc" id="L1068" title="All 2 branches missed.">        } else if (vec instanceof Float4Vector) {</span>
-<span class="nc" id="L1069">            ((Float4Vector) vec).setSafe(index, ((Number) value).floatValue());</span>
-<span class="nc bnc" id="L1070" title="All 2 branches missed.">        } else if (vec instanceof BitVector) {</span>
-<span class="nc bnc" id="L1071" title="All 2 branches missed.">            ((BitVector) vec).setSafe(index, ((Boolean) value) ? 1 : 0);</span>
-<span class="nc bnc" id="L1072" title="All 2 branches missed.">        } else if (vec instanceof VarCharVector) {</span>
-<span class="nc bnc" id="L1073" title="All 2 branches missed.">            byte[] bytes = value instanceof Text</span>
+<span class="fc bfc" id="L1058" title="All 2 branches covered.">        if (vec instanceof BigIntVector) {</span>
+<span class="fc" id="L1059">            ((BigIntVector) vec).setSafe(index, ((Number) value).longValue());</span>
+<span class="fc bfc" id="L1060" title="All 2 branches covered.">        } else if (vec instanceof IntVector) {</span>
+<span class="fc" id="L1061">            ((IntVector) vec).setSafe(index, ((Number) value).intValue());</span>
+<span class="fc bfc" id="L1062" title="All 2 branches covered.">        } else if (vec instanceof SmallIntVector) {</span>
+<span class="fc" id="L1063">            ((SmallIntVector) vec).setSafe(index, ((Number) value).shortValue());</span>
+<span class="fc bfc" id="L1064" title="All 2 branches covered.">        } else if (vec instanceof TinyIntVector) {</span>
+<span class="fc" id="L1065">            ((TinyIntVector) vec).setSafe(index, ((Number) value).byteValue());</span>
+<span class="fc bfc" id="L1066" title="All 2 branches covered.">        } else if (vec instanceof Float8Vector) {</span>
+<span class="fc" id="L1067">            ((Float8Vector) vec).setSafe(index, ((Number) value).doubleValue());</span>
+<span class="fc bfc" id="L1068" title="All 2 branches covered.">        } else if (vec instanceof Float4Vector) {</span>
+<span class="fc" id="L1069">            ((Float4Vector) vec).setSafe(index, ((Number) value).floatValue());</span>
+<span class="fc bfc" id="L1070" title="All 2 branches covered.">        } else if (vec instanceof BitVector) {</span>
+<span class="pc bpc" id="L1071" title="1 of 2 branches missed.">            ((BitVector) vec).setSafe(index, ((Boolean) value) ? 1 : 0);</span>
+<span class="pc bpc" id="L1072" title="1 of 2 branches missed.">        } else if (vec instanceof VarCharVector) {</span>
+<span class="pc bpc" id="L1073" title="1 of 2 branches missed.">            byte[] bytes = value instanceof Text</span>
 <span class="nc" id="L1074">                    ? ((Text) value).getBytes()</span>
-<span class="nc" id="L1075">                    : value.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);</span>
-<span class="nc" id="L1076">            ((VarCharVector) vec).setSafe(index, bytes);</span>
+<span class="fc" id="L1075">                    : value.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);</span>
+<span class="fc" id="L1076">            ((VarCharVector) vec).setSafe(index, bytes);</span>
         }
-<span class="nc" id="L1078">    }</span>
+<span class="fc" id="L1078">    }</span>
 
     /**
      * Partitions items into numGroups using round-robin distribution.

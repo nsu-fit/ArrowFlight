@@ -93,7 +93,7 @@ public final class Table implements Serializable {
      * @return - the spark schema
      */
     public StructType getSparkSchema() {
-<span class="nc" id="L96">        return this.sparkSchema;</span>
+<span class="fc" id="L96">        return this.sparkSchema;</span>
     }
 
     /**
@@ -104,8 +104,8 @@ public final class Table implements Serializable {
      * @param sparkSchema persisted Spark schema
      */
     public void setSparkSchema(StructType sparkSchema) {
-<span class="nc" id="L107">        this.sparkSchema = sparkSchema;</span>
-<span class="nc" id="L108">    }</span>
+<span class="fc" id="L107">        this.sparkSchema = sparkSchema;</span>
+<span class="fc" id="L108">    }</span>
 
     /**
      * Get the end-points
@@ -128,7 +128,7 @@ public final class Table implements Serializable {
      * @return - the character for quoting columns
      */
     public String getColumnQuote() {
-<span class="nc" id="L131">        return this.columnQuote;</span>
+<span class="fc" id="L131">        return this.columnQuote;</span>
     }
 
     /**
@@ -254,7 +254,7 @@ public final class Table implements Serializable {
      */
     public String toWhereClause(Filter filter) {
 <span class="fc" id="L256">        return toWhereClauseIfSupported(filter).orElseThrow(() -&gt;</span>
-<span class="nc" id="L257">                new IllegalArgumentException(&quot;Unsupported Spark filter: &quot; + filter));</span>
+<span class="fc" id="L257">                new IllegalArgumentException(&quot;Unsupported Spark filter: &quot; + filter));</span>
     }
 
     /**
@@ -265,7 +265,7 @@ public final class Table implements Serializable {
      * @return true when the complete filter can be evaluated by the Flight server
      */
     public boolean canPushFilter(Filter filter) {
-<span class="nc" id="L268">        return toWhereClauseIfSupported(filter).isPresent();</span>
+<span class="fc" id="L268">        return toWhereClauseIfSupported(filter).isPresent();</span>
     }
 
     private Optional&lt;String&gt; toWhereClauseIfSupported(Filter filter) {
@@ -276,8 +276,8 @@ public final class Table implements Serializable {
 <span class="fc" id="L276">            return comparison(equalTo.attribute(), &quot;=&quot;, equalTo.value());</span>
         }
 <span class="fc bfc" id="L278" title="All 2 branches covered.">        if (filter instanceof EqualNullSafe equalNullSafe) {</span>
-<span class="pc bpc" id="L279" title="1 of 2 branches missed.">            if (equalNullSafe.value() == null) {</span>
-<span class="nc" id="L280">                return Optional.of(quoteIdentifier(equalNullSafe.attribute()) + &quot; is null&quot;);</span>
+<span class="fc bfc" id="L279" title="All 2 branches covered.">            if (equalNullSafe.value() == null) {</span>
+<span class="fc" id="L280">                return Optional.of(quoteIdentifier(equalNullSafe.attribute()) + &quot; is null&quot;);</span>
             }
 <span class="fc" id="L282">            Optional&lt;String&gt; equality = comparison(</span>
 <span class="fc" id="L283">                    equalNullSafe.attribute(), &quot;=&quot;, equalNullSafe.value());</span>
@@ -322,10 +322,10 @@ public final class Table implements Serializable {
 <span class="fc bfc" id="L322" title="All 2 branches covered.">        if (filter instanceof StringEndsWith endsWith) {</span>
 <span class="fc" id="L323">            return Optional.of(like(endsWith.attribute(), &quot;%&quot; + escapeLike(endsWith.value())));</span>
         }
-<span class="pc bpc" id="L325" title="1 of 2 branches missed.">        if (filter instanceof In in) {</span>
+<span class="fc bfc" id="L325" title="All 2 branches covered.">        if (filter instanceof In in) {</span>
 <span class="fc" id="L326">            Object[] values = in.values();</span>
-<span class="pc bpc" id="L327" title="2 of 4 branches missed.">            if (values == null || values.length == 0) {</span>
-<span class="nc" id="L328">                return Optional.of(&quot;(1 = 0)&quot;);</span>
+<span class="pc bpc" id="L327" title="1 of 4 branches missed.">            if (values == null || values.length == 0) {</span>
+<span class="fc" id="L328">                return Optional.of(&quot;(1 = 0)&quot;);</span>
             }
 <span class="fc" id="L330">            String[] literals = new String[values.length];</span>
 <span class="fc bfc" id="L331" title="All 2 branches covered.">            for (int i = 0; i &lt; values.length; i++) {</span>
@@ -337,12 +337,12 @@ public final class Table implements Serializable {
             }
 <span class="fc" id="L338">            return Optional.of(String.format(&quot;%s in (%s)&quot;, quoteIdentifier(in.attribute()), String.join(&quot;,&quot;, literals)));</span>
         }
-<span class="nc" id="L340">        return Optional.empty();</span>
+<span class="fc" id="L340">        return Optional.empty();</span>
     }
 
     private Optional&lt;String&gt; comparison(String attribute, String operator, Object value) {
-<span class="pc bpc" id="L344" title="1 of 2 branches missed.">        if (value == null) {</span>
-<span class="nc" id="L345">            return Optional.empty();</span>
+<span class="fc bfc" id="L344" title="All 2 branches covered.">        if (value == null) {</span>
+<span class="fc" id="L345">            return Optional.empty();</span>
         }
 <span class="fc" id="L347">        return sqlLiteral(value, false).map(literal -&gt;</span>
 <span class="fc" id="L348">                String.format(&quot;%s %s %s&quot;, quoteIdentifier(attribute), operator, literal));</span>
@@ -351,8 +351,8 @@ public final class Table implements Serializable {
     private Optional&lt;String&gt; combine(Filter left, String operator, Filter right) {
 <span class="fc" id="L352">        Optional&lt;String&gt; leftSql = toWhereClauseIfSupported(left);</span>
 <span class="fc" id="L353">        Optional&lt;String&gt; rightSql = toWhereClauseIfSupported(right);</span>
-<span class="pc bpc" id="L354" title="2 of 4 branches missed.">        if (leftSql.isEmpty() || rightSql.isEmpty()) {</span>
-<span class="nc" id="L355">            return Optional.empty();</span>
+<span class="pc bpc" id="L354" title="1 of 4 branches missed.">        if (leftSql.isEmpty() || rightSql.isEmpty()) {</span>
+<span class="fc" id="L355">            return Optional.empty();</span>
         }
 <span class="fc" id="L357">        return Optional.of(String.format(&quot;(%s %s %s)&quot;, leftSql.get(), operator, rightSql.get()));</span>
     }
@@ -361,17 +361,17 @@ public final class Table implements Serializable {
 <span class="pc bpc" id="L361" title="1 of 2 branches missed.">        if (value == null) {</span>
 <span class="nc bnc" id="L362" title="All 2 branches missed.">            return allowNull ? Optional.of(&quot;null&quot;) : Optional.empty();</span>
         }
-<span class="pc bpc" id="L364" title="3 of 4 branches missed.">        if (value instanceof Double number &amp;&amp; !Double.isFinite(number)) {</span>
-<span class="nc" id="L365">            return Optional.empty();</span>
+<span class="pc bpc" id="L364" title="1 of 4 branches missed.">        if (value instanceof Double number &amp;&amp; !Double.isFinite(number)) {</span>
+<span class="fc" id="L365">            return Optional.empty();</span>
         }
-<span class="pc bpc" id="L367" title="3 of 4 branches missed.">        if (value instanceof Float number &amp;&amp; !Float.isFinite(number)) {</span>
-<span class="nc" id="L368">            return Optional.empty();</span>
+<span class="fc bfc" id="L367" title="All 4 branches covered.">        if (value instanceof Float number &amp;&amp; !Float.isFinite(number)) {</span>
+<span class="fc" id="L368">            return Optional.empty();</span>
         }
 <span class="fc bfc" id="L370" title="All 2 branches covered.">        if (value instanceof Number) {</span>
 <span class="fc" id="L371">            return Optional.of(value.toString());</span>
         }
-<span class="pc bpc" id="L373" title="1 of 2 branches missed.">        if (value instanceof Boolean) {</span>
-<span class="nc" id="L374">            return Optional.of(value.toString());</span>
+<span class="fc bfc" id="L373" title="All 2 branches covered.">        if (value instanceof Boolean) {</span>
+<span class="fc" id="L374">            return Optional.of(value.toString());</span>
         }
 <span class="pc bpc" id="L376" title="11 of 12 branches missed.">        if (value instanceof CharSequence || value instanceof Character</span>
                 || value instanceof Date || value instanceof Time || value instanceof Timestamp

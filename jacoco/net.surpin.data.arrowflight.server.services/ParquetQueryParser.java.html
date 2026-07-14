@@ -26,7 +26,7 @@ public class ParquetQueryParser {
     /**
      * A table reference in a JOIN, with optional schema and alias.
      */
-<span class="nc" id="L29">    public record JoinTable(String schema, String table, String alias) {}</span>
+<span class="fc" id="L29">    public record JoinTable(String schema, String table, String alias) {}</span>
 
     /**
      * A selected expression in a query, describing its aggregation function and column references.
@@ -156,76 +156,76 @@ public class ParquetQueryParser {
 <span class="fc" id="L156">        String q = query.trim();</span>
 
 <span class="fc" id="L158">        Matcher fromParen = Pattern.compile(&quot;(?i)\\bfrom\\s*\\(&quot;).matcher(q);</span>
-<span class="pc bpc" id="L159" title="1 of 2 branches missed.">        if (!fromParen.find()) {</span>
+<span class="fc bfc" id="L159" title="All 2 branches covered.">        if (!fromParen.find()) {</span>
 <span class="fc" id="L160">            return q;</span>
         }
 
-<span class="nc" id="L163">        int openParen = fromParen.end() - 1;</span>
-<span class="nc" id="L164">        String beforeFrom = q.substring(0, fromParen.start());</span>
+<span class="fc" id="L163">        int openParen = fromParen.end() - 1;</span>
+<span class="fc" id="L164">        String beforeFrom = q.substring(0, fromParen.start());</span>
 
-<span class="nc" id="L166">        int depth = 1;</span>
-<span class="nc" id="L167">        int i = openParen + 1;</span>
-<span class="nc bnc" id="L168" title="All 4 branches missed.">        while (i &lt; q.length() &amp;&amp; depth &gt; 0) {</span>
-<span class="nc" id="L169">            char c = q.charAt(i);</span>
-<span class="nc bnc" id="L170" title="All 2 branches missed.">            if (c == '(') {</span>
-<span class="nc" id="L171">                depth++;</span>
-<span class="nc bnc" id="L172" title="All 2 branches missed.">            } else if (c == ')') {</span>
-<span class="nc" id="L173">                depth--;</span>
+<span class="fc" id="L166">        int depth = 1;</span>
+<span class="fc" id="L167">        int i = openParen + 1;</span>
+<span class="fc bfc" id="L168" title="All 4 branches covered.">        while (i &lt; q.length() &amp;&amp; depth &gt; 0) {</span>
+<span class="fc" id="L169">            char c = q.charAt(i);</span>
+<span class="fc bfc" id="L170" title="All 2 branches covered.">            if (c == '(') {</span>
+<span class="fc" id="L171">                depth++;</span>
+<span class="fc bfc" id="L172" title="All 2 branches covered.">            } else if (c == ')') {</span>
+<span class="fc" id="L173">                depth--;</span>
             }
-<span class="nc" id="L175">            i++;</span>
-<span class="nc" id="L176">        }</span>
-<span class="nc bnc" id="L177" title="All 2 branches missed.">        if (depth != 0) {</span>
-<span class="nc" id="L178">            return q;</span>
+<span class="fc" id="L175">            i++;</span>
+<span class="fc" id="L176">        }</span>
+<span class="fc bfc" id="L177" title="All 2 branches covered.">        if (depth != 0) {</span>
+<span class="fc" id="L178">            return q;</span>
         }
 
-<span class="nc" id="L181">        String innerSQL = q.substring(openParen + 1, i - 1).trim();</span>
-<span class="nc" id="L182">        String afterParen = q.substring(i).trim();</span>
+<span class="fc" id="L181">        String innerSQL = q.substring(openParen + 1, i - 1).trim();</span>
+<span class="fc" id="L182">        String afterParen = q.substring(i).trim();</span>
 
-<span class="nc" id="L184">        Matcher aliasM = Pattern.compile(&quot;^([a-zA-Z_][a-zA-Z0-9_]*)(.*)$&quot;,</span>
-<span class="nc" id="L185">                Pattern.DOTALL).matcher(afterParen);</span>
-<span class="nc bnc" id="L186" title="All 2 branches missed.">        if (!aliasM.matches()) {</span>
+<span class="fc" id="L184">        Matcher aliasM = Pattern.compile(&quot;^([a-zA-Z_][a-zA-Z0-9_]*)(.*)$&quot;,</span>
+<span class="fc" id="L185">                Pattern.DOTALL).matcher(afterParen);</span>
+<span class="pc bpc" id="L186" title="1 of 2 branches missed.">        if (!aliasM.matches()) {</span>
 <span class="nc" id="L187">            return q;</span>
         }
-<span class="nc" id="L189">        String outerRest = aliasM.group(2).trim();</span>
+<span class="fc" id="L189">        String outerRest = aliasM.group(2).trim();</span>
 
-<span class="nc bnc" id="L191" title="All 2 branches missed.">        if (!innerSQL.toLowerCase(Locale.ROOT).startsWith(&quot;select&quot;)) {</span>
-<span class="nc" id="L192">            return q;</span>
+<span class="fc bfc" id="L191" title="All 2 branches covered.">        if (!innerSQL.toLowerCase(Locale.ROOT).startsWith(&quot;select&quot;)) {</span>
+<span class="fc" id="L192">            return q;</span>
         }
 
-<span class="nc" id="L195">        Matcher innerFrom = Pattern.compile(&quot;(?i)\\bfrom\\s+(\\S+)&quot;).matcher(innerSQL);</span>
-<span class="nc bnc" id="L196" title="All 2 branches missed.">        if (!innerFrom.find()) {</span>
+<span class="fc" id="L195">        Matcher innerFrom = Pattern.compile(&quot;(?i)\\bfrom\\s+(\\S+)&quot;).matcher(innerSQL);</span>
+<span class="pc bpc" id="L196" title="1 of 2 branches missed.">        if (!innerFrom.find()) {</span>
 <span class="nc" id="L197">            return q;</span>
         }
-<span class="nc" id="L199">        String realTableRef = innerFrom.group(1).replaceAll(&quot;\\s*$&quot;, &quot;&quot;);</span>
+<span class="fc" id="L199">        String realTableRef = innerFrom.group(1).replaceAll(&quot;\\s*$&quot;, &quot;&quot;);</span>
 
-<span class="nc" id="L201">        String innerWhere = &quot;&quot;;</span>
-<span class="nc" id="L202">        Matcher innerWhereM = Pattern.compile(&quot;(?i)\\bwhere\\b(.+)$&quot;,</span>
-<span class="nc" id="L203">                Pattern.DOTALL).matcher(innerSQL);</span>
-<span class="nc bnc" id="L204" title="All 2 branches missed.">        if (innerWhereM.find()) {</span>
-<span class="nc" id="L205">            innerWhere = innerWhereM.group(1).trim();</span>
+<span class="fc" id="L201">        String innerWhere = &quot;&quot;;</span>
+<span class="fc" id="L202">        Matcher innerWhereM = Pattern.compile(&quot;(?i)\\bwhere\\b(.+)$&quot;,</span>
+<span class="fc" id="L203">                Pattern.DOTALL).matcher(innerSQL);</span>
+<span class="fc bfc" id="L204" title="All 2 branches covered.">        if (innerWhereM.find()) {</span>
+<span class="fc" id="L205">            innerWhere = innerWhereM.group(1).trim();</span>
         }
 
-<span class="nc" id="L208">        StringBuilder flat = new StringBuilder(beforeFrom);</span>
-<span class="nc" id="L209">        flat.append(&quot;from &quot;).append(realTableRef);</span>
+<span class="fc" id="L208">        StringBuilder flat = new StringBuilder(beforeFrom);</span>
+<span class="fc" id="L209">        flat.append(&quot;from &quot;).append(realTableRef);</span>
 
-<span class="nc" id="L211">        String outerWhere = &quot;&quot;;</span>
-<span class="nc bnc" id="L212" title="All 2 branches missed.">        if (outerRest.toLowerCase(Locale.ROOT).startsWith(&quot;where &quot;)) {</span>
-<span class="nc" id="L213">            outerWhere = outerRest.substring(5).trim();</span>
+<span class="fc" id="L211">        String outerWhere = &quot;&quot;;</span>
+<span class="pc bpc" id="L212" title="1 of 2 branches missed.">        if (outerRest.toLowerCase(Locale.ROOT).startsWith(&quot;where &quot;)) {</span>
+<span class="fc" id="L213">            outerWhere = outerRest.substring(5).trim();</span>
 <span class="nc bnc" id="L214" title="All 2 branches missed.">        } else if (!outerRest.isEmpty()) {</span>
 <span class="nc" id="L215">            return q;</span>
         }
 
-<span class="nc bnc" id="L218" title="All 2 branches missed.">        boolean hasInner = !innerWhere.isEmpty();</span>
-<span class="nc bnc" id="L219" title="All 2 branches missed.">        boolean hasOuter = !outerWhere.isEmpty();</span>
-<span class="nc bnc" id="L220" title="All 4 branches missed.">        if (hasInner &amp;&amp; hasOuter) {</span>
-<span class="nc" id="L221">            flat.append(&quot; where (&quot;).append(innerWhere).append(&quot;) and (&quot;).append(outerWhere).append(&quot;)&quot;);</span>
-<span class="nc bnc" id="L222" title="All 2 branches missed.">        } else if (hasInner) {</span>
+<span class="fc bfc" id="L218" title="All 2 branches covered.">        boolean hasInner = !innerWhere.isEmpty();</span>
+<span class="pc bpc" id="L219" title="1 of 2 branches missed.">        boolean hasOuter = !outerWhere.isEmpty();</span>
+<span class="pc bpc" id="L220" title="1 of 4 branches missed.">        if (hasInner &amp;&amp; hasOuter) {</span>
+<span class="fc" id="L221">            flat.append(&quot; where (&quot;).append(innerWhere).append(&quot;) and (&quot;).append(outerWhere).append(&quot;)&quot;);</span>
+<span class="pc bpc" id="L222" title="1 of 2 branches missed.">        } else if (hasInner) {</span>
 <span class="nc" id="L223">            flat.append(&quot; where &quot;).append(innerWhere);</span>
-<span class="nc bnc" id="L224" title="All 2 branches missed.">        } else if (hasOuter) {</span>
-<span class="nc" id="L225">            flat.append(&quot; where &quot;).append(outerWhere);</span>
+<span class="pc bpc" id="L224" title="1 of 2 branches missed.">        } else if (hasOuter) {</span>
+<span class="fc" id="L225">            flat.append(&quot; where &quot;).append(outerWhere);</span>
         }
 
-<span class="nc" id="L228">        return flat.toString();</span>
+<span class="fc" id="L228">        return flat.toString();</span>
     }
 
     /**
@@ -247,8 +247,8 @@ public class ParquetQueryParser {
         // Detect JOIN via jOOQ rendered output
 <span class="fc" id="L248">        boolean isJoin = hasJoinKeywords(select);</span>
 
-<span class="pc bpc" id="L250" title="1 of 2 branches missed.">        if (isJoin) {</span>
-<span class="nc" id="L251">            return parseJoinSelect(select, noQuoteCtx, originalSql);</span>
+<span class="fc bfc" id="L250" title="All 2 branches covered.">        if (isJoin) {</span>
+<span class="fc" id="L251">            return parseJoinSelect(select, noQuoteCtx, originalSql);</span>
         }
 <span class="fc" id="L253">        return parseSingleTableSelect(select, fromTables, noQuoteCtx);</span>
     }
@@ -291,24 +291,24 @@ public class ParquetQueryParser {
      * @return list of extracted join tables
      */
     private static List&lt;JoinTable&gt; extractJoinTables(String sql) {
-<span class="nc" id="L294">        List&lt;JoinTable&gt; tables = new ArrayList&lt;&gt;();</span>
-<span class="nc" id="L295">        Matcher kw = JOIN_KEYWORD.matcher(sql);</span>
-<span class="nc bnc" id="L296" title="All 2 branches missed.">        while (kw.find()) {</span>
-<span class="nc" id="L297">            String rest = sql.substring(kw.end()).trim();</span>
-<span class="nc" id="L298">            Matcher tr = TABLE_REF.matcher(rest);</span>
-<span class="nc bnc" id="L299" title="All 2 branches missed.">            if (tr.find()) {</span>
-<span class="nc" id="L300">                String qualified = tr.group(1);</span>
-<span class="nc" id="L301">                String alias = tr.group(2);</span>
-<span class="nc" id="L302">                int dot = qualified.indexOf('.');</span>
-<span class="nc bnc" id="L303" title="All 2 branches missed.">                String schema = dot &gt; 0 ? qualified.substring(0, dot) : null;</span>
-<span class="nc bnc" id="L304" title="All 2 branches missed.">                String table = dot &gt; 0 ? qualified.substring(dot + 1) : qualified;</span>
-<span class="nc bnc" id="L305" title="All 2 branches missed.">                if (alias == null) {</span>
+<span class="fc" id="L294">        List&lt;JoinTable&gt; tables = new ArrayList&lt;&gt;();</span>
+<span class="fc" id="L295">        Matcher kw = JOIN_KEYWORD.matcher(sql);</span>
+<span class="fc bfc" id="L296" title="All 2 branches covered.">        while (kw.find()) {</span>
+<span class="fc" id="L297">            String rest = sql.substring(kw.end()).trim();</span>
+<span class="fc" id="L298">            Matcher tr = TABLE_REF.matcher(rest);</span>
+<span class="pc bpc" id="L299" title="1 of 2 branches missed.">            if (tr.find()) {</span>
+<span class="fc" id="L300">                String qualified = tr.group(1);</span>
+<span class="fc" id="L301">                String alias = tr.group(2);</span>
+<span class="fc" id="L302">                int dot = qualified.indexOf('.');</span>
+<span class="fc bfc" id="L303" title="All 2 branches covered.">                String schema = dot &gt; 0 ? qualified.substring(0, dot) : null;</span>
+<span class="fc bfc" id="L304" title="All 2 branches covered.">                String table = dot &gt; 0 ? qualified.substring(dot + 1) : qualified;</span>
+<span class="pc bpc" id="L305" title="1 of 2 branches missed.">                if (alias == null) {</span>
 <span class="nc" id="L306">                    alias = table;</span>
                 }
-<span class="nc" id="L308">                tables.add(new JoinTable(schema, table, alias));</span>
+<span class="fc" id="L308">                tables.add(new JoinTable(schema, table, alias));</span>
             }
-<span class="nc" id="L310">        }</span>
-<span class="nc" id="L311">        return tables;</span>
+<span class="fc" id="L310">        }</span>
+<span class="fc" id="L311">        return tables;</span>
     }
 
     /**
@@ -320,33 +320,33 @@ public class ParquetQueryParser {
     private static ParquetQueryParser parseJoinSelect(Select&lt;?&gt; select,
             DSLContext noQuoteCtx, String originalSql) {
 
-<span class="nc" id="L323">        List&lt;JoinTable&gt; joinTables = extractJoinTables(originalSql);</span>
-<span class="nc bnc" id="L324" title="All 2 branches missed.">        if (joinTables.isEmpty()) {</span>
+<span class="fc" id="L323">        List&lt;JoinTable&gt; joinTables = extractJoinTables(originalSql);</span>
+<span class="pc bpc" id="L324" title="1 of 2 branches missed.">        if (joinTables.isEmpty()) {</span>
 <span class="nc" id="L325">            throw new IllegalArgumentException(&quot;Could not extract table references from JOIN: &quot; + originalSql);</span>
         }
 
-<span class="nc" id="L328">        List&lt;String&gt; columns = new ArrayList&lt;&gt;();</span>
-<span class="nc" id="L329">        List&lt;SelectExpr&gt; exprs = new ArrayList&lt;&gt;();</span>
-<span class="nc bnc" id="L330" title="All 2 branches missed.">        for (SelectFieldOrAsterisk sfoa : select.$select()) {</span>
-<span class="nc bnc" id="L331" title="All 2 branches missed.">            if (!(sfoa instanceof org.jooq.Field&lt;?&gt;)) {</span>
-<span class="nc" id="L332">                continue;</span>
+<span class="fc" id="L328">        List&lt;String&gt; columns = new ArrayList&lt;&gt;();</span>
+<span class="fc" id="L329">        List&lt;SelectExpr&gt; exprs = new ArrayList&lt;&gt;();</span>
+<span class="fc bfc" id="L330" title="All 2 branches covered.">        for (SelectFieldOrAsterisk sfoa : select.$select()) {</span>
+<span class="fc bfc" id="L331" title="All 2 branches covered.">            if (!(sfoa instanceof org.jooq.Field&lt;?&gt;)) {</span>
+<span class="fc" id="L332">                continue;</span>
             }
-<span class="nc" id="L334">            org.jooq.Field&lt;?&gt; f = (org.jooq.Field&lt;?&gt;) sfoa;</span>
-<span class="nc" id="L335">            columns.add(f.getName());</span>
-<span class="nc" id="L336">            String outputName = noQuoteCtx.renderInlined(f).trim();</span>
-<span class="nc" id="L337">            exprs.add(new SelectExpr(SelectExpr.AggFunc.COLUMN, outputName, outputName));</span>
-<span class="nc" id="L338">        }</span>
+<span class="fc" id="L334">            org.jooq.Field&lt;?&gt; f = (org.jooq.Field&lt;?&gt;) sfoa;</span>
+<span class="fc" id="L335">            columns.add(f.getName());</span>
+<span class="fc" id="L336">            String outputName = noQuoteCtx.renderInlined(f).trim();</span>
+<span class="fc" id="L337">            exprs.add(new SelectExpr(SelectExpr.AggFunc.COLUMN, outputName, outputName));</span>
+<span class="fc" id="L338">        }</span>
 
-<span class="nc" id="L340">        Condition where = select.$where();</span>
-<span class="nc" id="L341">        DSLContext quotedCtx = DSL.using(SQLDialect.DEFAULT,</span>
-<span class="nc" id="L342">                new Settings().withRenderQuotedNames(RenderQuotedNames.ALWAYS));</span>
-<span class="nc" id="L343">        String filter = quotedCtx.renderInlined(where);</span>
+<span class="fc" id="L340">        Condition where = select.$where();</span>
+<span class="fc" id="L341">        DSLContext quotedCtx = DSL.using(SQLDialect.DEFAULT,</span>
+<span class="fc" id="L342">                new Settings().withRenderQuotedNames(RenderQuotedNames.ALWAYS));</span>
+<span class="fc" id="L343">        String filter = quotedCtx.renderInlined(where);</span>
 
-<span class="nc" id="L345">        String duckDbSql = rewriteTableRefs(originalSql, joinTables);</span>
+<span class="fc" id="L345">        String duckDbSql = rewriteTableRefs(originalSql, joinTables);</span>
 
-<span class="nc" id="L347">        JoinTable primary = joinTables.get(0);</span>
-<span class="nc" id="L348">        return new ParquetQueryParser(primary.schema, primary.table, columns, filter,</span>
-<span class="nc" id="L349">                false, Collections.emptyList(), exprs, true, joinTables, duckDbSql);</span>
+<span class="fc" id="L347">        JoinTable primary = joinTables.get(0);</span>
+<span class="fc" id="L348">        return new ParquetQueryParser(primary.schema, primary.table, columns, filter,</span>
+<span class="fc" id="L349">                false, Collections.emptyList(), exprs, true, joinTables, duckDbSql);</span>
     }
 
     /**
@@ -427,22 +427,22 @@ public class ParquetQueryParser {
      * @return SQL string with qualified table refs rewritten to aliases
      */
     static String rewriteTableRefs(String sql, List&lt;JoinTable&gt; joinTables) {
-<span class="nc" id="L430">        String result = sql;</span>
-<span class="nc bnc" id="L431" title="All 2 branches missed.">        for (JoinTable jt : joinTables) {</span>
-<span class="nc bnc" id="L432" title="All 2 branches missed.">            String qualified = jt.schema() != null</span>
-<span class="nc" id="L433">                    ? jt.schema() + &quot;.&quot; + jt.table() : jt.table();</span>
-<span class="nc bnc" id="L434" title="All 2 branches missed.">            if (!jt.alias().equals(jt.table())) {</span>
-<span class="nc" id="L435">                result = result.replaceAll(</span>
-<span class="nc" id="L436">                        &quot;(?i)(\\b&quot; + JOIN_ANY_RE + &quot;\\s+)&quot; + Pattern.quote(qualified)</span>
-<span class="nc" id="L437">                                + &quot;\\s+(?:AS\\s+)?&quot; + Pattern.quote(jt.alias()),</span>
-<span class="nc" id="L438">                        &quot;$1&quot; + Matcher.quoteReplacement(jt.alias()));</span>
+<span class="fc" id="L430">        String result = sql;</span>
+<span class="fc bfc" id="L431" title="All 2 branches covered.">        for (JoinTable jt : joinTables) {</span>
+<span class="fc bfc" id="L432" title="All 2 branches covered.">            String qualified = jt.schema() != null</span>
+<span class="fc" id="L433">                    ? jt.schema() + &quot;.&quot; + jt.table() : jt.table();</span>
+<span class="fc bfc" id="L434" title="All 2 branches covered.">            if (!jt.alias().equals(jt.table())) {</span>
+<span class="fc" id="L435">                result = result.replaceAll(</span>
+<span class="fc" id="L436">                        &quot;(?i)(\\b&quot; + JOIN_ANY_RE + &quot;\\s+)&quot; + Pattern.quote(qualified)</span>
+<span class="fc" id="L437">                                + &quot;\\s+(?:AS\\s+)?&quot; + Pattern.quote(jt.alias()),</span>
+<span class="fc" id="L438">                        &quot;$1&quot; + Matcher.quoteReplacement(jt.alias()));</span>
             } else {
-<span class="nc" id="L440">                result = result.replaceAll(</span>
-<span class="nc" id="L441">                        &quot;(?i)(\\b&quot; + JOIN_ANY_RE + &quot;\\s+|,\\s*)&quot; + Pattern.quote(qualified) + &quot;\\b&quot;,</span>
-<span class="nc" id="L442">                        &quot;$1&quot; + Matcher.quoteReplacement(jt.table()));</span>
+<span class="fc" id="L440">                result = result.replaceAll(</span>
+<span class="fc" id="L441">                        &quot;(?i)(\\b&quot; + JOIN_ANY_RE + &quot;\\s+|,\\s*)&quot; + Pattern.quote(qualified) + &quot;\\b&quot;,</span>
+<span class="fc" id="L442">                        &quot;$1&quot; + Matcher.quoteReplacement(jt.table()));</span>
             }
-<span class="nc" id="L444">        }</span>
-<span class="nc" id="L445">        return result;</span>
+<span class="fc" id="L444">        }</span>
+<span class="fc" id="L445">        return result;</span>
     }
 
     // ── public accessors ──────────────────────────────────────────────────
@@ -477,8 +477,8 @@ public class ParquetQueryParser {
 
     @Override
     public String toString() {
-<span class="pc bpc" id="L480" title="1 of 2 branches missed.">        if (isJoin) {</span>
-<span class="nc" id="L481">            return &quot;ParquetQueryParser{isJoin=true, joinTables=&quot; + joinTables</span>
+<span class="fc bfc" id="L480" title="All 2 branches covered.">        if (isJoin) {</span>
+<span class="fc" id="L481">            return &quot;ParquetQueryParser{isJoin=true, joinTables=&quot; + joinTables</span>
                     + &quot;, columns=&quot; + columns + &quot;, filter='&quot; + filter + &quot;'}&quot;;
         }
 <span class="fc" id="L484">        return &quot;ParquetQueryParser{&quot; +</span>

@@ -216,70 +216,70 @@ public final class MetadataService {
             boolean includeSchema,
             String schemaFilterPattern,
             String tableFilterPattern) {
-<span class="nc" id="L219">        Objects.requireNonNull(allocator, &quot;BufferAllocator cannot be null.&quot;);</span>
+<span class="fc" id="L219">        Objects.requireNonNull(allocator, &quot;BufferAllocator cannot be null.&quot;);</span>
 
-<span class="nc" id="L221">        Predicate&lt;String&gt; schemaNamePredicate = createLikePredicate(schemaFilterPattern);</span>
-<span class="nc" id="L222">        Predicate&lt;String&gt; tableNamePredicate = createLikePredicate(tableFilterPattern);</span>
+<span class="fc" id="L221">        Predicate&lt;String&gt; schemaNamePredicate = createLikePredicate(schemaFilterPattern);</span>
+<span class="fc" id="L222">        Predicate&lt;String&gt; tableNamePredicate = createLikePredicate(tableFilterPattern);</span>
 
-<span class="nc" id="L224">        final VarCharVector catalogNameVector = new VarCharVector(&quot;catalog_name&quot;, allocator);</span>
-<span class="nc" id="L225">        final VarCharVector schemaNameVector = new VarCharVector(&quot;db_schema_name&quot;, allocator);</span>
-<span class="nc" id="L226">        final VarCharVector tableNameVector = new VarCharVector(&quot;table_name&quot;,</span>
-<span class="nc" id="L227">                FieldType.notNullable(Types.MinorType.VARCHAR.getType()), allocator);</span>
-<span class="nc" id="L228">        final VarCharVector tableTypeVector = new VarCharVector(&quot;table_type&quot;,</span>
-<span class="nc" id="L229">                FieldType.notNullable(Types.MinorType.VARCHAR.getType()), allocator);</span>
-<span class="nc bnc" id="L230" title="All 2 branches missed.">        final VarBinaryVector tableSchemaVector = includeSchema</span>
+<span class="fc" id="L224">        final VarCharVector catalogNameVector = new VarCharVector(&quot;catalog_name&quot;, allocator);</span>
+<span class="fc" id="L225">        final VarCharVector schemaNameVector = new VarCharVector(&quot;db_schema_name&quot;, allocator);</span>
+<span class="fc" id="L226">        final VarCharVector tableNameVector = new VarCharVector(&quot;table_name&quot;,</span>
+<span class="fc" id="L227">                FieldType.notNullable(Types.MinorType.VARCHAR.getType()), allocator);</span>
+<span class="fc" id="L228">        final VarCharVector tableTypeVector = new VarCharVector(&quot;table_type&quot;,</span>
+<span class="fc" id="L229">                FieldType.notNullable(Types.MinorType.VARCHAR.getType()), allocator);</span>
+<span class="pc bpc" id="L230" title="1 of 2 branches missed.">        final VarBinaryVector tableSchemaVector = includeSchema</span>
 <span class="nc" id="L231">                ? new VarBinaryVector(&quot;table_schema&quot;,</span>
 <span class="nc" id="L232">                        FieldType.notNullable(Types.MinorType.VARBINARY.getType()), allocator)</span>
-<span class="nc" id="L233">                : null;</span>
+<span class="fc" id="L233">                : null;</span>
 
-<span class="nc" id="L235">        final List&lt;FieldVector&gt; vectors = new ArrayList&lt;&gt;(4);</span>
-<span class="nc" id="L236">        vectors.add(catalogNameVector);</span>
-<span class="nc" id="L237">        vectors.add(schemaNameVector);</span>
-<span class="nc" id="L238">        vectors.add(tableNameVector);</span>
-<span class="nc" id="L239">        vectors.add(tableTypeVector);</span>
-<span class="nc bnc" id="L240" title="All 2 branches missed.">        if (tableSchemaVector != null) {</span>
+<span class="fc" id="L235">        final List&lt;FieldVector&gt; vectors = new ArrayList&lt;&gt;(4);</span>
+<span class="fc" id="L236">        vectors.add(catalogNameVector);</span>
+<span class="fc" id="L237">        vectors.add(schemaNameVector);</span>
+<span class="fc" id="L238">        vectors.add(tableNameVector);</span>
+<span class="fc" id="L239">        vectors.add(tableTypeVector);</span>
+<span class="pc bpc" id="L240" title="1 of 2 branches missed.">        if (tableSchemaVector != null) {</span>
 <span class="nc" id="L241">            vectors.add(tableSchemaVector);</span>
         }
-<span class="nc" id="L243">        vectors.forEach(FieldVector::allocateNew);</span>
+<span class="fc" id="L243">        vectors.forEach(FieldVector::allocateNew);</span>
 
-<span class="nc" id="L245">        final Map&lt;FieldVector, String&gt; vectorToColumnName = ImmutableMap.of(</span>
+<span class="fc" id="L245">        final Map&lt;FieldVector, String&gt; vectorToColumnName = ImmutableMap.of(</span>
                 catalogNameVector, &quot;TABLE_CAT&quot;,
                 schemaNameVector, &quot;TABLE_SCHEM&quot;,
                 tableNameVector, &quot;TABLE_NAME&quot;,
                 tableTypeVector, &quot;TABLE_TYPE&quot;);
 
-<span class="nc" id="L251">        List&lt;Map&lt;String, ?&gt;&gt; data = new LinkedList&lt;&gt;();</span>
-<span class="nc bnc" id="L252" title="All 2 branches missed.">        for (Map.Entry&lt;String, Map&lt;String, Schema&gt;&gt; schemaEntry : tables.entrySet()) {</span>
-<span class="nc" id="L253">            String schemaName = schemaEntry.getKey();</span>
-<span class="nc bnc" id="L254" title="All 2 branches missed.">            if (!schemaNamePredicate.test(schemaName)) {</span>
+<span class="fc" id="L251">        List&lt;Map&lt;String, ?&gt;&gt; data = new LinkedList&lt;&gt;();</span>
+<span class="fc bfc" id="L252" title="All 2 branches covered.">        for (Map.Entry&lt;String, Map&lt;String, Schema&gt;&gt; schemaEntry : tables.entrySet()) {</span>
+<span class="fc" id="L253">            String schemaName = schemaEntry.getKey();</span>
+<span class="pc bpc" id="L254" title="1 of 2 branches missed.">            if (!schemaNamePredicate.test(schemaName)) {</span>
 <span class="nc" id="L255">                continue;</span>
             }
-<span class="nc bnc" id="L257" title="All 2 branches missed.">            for (Map.Entry&lt;String, Schema&gt; tableEntry : schemaEntry.getValue().entrySet()) {</span>
-<span class="nc" id="L258">                String tableName = tableEntry.getKey();</span>
-<span class="nc bnc" id="L259" title="All 2 branches missed.">                if (!tableNamePredicate.test(tableName)) {</span>
-<span class="nc" id="L260">                    continue;</span>
+<span class="fc bfc" id="L257" title="All 2 branches covered.">            for (Map.Entry&lt;String, Schema&gt; tableEntry : schemaEntry.getValue().entrySet()) {</span>
+<span class="fc" id="L258">                String tableName = tableEntry.getKey();</span>
+<span class="fc bfc" id="L259" title="All 2 branches covered.">                if (!tableNamePredicate.test(tableName)) {</span>
+<span class="fc" id="L260">                    continue;</span>
                 }
-<span class="nc" id="L262">                data.add(Map.of(</span>
+<span class="fc" id="L262">                data.add(Map.of(</span>
                         &quot;TABLE_CAT&quot;, CATALOG_NAME,
                         &quot;TABLE_SCHEM&quot;, schemaName,
                         &quot;TABLE_NAME&quot;, tableName,
                         &quot;TABLE_TYPE&quot;, TABLE_TYPE));
-<span class="nc bnc" id="L267" title="All 2 branches missed.">                if (tableSchemaVector != null) {</span>
+<span class="pc bpc" id="L267" title="1 of 2 branches missed.">                if (tableSchemaVector != null) {</span>
 <span class="nc" id="L268">                    java.nio.ByteBuffer buf = serializeMetadata(</span>
 <span class="nc" id="L269">                            tableEntry.getValue(), IpcOption.DEFAULT);</span>
 <span class="nc" id="L270">                    byte[] schemaBytes = new byte[buf.remaining()];</span>
 <span class="nc" id="L271">                    buf.get(schemaBytes);</span>
 <span class="nc" id="L272">                    saveToVector(schemaBytes, tableSchemaVector, data.size() - 1);</span>
                 }
-<span class="nc" id="L274">            }</span>
-<span class="nc" id="L275">        }</span>
-<span class="nc" id="L276">        saveToVectors(vectorToColumnName, data);</span>
-<span class="nc" id="L277">        final int rows = vectors.stream()</span>
-<span class="nc" id="L278">                .map(FieldVector::getValueCount)</span>
-<span class="nc" id="L279">                .findAny()</span>
-<span class="nc" id="L280">                .orElseThrow(IllegalStateException::new);</span>
-<span class="nc" id="L281">        vectors.forEach(vector -&gt; vector.setValueCount(rows));</span>
-<span class="nc" id="L282">        return new VectorSchemaRoot(vectors);</span>
+<span class="fc" id="L274">            }</span>
+<span class="fc" id="L275">        }</span>
+<span class="fc" id="L276">        saveToVectors(vectorToColumnName, data);</span>
+<span class="fc" id="L277">        final int rows = vectors.stream()</span>
+<span class="fc" id="L278">                .map(FieldVector::getValueCount)</span>
+<span class="fc" id="L279">                .findAny()</span>
+<span class="fc" id="L280">                .orElseThrow(IllegalStateException::new);</span>
+<span class="fc" id="L281">        vectors.forEach(vector -&gt; vector.setValueCount(rows));</span>
+<span class="fc" id="L282">        return new VectorSchemaRoot(vectors);</span>
     }
 
     /**
@@ -397,35 +397,35 @@ public final class MetadataService {
      * @return Arrow schema
      */
     public Schema buildAggregationSchema(ParquetQueryParser pq) {
-<span class="nc" id="L400">        org.apache.arrow.vector.types.pojo.Schema tableSchema =</span>
-<span class="nc" id="L401">                parquetAdapter.getTableSchema(pq.schema, pq.table);</span>
-<span class="nc" id="L402">        Map&lt;String, Field&gt; colFieldMap = tableSchema.getFields().stream()</span>
-<span class="nc" id="L403">                .collect(Collectors.toMap(Field::getName, f -&gt; f, (a, b) -&gt; a));</span>
+<span class="fc" id="L400">        org.apache.arrow.vector.types.pojo.Schema tableSchema =</span>
+<span class="fc" id="L401">                parquetAdapter.getTableSchema(pq.schema, pq.table);</span>
+<span class="fc" id="L402">        Map&lt;String, Field&gt; colFieldMap = tableSchema.getFields().stream()</span>
+<span class="pc" id="L403">                .collect(Collectors.toMap(Field::getName, f -&gt; f, (a, b) -&gt; a));</span>
 
-<span class="nc" id="L405">        List&lt;Field&gt; resultFields = new ArrayList&lt;&gt;();</span>
-<span class="nc bnc" id="L406" title="All 2 branches missed.">        for (ParquetQueryParser.SelectExpr expr : pq.selectExprs) {</span>
-<span class="nc bnc" id="L407" title="All 5 branches missed.">            switch (expr.func) {</span>
+<span class="fc" id="L405">        List&lt;Field&gt; resultFields = new ArrayList&lt;&gt;();</span>
+<span class="fc bfc" id="L406" title="All 2 branches covered.">        for (ParquetQueryParser.SelectExpr expr : pq.selectExprs) {</span>
+<span class="pc bpc" id="L407" title="1 of 5 branches missed.">            switch (expr.func) {</span>
                 case COLUMN -&gt; {
-<span class="nc" id="L409">                    Field src = resolveColumn(colFieldMap, expr.inputColumn);</span>
-<span class="nc" id="L410">                    resultFields.add(new Field(expr.outputName,</span>
-<span class="nc" id="L411">                            FieldType.nullable(src.getType()), null));</span>
-<span class="nc" id="L412">                }</span>
+<span class="fc" id="L409">                    Field src = resolveColumn(colFieldMap, expr.inputColumn);</span>
+<span class="fc" id="L410">                    resultFields.add(new Field(expr.outputName,</span>
+<span class="fc" id="L411">                            FieldType.nullable(src.getType()), null));</span>
+<span class="fc" id="L412">                }</span>
                 case COUNT_STAR, COUNT -&gt;
-<span class="nc" id="L414">                    resultFields.add(new Field(expr.outputName,</span>
-<span class="nc" id="L415">                            FieldType.nullable(new ArrowType.Int(64, true)), null));</span>
+<span class="fc" id="L414">                    resultFields.add(new Field(expr.outputName,</span>
+<span class="fc" id="L415">                            FieldType.nullable(new ArrowType.Int(64, true)), null));</span>
                 case SUM -&gt;
-<span class="nc" id="L417">                    resultFields.add(new Field(expr.outputName,</span>
-<span class="nc" id="L418">                            FieldType.nullable(new ArrowType.FloatingPoint(</span>
+<span class="fc" id="L417">                    resultFields.add(new Field(expr.outputName,</span>
+<span class="fc" id="L418">                            FieldType.nullable(new ArrowType.FloatingPoint(</span>
                                     org.apache.arrow.vector.types.FloatingPointPrecision.DOUBLE)), null));
                 case MIN, MAX -&gt; {
-<span class="nc" id="L421">                    Field src = resolveColumn(colFieldMap, expr.inputColumn);</span>
-<span class="nc" id="L422">                    resultFields.add(new Field(expr.outputName,</span>
-<span class="nc" id="L423">                            FieldType.nullable(src.getType()), null));</span>
-<span class="nc" id="L424">                }</span>
+<span class="fc" id="L421">                    Field src = resolveColumn(colFieldMap, expr.inputColumn);</span>
+<span class="fc" id="L422">                    resultFields.add(new Field(expr.outputName,</span>
+<span class="fc" id="L423">                            FieldType.nullable(src.getType()), null));</span>
+<span class="fc" id="L424">                }</span>
                 default -&gt; { }
             }
-<span class="nc" id="L427">        }</span>
-<span class="nc" id="L428">        return new org.apache.arrow.vector.types.pojo.Schema(resultFields);</span>
+<span class="fc" id="L427">        }</span>
+<span class="fc" id="L428">        return new org.apache.arrow.vector.types.pojo.Schema(resultFields);</span>
     }
 
     /**
@@ -436,9 +436,9 @@ public final class MetadataService {
      * @return resolved Arrow field
      */
     private static Field resolveColumn(Map&lt;String, Field&gt; colFieldMap, String inputColumn) {
-<span class="nc" id="L439">        Field src = colFieldMap.get(inputColumn);</span>
-<span class="nc bnc" id="L440" title="All 2 branches missed.">        if (src != null) {</span>
-<span class="nc" id="L441">            return src;</span>
+<span class="fc" id="L439">        Field src = colFieldMap.get(inputColumn);</span>
+<span class="pc bpc" id="L440" title="1 of 2 branches missed.">        if (src != null) {</span>
+<span class="fc" id="L441">            return src;</span>
         }
 <span class="nc bnc" id="L443" title="All 2 branches missed.">        for (Map.Entry&lt;String, Field&gt; entry : colFieldMap.entrySet()) {</span>
 <span class="nc bnc" id="L444" title="All 2 branches missed.">            if (entry.getKey().equalsIgnoreCase(inputColumn)) {</span>
