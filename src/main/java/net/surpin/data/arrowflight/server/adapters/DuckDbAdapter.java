@@ -22,7 +22,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 
 import net.surpin.data.arrowflight.server.services.ParquetQueryParser;
@@ -35,6 +34,7 @@ import net.surpin.data.arrowflight.server.model.AppConfig;
 public final class DuckDbAdapter {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(DuckDbAdapter.class);
+    private static final long LISTENER_READY_POLL_MILLIS = 5L;
 
     private final ThreadLocal<Connection> threadConn;
     private final ExecutorService ioPool;
@@ -521,20 +521,14 @@ public final class DuckDbAdapter {
                     "Flight listener readiness timeout must be positive: " + timeoutMillis);
         }
 
-        Semaphore stateChanged = new Semaphore(0);
-        Runnable stateChangeHandler = stateChanged::release;
-        listener.setOnReadyHandler(stateChangeHandler);
-        listener.setOnCancelHandler(stateChangeHandler);
-
         long deadlineNanos = System.nanoTime()
                 + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
         while (!listener.isCancelled() && !listener.isReady()) {
-            long remainingNanos = deadlineNanos - System.nanoTime();
-            if (remainingNanos <= 0
-                    || !stateChanged.tryAcquire(remainingNanos, TimeUnit.NANOSECONDS)) {
+            if (System.nanoTime() >= deadlineNanos) {
                 LOGGER.warn("Listener readiness timeout after {}ms", timeoutMillis);
                 return false;
             }
+            Thread.sleep(LISTENER_READY_POLL_MILLIS);
         }
         return !listener.isCancelled() && listener.isReady();
     }
