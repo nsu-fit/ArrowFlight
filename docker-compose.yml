@@ -29,7 +29,7 @@ x-server-node: &server-node
     spark-master:
       condition: service_started
   healthcheck:
-    test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/32010'"]
+    test: ["CMD-SHELL", "bash -c '</dev/tcp/$${HOSTNAME}/32010'"]
     interval: 5s
     timeout: 3s
     retries: 60
