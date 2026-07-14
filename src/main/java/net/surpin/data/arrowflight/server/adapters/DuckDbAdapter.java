@@ -1,7 +1,6 @@
 package net.surpin.data.arrowflight.server.adapters;
 
 import org.apache.arrow.memory.BufferAllocator;
-import org.apache.arrow.vector.ValueVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.arrow.vector.ipc.ArrowReader;
 import org.apache.parquet.hadoop.ParquetFileReader;
@@ -22,8 +21,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 
 import net.surpin.data.arrowflight.server.services.ParquetQueryParser;
@@ -39,6 +38,7 @@ public final class DuckDbAdapter {
 
     private final ThreadLocal<Connection> threadConn;
     private final ExecutorService ioPool;
+    
     private final int batchSize;
     private final int duckDbGroups;
     private final AppConfig appConfig;
@@ -186,46 +186,34 @@ public final class DuckDbAdapter {
         Connection conn = threadConn.get();
         try (Statement stmt = conn.createStatement();
                 org.duckdb.DuckDBResultSet drs = (org.duckdb.DuckDBResultSet) stmt.executeQuery(duckSql);
-                ArrowReader reader = (ArrowReader) drs.arrowExportStream(allocator, batchSize);
-                VectorSchemaRoot flightRoot = VectorSchemaRoot.create(
-                        reader.getVectorSchemaRoot().getSchema(), allocator)) {
-            VectorSchemaRoot duckRoot = reader.getVectorSchemaRoot();
+                ArrowReader reader = (ArrowReader) drs.arrowExportStream(allocator, batchSize)) {
+            VectorSchemaRoot root = reader.getVectorSchemaRoot();
 
             if (startListener) {
-                listener.start(flightRoot);
+                listener.start(root);
             }
 
-            int duckBatchesRead = 0;
-            int flightBatchesSent = 0;
+            int batchesSent = 0;
             long rowsSent = 0;
             boolean cancelled = false;
             while (!cancelled && reader.loadNextBatch()) {
-                duckBatchesRead++;
-                int duckRows = duckRoot.getRowCount();
-                if (duckRows == 0) {
-                    duckRoot.clear();
+                if (root.getRowCount() == 0) {
+                    root.clear();
                     continue;
                 }
-
-                for (int offset = 0; offset < duckRows; offset += batchSize) {
-                    int rowCount = Math.min(batchSize, duckRows - offset);
-                    copyRows(duckRoot, flightRoot, offset, rowCount);
-
-                    if (!awaitListenerReady(listener)) {
-                        cancelled = true;
-                        flightRoot.clear();
-                        break;
-                    }
-
-                    listener.putNext();
-                    flightBatchesSent++;
-                    rowsSent += rowCount;
-                    flightRoot.clear();
+                if (!awaitListenerReady(
+                        listener, appConfig.flightListenerReadyTimeoutMillis())) {
+                    cancelled = true;
+                    root.clear();
+                    break;
                 }
-                duckRoot.clear();
+                listener.putNext();
+                batchesSent++;
+                rowsSent += root.getRowCount();
+                root.clear();
             }
-            LOGGER.info("DuckDB sent {} Flight batch(es), {} row(s), read {} DuckDB batch(es){}",
-                    flightBatchesSent, rowsSent, duckBatchesRead,
+            LOGGER.info("DuckDB sent {} Flight batch(es), {} row(s){}",
+                    batchesSent, rowsSent,
                     cancelled ? " before cancellation" : "");
         }
     }
@@ -518,51 +506,37 @@ public final class DuckDbAdapter {
     /**
      * Checks whether a Flight listener is ready to receive data.
      *
-     * @param listener Flight stream listener
+     * @param listener      Flight stream listener
+     * @param timeoutMillis maximum wait time in milliseconds
      * @return true if ready, false if cancelled
      * @throws InterruptedException if waiting is interrupted
+     * @throws IllegalArgumentException if timeout is not positive
      */
     public static boolean awaitListenerReady(
-            org.apache.arrow.flight.FlightProducer.ServerStreamListener listener)
+            org.apache.arrow.flight.FlightProducer.ServerStreamListener listener,
+            long timeoutMillis)
             throws InterruptedException {
-        if (listener.isCancelled()) {
-            return false;
-        }
-        if (listener.isReady()) {
-            return true;
+        if (timeoutMillis <= 0) {
+            throw new IllegalArgumentException(
+                    "Flight listener readiness timeout must be positive: " + timeoutMillis);
         }
 
-        CountDownLatch readyLatch = new CountDownLatch(1);
-        listener.setOnReadyHandler(readyLatch::countDown);
+        Semaphore stateChanged = new Semaphore(0);
+        Runnable stateChangeHandler = stateChanged::release;
+        listener.setOnReadyHandler(stateChangeHandler);
+        listener.setOnCancelHandler(stateChangeHandler);
 
-        long timeout = 60_000;
-        if (!readyLatch.await(timeout, TimeUnit.MILLISECONDS)) {
-            LOGGER.warn("Listener readiness timeout after {}ms", timeout);
-            return false;
-        }
-        return !listener.isCancelled();
-    }
-
-    /**
-     * Copies rows from source to target VectorSchemaRoot using copyFromSafe.
-     *
-     * @param sourceRoot  source VSR
-     * @param targetRoot  target VSR
-     * @param sourceOffset source row offset
-     * @param rowCount    number of rows to copy
-     */
-    public static void copyRows(VectorSchemaRoot sourceRoot, VectorSchemaRoot targetRoot,
-            int sourceOffset, int rowCount) {
-        targetRoot.clear();
-        for (int column = 0; column < sourceRoot.getFieldVectors().size(); column++) {
-            ValueVector sourceVector = sourceRoot.getVector(column);
-            ValueVector targetVector = targetRoot.getVector(column);
-            for (int row = 0; row < rowCount; row++) {
-                targetVector.copyFromSafe(sourceOffset + row, row, sourceVector);
+        long deadlineNanos = System.nanoTime()
+                + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
+        while (!listener.isCancelled() && !listener.isReady()) {
+            long remainingNanos = deadlineNanos - System.nanoTime();
+            if (remainingNanos <= 0
+                    || !stateChanged.tryAcquire(remainingNanos, TimeUnit.NANOSECONDS)) {
+                LOGGER.warn("Listener readiness timeout after {}ms", timeoutMillis);
+                return false;
             }
-            targetVector.setValueCount(rowCount);
         }
-        targetRoot.setRowCount(rowCount);
+        return !listener.isCancelled() && listener.isReady();
     }
 
     /**

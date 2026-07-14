@@ -93,9 +93,13 @@ final class AceroFileResolver {
 
     private void copyToCache(FileStatus status, java.nio.file.Path destination)
             throws IOException {
-        Files.createDirectories(destination.getParent());
+        java.nio.file.Path destinationParent = destination.getParent();
+        if (destinationParent == null) {
+            throw new IOException("Cache destination has no parent directory: " + destination);
+        }
+        Files.createDirectories(destinationParent);
         java.nio.file.Path temporary = Files.createTempFile(
-                destination.getParent(), ".arrowflight-", ".part");
+                destinationParent, ".arrowflight-", ".part");
         LOGGER.info("Materializing HDFS file for Acero: {} -> {}", status.getPath(), destination);
         try {
             try (InputStream input = fileSystem.open(status.getPath(), bufferSize);

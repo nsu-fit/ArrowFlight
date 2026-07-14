@@ -2,6 +2,7 @@ package net.surpin.data.arrowflight.server.adapters;
 
 import net.surpin.data.arrowflight.server.model.AppConfig;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashSet;
@@ -9,6 +10,8 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+/** Tests system-property and environment configuration mapping. */
+@Tag("unit")
 class ConfigAdapterTest {
 
     private static final Set<String> CLEARED = new HashSet<>();
@@ -41,7 +44,7 @@ class ConfigAdapterTest {
         assertEquals(60, cfg.hazelcastClusterJoinTimeoutSec());
         assertEquals(3, cfg.clientMaxRetries());
         assertEquals(1000, cfg.clientRetryBackoffMs());
-        assertEquals(30000, cfg.clientConnectTimeoutMs());
+        assertEquals(0, cfg.clientConnectTimeoutMs());
         assertFalse(cfg.duckDbAllowUnsignedExtensions());
         assertEquals(Integer.MAX_VALUE, cfg.grpcMaxInboundMessageSize());
         assertEquals(60000, cfg.flightListenerReadyTimeoutMillis());
@@ -163,6 +166,16 @@ class ConfigAdapterTest {
 
         AppConfig cfg = ConfigAdapter.getConfig();
         assertEquals(30000, cfg.flightListenerReadyTimeoutMillis());
+    }
+
+    /** Verifies invalid readiness timeout configuration is rejected at startup. */
+    @Test
+    void getConfigRejectsNonPositiveFlightListenerReadyTimeout() {
+        setProp("flightListenerReadyTimeoutMs", "0");
+
+        IllegalArgumentException error = assertThrows(
+                IllegalArgumentException.class, ConfigAdapter::getConfig);
+        assertTrue(error.getMessage().contains("flightListenerReadyTimeoutMs"));
     }
 
     @Test

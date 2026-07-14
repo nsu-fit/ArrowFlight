@@ -89,13 +89,15 @@ class ClientRetryTest {
                 "Different secrets must produce different connection identities");
     }
 
+    /** Verifies long Flight streams have no default whole-call deadline. */
     @Test
-    void toStringIncludesRetrySettings() {
+    void defaultConfigurationDoesNotLimitFlightStreamDuration() {
         Configuration config = new Configuration("localhost", 32010, "user", "pass", null);
         String str = config.toString();
 
         assertTrue(str.contains("maxRetries=3"));
         assertTrue(str.contains("retryBackoffMs=1000"));
-        assertTrue(str.contains("connectTimeoutMs=30000"));
+        assertEquals(0, config.getConnectTimeoutMs());
+        assertTrue(str.contains("connectTimeoutMs=0"));
     }
 }

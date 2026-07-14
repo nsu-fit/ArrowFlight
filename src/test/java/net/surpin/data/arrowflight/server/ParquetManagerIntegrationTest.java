@@ -156,11 +156,55 @@ class ParquetManagerIntegrationTest {
     }
 
     @Test
+    void initCatalogReaderPopulatesDdlCache() {
+        parquetAdapter.initCatalogReader();
+        Map<String, Map<String, String>> ddlCache = parquetAdapter.tableDdlCache();
+        assertFalse(ddlCache.isEmpty(), "DDL cache must not be empty after initCatalogReader");
+        Map<String, String> schemaTables = ddlCache.get("test_schema");
+        assertNotNull(schemaTables, "test_schema must be in DDL cache");
+        String tableDdl = schemaTables.get("test_table");
+        assertNotNull(tableDdl, "test_table must have DDL in cache");
+        assertTrue(tableDdl.startsWith("CREATE TABLE"),
+                "DDL must start with CREATE TABLE");
+    }
+
+    @Test
     void readParquetFullScanReturnsRows() throws Exception {
         CountingListener listener = new CountingListener();
         executionService.readParquet(allocator,
                 "SELECT * FROM test_schema.test_table", null, listener, true);
         assertTrue(listener.totalRows > 0);
+    }
+
+    @Test
+    void filterBuilderReturnsSubstraitBytesAfterDdlCacheWarmUp() {
+        parquetAdapter.initCatalogReader();
+
+        var pq = ParquetQueryParser.parse(
+                "SELECT * FROM test_schema.test_table WHERE \"tinyint_col\" = 0");
+        Function<ParquetQueryParser, byte[]> fb = pq2 -> {
+            java.util.Map<String, Map<String, String>> ddlCache =
+                    parquetAdapter.tableDdlCache();
+            String ddl = ddlCache.getOrDefault(pq2.schema,
+                    java.util.Collections.emptyMap()).get(pq2.table);
+            if (ddl == null) return null;
+            String cleanDdl = ddl.replace(pq2.schema + ".", "");
+            try {
+                ByteBuffer buf = FilterConverter.toByteBuffer(
+                        pq2.filter, java.util.Collections.singletonList(cleanDdl));
+                byte[] bytes = new byte[buf.remaining()];
+                buf.get(bytes);
+                return bytes;
+            } catch (Exception e) {
+                return null;
+            }
+        };
+
+        byte[] filterBytes = fb.apply(pq);
+        assertNotNull(filterBytes,
+                "Substrait filter bytes must be non-null when DDL cache is warm");
+        assertTrue(filterBytes.length > 0,
+                "Substrait filter bytes must not be empty");
     }
 
     @Test

@@ -149,6 +149,22 @@ class FilterConverterTest {
         assertTrue(buf.capacity() > 0);
     }
 
+    /** Verifies the TPC-H Q1 date predicate uses a native date literal accepted by Acero. */
+    @Test
+    void datePredicateProducesNativeDateLiteral() throws Exception {
+        ByteBuffer buf = FilterConverter.toByteBuffer(
+                "\"l_shipdate\" <= DATE '1998-09-02'",
+                List.of("CREATE TABLE lineitem(\"l_shipdate\" DATE)"));
+        assertNotNull(buf);
+        assertTrue(buf.capacity() > 0);
+
+        byte[] bytes = new byte[buf.remaining()];
+        buf.get(bytes);
+        String expression = ExtendedExpression.parseFrom(bytes).toString();
+        assertTrue(expression.contains("date: 10471"), expression);
+        assertFalse(expression.contains("cast {"), expression);
+    }
+
     @Test
     void multipleCreateStatements() throws SqlParseException {
         String other = "CREATE TABLE other(\"x\" INTEGER)";

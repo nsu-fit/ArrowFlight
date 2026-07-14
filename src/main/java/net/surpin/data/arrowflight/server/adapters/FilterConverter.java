@@ -1,20 +1,25 @@
 package net.surpin.data.arrowflight.server.adapters;
 
+import io.substrait.expression.ExpressionCreator;
 import io.substrait.isthmus.CallConverter;
 import io.substrait.isthmus.ConverterProvider;
 import io.substrait.isthmus.SqlExpressionToSubstrait;
 import io.substrait.isthmus.expression.CallConverters;
 import io.substrait.isthmus.expression.ScalarFunctionConverter;
 import java.nio.ByteBuffer;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Function;
 import org.apache.calcite.rex.RexBuilder;
 import org.apache.calcite.rex.RexCall;
+import org.apache.calcite.rex.RexLiteral;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.parser.SqlParseException;
+import org.apache.calcite.sql.type.SqlTypeName;
 
 /**
  * Converts SQL filter expressions to Substrait ByteBuffers for Arrow Acero filter pushdown.
@@ -41,6 +46,10 @@ public final class FilterConverter {
                         return Optional.of(visitor.apply(folded));
                     }
                     if (call.getKind() == SqlKind.CAST) {
+                        Optional<io.substrait.expression.Expression> dateLiteral = nativeDateLiteral(call);
+                        if (dateLiteral.isPresent()) {
+                            return dateLiteral;
+                        }
                         return castConv.convert(call, visitor)
                                 .or(() -> Optional.of(visitor.apply(call.getOperands().get(0))));
                     }
@@ -49,6 +58,27 @@ public final class FilterConverter {
             };
         }
     };
+
+    /**
+     * Converts a character-to-date cast into a native Substrait date literal.
+     *
+     * @param call Calcite cast expression
+     * @return native date literal when the cast contains an ISO date string
+     */
+    private static Optional<io.substrait.expression.Expression> nativeDateLiteral(RexCall call) {
+        if (call.getType().getSqlTypeName() != SqlTypeName.DATE
+                || call.getOperands().size() != 1
+                || !(call.getOperands().get(0) instanceof RexLiteral literal)) {
+            return Optional.empty();
+        }
+        try {
+            LocalDate date = LocalDate.parse(RexLiteral.stringValue(literal));
+            return Optional.of(ExpressionCreator.date(
+                    call.getType().isNullable(), Math.toIntExact(date.toEpochDay())));
+        } catch (DateTimeParseException | ClassCastException exception) {
+            return Optional.empty();
+        }
+    }
 
     /**
      * Utility class, no instantiation.

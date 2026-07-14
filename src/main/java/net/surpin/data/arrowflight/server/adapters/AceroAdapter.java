@@ -36,6 +36,7 @@ public final class AceroAdapter {
     private static final Logger LOGGER = LoggerFactory.getLogger(AceroAdapter.class);
 
     private final int batchSize;
+    private final long listenerReadyTimeoutMillis;
 
     /**
      * Creates an AceroAdapter.
@@ -44,6 +45,7 @@ public final class AceroAdapter {
      */
     public AceroAdapter(AppConfig appConfig) {
         this.batchSize = appConfig.batchSize();
+        this.listenerReadyTimeoutMillis = appConfig.flightListenerReadyTimeoutMillis();
     }
 
     /**
@@ -104,7 +106,8 @@ public final class AceroAdapter {
                     vsr.clear();
                     continue;
                 }
-                if (!DuckDbAdapter.awaitListenerReady(listener)) {
+                if (!DuckDbAdapter.awaitListenerReady(
+                        listener, listenerReadyTimeoutMillis)) {
                     LOGGER.warn("Flight listener cancelled during Acero scan");
                     vsr.clear();
                     break;

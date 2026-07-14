@@ -55,6 +55,7 @@ public final class QueryPlanner {
         this.clusterService = clusterService;
         try {
             this.clusterService.registerLocalFiles(this.parquetAdapter.localFileInventory());
+            this.parquetAdapter.initCatalogReader();
         } catch (IOException e) {
             throw new UncheckedIOException("Unable to publish local Parquet inventory", e);
         }
@@ -72,20 +73,20 @@ public final class QueryPlanner {
             throws IOException {
         ParquetQueryParser parsed = ParquetQueryParser.parse(query);
 
-        Set<String> allServerUris = new LinkedHashSet<>(clusterService.allServerLoads().keySet());
-        if (allServerUris.isEmpty()) {
+        Map<String, Long> allServers = clusterService.allServerLoads();
+        if (allServers.isEmpty()) {
             throw new IOException("Flight server registry is empty");
         }
 
-        allServerUris = clusterService.filterLiveServers(allServerUris);
+        Set<String> allServerUris = new LinkedHashSet<>(clusterService.filterLiveServers(allServers.keySet()));
         if (allServerUris.isEmpty()) {
             throw new IOException("No live Flight servers are registered");
         }
 
-        Map<String, Long> serverLoad = new HashMap<>(
-                clusterService.getLoads(allServerUris));
+        Map<String, Long> serverLoad = new HashMap<>();
         for (String uri : allServerUris) {
-            serverLoad.putIfAbsent(uri, 0L);
+            Long load = allServers.get(uri);
+            serverLoad.put(uri, load != null ? load : 0L);
         }
 
         Set<String> missingInventories = allServerUris.stream()
