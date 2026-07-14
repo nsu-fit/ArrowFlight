@@ -128,9 +128,13 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
                     qid, serverUri, elapsed, filePaths.length, query);
         } catch (Exception e) {
             long elapsed = System.currentTimeMillis() - started;
+            String failure = failureDescription(e);
             LOGGER.error("qid={} execution=failed server={} elapsedMs={} error='{}'",
-                    qid, serverUri, elapsed, e.getMessage(), e);
-            listener.error(e);
+                    qid, serverUri, elapsed, failure, e);
+            listener.error(CallStatus.INTERNAL
+                    .withDescription(failure)
+                    .withCause(e)
+                    .toRuntimeException());
         } finally {
             MDC.remove("qid");
             if (state.serverUri() != null) {
@@ -141,6 +145,19 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
                 clusterService.addLoad(state.serverUri(), -state.bytes());
             }
         }
+    }
+
+    private static String failureDescription(Throwable failure) {
+        Throwable root = failure;
+        while (root.getCause() != null && root.getCause() != root) {
+            root = root.getCause();
+        }
+        String message = root.getMessage();
+        String description = "Query execution failed: " + root.getClass().getSimpleName();
+        if (message != null && !message.isBlank()) {
+            description += ": " + message;
+        }
+        return description.length() <= 1024 ? description : description.substring(0, 1024);
     }
 
     @Override

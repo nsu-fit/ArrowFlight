@@ -546,10 +546,28 @@ public final class ExecutionService {
      * @return projected column names, empty if none needed
      */
     private Optional<String[]> buildProjection(ParquetQueryParser pq) {
+        java.util.Set<String> scanCols = projectedColumns(pq);
+        if (scanCols.isEmpty()) {
+            org.apache.arrow.vector.types.pojo.Schema tSchema =
+                    parquetAdapter.getTableSchema(pq.schema, pq.table);
+            if (!tSchema.getFields().isEmpty()) {
+                scanCols.add(tSchema.getFields().get(0).getName());
+            }
+        }
+        return scanCols.isEmpty() ? Optional.empty()
+                : Optional.of(scanCols.toArray(new String[0]));
+    }
+
+    /**
+     * Collects physical columns needed by the projection, aggregation, and filter.
+     *
+     * @param pq parsed query
+     * @return columns that must be present in the Acero stream
+     */
+    static java.util.Set<String> projectedColumns(ParquetQueryParser pq) {
         java.util.Set<String> scanCols = new java.util.LinkedHashSet<>(pq.groupByColumnNames);
         for (ParquetQueryParser.SelectExpr e : pq.selectExprs) {
-            if (e.func != ParquetQueryParser.SelectExpr.AggFunc.COLUMN
-                    && e.func != ParquetQueryParser.SelectExpr.AggFunc.COUNT_STAR
+            if (e.func != ParquetQueryParser.SelectExpr.AggFunc.COUNT_STAR
                     && e.inputColumn != null) {
                 scanCols.add(e.inputColumn);
             }
@@ -561,15 +579,7 @@ public final class ExecutionService {
                 scanCols.add(m.group(1));
             }
         }
-        if (scanCols.isEmpty()) {
-            org.apache.arrow.vector.types.pojo.Schema tSchema =
-                    parquetAdapter.getTableSchema(pq.schema, pq.table);
-            if (!tSchema.getFields().isEmpty()) {
-                scanCols.add(tSchema.getFields().get(0).getName());
-            }
-        }
-        return scanCols.isEmpty() ? Optional.empty()
-                : Optional.of(scanCols.toArray(new String[0]));
+        return scanCols;
     }
 
     /**
