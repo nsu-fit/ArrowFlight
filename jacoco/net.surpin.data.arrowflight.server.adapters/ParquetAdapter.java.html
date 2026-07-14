@@ -224,7 +224,7 @@ public class ParquetAdapter {
 <span class="fc" id="L224">        Objects.requireNonNull(tableCache, &quot;Initialize table cache first&quot;);</span>
 
 <span class="fc" id="L226">        StringBuilder ddlBuilder = new StringBuilder();</span>
-<span class="fc" id="L227">        List&lt;String&gt; unqualifiedDdls = new ArrayList&lt;&gt;();</span>
+<span class="fc" id="L227">        List&lt;String&gt; strippedDdls = new ArrayList&lt;&gt;();</span>
 <span class="fc" id="L228">        tableCache.forEach((schemaName, tablesMap) -&gt; {</span>
 <span class="fc" id="L229">            tableDdlCache.putIfAbsent(schemaName, new HashMap&lt;&gt;());</span>
 <span class="fc" id="L230">            tablesMap.forEach((tableName, path) -&gt; {</span>
@@ -232,12 +232,12 @@ public class ParquetAdapter {
 <span class="fc" id="L232">                String ddl = arrowSchemaToDDL(schemaName, tableName, schema);</span>
 <span class="fc" id="L233">                tableDdlCache.get(schemaName).put(tableName, ddl);</span>
 <span class="fc" id="L234">                ddlBuilder.append(ddl).append(&quot;;\n&quot;);</span>
-<span class="fc" id="L235">                unqualifiedDdls.add(ddl.replace(schemaName + &quot;.&quot;, &quot;&quot;));</span>
+<span class="fc" id="L235">                strippedDdls.add(ddl.replace(schemaName + &quot;.&quot;, &quot;&quot;));</span>
 <span class="fc" id="L236">            });</span>
 <span class="fc" id="L237">        });</span>
 
 <span class="fc" id="L239">        LOGGER.info(&quot;Parsed DDL: {}&quot;, ddlBuilder.toString());</span>
-<span class="fc" id="L240">        FilterConverter.warmUp(unqualifiedDdls);</span>
+<span class="fc" id="L240">        FilterConverter.warmUp(strippedDdls);</span>
 <span class="fc" id="L241">    }</span>
 
     /**
