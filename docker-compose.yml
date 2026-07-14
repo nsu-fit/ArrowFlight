@@ -13,8 +13,6 @@ x-server-node-env: &server-node-env
   HDFS_NAMENODE_PORT: "8020"
   HDFS_READY_PATH: "${HDFS_BENCHMARK_PATH:-/bench}/_READY"
   HDFS_BLOCK_SIZE_BYTES: "${HDFS_BLOCK_SIZE_BYTES:-1073741824}"
-  HDFS_SHORTCIRCUIT: "true"
-  HDFS_DOMAIN_SOCKET_PATH: /var/lib/hadoop-hdfs/socket/dn_socket
   SPARK_MASTER_URL: spark://spark-master:7077
   SPARK_WORKER_CORES: "2"
   SPARK_WORKER_MEMORY: 2g
