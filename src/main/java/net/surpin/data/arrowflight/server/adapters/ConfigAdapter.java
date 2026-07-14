@@ -53,6 +53,8 @@ public class ConfigAdapter {
         long flightListenerReadyTimeoutMillis = getLong("flightListenerReadyTimeoutMs",
                 "arrowflight.flight.listenerReadyTimeoutMs", 60_000L, props);
         String dataDir = getString("dataDir", null, "/data/parquet", props);
+        String localDataDir = getStringWithEnv("localDataDir", "arrowflight.localDataDir",
+                "FLIGHT_LOCAL_DATA_DIR", null, props);
         int port = getInt("port", null, 32010, props);
         int hazelcastPort = getInt("hazelcastPort", null, 5701, props);
         int hazelcastClusterJoinTimeoutSec = getInt("hazelcastClusterJoinTimeoutSec",
@@ -68,7 +70,7 @@ public class ConfigAdapter {
                 duckDbHdfsDefaultNamenode, duckDbHdfsHaNamenodes,
                 duckDbHdfsShortcircuit, duckDbHdfsDomainSocketPath,
                 grpcMaxInboundMessageSize, flightListenerReadyTimeoutMillis,
-                dataDir, port, hazelcastPort, hazelcastClusterJoinTimeoutSec,
+                dataDir, localDataDir, port, hazelcastPort, hazelcastClusterJoinTimeoutSec,
                 clientMaxRetries, clientRetryBackoffMs, clientConnectTimeoutMs);
     }
 

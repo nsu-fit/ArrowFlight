@@ -35,6 +35,7 @@ class ConfigAdapterTest {
         assertTrue(cfg.ioParallelism() >= 1 && cfg.ioParallelism() <= 64);
         assertEquals(1, cfg.duckDbThreads());
         assertEquals("/data/parquet", cfg.dataDir());
+        assertNull(cfg.localDataDir());
         assertEquals(32010, cfg.port());
         assertEquals(5701, cfg.hazelcastPort());
         assertEquals(60, cfg.hazelcastClusterJoinTimeoutSec());
@@ -122,6 +123,14 @@ class ConfigAdapterTest {
 
         AppConfig cfg = ConfigAdapter.getConfig();
         assertEquals("/custom/data/path", cfg.dataDir());
+    }
+
+    @Test
+    void getConfigLocalDataDir() {
+        setProp("localDataDir", "/staging");
+
+        AppConfig cfg = ConfigAdapter.getConfig();
+        assertEquals("/staging", cfg.localDataDir());
     }
 
     @Test

@@ -20,6 +20,7 @@ public record AppConfig(
     int grpcMaxInboundMessageSize,
     long flightListenerReadyTimeoutMillis,
     String dataDir,
+    String localDataDir,
     int port,
     int hazelcastPort,
     int hazelcastClusterJoinTimeoutSec,
