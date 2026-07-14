@@ -51,7 +51,7 @@ public class ConfigAdapter {
 <span class="fc" id="L51">        int grpcMaxInboundMessageSize = getInt(&quot;grpcMaxInboundMessageSize&quot;,</span>
                 &quot;arrowflight.grpc.maxInboundMessageSize&quot;, Integer.MAX_VALUE, props);
 <span class="fc" id="L53">        long flightListenerReadyTimeoutMillis = getLong(&quot;flightListenerReadyTimeoutMs&quot;,</span>
-                &quot;arrowflight.flight.listenerReadyTimeoutMs&quot;, 60_000L, props);
+                &quot;arrowflight.flight.listenerReadyTimeoutMs&quot;, 300_000L, props);
 <span class="fc bfc" id="L55" title="All 2 branches covered.">        if (flightListenerReadyTimeoutMillis &lt;= 0) {</span>
 <span class="fc" id="L56">            throw new IllegalArgumentException(</span>
                     &quot;flightListenerReadyTimeoutMs must be positive: &quot;
