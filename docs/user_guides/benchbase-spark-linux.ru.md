@@ -75,9 +75,16 @@ BENCHMARK_SCALE_FACTOR=0.1       # TPC-H scale factor
 BENCHBASE_TIME_SECONDS=120      # длительность каждого пути
 BENCHBASE_TERMINALS=2           # параллельные BenchBase workers
 BENCHBASE_RATE=unlimited        # лимит requests/sec
+BENCHBASE_QUERY_TIMEOUT_SECONDS=120   # timeout BenchBase query через JDBC
+BENCHBASE_CAPTURE_TIMEOUT_SECONDS=120 # timeout повторного query для HTML-проверки
 BENCHBASE_UPDATE_PAGES=false    # не обновлять локальную pages/
 HDFS_BLOCK_SIZE_BYTES=1073741824 # shard обязан помещаться в один HDFS block
 ```
+
+После измерения каждый выбранный query повторно выполняется через `beeline`, чтобы
+сохранить фактический результат в HTML report. Если этот запуск превышает
+`BENCHBASE_CAPTURE_TIMEOUT_SECONDS`, script удаляет неполный CSV, отмечает result как
+`not captured` и продолжает следующий benchmark path.
 
 Пример более тяжёлого запуска:
 

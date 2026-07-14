@@ -215,7 +215,8 @@ public final class HiveExecuteDriver implements Driver {
             String trimmed = sql.trim();
             String withoutSemicolon = trimmed.endsWith(";") ? trimmed.substring(0, trimmed.length() - 1).trim() : trimmed;
             if (withoutSemicolon.equalsIgnoreCase("SHOW ALL")) {
-                return "SET -v";
+                return "SELECT 'engine' AS name, 'Spark SQL' AS setting, "
+                        + "'BenchBase JDBC target' AS description";
             }
 
             String result = sql;
