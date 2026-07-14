@@ -22,7 +22,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 
 import net.surpin.data.arrowflight.server.services.ParquetQueryParser;
@@ -34,7 +33,8 @@ import net.surpin.data.arrowflight.server.model.AppConfig;
  */
 public final class DuckDbAdapter {
 
-<span class="fc" id="L37">    private static final Logger LOGGER = LoggerFactory.getLogger(DuckDbAdapter.class);</span>
+<span class="fc" id="L36">    private static final Logger LOGGER = LoggerFactory.getLogger(DuckDbAdapter.class);</span>
+    private static final long LISTENER_READY_POLL_MILLIS = 5L;
 
     private final ThreadLocal&lt;Connection&gt; threadConn;
     private final ExecutorService ioPool;
@@ -521,22 +521,16 @@ public final class DuckDbAdapter {
                     &quot;Flight listener readiness timeout must be positive: &quot; + timeoutMillis);
         }
 
-<span class="fc" id="L524">        Semaphore stateChanged = new Semaphore(0);</span>
-<span class="fc" id="L525">        Runnable stateChangeHandler = stateChanged::release;</span>
-<span class="fc" id="L526">        listener.setOnReadyHandler(stateChangeHandler);</span>
-<span class="fc" id="L527">        listener.setOnCancelHandler(stateChangeHandler);</span>
-
-<span class="fc" id="L529">        long deadlineNanos = System.nanoTime()</span>
-<span class="fc" id="L530">                + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);</span>
-<span class="fc bfc" id="L531" title="All 4 branches covered.">        while (!listener.isCancelled() &amp;&amp; !listener.isReady()) {</span>
-<span class="fc" id="L532">            long remainingNanos = deadlineNanos - System.nanoTime();</span>
-<span class="pc bpc" id="L533" title="1 of 2 branches missed.">            if (remainingNanos &lt;= 0</span>
-<span class="fc bfc" id="L534" title="All 2 branches covered.">                    || !stateChanged.tryAcquire(remainingNanos, TimeUnit.NANOSECONDS)) {</span>
-<span class="fc" id="L535">                LOGGER.warn(&quot;Listener readiness timeout after {}ms&quot;, timeoutMillis);</span>
-<span class="fc" id="L536">                return false;</span>
+<span class="fc" id="L524">        long deadlineNanos = System.nanoTime()</span>
+<span class="fc" id="L525">                + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);</span>
+<span class="fc bfc" id="L526" title="All 4 branches covered.">        while (!listener.isCancelled() &amp;&amp; !listener.isReady()) {</span>
+<span class="fc bfc" id="L527" title="All 2 branches covered.">            if (System.nanoTime() &gt;= deadlineNanos) {</span>
+<span class="fc" id="L528">                LOGGER.warn(&quot;Listener readiness timeout after {}ms&quot;, timeoutMillis);</span>
+<span class="fc" id="L529">                return false;</span>
             }
-<span class="fc" id="L538">        }</span>
-<span class="pc bpc" id="L539" title="1 of 4 branches missed.">        return !listener.isCancelled() &amp;&amp; listener.isReady();</span>
+<span class="fc" id="L531">            Thread.sleep(LISTENER_READY_POLL_MILLIS);</span>
+        }
+<span class="pc bpc" id="L533" title="1 of 4 branches missed.">        return !listener.isCancelled() &amp;&amp; listener.isReady();</span>
     }
 
     /**
@@ -547,13 +541,13 @@ public final class DuckDbAdapter {
      */
     @SuppressWarnings(&quot;unchecked&quot;)
     private static Object minOf(Object a, Object b) {
-<span class="nc bnc" id="L550" title="All 2 branches missed.">        if (a == null) {</span>
-<span class="nc" id="L551">            return b;</span>
+<span class="nc bnc" id="L544" title="All 2 branches missed.">        if (a == null) {</span>
+<span class="nc" id="L545">            return b;</span>
         }
-<span class="nc bnc" id="L553" title="All 2 branches missed.">        if (b == null) {</span>
-<span class="nc" id="L554">            return a;</span>
+<span class="nc bnc" id="L547" title="All 2 branches missed.">        if (b == null) {</span>
+<span class="nc" id="L548">            return a;</span>
         }
-<span class="nc bnc" id="L556" title="All 2 branches missed.">        return ((Comparable&lt;Object&gt;) a).compareTo(b) &lt;= 0 ? a : b;</span>
+<span class="nc bnc" id="L550" title="All 2 branches missed.">        return ((Comparable&lt;Object&gt;) a).compareTo(b) &lt;= 0 ? a : b;</span>
     }
 
     /**
@@ -564,13 +558,13 @@ public final class DuckDbAdapter {
      */
     @SuppressWarnings(&quot;unchecked&quot;)
     private static Object maxOf(Object a, Object b) {
-<span class="nc bnc" id="L567" title="All 2 branches missed.">        if (a == null) {</span>
-<span class="nc" id="L568">            return b;</span>
+<span class="nc bnc" id="L561" title="All 2 branches missed.">        if (a == null) {</span>
+<span class="nc" id="L562">            return b;</span>
         }
-<span class="nc bnc" id="L570" title="All 2 branches missed.">        if (b == null) {</span>
-<span class="nc" id="L571">            return a;</span>
+<span class="nc bnc" id="L564" title="All 2 branches missed.">        if (b == null) {</span>
+<span class="nc" id="L565">            return a;</span>
         }
-<span class="nc bnc" id="L573" title="All 2 branches missed.">        return ((Comparable&lt;Object&gt;) a).compareTo(b) &gt;= 0 ? a : b;</span>
+<span class="nc bnc" id="L567" title="All 2 branches missed.">        return ((Comparable&lt;Object&gt;) a).compareTo(b) &gt;= 0 ? a : b;</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>
