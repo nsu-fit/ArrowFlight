@@ -520,18 +520,22 @@ public final class DuckDbAdapter {
     public static boolean awaitListenerReady(
             org.apache.arrow.flight.FlightProducer.ServerStreamListener listener)
             throws InterruptedException {
-<span class="nc bnc" id="L523" title="All 2 branches missed.">        if (listener.isCancelled()) return false;</span>
-<span class="nc bnc" id="L524" title="All 2 branches missed.">        if (listener.isReady()) return true;</span>
-
-<span class="nc" id="L526">        CountDownLatch readyLatch = new CountDownLatch(1);</span>
-<span class="nc" id="L527">        listener.setOnReadyHandler(readyLatch::countDown);</span>
-
-<span class="nc" id="L529">        long timeout = 60_000;</span>
-<span class="nc bnc" id="L530" title="All 2 branches missed.">        if (!readyLatch.await(timeout, TimeUnit.MILLISECONDS)) {</span>
-<span class="nc" id="L531">            LOGGER.warn(&quot;Listener readiness timeout after {}ms&quot;, timeout);</span>
-<span class="nc" id="L532">            return false;</span>
+<span class="nc bnc" id="L523" title="All 2 branches missed.">        if (listener.isCancelled()) {</span>
+<span class="nc" id="L524">            return false;</span>
         }
-<span class="nc bnc" id="L534" title="All 2 branches missed.">        return !listener.isCancelled();</span>
+<span class="nc bnc" id="L526" title="All 2 branches missed.">        if (listener.isReady()) {</span>
+<span class="nc" id="L527">            return true;</span>
+        }
+
+<span class="nc" id="L530">        CountDownLatch readyLatch = new CountDownLatch(1);</span>
+<span class="nc" id="L531">        listener.setOnReadyHandler(readyLatch::countDown);</span>
+
+<span class="nc" id="L533">        long timeout = 60_000;</span>
+<span class="nc bnc" id="L534" title="All 2 branches missed.">        if (!readyLatch.await(timeout, TimeUnit.MILLISECONDS)) {</span>
+<span class="nc" id="L535">            LOGGER.warn(&quot;Listener readiness timeout after {}ms&quot;, timeout);</span>
+<span class="nc" id="L536">            return false;</span>
+        }
+<span class="nc bnc" id="L538" title="All 2 branches missed.">        return !listener.isCancelled();</span>
     }
 
     /**
@@ -544,17 +548,17 @@ public final class DuckDbAdapter {
      */
     public static void copyRows(VectorSchemaRoot sourceRoot, VectorSchemaRoot targetRoot,
             int sourceOffset, int rowCount) {
-<span class="nc" id="L547">        targetRoot.clear();</span>
-<span class="nc bnc" id="L548" title="All 2 branches missed.">        for (int column = 0; column &lt; sourceRoot.getFieldVectors().size(); column++) {</span>
-<span class="nc" id="L549">            ValueVector sourceVector = sourceRoot.getVector(column);</span>
-<span class="nc" id="L550">            ValueVector targetVector = targetRoot.getVector(column);</span>
-<span class="nc bnc" id="L551" title="All 2 branches missed.">            for (int row = 0; row &lt; rowCount; row++) {</span>
-<span class="nc" id="L552">                targetVector.copyFromSafe(sourceOffset + row, row, sourceVector);</span>
+<span class="nc" id="L551">        targetRoot.clear();</span>
+<span class="nc bnc" id="L552" title="All 2 branches missed.">        for (int column = 0; column &lt; sourceRoot.getFieldVectors().size(); column++) {</span>
+<span class="nc" id="L553">            ValueVector sourceVector = sourceRoot.getVector(column);</span>
+<span class="nc" id="L554">            ValueVector targetVector = targetRoot.getVector(column);</span>
+<span class="nc bnc" id="L555" title="All 2 branches missed.">            for (int row = 0; row &lt; rowCount; row++) {</span>
+<span class="nc" id="L556">                targetVector.copyFromSafe(sourceOffset + row, row, sourceVector);</span>
             }
-<span class="nc" id="L554">            targetVector.setValueCount(rowCount);</span>
+<span class="nc" id="L558">            targetVector.setValueCount(rowCount);</span>
         }
-<span class="nc" id="L556">        targetRoot.setRowCount(rowCount);</span>
-<span class="nc" id="L557">    }</span>
+<span class="nc" id="L560">        targetRoot.setRowCount(rowCount);</span>
+<span class="nc" id="L561">    }</span>
 
     /**
      * Return minimum of two comparable values
@@ -564,13 +568,13 @@ public final class DuckDbAdapter {
      */
     @SuppressWarnings(&quot;unchecked&quot;)
     private static Object minOf(Object a, Object b) {
-<span class="nc bnc" id="L567" title="All 2 branches missed.">        if (a == null) {</span>
-<span class="nc" id="L568">            return b;</span>
+<span class="nc bnc" id="L571" title="All 2 branches missed.">        if (a == null) {</span>
+<span class="nc" id="L572">            return b;</span>
         }
-<span class="nc bnc" id="L570" title="All 2 branches missed.">        if (b == null) {</span>
-<span class="nc" id="L571">            return a;</span>
+<span class="nc bnc" id="L574" title="All 2 branches missed.">        if (b == null) {</span>
+<span class="nc" id="L575">            return a;</span>
         }
-<span class="nc bnc" id="L573" title="All 2 branches missed.">        return ((Comparable&lt;Object&gt;) a).compareTo(b) &lt;= 0 ? a : b;</span>
+<span class="nc bnc" id="L577" title="All 2 branches missed.">        return ((Comparable&lt;Object&gt;) a).compareTo(b) &lt;= 0 ? a : b;</span>
     }
 
     /**
@@ -581,13 +585,13 @@ public final class DuckDbAdapter {
      */
     @SuppressWarnings(&quot;unchecked&quot;)
     private static Object maxOf(Object a, Object b) {
-<span class="nc bnc" id="L584" title="All 2 branches missed.">        if (a == null) {</span>
-<span class="nc" id="L585">            return b;</span>
+<span class="nc bnc" id="L588" title="All 2 branches missed.">        if (a == null) {</span>
+<span class="nc" id="L589">            return b;</span>
         }
-<span class="nc bnc" id="L587" title="All 2 branches missed.">        if (b == null) {</span>
-<span class="nc" id="L588">            return a;</span>
+<span class="nc bnc" id="L591" title="All 2 branches missed.">        if (b == null) {</span>
+<span class="nc" id="L592">            return a;</span>
         }
-<span class="nc bnc" id="L590" title="All 2 branches missed.">        return ((Comparable&lt;Object&gt;) a).compareTo(b) &gt;= 0 ? a : b;</span>
+<span class="nc bnc" id="L594" title="All 2 branches missed.">        return ((Comparable&lt;Object&gt;) a).compareTo(b) &gt;= 0 ? a : b;</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>
