@@ -55,15 +55,16 @@ coverage:
   stage: coverage
   script:
     - mvn clean verify -B -Dmaven.test.failure.ignore=true
-    - python3 -c "
-import xml.etree.ElementTree as ET
-r = ET.parse('target/site/jacoco/jacoco.xml').getroot()
-c = r.find('.//counter[@type=\"INSTRUCTION\"]')
-covered = int(c.get('covered'))
-missed = int(c.get('missed'))
-pct = covered / (covered + missed) * 100
-print(f'JaCoCo coverage: {pct:.1f}%')
-"
+    - |
+      python3 <<'PYEOF'
+      import xml.etree.ElementTree as ET
+      r = ET.parse('target/site/jacoco/jacoco.xml').getroot()
+      c = r.find('.//counter[@type="INSTRUCTION"]')
+      covered = int(c.get('covered'))
+      missed = int(c.get('missed'))
+      pct = covered / (covered + missed) * 100
+      print(f'JaCoCo coverage: {pct:.1f}%')
+      PYEOF
   allow_failure: true
   artifacts:
     paths:
