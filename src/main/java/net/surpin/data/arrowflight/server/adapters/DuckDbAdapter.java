@@ -40,6 +40,7 @@ public final class DuckDbAdapter {
 
     private final ThreadLocal<Connection> threadConn;
     private final ExecutorService ioPool;
+    
     private final int batchSize;
     private final int duckDbGroups;
     private final AppConfig appConfig;
