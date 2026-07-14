@@ -165,4 +165,22 @@ class FilterConverterTest {
                 "\"id\" = 0", List.of(CREATE_TABLE));
         assertTrue(buf.isDirect(), "ByteBuffer must be direct for Arrow native use");
     }
+
+    // ── warmUp ────────────────────────────────────────────────────────────
+
+    @Test
+    void warmUpEmptyListDoesNotThrow() {
+        assertDoesNotThrow(() -> FilterConverter.warmUp(List.of()));
+    }
+
+    @Test
+    void warmUpWithCreateTableDoesNotThrow() {
+        assertDoesNotThrow(() -> FilterConverter.warmUp(List.of(CREATE_TABLE)));
+    }
+
+    @Test
+    void warmUpWithMultipleTablesDoesNotThrow() {
+        String other = "CREATE TABLE other(\"x\" INTEGER)";
+        assertDoesNotThrow(() -> FilterConverter.warmUp(List.of(CREATE_TABLE, other)));
+    }
 }

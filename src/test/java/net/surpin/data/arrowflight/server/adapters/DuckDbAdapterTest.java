@@ -198,4 +198,91 @@ class DuckDbAdapterTest {
         assertTrue(sql.contains("count(*)"), "Got: " + sql);
         assertTrue(sql.contains("WHERE"), "Got: " + sql);
     }
+
+    @Test
+    void buildSelectSqlWithCountColumn() {
+        ParquetQueryParser pq = ParquetQueryParser.parse(
+                "SELECT count(id) FROM s.t");
+        String sql = DuckDbAdapter.buildSelectSql(pq, "t0");
+        assertTrue(sql.contains("count(\"id\")"), "Got: " + sql);
+    }
+
+    @Test
+    void buildSelectSqlWithSum() {
+        ParquetQueryParser pq = ParquetQueryParser.parse(
+                "SELECT sum(amount) FROM s.t");
+        String sql = DuckDbAdapter.buildSelectSql(pq, "t0");
+        assertTrue(sql.contains("sum(\"amount\")"), "Got: " + sql);
+    }
+
+    @Test
+    void buildSelectSqlWithMin() {
+        ParquetQueryParser pq = ParquetQueryParser.parse(
+                "SELECT min(id) FROM s.t");
+        String sql = DuckDbAdapter.buildSelectSql(pq, "t0");
+        assertTrue(sql.contains("min(\"id\")"), "Got: " + sql);
+    }
+
+    @Test
+    void buildSelectSqlWithMax() {
+        ParquetQueryParser pq = ParquetQueryParser.parse(
+                "SELECT max(id) FROM s.t");
+        String sql = DuckDbAdapter.buildSelectSql(pq, "t0");
+        assertTrue(sql.contains("max(\"id\")"), "Got: " + sql);
+    }
+
+    // ── appendSelectExpr ──────────────────────────────────────────────────
+
+    @Test
+    void appendSelectExprCountStar() {
+        StringBuilder sb = new StringBuilder();
+        ParquetQueryParser.SelectExpr expr = parseSingleExpr("SELECT count(*) FROM s.t");
+        DuckDbAdapter.appendSelectExpr(sb, expr);
+        assertTrue(sb.toString().startsWith("count(*)"),
+                "Got: " + sb);
+    }
+
+    @Test
+    void appendSelectExprCountColumn() {
+        StringBuilder sb = new StringBuilder();
+        ParquetQueryParser.SelectExpr expr = parseSingleExpr("SELECT count(id) FROM s.t");
+        DuckDbAdapter.appendSelectExpr(sb, expr);
+        assertTrue(sb.toString().contains("count(\"id\")"), "Got: " + sb);
+    }
+
+    @Test
+    void appendSelectExprSum() {
+        StringBuilder sb = new StringBuilder();
+        ParquetQueryParser.SelectExpr expr = parseSingleExpr("SELECT sum(amount) FROM s.t");
+        DuckDbAdapter.appendSelectExpr(sb, expr);
+        assertTrue(sb.toString().contains("sum(\"amount\")"), "Got: " + sb);
+    }
+
+    @Test
+    void appendSelectExprMin() {
+        StringBuilder sb = new StringBuilder();
+        ParquetQueryParser.SelectExpr expr = parseSingleExpr("SELECT min(price) FROM s.t");
+        DuckDbAdapter.appendSelectExpr(sb, expr);
+        assertTrue(sb.toString().contains("min(\"price\")"), "Got: " + sb);
+    }
+
+    @Test
+    void appendSelectExprMax() {
+        StringBuilder sb = new StringBuilder();
+        ParquetQueryParser.SelectExpr expr = parseSingleExpr("SELECT max(score) FROM s.t");
+        DuckDbAdapter.appendSelectExpr(sb, expr);
+        assertTrue(sb.toString().contains("max(\"score\")"), "Got: " + sb);
+    }
+
+    @Test
+    void appendSelectExprColumn() {
+        StringBuilder sb = new StringBuilder();
+        ParquetQueryParser.SelectExpr expr = parseSingleExpr("SELECT col_name FROM s.t");
+        DuckDbAdapter.appendSelectExpr(sb, expr);
+        assertTrue(sb.toString().contains("\"col_name\""), "Got: " + sb);
+    }
+
+    private static ParquetQueryParser.SelectExpr parseSingleExpr(String sql) {
+        return ParquetQueryParser.parse(sql).selectExprs.get(0);
+    }
 }
