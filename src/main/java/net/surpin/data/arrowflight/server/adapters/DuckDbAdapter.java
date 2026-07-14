@@ -83,13 +83,18 @@ public final class DuckDbAdapter {
             if (appConfig.duckDbAllowUnsignedExtensions()) {
                 s.execute("SET allow_unsigned_extensions = true");
             }
-            if (appConfig.duckDbHdfsExtension() != null) {
-                s.execute("LOAD " + sqlStringLiteral(appConfig.duckDbHdfsExtension()));
+            String hdfsExtension = appConfig.duckDbHdfsExtension();
+            if (hdfsExtension != null) {
+                s.execute("LOAD " + sqlStringLiteral(hdfsExtension));
+                setOptionIfPresent(s, "hdfs_default_namenode",
+                        appConfig.duckDbHdfsDefaultNamenode());
+                setOptionIfPresent(s, "hdfs_ha_namenodes",
+                        appConfig.duckDbHdfsHaNamenodes());
+                setOptionIfPresent(s, "hdfs_shortcircuit",
+                        appConfig.duckDbHdfsShortcircuit());
+                setOptionIfPresent(s, "hdfs_domain_socket_path",
+                        appConfig.duckDbHdfsDomainSocketPath());
             }
-            setOptionIfPresent(s, "hdfs_default_namenode", appConfig.duckDbHdfsDefaultNamenode());
-            setOptionIfPresent(s, "hdfs_ha_namenodes", appConfig.duckDbHdfsHaNamenodes());
-            setOptionIfPresent(s, "hdfs_shortcircuit", appConfig.duckDbHdfsShortcircuit());
-            setOptionIfPresent(s, "hdfs_domain_socket_path", appConfig.duckDbHdfsDomainSocketPath());
         }
     }
 
