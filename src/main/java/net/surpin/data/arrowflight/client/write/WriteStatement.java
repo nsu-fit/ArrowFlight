@@ -39,7 +39,7 @@ public class WriteStatement implements Serializable {
      * Convert function with four arguments
      */
     @FunctionalInterface
-    private interface Convert<A, B, C, D, R> {
+    interface Convert<A, B, C, D, R> {
         R apply(A a, B b, C c, D d);
     }
     //the values variable
@@ -337,7 +337,7 @@ public class WriteStatement implements Serializable {
     }
 
     //conversion - Number to DECIMAL256
-    private static final Convert<Object, Field, DataType, String, String> numberToDecimal256 = (o, f, t, n) -> String.format("cast(%s as %s)", (o == null) ? "null" : o.toString(), n);
+    static final Convert<Object, Field, DataType, String, String> numberToDecimal256 = (o, f, t, n) -> String.format("cast(%s as %s)", (o == null) ? "null" : o.toString(), n);
     //conversion - Number to DECIMAL
     private static final Convert<Object, Field, DataType, String, String> numberToDecimal = (o, f, t, n) -> String.format("cast(%s as %s)", (o == null) ? "null" : o.toString(), n);
     //conversion - Number to FLOAT8
@@ -361,7 +361,7 @@ public class WriteStatement implements Serializable {
     //conversion - Number to TINYINT
     private static final Convert<Object, Field, DataType, String, String> numberToTinyint = (o, f, t, n) -> String.format("cast(%s as %s)", (o == null) ? "null" : o.toString(), n);
     //conversion - Primitive to VARCHAR
-    private static final Convert<Object, Field, DataType, String, String> primitiveToVarchar = (o, f, t, n) -> (o == null) ? String.format("cast(null as %s)", n) : String.format("'%s'", o.toString().replace("'", "''"));
+    static final Convert<Object, Field, DataType, String, String> primitiveToVarchar = (o, f, t, n) -> (o == null) ? String.format("cast(null as %s)", n) : String.format("'%s'", o.toString().replace("'", "''"));
     //conversion - Primitive to LARGEVARCHAR
     private static final Convert<Object, Field, DataType, String, String> primitiveToLargevarchar = (o, f, t, n) -> (o == null) ? String.format("cast(null as %s)", n) : String.format("'%s'", o.toString().replace("'", "''"));
     //conversion - Complex to VARCHAR
@@ -369,7 +369,7 @@ public class WriteStatement implements Serializable {
     //conversion - Complex to LARGEVARCHAR
     private static final Convert<Object, Field, DataType, String, String> complexToLargevarchar = (o, f, t, n) -> (o == null) ? String.format("cast(null as %s)", n) : String.format("'%s'", WriteStatement.toJson.apply(o, t).replace("'", "''"));
     //conversion - String to TIMESEC
-    private static final Convert<Object, Field, DataType, String, String> stringToTimeSec = (o, f, t, n) -> String.format("cast('%s' as %s)", (o == null) ? "null" : LocalTime.parse((o instanceof String) ? (String) o : o.toString()).format(DateTimeFormatter.ofPattern("HH:mm:ss")), n);
+    static final Convert<Object, Field, DataType, String, String> stringToTimeSec = (o, f, t, n) -> String.format("cast('%s' as %s)", (o == null) ? "null" : LocalTime.parse((o instanceof String) ? (String) o : o.toString()).format(DateTimeFormatter.ofPattern("HH:mm:ss")), n);
     //conversion - Timestamp to TIMESEC
     private static final Convert<Object, Field, DataType, String, String> timestampToTimeSec = (o, f, t, n) -> String.format("cast('%s' as %s)", (o == null) ? "null" : DateTimeUtils.microsToLocalDateTime((o instanceof Number) ? (long) o : Long.parseLong(o.toString())).format(DateTimeFormatter.ofPattern("HH:mm:ss")), n);
     //conversion - String to TIMENANO
@@ -393,11 +393,11 @@ public class WriteStatement implements Serializable {
     //conversion - Date to DateDay
     private static final Convert<Object, Field, DataType, String, String> dateToDateDay = (o, f, t, n) -> String.format("cast('%s' as %s)", (o == null) ? "null" : DateTimeUtils.daysToLocalDate((o instanceof Number) ? (int) o : Integer.parseInt(o.toString())).format(DateTimeFormatter.ofPattern("yyyy-MM-dd")), n);
     //conversion - Boolean to BIT
-    private static final Convert<Object, Field, DataType, String, String> booleanToBit = (o, f, t, n) -> String.format("cast(%s as %s)", (o == null) ? "null" : o.toString(), n);
+    static final Convert<Object, Field, DataType, String, String> booleanToBit = (o, f, t, n) -> String.format("cast(%s as %s)", (o == null) ? "null" : o.toString(), n);
     //conversion - Number to BIT
-    private static final Convert<Object, Field, DataType, String, String> numberToBit = (o, f, t, n) -> String.format("cast(%s as %s)", (o == null) ? "null" : (((int) o) != 0) ? "true" : "false", n);
+    static final Convert<Object, Field, DataType, String, String> numberToBit = (o, f, t, n) -> String.format("cast(%s as %s)", (o == null) ? "null" : (((int) o) != 0) ? "true" : "false", n);
     //conversion - String to BIT
-    private static final Convert<Object, Field, DataType, String, String> stringToBit = (o, f, t, n) -> String.format("cast(%s as %s)", (o == null) ? "null" : o.toString().equalsIgnoreCase("true") ? "true" : "false", n);
+    static final Convert<Object, Field, DataType, String, String> stringToBit = (o, f, t, n) -> String.format("cast(%s as %s)", (o == null) ? "null" : o.toString().equalsIgnoreCase("true") ? "true" : "false", n);
     //conversion - Timestamp to TIMESTAMPMILLI
     private static final Convert<Object, Field, DataType, String, String> timestampToTimestampMilli = (o, f, t, n) -> String.format("cast('%s' as %s)", (o == null) ? "null" : DateTimeUtils.microsToLocalDateTime((o instanceof Number) ? (long) o : Long.parseLong(o.toString())).format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS")), n);
     //conversion - Date to TIMESTAMPMILLI

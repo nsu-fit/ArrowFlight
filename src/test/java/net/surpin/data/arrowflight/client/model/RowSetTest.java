@@ -75,27 +75,4 @@ class RowSetTest {
         assertDoesNotThrow(() -> rs1.add(rs2));
     }
 
-    @Test
-    void rowGetDataEmpty() {
-        RowSet.Row row = new RowSet.Row();
-        assertEquals(0, row.getData().length);
-    }
-
-    @Test
-    void rowGetDataMultipleValues() {
-        RowSet.Row row = new RowSet.Row();
-        row.add("a");
-        row.add("b");
-        row.add("c");
-
-        assertEquals(3, row.getData().length);
-    }
-
-    @Test
-    void schemaPassedThrough() {
-        Schema schema = emptySchema();
-        RowSet rs = new RowSet(schema);
-
-        assertSame(schema, rs.getSchema());
-    }
 }

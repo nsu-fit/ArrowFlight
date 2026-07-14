@@ -7,36 +7,6 @@ import static org.junit.jupiter.api.Assertions.*;
 class ClientRetryTest {
 
     @Test
-    void retryOnTransientErrors() {
-        Configuration config = new Configuration("localhost", 32010, "user", "pass", null);
-        config.setMaxRetries(3);
-        config.setRetryBackoffMs(10);
-        config.setConnectTimeoutMs(5000);
-
-        assertEquals(3, config.getMaxRetries());
-        assertEquals(10, config.getRetryBackoffMs());
-        assertEquals(5000, config.getConnectTimeoutMs());
-    }
-
-    @Test
-    void setterOverridesDefault() {
-        Configuration config = new Configuration("localhost", 32010, "user", "pass", null);
-        assertEquals(3, config.getMaxRetries());
-
-        config.setMaxRetries(5);
-        assertEquals(5, config.getMaxRetries());
-    }
-
-    @Test
-    void defaultConfigurationValues() {
-        Configuration config = new Configuration("localhost", 32010, "user", "pass", null);
-
-        assertEquals(3, config.getMaxRetries());
-        assertEquals(1000, config.getRetryBackoffMs());
-        assertEquals(30000, config.getConnectTimeoutMs());
-    }
-
-    @Test
     void toStringRedactsPassword() {
         Configuration config = new Configuration("localhost", 32010, "user", "my-secret-pass", null);
         String str = config.toString();

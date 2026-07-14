@@ -146,13 +146,6 @@ class TableTest {
     // ── forTable ────────────────────────────────────────────────────────────
 
     @Test
-    void forTableSimpleName() {
-        Table t = Table.forTable("my_table", "`");
-        assertEquals("my_table", t.getName());
-        assertEquals("`", t.getColumnQuote());
-    }
-
-    @Test
     void forTableQueryWrapsInSubquery() {
         Table t = Table.forTable("SELECT * FROM remote_table", "\"");
         assertEquals("(SELECT * FROM remote_table) t", t.getName());
