@@ -60,16 +60,31 @@ public final class AceroAdapter {
     public void scanBatches(BufferAllocator allocator, String query,
             ParquetQueryParser parsedQuery, List<String> parquetUris,
             FlightProducer.ServerStreamListener listener, boolean startListener) throws Exception {
+        scanBatches(allocator, query, parsedQuery, parquetUris, null, listener, startListener);
+    }
+
+    /**
+     * Scans Parquet files with an optional Substrait filter.
+     *
+     * @param allocator       Arrow allocator
+     * @param query           original SQL query for logging
+     * @param parsedQuery     parsed query
+     * @param parquetUris     Parquet file URIs
+     * @param filterBytes     serialized Substrait filter, or null
+     * @param listener        Flight stream listener
+     * @param startListener   whether to start the listener
+     * @throws Exception on scan failure
+     */
+    public void scanBatches(BufferAllocator allocator, String query,
+            ParquetQueryParser parsedQuery, List<String> parquetUris, byte[] filterBytes,
+            FlightProducer.ServerStreamListener listener, boolean startListener) throws Exception {
         List<String> selectedColumns = parsedQuery.columns;
 
         try (FileSystemDatasetFactory factory = new FileSystemDatasetFactory(
                 allocator, NativeMemoryPool.getDefault(), FileFormat.PARQUET,
                 parquetUris.toArray(new String[0]));
              Dataset dataset = factory.finish();
-             Scanner scanner = dataset.newScan(new ScanOptions.Builder(batchSize)
-                     .columns(selectedColumns.isEmpty() ? Optional.empty()
-                             : Optional.of(selectedColumns.toArray(new String[0])))
-                     .build());
+             Scanner scanner = dataset.newScan(scanOptions(selectedColumns, filterBytes));
              ArrowReader reader = scanner.scanBatches()) {
 
             Schema aceroSchema = scanner.schema();
@@ -98,6 +113,18 @@ public final class AceroAdapter {
                 vsr.clear();
             }
         }
+    }
+
+    private ScanOptions scanOptions(List<String> selectedColumns, byte[] filterBytes) {
+        ScanOptions.Builder builder = new ScanOptions.Builder(batchSize)
+                .columns(selectedColumns.isEmpty() ? Optional.empty()
+                        : Optional.of(selectedColumns.toArray(new String[0])));
+        if (filterBytes != null) {
+            ByteBuffer direct = ByteBuffer.allocateDirect(filterBytes.length);
+            direct.put(filterBytes).flip();
+            builder.substraitFilter(direct);
+        }
+        return builder.build();
     }
 
     /**

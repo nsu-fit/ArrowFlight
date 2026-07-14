@@ -117,11 +117,23 @@ public final class ExecutionService {
         List<String> resolvedUris = resolveUris(fileUris);
 
         if (parsedQuery.hasAggregation) {
-            executeAggregation(allocator, parsedQuery, parquetFiles, resolvedUris, listener, startListener);
+            executeAggregation(allocator, parsedQuery, parquetFiles, resolvedUris,
+                    fileUris, listener, startListener);
             return;
         }
 
         if (parsedQuery.filter != null && !parsedQuery.filter.isBlank()) {
+            byte[] filterBytes = filterBuilder.apply(parsedQuery);
+            if (isHdfsData() && filterBytes != null) {
+                aceroAdapter.scanBatches(allocator, query, parsedQuery,
+                        resolvedUris, filterBytes, listener, startListener);
+                return;
+            }
+            if (isHdfsData()) {
+                streamHdfsFilterViaArrow(allocator, parsedQuery, resolvedUris,
+                        listener, startListener);
+                return;
+            }
             String duckSql = DuckDbAdapter.buildSelectSql(parsedQuery,
                     DuckDbAdapter.readParquetFromClause(ducksDbPaths(resolvedUris)));
             duckDbAdapter.streamSql(allocator, duckSql, listener, startListener);
@@ -132,6 +144,38 @@ public final class ExecutionService {
                 resolvedUris, listener, startListener);
     }
 
+    private boolean isHdfsData() {
+        return "hdfs".equalsIgnoreCase(parquetAdapter.fileSystem().getUri().getScheme());
+    }
+
+    private void streamHdfsFilterViaArrow(BufferAllocator allocator, ParquetQueryParser pq,
+            List<String> resolvedUris, FlightProducer.ServerStreamListener listener,
+            boolean startListener) throws Exception {
+        try (BufferAllocator child = allocator.newChildAllocator(
+                "hdfs-filter", 0, Long.MAX_VALUE)) {
+            Connection conn = duckDbAdapter.connection();
+            DuckDBConnection duckConn = conn.unwrap(DuckDBConnection.class);
+            aceroAdapter.exportToDuckDb(child, resolvedUris, null, buildProjection(pq), duckConn);
+            String duckSql = DuckDbAdapter.buildSelectSql(
+                    pq, arrowStreamsFromClause(resolvedUris.size()));
+            duckDbAdapter.streamSql(allocator, duckSql, listener, startListener);
+        }
+    }
+
+    private static String arrowStreamsFromClause(int count) {
+        if (count == 1) {
+            return "\"t0\"";
+        }
+        StringBuilder result = new StringBuilder("(");
+        for (int i = 0; i < count; i++) {
+            if (i > 0) {
+                result.append(" UNION ALL ");
+            }
+            result.append("SELECT * FROM \"t").append(i).append("\"");
+        }
+        return result.append(')').toString();
+    }
+
     /**
      * Executes aggregation queries via DuckDB or footer-stats fast paths.
      *
@@ -139,12 +183,13 @@ public final class ExecutionService {
      * @param pq            parsed query
      * @param parquetFiles  resolved Parquet file paths
      * @param resolvedUris  resolved file URIs
+     * @param fileUris      relative file paths
      * @param listener      Flight stream listener
      * @param startListener whether to call listener.start()
      * @throws Exception on execution failure
      */
     private void executeAggregation(BufferAllocator allocator, ParquetQueryParser pq,
-            List<Path> parquetFiles, List<String> resolvedUris,
+            List<Path> parquetFiles, List<String> resolvedUris, String[] fileUris,
             FlightProducer.ServerStreamListener listener,
             boolean startListener) throws Exception {
 
@@ -217,6 +262,11 @@ public final class ExecutionService {
                 return;
             }
             LOGGER.debug("MIN/MAX stats missing; falling back to DuckDB");
+        }
+
+        if (isHdfsData()) {
+            parallelAggregate(allocator, pq, fileUris, listener, startListener);
+            return;
         }
 
         String duckSql = DuckDbAdapter.buildDuckSqlWithFilter(pq,

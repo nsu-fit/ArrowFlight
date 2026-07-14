@@ -1,5 +1,4 @@
 import os
-from pathlib import Path
 
 from pyspark.sql import SparkSession
 
@@ -14,30 +13,31 @@ def sql_string(value):
     return "'" + str(value).replace("'", "''") + "'"
 
 
-def list_exported_tables(roots, schema):
-    tables_by_root = {}
-    for root in roots:
-        schema_dir = root / schema
-        tables = set()
-        if schema_dir.exists():
-            tables.update(
-                path.name
-                for path in schema_dir.iterdir()
-                if path.is_dir() and any(path.rglob("*.parquet"))
-            )
-        tables_by_root[root] = tables
+def hdfs_location(root, *parts):
+    suffix = "/".join(str(part).strip("/") for part in parts)
+    return f"{root.rstrip('/')}/{suffix}"
 
-    all_tables = set().union(*tables_by_root.values()) if tables_by_root else set()
-    missing = {
-        str(root): sorted(all_tables - tables)
-        for root, tables in tables_by_root.items()
-        if all_tables - tables
-    }
-    if missing:
-        raise RuntimeError(
-            f"Incomplete node-local Parquet layout for schema '{schema}': {missing}"
-        )
-    return sorted(all_tables)
+
+def list_hdfs_tables(spark, root, schema):
+    schema_path = spark._jvm.org.apache.hadoop.fs.Path(hdfs_location(root, schema))
+    filesystem = schema_path.getFileSystem(spark._jsc.hadoopConfiguration())
+    if not filesystem.exists(schema_path):
+        return []
+
+    tables = []
+    for status in filesystem.listStatus(schema_path):
+        if not status.isDirectory():
+            continue
+        files = filesystem.listFiles(status.getPath(), True)
+        has_parquet = False
+        while files.hasNext():
+            file = files.next()
+            if file.isFile() and file.getPath().getName().lower().endswith(".parquet"):
+                has_parquet = True
+                break
+        if has_parquet:
+            tables.append(status.getPath().getName())
+    return sorted(tables)
 
 
 def create_database(spark, schema):
@@ -75,14 +75,14 @@ def register_flight_tables(spark, publish_schema, source_schema, tables, host, p
         print(f"Registered Spark Flight table {publish_schema}.{table} via flight://{host}:{port}/{source_table}")
 
 
-def register_direct_parquet_tables(spark, publish_schema, source_schema, tables, direct_root):
+def register_direct_parquet_tables(spark, publish_schema, source_schema, tables, hdfs_root):
     if not tables:
-        raise RuntimeError(f"No direct Parquet tables found for schema '{source_schema}' under {direct_root}")
+        raise RuntimeError(f"No HDFS Parquet tables found for schema '{source_schema}' under {hdfs_root}")
 
     create_database(spark, publish_schema)
     for table in tables:
         spark_table = f"{quote_identifier(publish_schema)}.{quote_identifier(table)}"
-        location = direct_root / source_schema / table
+        location = hdfs_location(hdfs_root, source_schema, table)
         spark.sql(f"DROP TABLE IF EXISTS {spark_table}")
         spark.sql(
             f"""
@@ -100,20 +100,12 @@ publish_schema = os.environ.get("SPARK_PUBLISH_SCHEMA") or os.environ.get("BENCH
 publish_mode = os.environ.get("BENCHMARK_PUBLISH_MODE", "flight").lower()
 flight_publish_schema = os.environ.get("FLIGHT_PUBLISH_SCHEMA", f"{source_schema}_flight")
 direct_publish_schema = os.environ.get("DIRECT_PUBLISH_SCHEMA", f"{source_schema}_direct")
-direct_root = Path(os.environ.get("DIRECT_PARQUET_DIR", "/direct-data"))
-server_roots = [
-    Path(item)
-    for item in os.environ.get(
-        "FLIGHT_SERVER_DATA_DIRS",
-        "/server-data/flight-server-1,/server-data/flight-server-2,/server-data/flight-server-3",
-    ).split(",")
-    if item
-]
+hdfs_root = os.environ.get(
+    "HDFS_DATA_DIR",
+    os.environ.get("DIRECT_PARQUET_DIR", "hdfs://hdfs-namenode:8020/bench"),
+)
 flight_host = os.environ.get("FLIGHT_SOURCE_HOST", "flight-server-1")
 flight_port = os.environ.get("FLIGHT_SOURCE_PORT", "32010")
-
-if not server_roots:
-    raise RuntimeError("FLIGHT_SERVER_DATA_DIRS is empty")
 
 spark = (
     SparkSession.builder.appName("BenchBaseSparkTablePublisher")
@@ -122,16 +114,15 @@ spark = (
 )
 spark.sparkContext.setLogLevel(os.environ.get("SPARK_LOG_LEVEL", "WARN"))
 
-flight_tables = list_exported_tables(server_roots, source_schema)
-direct_tables = list_exported_tables([direct_root], source_schema)
+tables = list_hdfs_tables(spark, hdfs_root, source_schema)
 
 if publish_mode == "flight":
-    register_flight_tables(spark, publish_schema, source_schema, flight_tables, flight_host, flight_port)
+    register_flight_tables(spark, publish_schema, source_schema, tables, flight_host, flight_port)
 elif publish_mode == "direct":
-    register_direct_parquet_tables(spark, publish_schema, source_schema, direct_tables, direct_root)
+    register_direct_parquet_tables(spark, publish_schema, source_schema, tables, hdfs_root)
 elif publish_mode == "both":
-    register_flight_tables(spark, flight_publish_schema, source_schema, flight_tables, flight_host, flight_port)
-    register_direct_parquet_tables(spark, direct_publish_schema, source_schema, direct_tables, direct_root)
+    register_flight_tables(spark, flight_publish_schema, source_schema, tables, flight_host, flight_port)
+    register_direct_parquet_tables(spark, direct_publish_schema, source_schema, tables, hdfs_root)
 else:
     raise RuntimeError("BENCHMARK_PUBLISH_MODE must be flight, direct, or both")
 

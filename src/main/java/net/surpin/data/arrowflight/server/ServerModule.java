@@ -43,6 +43,7 @@ public final class ServerModule {
 
     private final String[] hazelcastHosts;
     private final String serverUri;
+    private final String localStorageHost;
     private final Configuration hadoopConfig;
 
     /**
@@ -50,11 +51,14 @@ public final class ServerModule {
      *
      * @param hazelcastHosts cluster seed hosts
      * @param serverUri      this server's URI
+     * @param localStorageHost HDFS DataNode host colocated with this server
      * @param hadoopConfig   Hadoop configuration
      */
-    public ServerModule(String[] hazelcastHosts, String serverUri, Configuration hadoopConfig) {
+    public ServerModule(String[] hazelcastHosts, String serverUri,
+            String localStorageHost, Configuration hadoopConfig) {
         this.hazelcastHosts = hazelcastHosts;
         this.serverUri = serverUri;
+        this.localStorageHost = localStorageHost;
         this.hadoopConfig = hadoopConfig;
     }
 
@@ -137,7 +141,7 @@ public final class ServerModule {
     @Provides
     @Singleton
     ParquetAdapter parquetAdapter(AppConfig config, FileSystem fs) {
-        return new ParquetAdapter(config, fs);
+        return new ParquetAdapter(config, fs, localStorageHost);
     }
 
     /**

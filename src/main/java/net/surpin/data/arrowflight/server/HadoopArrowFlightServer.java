@@ -75,6 +75,7 @@ public class HadoopArrowFlightServer {
                 getArgValue(args, "--port", String.valueOf(config.port())));
         String hosts = getArgValue(args, "--hosts", "0.0.0.0");
         String localhost = getArgValue(args, "--localhost", "localhost");
+        String storageHost = getArgValue(args, "--storage-host", localhost);
         int hazelcastPort = Integer.parseInt(
                 getArgValue(args, "--hazelcast-port", String.valueOf(config.hazelcastPort())));
 
@@ -86,6 +87,7 @@ public class HadoopArrowFlightServer {
         LOGGER.info("Starting Hadoop Arrow Flight SQL server...");
         LOGGER.info("Data Directory: {}", dataDirectory);
         LOGGER.info("Hosts: {}", hosts);
+        LOGGER.info("Local storage host: {}", storageHost);
         LOGGER.info("Port: {}", port);
 
         Configuration hadoopConfig = new Configuration();
@@ -95,7 +97,7 @@ public class HadoopArrowFlightServer {
         component = DaggerServerComponent.builder()
                 .serverModule(new ServerModule(hazelcastHosts,
                         Location.forGrpcInsecure(localhost, port).getUri().toString(),
-                        hadoopConfig))
+                        storageHost, hadoopConfig))
                 .build();
 
         // Wait for cluster nodes (single-node skip)

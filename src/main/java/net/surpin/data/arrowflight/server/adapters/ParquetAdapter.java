@@ -303,9 +303,9 @@ public class ParquetAdapter {
     }
 
     /**
-     * Lists every Parquet file physically visible to this server. Paths are relative
-     * to the server data root so the same ticket can be resolved against the target
-     * node's own local root.
+     * Lists Parquet files with at least one block on this server's colocated storage host.
+     * Paths are relative to the shared data root. For local filesystems, loopback block
+     * locations are mapped to the configured storage host.
      *
      * @return relative Parquet path to file size
      * @throws IOException on file-system access failure
@@ -321,12 +321,21 @@ public class ParquetAdapter {
         RemoteIterator<LocatedFileStatus> files = this.fileSystem.listFiles(root, true);
         while (files.hasNext()) {
             LocatedFileStatus file = files.next();
-            if (file.isFile() && file.getPath().getName().toLowerCase().endsWith(".parquet")) {
+            if (file.isFile()
+                    && file.getPath().getName().toLowerCase().endsWith(".parquet")
+                    && hasLocalBlock(fileLocality(file).keySet(), localhost)) {
                 String relativePath = rootUri.relativize(file.getPath().toUri()).toString();
                 result.put(relativePath, file.getLen());
             }
         }
         return result;
+    }
+
+    static boolean hasLocalBlock(java.util.Set<String> blockHosts, String localHost) {
+        String normalizedLocalHost = HostUtils.normalize(localHost);
+        return blockHosts.stream()
+                .map(HostUtils::normalize)
+                .anyMatch(normalizedLocalHost::equals);
     }
 
     /**

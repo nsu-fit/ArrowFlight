@@ -35,6 +35,21 @@ DEFAULT_HIVE_METASTORE_SHARED_PREFIXES="${SPARK_HIVE_METASTORE_SHARED_PREFIXES:-
 net.surpin.data.arrowflight,flight,org.apache.arrow,io.grpc,io.netty,com.google.protobuf}"
 
 export SPARK_DAEMON_JAVA_OPTS="${SPARK_DAEMON_JAVA_OPTS:-${DEFAULT_SPARK_JAVA_OPTIONS}}"
+export HDFS_BLOCK_SIZE_BYTES="${HDFS_BLOCK_SIZE_BYTES:-1073741824}"
+
+DEFAULT_HADOOP_JAVA_OPTS="${DEFAULT_HADOOP_JAVA_OPTS:-\
+--add-opens=java.base/java.lang=ALL-UNNAMED \
+--add-opens=java.base/java.lang.reflect=ALL-UNNAMED \
+--add-opens=java.base/java.io=ALL-UNNAMED \
+--add-opens=java.base/java.net=ALL-UNNAMED \
+--add-opens=java.base/java.nio=ALL-UNNAMED \
+--add-opens=java.base/java.util=ALL-UNNAMED \
+--add-opens=java.base/java.util.concurrent=ALL-UNNAMED \
+--add-exports=java.base/sun.net.dns=ALL-UNNAMED \
+--add-exports=java.base/sun.net.util=ALL-UNNAMED}"
+export HADOOP_OPTS="${HADOOP_OPTS:-${DEFAULT_HADOOP_JAVA_OPTS}}"
+export HDFS_NAMENODE_OPTS="${HDFS_NAMENODE_OPTS:-${DEFAULT_HADOOP_JAVA_OPTS}}"
+export HDFS_DATANODE_OPTS="${HDFS_DATANODE_OPTS:-${DEFAULT_HADOOP_JAVA_OPTS}}"
 
 wait_for_tcp() {
   local host="$1"
@@ -54,6 +69,58 @@ wait_for_tcp() {
 expose_app_jar_to_spark_driver() {
   export SPARK_CLASSPATH="${APP_JAR}${SPARK_CLASSPATH:+:${SPARK_CLASSPATH}}"
   export SPARK_DIST_CLASSPATH="${APP_JAR}${SPARK_DIST_CLASSPATH:+:${SPARK_DIST_CLASSPATH}}"
+}
+
+hadoop_classpath() {
+  "${HADOOP_HOME}/bin/hadoop" classpath --glob
+}
+
+flight_server_command() {
+  local hadoop_cp
+  hadoop_cp="$(hadoop_classpath)"
+  local java_opts=("${DEFAULT_SERVER_JAVA_OPTS[@]}")
+  if [[ -n "${JAVA_OPTS:-}" ]]; then
+    local extra_java_opts=()
+    read -r -a extra_java_opts <<< "${JAVA_OPTS}"
+    java_opts+=("${extra_java_opts[@]}")
+  fi
+
+  local command=(java "${java_opts[@]}" \
+    -cp "${APP_JAR}:${HADOOP_CONF_DIR}:${hadoop_cp}:${SPARK_HOME}/jars/*" \
+    net.surpin.data.arrowflight.server.HadoopArrowFlightServer \
+    --data-dir "${FLIGHT_DATA_DIR:-/data/parquet}" \
+    --port "${FLIGHT_PORT:-32010}" \
+    --hosts "${FLIGHT_HOSTS:-flight-server-1,flight-server-2,flight-server-3}" \
+    --localhost "${FLIGHT_LOCALHOST:-$(hostname -f)}" \
+    --storage-host "${FLIGHT_LOCAL_STORAGE_HOST:-$(hostname -f)}" \
+    --hazelcast-port "${HAZELCAST_PORT:-5701}" \
+    "$@")
+  if [[ "${FLIGHT_SERVER_EXEC:-false}" == "true" ]]; then
+    exec "${command[@]}"
+  fi
+  "${command[@]}"
+}
+
+wait_for_hdfs_path() {
+  local path="$1"
+  local watched_pid="${2:-}"
+  while ! "${HADOOP_HOME}/bin/hdfs" dfs -test -e "${path}" >/dev/null 2>&1; do
+    if [[ -n "${watched_pid}" ]] && ! kill -0 "${watched_pid}" 2>/dev/null; then
+      echo "HDFS DataNode exited before ${path} became ready" >&2
+      return 1
+    fi
+    sleep 2
+  done
+}
+
+stop_children() {
+  local pid
+  for pid in "$@"; do
+    kill "${pid}" 2>/dev/null || true
+  done
+  for pid in "$@"; do
+    wait "${pid}" 2>/dev/null || true
+  done
 }
 
 spark_submit_common() {
@@ -104,20 +171,47 @@ spark_common_conf=(
 
 case "${mode}" in
   server)
-    java_opts=("${DEFAULT_SERVER_JAVA_OPTS[@]}")
-    if [[ -n "${JAVA_OPTS:-}" ]]; then
-      read -r -a extra_java_opts <<< "${JAVA_OPTS}"
-      java_opts+=("${extra_java_opts[@]}")
+    FLIGHT_SERVER_EXEC=true flight_server_command "$@"
+    ;;
+  hdfs-namenode)
+    mkdir -p /var/lib/hadoop-hdfs/name /var/lib/hadoop-hdfs/tmp
+    if [[ ! -f /var/lib/hadoop-hdfs/name/current/VERSION ]]; then
+      "${HADOOP_HOME}/bin/hdfs" namenode -format -force -nonInteractive
     fi
-    exec java "${java_opts[@]}" \
-      -cp "${APP_JAR}:${SPARK_HOME}/jars/*" \
-      net.surpin.data.arrowflight.server.HadoopArrowFlightServer \
-      --data-dir "${FLIGHT_DATA_DIR:-/data/parquet}" \
-      --port "${FLIGHT_PORT:-32010}" \
-      --hosts "${FLIGHT_HOSTS:-flight-server-1,flight-server-2,flight-server-3}" \
-      --localhost "${FLIGHT_LOCALHOST:-$(hostname -f)}" \
-      --hazelcast-port "${HAZELCAST_PORT:-5701}" \
-      "$@"
+    exec "${HADOOP_HOME}/bin/hdfs" namenode
+    ;;
+  benchmark-node)
+    mkdir -p /var/lib/hadoop-hdfs/data /var/lib/hadoop-hdfs/tmp /var/lib/hadoop-hdfs/socket
+    wait_for_tcp "${HDFS_NAMENODE_HOST:-hdfs-namenode}" "${HDFS_NAMENODE_PORT:-8020}" 180
+
+    "${HADOOP_HOME}/bin/hdfs" datanode &
+    datanode_pid="$!"
+    child_pids=("${datanode_pid}")
+    trap 'stop_children "${child_pids[@]}"' TERM INT EXIT
+
+    wait_for_hdfs_path "${HDFS_READY_PATH:-/bench/_READY}" "${datanode_pid}"
+
+    flight_server_command &
+    flight_pid="$!"
+    child_pids+=("${flight_pid}")
+
+    wait_for_tcp "${SPARK_MASTER_HOST:-spark-master}" "${SPARK_MASTER_PORT:-7077}" 180
+    "${SPARK_HOME}/bin/spark-class" org.apache.spark.deploy.worker.Worker \
+      --cores "${SPARK_WORKER_CORES:-2}" \
+      --memory "${SPARK_WORKER_MEMORY:-2g}" \
+      --webui-port "${SPARK_WORKER_WEBUI_PORT:-8081}" \
+      "${SPARK_MASTER_URL:-spark://spark-master:7077}" \
+      "$@" &
+    worker_pid="$!"
+    child_pids+=("${worker_pid}")
+
+    set +e
+    wait -n "${child_pids[@]}"
+    child_status="$?"
+    set -e
+    stop_children "${child_pids[@]}"
+    trap - TERM INT EXIT
+    exit "${child_status}"
     ;;
   spark-master)
     exec "${SPARK_HOME}/bin/spark-class" org.apache.spark.deploy.master.Master \

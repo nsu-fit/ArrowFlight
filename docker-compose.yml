@@ -4,50 +4,138 @@ x-arrowflight-image: &arrowflight-image
     context: .
     dockerfile: docker/Dockerfile
 
-x-server-env: &server-env
-  FLIGHT_DATA_DIR: /data/parquet
+x-server-node-env: &server-node-env
+  FLIGHT_DATA_DIR: "${HDFS_DATA_DIR:-hdfs://hdfs-namenode:8020/bench}"
   FLIGHT_PORT: "32010"
   FLIGHT_HOSTS: "${FLIGHT_HOSTS:-flight-server-1,flight-server-2,flight-server-3}"
   HAZELCAST_PORT: "5701"
+  HDFS_NAMENODE_HOST: hdfs-namenode
+  HDFS_NAMENODE_PORT: "8020"
+  HDFS_READY_PATH: "${HDFS_BENCHMARK_PATH:-/bench}/_READY"
+  HDFS_BLOCK_SIZE_BYTES: "${HDFS_BLOCK_SIZE_BYTES:-1073741824}"
+  HDFS_SHORTCIRCUIT: "true"
+  HDFS_DOMAIN_SOCKET_PATH: /var/lib/hadoop-hdfs/socket/dn_socket
+  SPARK_MASTER_URL: spark://spark-master:7077
+  SPARK_WORKER_CORES: "2"
+  SPARK_WORKER_MEMORY: 2g
   JAVA_OPTS: -Xmx2g
 
+x-server-node: &server-node
+  <<: *arrowflight-image
+  command: ["benchmark-node"]
+  depends_on:
+    hdfs-namenode:
+      condition: service_healthy
+    spark-master:
+      condition: service_started
+  healthcheck:
+    test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/32010'"]
+    interval: 5s
+    timeout: 3s
+    retries: 60
+    start_period: 30s
+
 services:
+  hdfs-namenode:
+    <<: *arrowflight-image
+    command: ["hdfs-namenode"]
+    hostname: hdfs-namenode
+    environment:
+      HDFS_DATANODE_HOSTNAME: hdfs-namenode
+      HDFS_BLOCK_SIZE_BYTES: "${HDFS_BLOCK_SIZE_BYTES:-1073741824}"
+    volumes:
+      - hdfs-namenode-data:/var/lib/hadoop-hdfs/name
+    ports:
+      - "8020:8020"
+      - "9870:9870"
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8020'"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+
   spark-master:
     <<: *arrowflight-image
     command: ["spark-master"]
+    hostname: spark-master
     ports:
       - "7077:7077"
       - "8080:8080"
 
-  spark-worker-1:
-    <<: *arrowflight-image
-    command: ["spark-worker"]
+  server-node-1:
+    <<: *server-node
+    hostname: server-node-1
     environment:
-      SPARK_WORKER_CORES: "2"
-      SPARK_WORKER_MEMORY: 2g
+      <<: *server-node-env
+      HDFS_DATANODE_HOSTNAME: server-node-1
+      FLIGHT_LOCALHOST: flight-server-1
+      FLIGHT_LOCAL_STORAGE_HOST: server-node-1
+      SPARK_LOCAL_HOSTNAME: server-node-1
       SPARK_WORKER_WEBUI_PORT: "8081"
-    depends_on:
-      - spark-master
     volumes:
+      - server-node-1-staging:/staging:ro
+      - hdfs-datanode-1-data:/var/lib/hadoop-hdfs/data
       - spark-warehouse:/spark-warehouse
-      - direct-parquet-data:/direct-data
     ports:
+      - "32010:32010"
       - "8081:8081"
+      - "9864:9864"
+    networks:
+      default:
+        aliases:
+          - flight-server-1
+          - datanode-1
+          - spark-worker-1
 
-  spark-worker-2:
-    <<: *arrowflight-image
-    command: ["spark-worker"]
+  server-node-2:
+    <<: *server-node
+    hostname: server-node-2
     environment:
-      SPARK_WORKER_CORES: "2"
-      SPARK_WORKER_MEMORY: 2g
+      <<: *server-node-env
+      HDFS_DATANODE_HOSTNAME: server-node-2
+      FLIGHT_LOCALHOST: flight-server-2
+      FLIGHT_LOCAL_STORAGE_HOST: server-node-2
+      SPARK_LOCAL_HOSTNAME: server-node-2
       SPARK_WORKER_WEBUI_PORT: "8082"
-    depends_on:
-      - spark-master
     volumes:
+      - server-node-2-staging:/staging:ro
+      - hdfs-datanode-2-data:/var/lib/hadoop-hdfs/data
       - spark-warehouse:/spark-warehouse
-      - direct-parquet-data:/direct-data
     ports:
+      - "32011:32010"
       - "8082:8082"
+      - "9865:9864"
+    networks:
+      default:
+        aliases:
+          - flight-server-2
+          - datanode-2
+          - spark-worker-2
+
+  server-node-3:
+    <<: *server-node
+    hostname: server-node-3
+    environment:
+      <<: *server-node-env
+      HDFS_DATANODE_HOSTNAME: server-node-3
+      FLIGHT_LOCALHOST: flight-server-3
+      FLIGHT_LOCAL_STORAGE_HOST: server-node-3
+      SPARK_LOCAL_HOSTNAME: server-node-3
+      SPARK_WORKER_WEBUI_PORT: "8083"
+    volumes:
+      - server-node-3-staging:/staging:ro
+      - hdfs-datanode-3-data:/var/lib/hadoop-hdfs/data
+      - spark-warehouse:/spark-warehouse
+    ports:
+      - "32012:32010"
+      - "8083:8083"
+      - "9866:9864"
+    networks:
+      default:
+        aliases:
+          - flight-server-3
+          - datanode-3
+          - spark-worker-3
 
   spark-benchmark-publisher:
     <<: *arrowflight-image
@@ -65,15 +153,11 @@ services:
       DIRECT_PUBLISH_SCHEMA: "${DIRECT_PUBLISH_SCHEMA:-tpch_direct}"
       FLIGHT_SOURCE_HOST: "${FLIGHT_SOURCE_HOST:-flight-server-1}"
       FLIGHT_SOURCE_PORT: "${FLIGHT_SOURCE_PORT:-32010}"
-      FLIGHT_SERVER_DATA_DIRS: "${FLIGHT_SERVER_DATA_DIRS:-/server-data/flight-server-1,/server-data/flight-server-2,/server-data/flight-server-3}"
-      DIRECT_PARQUET_DIR: "${DIRECT_PARQUET_DIR:-/direct-data}"
+      HDFS_DATA_DIR: "${HDFS_DATA_DIR:-hdfs://hdfs-namenode:8020/bench}"
+      DIRECT_PARQUET_DIR: "${DIRECT_PARQUET_DIR:-hdfs://hdfs-namenode:8020/bench}"
       SPARK_WAREHOUSE_DIR: /spark-warehouse
       SPARK_METASTORE_DB: /spark-warehouse/metastore_db
     volumes:
-      - flight-server-1-data:/server-data/flight-server-1
-      - flight-server-2-data:/server-data/flight-server-2
-      - flight-server-3-data:/server-data/flight-server-3
-      - direct-parquet-data:/direct-data
       - spark-warehouse:/spark-warehouse
     restart: "no"
 
@@ -88,15 +172,15 @@ services:
       BENCHMARK_SCALE_FACTOR: "${BENCHMARK_SCALE_FACTOR:-0.01}"
       BENCHMARK_QUERY_SET: "${BENCHMARK_QUERY_SET:-}"
       BENCHMARK_METADATA_OUT: "${BENCHMARK_METADATA_OUT:-}"
-      FLIGHT_SERVER_DATA_DIRS: "${FLIGHT_SERVER_DATA_DIRS:-/server-data/flight-server-1,/server-data/flight-server-2,/server-data/flight-server-3}"
-      GENERATE_DIRECT_PARQUET: "${GENERATE_DIRECT_PARQUET:-false}"
-      DIRECT_PARQUET_DIR: "${DIRECT_PARQUET_DIR:-/direct-data}"
-      DIRECT_PARQUET_PARTITIONS: "${DIRECT_PARQUET_PARTITIONS:-}"
+      FLIGHT_HOSTS: "${FLIGHT_HOSTS:-flight-server-1,flight-server-2,flight-server-3}"
+      FLIGHT_SERVERS: "${FLIGHT_SERVERS:-flight-server-1:32010,flight-server-2:32010,flight-server-3:32010}"
+      FLIGHT_SERVER_DATA_DIRS: "${FLIGHT_SERVER_DATA_DIRS:-/server-data/server-node-1,/server-data/server-node-2,/server-data/server-node-3}"
+      HDFS_DATA_DIR: "${HDFS_DATA_DIR:-hdfs://hdfs-namenode:8020/bench}"
+      HDFS_BLOCK_SIZE_BYTES: "${HDFS_BLOCK_SIZE_BYTES:-1073741824}"
     volumes:
-      - flight-server-1-data:/server-data/flight-server-1
-      - flight-server-2-data:/server-data/flight-server-2
-      - flight-server-3-data:/server-data/flight-server-3
-      - direct-parquet-data:/direct-data
+      - server-node-1-staging:/server-data/server-node-1
+      - server-node-2-staging:/server-data/server-node-2
+      - server-node-3-staging:/server-data/server-node-3
       - ./benchmarks/benchbase-spark/results:/benchbase/results
     restart: "no"
 
@@ -116,7 +200,6 @@ services:
       - "4040:4040"
     volumes:
       - spark-warehouse:/spark-warehouse
-      - direct-parquet-data:/direct-data
       - ./benchmarks/benchbase-spark/results:/benchbase/results
     healthcheck:
       test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/10000'"]
@@ -140,57 +223,12 @@ services:
       - ./benchmarks/benchbase-spark/config:/benchbase/config/custom:ro
       - ./benchmarks/benchbase-spark/results:/benchbase/results
 
-  flight-server-1:
-    <<: *arrowflight-image
-    command: ["server"]
-    environment:
-      <<: *server-env
-      FLIGHT_LOCALHOST: flight-server-1
-    volumes:
-      - flight-server-1-data:/data/parquet
-    ports:
-      - "32010:32010"
-    healthcheck:
-      test: ["CMD-SHELL", "bash -c '</dev/tcp/$${FLIGHT_LOCALHOST}/$${FLIGHT_PORT}'"]
-      interval: 5s
-      timeout: 3s
-      retries: 60
-
-  flight-server-2:
-    <<: *arrowflight-image
-    command: ["server"]
-    environment:
-      <<: *server-env
-      FLIGHT_LOCALHOST: flight-server-2
-    volumes:
-      - flight-server-2-data:/data/parquet
-    ports:
-      - "32011:32010"
-    healthcheck:
-      test: ["CMD-SHELL", "bash -c '</dev/tcp/$${FLIGHT_LOCALHOST}/$${FLIGHT_PORT}'"]
-      interval: 5s
-      timeout: 3s
-      retries: 60
-
-  flight-server-3:
-    <<: *arrowflight-image
-    command: ["server"]
-    environment:
-      <<: *server-env
-      FLIGHT_LOCALHOST: flight-server-3
-    volumes:
-      - flight-server-3-data:/data/parquet
-    ports:
-      - "32012:32010"
-    healthcheck:
-      test: ["CMD-SHELL", "bash -c '</dev/tcp/$${FLIGHT_LOCALHOST}/$${FLIGHT_PORT}'"]
-      interval: 5s
-      timeout: 3s
-      retries: 60
-
 volumes:
-  flight-server-1-data:
-  flight-server-2-data:
-  flight-server-3-data:
-  direct-parquet-data:
+  hdfs-namenode-data:
+  hdfs-datanode-1-data:
+  hdfs-datanode-2-data:
+  hdfs-datanode-3-data:
+  server-node-1-staging:
+  server-node-2-staging:
+  server-node-3-staging:
   spark-warehouse:

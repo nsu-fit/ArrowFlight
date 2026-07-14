@@ -34,11 +34,11 @@ Benchmarks:
   tpcds
 
 Modes:
-  smoke    reset volumes, DuckDB generate Parquet, register Flight, verify Spark, execute small query set
+  smoke    reset volumes, generate shared HDFS Parquet, register Flight, verify Spark, execute small query set
   graph    reset volumes, run a timed TPC-H query set so the HTML report has chart points
-  compare  reset volumes, register Flight and direct Parquet tables, execute both
-  fresh    reset volumes, DuckDB generate Parquet, register Flight, verify Spark, execute benchmark
-  prepare  reset volumes, DuckDB generate Parquet, register Flight, verify Spark, start Spark Thrift
+  compare  reset volumes, register Flight and direct HDFS Parquet tables, execute both
+  fresh    reset volumes, generate shared HDFS Parquet, register Flight, verify Spark, execute benchmark
+  prepare  reset volumes, generate shared HDFS Parquet, register Flight, verify Spark, start Spark Thrift
   prepare-compare
            reset volumes, generate Flight/direct data, register both schemas, start Spark Thrift
   run      execute BenchBase against already prepared Spark Flight tables
@@ -137,8 +137,8 @@ configure_cluster() {
   for index in $(seq 1 "${nodes}"); do
     hosts+=("flight-server-${index}")
     servers+=("flight-server-${index}:32010")
-    data_dirs+=("/server-data/flight-server-${index}")
-    FLIGHT_SERVER_SERVICES+=("flight-server-${index}")
+    data_dirs+=("/server-data/server-node-${index}")
+    FLIGHT_SERVER_SERVICES+=("server-node-${index}")
   done
 
   export FLIGHT_HOSTS
@@ -151,7 +151,10 @@ configure_cluster() {
   export BENCHMARK_SOURCE_SCHEMA="${BENCHMARK}"
   export BENCHMARK_QUERY_SET="${QUERY_SET}"
   export BENCHMARK_SCALE_FACTOR="${BENCHMARK_SCALE_FACTOR:-0.01}"
-  export DIRECT_PARQUET_DIR="${DIRECT_PARQUET_DIR:-/direct-data}"
+  export HDFS_DATA_DIR="${HDFS_DATA_DIR:-hdfs://hdfs-namenode:8020/bench}"
+  export HDFS_BENCHMARK_PATH="${HDFS_BENCHMARK_PATH:-/bench}"
+  export HDFS_BLOCK_SIZE_BYTES="${HDFS_BLOCK_SIZE_BYTES:-1073741824}"
+  export DIRECT_PARQUET_DIR="${HDFS_DATA_DIR}"
   export DIRECT_PARQUET_PARTITIONS="${DIRECT_PARQUET_PARTITIONS:-${nodes}}"
 
   FLIGHT_HOSTS="$(join_by_comma "${hosts[@]}")"
@@ -160,6 +163,8 @@ configure_cluster() {
 
   echo "clusterNodes=${nodes}"
   echo "FLIGHT_HOSTS=${FLIGHT_HOSTS}"
+  echo "HDFS_DATA_DIR=${HDFS_DATA_DIR}"
+  echo "HDFS_BLOCK_SIZE_BYTES=${HDFS_BLOCK_SIZE_BYTES}"
   echo "BENCHMARK_SCALE_FACTOR=${BENCHMARK_SCALE_FACTOR}"
 }
 
@@ -306,17 +311,14 @@ wait_service_healthy() {
   exit 1
 }
 
-start_spark() {
-  compose up --build -d spark-master spark-worker-1 spark-worker-2
+start_storage_cluster() {
+  compose up --build -d hdfs-namenode spark-master "${FLIGHT_SERVER_SERVICES[@]}"
+  wait_service_healthy hdfs-namenode 180
 }
 
 start_thrift() {
   compose --profile benchbase up --build --force-recreate -d spark-thrift-server
   wait_service_healthy spark-thrift-server 180
-}
-
-start_flight_servers() {
-  compose up --build -d "${FLIGHT_SERVER_SERVICES[@]}"
 }
 
 wait_flight_servers() {
@@ -347,11 +349,66 @@ register_compare_tables() {
     spark-benchmark-publisher
 }
 
+wait_hdfs_datanodes() {
+  local expected="${#FLIGHT_SERVER_SERVICES[@]}"
+  local deadline=$((SECONDS + 180))
+  local report=""
+  while (( SECONDS < deadline )); do
+    report="$(compose exec -T hdfs-namenode hdfs dfsadmin -report 2>/dev/null || true)"
+    if grep -q "Live datanodes (${expected})" <<< "${report}"; then
+      echo "HDFS DataNodes ready: ${expected}"
+      return
+    fi
+    sleep 2
+  done
+  echo "HDFS did not register ${expected} DataNodes." >&2
+  compose logs --tail=100 hdfs-namenode "${FLIGHT_SERVER_SERVICES[@]}" >&2 || true
+  exit 1
+}
+
 generate_parquet_data() {
-  local direct="${1:-false}"
-  export GENERATE_DIRECT_PARQUET="${direct}"
   compose --profile benchbase build duckdb-benchmark-generator
   compose --profile benchbase run --rm duckdb-benchmark-generator
+}
+
+upload_parquet_to_hdfs() {
+  compose exec -T hdfs-namenode hdfs dfs -mkdir -p "${HDFS_BENCHMARK_PATH}"
+  compose exec -T hdfs-namenode hdfs dfs -rm -r -f \
+    "${HDFS_BENCHMARK_PATH}/${BENCHMARK}" >/dev/null 2>&1 || true
+
+  local service
+  for service in "${FLIGHT_SERVER_SERVICES[@]}"; do
+    echo "Uploading ${service} Parquet shard(s) to HDFS"
+    compose exec -T "${service}" bash -lc '
+      set -euo pipefail
+      schema="$1"
+      hdfs_root="$2"
+      shopt -s nullglob
+      table_dirs=("/staging/${schema}"/*)
+      if (( ${#table_dirs[@]} == 0 )); then
+        echo "No staged tables under /staging/${schema}" >&2
+        exit 1
+      fi
+      for table_dir in "${table_dirs[@]}"; do
+        [[ -d "${table_dir}" ]] || continue
+        table="$(basename "${table_dir}")"
+        files=("${table_dir}"/*.parquet)
+        if (( ${#files[@]} == 0 )); then
+          echo "No Parquet files under ${table_dir}" >&2
+          exit 1
+        fi
+        hdfs dfs -mkdir -p "${hdfs_root}/${schema}/${table}"
+        hdfs dfs -put -f "${files[@]}" "${hdfs_root}/${schema}/${table}/"
+      done
+    ' _ "${BENCHMARK}" "${HDFS_BENCHMARK_PATH}"
+  done
+
+  compose exec -T hdfs-namenode hdfs dfs -setrep -w 1 \
+    "${HDFS_BENCHMARK_PATH}/${BENCHMARK}" >/dev/null
+  compose exec -T hdfs-namenode hdfs fsck \
+    "${HDFS_BENCHMARK_PATH}/${BENCHMARK}"
+  compose exec -T hdfs-namenode hdfs dfs -touchz \
+    "${HDFS_BENCHMARK_PATH}/_READY"
 }
 
 verify_spark_schema() {
@@ -540,20 +597,22 @@ benchbase_execute() {
 }
 
 prepare_stack() {
-  generate_parquet_data false
-  start_flight_servers
+  start_storage_cluster
+  wait_hdfs_datanodes
+  generate_parquet_data
+  upload_parquet_to_hdfs
   wait_flight_servers
-  start_spark
   register_flight_tables
   start_thrift
   verify_spark_flight
 }
 
 prepare_compare_stack() {
-  generate_parquet_data true
-  start_flight_servers
+  start_storage_cluster
+  wait_hdfs_datanodes
+  generate_parquet_data
+  upload_parquet_to_hdfs
   wait_flight_servers
-  start_spark
   register_compare_tables
   start_thrift
   verify_compare_tables

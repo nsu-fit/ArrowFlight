@@ -152,9 +152,8 @@ def write_metadata(
     scale_factor,
     flight_roots,
     flight_hosts,
-    direct_root,
-    direct_partitions,
-    generate_direct,
+    hdfs_root,
+    hdfs_block_size,
     reference_queries,
 ):
     if not output:
@@ -163,19 +162,25 @@ def write_metadata(
     output_path = Path(output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
+    node_stats = [directory_stats(root / schema) for root in flight_roots]
     metadata = {
         "dataset": dataset,
         "schema": schema,
         "scale_factor": scale_factor,
+        "storage": "hdfs",
+        "hdfs_data_dir": hdfs_root,
+        "hdfs_replication": 1,
+        "hdfs_block_size_bytes": hdfs_block_size,
+        "shared_parquet_dataset": True,
         "cluster_nodes": len(flight_hosts),
         "flight_hosts": os.environ.get("FLIGHT_HOSTS", ""),
         "flight_servers": os.environ.get("FLIGHT_SERVERS", ""),
         "flight_server_data_dirs": [str(root) for root in flight_roots],
         "flight_source_host": os.environ.get("FLIGHT_SOURCE_HOST", "flight-server-1"),
         "flight_source_port": os.environ.get("FLIGHT_SOURCE_PORT", "32010"),
-        "direct_parquet_dir": str(direct_root),
-        "direct_parquet_partitions": direct_partitions,
-        "direct_generated": generate_direct,
+        "direct_parquet_dir": hdfs_root,
+        "direct_parquet_partitions": len(flight_roots),
+        "direct_generated": True,
         "flight_data": [
             {
                 "server_index": index + 1,
@@ -188,10 +193,12 @@ def write_metadata(
             for index, host in enumerate(flight_hosts)
         ],
         "direct_data": {
-            "root": str(direct_root),
-            "schema_path": str(direct_root / schema),
-            "tables": table_stats(direct_root, schema),
-            **directory_stats(direct_root / schema),
+            "root": hdfs_root,
+            "schema_path": f"{hdfs_root.rstrip('/')}/{schema}",
+            "tables": [],
+            "bytes": sum(stats["bytes"] for stats in node_stats),
+            "files": sum(stats["files"] for stats in node_stats),
+            "file_details": [],
         },
         "reference_queries": reference_queries,
     }
@@ -250,23 +257,12 @@ def export_table_to_flight_roots(connection, table, schema, flight_roots, flight
     print(f"Generated {schema}.{table} across {len(flight_hosts)} node-local Flight root(s)")
 
 
-def export_table_to_direct_root(connection, table, schema, direct_root, shard_count):
-    table_dir = direct_root / schema / table
-    clean_dir(table_dir)
-
-    for shard in range(shard_count):
-        target = table_dir / f"part-{shard:05d}.parquet"
-        export_table_shard(connection, table, target, shard_count, shard)
-
-    print(f"Generated direct Spark parquet for {schema}.{table} with {shard_count} shard(s)")
-
-
 def main():
     dataset = os.environ.get("BENCHMARK_DATASET", "tpch").lower()
     schema = os.environ.get("BENCHMARK_SCHEMA", dataset).lower()
     scale_factor = float(os.environ.get("BENCHMARK_SCALE_FACTOR", "0.01"))
-    generate_direct = enabled(os.environ.get("GENERATE_DIRECT_PARQUET", "false"))
-    direct_root = Path(os.environ.get("DIRECT_PARQUET_DIR", "/direct-data"))
+    hdfs_root = os.environ.get("HDFS_DATA_DIR", "hdfs://hdfs-namenode:8020/bench")
+    hdfs_block_size = int(os.environ.get("HDFS_BLOCK_SIZE_BYTES", "1073741824"))
     query_ids = parse_query_ids(os.environ.get("BENCHMARK_QUERY_SET", ""))
     metadata_out = os.environ.get("BENCHMARK_METADATA_OUT", "")
     server_roots = [
@@ -299,12 +295,8 @@ def main():
 
     for root in server_roots:
         clean_dir(root / schema)
-    if generate_direct:
-        clean_dir(direct_root / schema)
-
-    direct_partitions = int(os.environ.get("DIRECT_PARQUET_PARTITIONS") or len(server_roots))
-    if direct_partitions < 1:
-        raise RuntimeError("DIRECT_PARQUET_PARTITIONS must be >= 1")
+    if hdfs_block_size < 1048576:
+        raise RuntimeError("HDFS_BLOCK_SIZE_BYTES must be at least 1048576")
 
     connection = duckdb.connect()
     if dataset == "tpch":
@@ -316,8 +308,20 @@ def main():
 
     for table in table_names(connection, dataset):
         export_table_to_flight_roots(connection, table, schema, server_roots, flight_hosts)
-        if generate_direct:
-            export_table_to_direct_root(connection, table, schema, direct_root, direct_partitions)
+
+    oversized = [
+        file
+        for root in server_roots
+        for file in root.joinpath(schema).rglob("*.parquet")
+        if file.stat().st_size > hdfs_block_size
+    ]
+    if oversized:
+        largest = max(oversized, key=lambda file: file.stat().st_size)
+        raise RuntimeError(
+            f"Parquet shard {largest} is {largest.stat().st_size} bytes, larger than "
+            f"HDFS_BLOCK_SIZE_BYTES={hdfs_block_size}. Increase HDFS_BLOCK_SIZE_BYTES so "
+            "every benchmark shard occupies one HDFS block."
+        )
 
     reference_queries = []
     if dataset == "tpch":
@@ -330,16 +334,14 @@ def main():
         scale_factor,
         server_roots,
         flight_hosts,
-        direct_root,
-        direct_partitions,
-        generate_direct,
+        hdfs_root,
+        hdfs_block_size,
         reference_queries,
     )
 
     connection.close()
     print(f"Generated {dataset.upper()} sf={scale_factor} as Parquet for schema {schema}")
-    if generate_direct:
-        print(f"Generated direct Spark parquet under {direct_root / schema}")
+    print(f"Staged one shared HDFS dataset for upload to {hdfs_root}/{schema}")
 
 
 if __name__ == "__main__":

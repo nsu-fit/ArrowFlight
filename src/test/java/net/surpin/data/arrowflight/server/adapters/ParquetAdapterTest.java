@@ -3,11 +3,18 @@ package net.surpin.data.arrowflight.server.adapters;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Method;
+import java.util.Set;
 import java.util.function.Predicate;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class ParquetAdapterTest {
+
+    @Test
+    void hasLocalBlockMatchesResolvedFlightAndDataNodeAliases() {
+        assertTrue(ParquetAdapter.hasLocalBlock(Set.of("127.0.0.1"), "localhost"));
+        assertFalse(ParquetAdapter.hasLocalBlock(Set.of("127.0.0.2"), "localhost"));
+    }
 
     @Test
     void validateNameValid() {
