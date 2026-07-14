@@ -36,7 +36,7 @@ class ConfigAdapterTest {
         assertEquals(4096, cfg.batchSize());
         assertEquals(131072, cfg.ioFileBufferSize());
         assertTrue(cfg.ioParallelism() >= 1 && cfg.ioParallelism() <= 64);
-        assertEquals(1, cfg.duckDbThreads());
+        assertEquals(2, cfg.duckDbThreads());
         assertEquals("/data/parquet", cfg.dataDir());
         assertNull(cfg.localDataDir());
         assertEquals(32010, cfg.port());

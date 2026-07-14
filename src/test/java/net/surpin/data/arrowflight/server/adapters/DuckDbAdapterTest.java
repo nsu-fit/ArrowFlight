@@ -292,7 +292,7 @@ class DuckDbAdapterTest {
         assertTrue(sql.contains("\"t0\""), "Got: " + sql);
         assertTrue(sql.contains("\"t1\""), "Got: " + sql);
         assertTrue(sql.contains("\"t2\""), "Got: " + sql);
-        assertTrue(sql.startsWith("SELECT count(*) FROM ("), "Got: " + sql);
+        assertTrue(sql.startsWith("SELECT count(*) AS \"count(*)\" FROM ("), "Got: " + sql);
     }
 
     // ── buildSelectSql ────────────────────────────────────────────────────
