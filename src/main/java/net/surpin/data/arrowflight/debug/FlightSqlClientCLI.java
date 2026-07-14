@@ -39,7 +39,9 @@ public class FlightSqlClientCLI implements AutoCloseable {
     }
 
     public static void main(String... args) throws Exception {
-        args = new String[] {"--host", "localhost", "--port", "32010", "--command", "Execute", "--query", "select * from test_schema.test_table", "--catalog", "PARQUET_ARROW_FLIGHT_CATALOG", "--schema", "test_schema"};
+        if (args.length == 0) {
+            args = new String[] {"--host", "localhost", "--port", "32010", "--command", "Execute", "--query", "select * from test_schema.test_table", "--catalog", "PARQUET_ARROW_FLIGHT_CATALOG", "--schema", "test_schema"};
+        }
 
         Options options = new Options();
 
