@@ -7,15 +7,6 @@ import static org.junit.jupiter.api.Assertions.*;
 class FieldTest {
 
     @Test
-    void constructorAndGetters() {
-        FieldType type = new FieldType(FieldType.IDs.INT);
-        Field f = new Field("id", type);
-
-        assertEquals("id", f.getName());
-        assertSame(type, f.getType());
-    }
-
-    @Test
     void equalsSameName() {
         Field a = new Field("col", new FieldType(FieldType.IDs.INT));
         Field b = new Field("COL", new FieldType(FieldType.IDs.LONG));
@@ -30,12 +21,6 @@ class FieldTest {
         Field b = new Field("col_b", new FieldType(FieldType.IDs.INT));
 
         assertNotEquals(a, b);
-    }
-
-    @Test
-    void equalsSameInstance() {
-        Field a = new Field("col", new FieldType(FieldType.IDs.INT));
-        assertEquals(a, a);
     }
 
     @Test

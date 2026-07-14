@@ -469,7 +469,7 @@ public final class ExecutionService {
      * @param uris fully-qualified URIs
      * @return DuckDB-compatible paths
      */
-    private static List<String> ducksDbPaths(List<String> uris) {
+    static List<String> ducksDbPaths(List<String> uris) {
         return uris.stream().map(u -> {
             if (u.startsWith("file:")) {
                 int colon = u.indexOf(':');
@@ -516,7 +516,7 @@ public final class ExecutionService {
      * @param p Hadoop path
      * @return quoted DuckDB path
      */
-    private static String duckDbPath(org.apache.hadoop.fs.Path p) {
+    static String duckDbPath(org.apache.hadoop.fs.Path p) {
         java.net.URI uri = p.toUri();
         String path = "file".equals(uri.getScheme())
                 ? uri.getPath()
@@ -530,7 +530,7 @@ public final class ExecutionService {
      * @param p Hadoop path
      * @return unquoted DuckDB path
      */
-    private static String plainDuckDbPath(org.apache.hadoop.fs.Path p) {
+    static String plainDuckDbPath(org.apache.hadoop.fs.Path p) {
         java.net.URI uri = p.toUri();
         return "file".equals(uri.getScheme())
                 ? uri.getPath()
@@ -839,7 +839,7 @@ public final class ExecutionService {
      * @return merged rows
      * @throws Exception on future resolution or merge failure
      */
-    private static List<Object[]> mergePartialRows(
+    static List<Object[]> mergePartialRows(
             List<ParquetQueryParser.SelectExpr> exprs,
             List<String> groupByColumnNames,
             List<Future<List<Object[]>>> futures) throws Exception {
@@ -885,7 +885,7 @@ public final class ExecutionService {
      * @param from      source row
      * @param numGbCols number of group-by columns
      */
-    private static void mergeAggCols(List<ParquetQueryParser.SelectExpr> exprs,
+    static void mergeAggCols(List<ParquetQueryParser.SelectExpr> exprs,
             Object[] into, Object[] from, int numGbCols) {
         int aggIdx = 0;
         for (ParquetQueryParser.SelectExpr expr : exprs) {
@@ -910,7 +910,7 @@ public final class ExecutionService {
      * @param index row index
      * @return long value
      */
-    private static long toLong(FieldVector vec, int index) {
+    static long toLong(FieldVector vec, int index) {
         if (vec instanceof BigIntVector v) {
             return v.get(index);
         }
@@ -933,7 +933,7 @@ public final class ExecutionService {
      * @param index row index
      * @return double value
      */
-    private static double toDouble(FieldVector vec, int index) {
+    static double toDouble(FieldVector vec, int index) {
         if (vec instanceof Float8Vector v) {
             return v.get(index);
         }
@@ -951,7 +951,7 @@ public final class ExecutionService {
      * @return minimum value
      */
     @SuppressWarnings("unchecked")
-    private static Object minOf(Object a, Object b) {
+    static Object minOf(Object a, Object b) {
         if (a == null) {
             return b;
         }
@@ -969,7 +969,7 @@ public final class ExecutionService {
      * @return maximum value
      */
     @SuppressWarnings("unchecked")
-    private static Object maxOf(Object a, Object b) {
+    static Object maxOf(Object a, Object b) {
         if (a == null) {
             return b;
         }
@@ -986,7 +986,7 @@ public final class ExecutionService {
      * @param b second accumulator
      * @return sum as Long
      */
-    private static Object addLongs(Object a, Object b) {
+    static Object addLongs(Object a, Object b) {
         if (a == null) {
             return b == null ? 0L : ((Number) b).longValue();
         }
@@ -1003,7 +1003,7 @@ public final class ExecutionService {
      * @param b second accumulator
      * @return sum as Double
      */
-    private static Object addDoubles(Object a, Object b) {
+    static Object addDoubles(Object a, Object b) {
         if (a == null) {
             return b == null ? 0.0 : ((Number) b).doubleValue();
         }
@@ -1021,7 +1021,7 @@ public final class ExecutionService {
      * @param value value to set
      */
     @SuppressWarnings("unchecked")
-    private static void setVectorValue(FieldVector vec, int index, Object value) {
+    static void setVectorValue(FieldVector vec, int index, Object value) {
         if (value == null) {
             vec.setNull(index);
             return;
@@ -1055,7 +1055,7 @@ public final class ExecutionService {
      * @param numGroups number of groups
      * @return partitioned lists
      */
-    private static <T> List<List<T>> partitionIntoGroups(List<T> items, int numGroups) {
+    static <T> List<List<T>> partitionIntoGroups(List<T> items, int numGroups) {
         List<List<T>> groups = new ArrayList<>(numGroups);
         for (int i = 0; i < numGroups; i++) {
             groups.add(new ArrayList<>());

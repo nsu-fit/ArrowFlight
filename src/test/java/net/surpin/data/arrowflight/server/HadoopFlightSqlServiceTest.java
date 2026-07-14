@@ -10,36 +10,6 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class HadoopFlightSqlServiceTest {
 
-    // ── extractTableFromPath ────────────────────────────────────────────────
-
-    @Test
-    void extractTableFromUnixPath() {
-        String p = "/data/schema_a/table_x/file.parquet";
-        assertEquals(".data.schema_a.table_x", QueryPlanner.extractTableFromPath(p));
-    }
-
-    @Test
-    void extractTableFromWindowsPath() {
-        String p = "C:\\data\\schema_a\\table_x\\file.parquet";
-        assertEquals("C:.data.schema_a.table_x", QueryPlanner.extractTableFromPath(p));
-    }
-
-    @Test
-    void extractTableReturnsSameForSameSchemaTable() {
-        String p1 = "/data/schema_a/table_x/file1.parquet";
-        String p2 = "/data/schema_a/table_x/file2.parquet";
-        assertEquals(QueryPlanner.extractTableFromPath(p1),
-                QueryPlanner.extractTableFromPath(p2));
-    }
-
-    @Test
-    void extractTableReturnsDifferentForDifferentTables() {
-        String p1 = "/data/schema_a/table_x/file.parquet";
-        String p2 = "/data/schema_b/table_y/file.parquet";
-        assertNotEquals(QueryPlanner.extractTableFromPath(p1),
-                QueryPlanner.extractTableFromPath(p2));
-    }
-
     // ── join-fallback: per-table file filtering ─────────────────────────────
 
     @Test

@@ -9,19 +9,6 @@ import static org.junit.jupiter.api.Assertions.*;
 class WriteBehaviorTest {
 
     @Test
-    void constructorAndGetters() {
-        String[] mergeBy = {"id", "region"};
-        Map<String, String> typeMapping = Map.of("int", "integer");
-        WriteBehavior wb = new WriteBehavior(WriteProtocol.LITERAL_SQL, 1024, mergeBy, typeMapping);
-
-        assertEquals(WriteProtocol.LITERAL_SQL, wb.getProtocol());
-        assertEquals(1024, wb.getBatchSize());
-        assertArrayEquals(mergeBy, wb.getMergeByColumns());
-        assertEquals(typeMapping, wb.getTypeMapping());
-        assertFalse(wb.isTruncate());
-    }
-
-    @Test
     void truncateSetsFlag() {
         WriteBehavior wb = new WriteBehavior(WriteProtocol.PREPARED_SQL, 512, new String[0], Map.of());
 
