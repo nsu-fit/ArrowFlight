@@ -1,6 +1,7 @@
 package net.surpin.data.arrowflight.server;
 
-import com.hazelcast.cluster.Member;
+import com.hazelcast.cluster.MembershipAdapter;
+import com.hazelcast.cluster.MembershipEvent;
 import com.hazelcast.core.HazelcastInstance;
 import org.apache.arrow.flight.FlightServer;
 import org.apache.arrow.flight.Location;
@@ -12,7 +13,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.Arrays;
 import java.util.Properties;
-import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import net.surpin.data.arrowflight.server.adapters.ConfigAdapter;
 import net.surpin.data.arrowflight.server.model.AppConfig;
@@ -159,34 +161,34 @@ public class HadoopArrowFlightServer {
      */
     private void waitForCluster(String[] hosts, int timeoutSec) {
         HazelcastInstance hazelcast = component.clusterService().getHazelcastInstance();
-        long deadline = System.currentTimeMillis() + timeoutSec * 1000L;
         long started = System.currentTimeMillis();
 
         LOGGER.info("Waiting up to {}s for {} nodes to connect (hosts: {})",
                 timeoutSec, hosts.length, Arrays.toString(hosts));
 
-        Set<Member> members;
-        do {
-            members = hazelcast.getCluster().getMembers();
-            long elapsed = (System.currentTimeMillis() - started) / 1000;
-            LOGGER.info("Connected: {} of {} nodes ({}s elapsed)",
-                    members.size(), hosts.length, elapsed);
+        CountDownLatch latch = new CountDownLatch(hosts.length);
+        hazelcast.getCluster().getMembers().forEach(m -> latch.countDown());
+        hazelcast.getCluster().addMembershipListener(new MembershipAdapter() {
+            @Override public void memberAdded(MembershipEvent e) {
+                latch.countDown();
+            }
+        });
 
-            if (System.currentTimeMillis() >= deadline) {
+        try {
+            if (!latch.await(timeoutSec, TimeUnit.SECONDS)) {
+                long elapsed = (System.currentTimeMillis() - started) / 1000;
+                int connected = hazelcast.getCluster().getMembers().size();
                 String msg = String.format(
                         "Cluster join timeout after %ds: only %d of %d nodes connected. "
                                 + "Expected hosts: %s.",
-                        timeoutSec, members.size(), hosts.length, Arrays.toString(hosts));
+                        elapsed, connected, hosts.length, Arrays.toString(hosts));
                 LOGGER.error(msg);
                 throw new IllegalStateException(msg);
             }
-            try {
-                Thread.sleep(1000);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new IllegalStateException("Interrupted while waiting for cluster join", e);
-            }
-        } while (members.size() < hosts.length);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while waiting for cluster join", e);
+        }
 
         long totalSec = (System.currentTimeMillis() - started) / 1000;
         LOGGER.info("All {} nodes connected in {}s. Initializing...", hosts.length, totalSec);
