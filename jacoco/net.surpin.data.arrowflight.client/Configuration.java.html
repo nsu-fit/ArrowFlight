@@ -51,7 +51,7 @@ public final class Configuration implements Serializable {
     //retry configuration
 <span class="fc" id="L52">    private int maxRetries = 3;</span>
 <span class="fc" id="L53">    private long retryBackoffMs = 1000;</span>
-<span class="fc" id="L54">    private long connectTimeoutMs = 30000;</span>
+    private long connectTimeoutMs;
 
     /**
      * Construct a Configuration object
@@ -368,7 +368,7 @@ public final class Configuration implements Serializable {
      * @return timeout in ms
      */
     public long getConnectTimeoutMs() {
-<span class="nc" id="L371">        return this.connectTimeoutMs;</span>
+<span class="fc" id="L371">        return this.connectTimeoutMs;</span>
     }
 
     /**
