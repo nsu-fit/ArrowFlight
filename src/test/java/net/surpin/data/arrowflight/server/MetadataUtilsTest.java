@@ -4,9 +4,15 @@ import net.surpin.data.arrowflight.server.adapters.ParquetAdapter;
 import net.surpin.data.arrowflight.server.adapters.SchemaConverter;
 import net.surpin.data.arrowflight.server.model.AppConfig;
 import net.surpin.data.arrowflight.server.services.MetadataService;
+import net.surpin.data.arrowflight.server.services.ParquetQueryParser;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.RootAllocator;
 import org.apache.arrow.vector.VectorSchemaRoot;
+import org.apache.arrow.vector.types.FloatingPointPrecision;
+import org.apache.arrow.vector.types.pojo.ArrowType;
+import org.apache.arrow.vector.types.pojo.Field;
+import org.apache.arrow.vector.types.pojo.FieldType;
+import org.apache.arrow.vector.types.pojo.Schema;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.RawLocalFileSystem;
@@ -14,6 +20,7 @@ import org.junit.jupiter.api.Test;
 
 import java.net.URI;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Predicate;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -184,5 +191,109 @@ class MetadataUtilsTest {
                     "Types should be sorted by dataType: " + types.get(i - 1).typeName()
                             + "(" + prev + ") > " + types.get(i).typeName() + "(" + curr + ")");
         }
+    }
+
+    // ─── getTablesRoot ────────────────────────────────────────────────────
+
+    @Test
+    void getTablesRootReturnsRows() {
+        Schema dummySchema = new Schema(List.of(), null);
+        Map<String, Map<String, Schema>> tables = Map.of(
+                "schema1", Map.of(
+                        "table_a", dummySchema,
+                        "table_b", dummySchema));
+
+        try (BufferAllocator allocator = new RootAllocator();
+             VectorSchemaRoot root = metadataService().getTablesRoot(
+                     tables, allocator, false, null, null)) {
+            assertEquals(2, root.getRowCount());
+        }
+    }
+
+    @Test
+    void getTablesRootWithPatterns() {
+        Schema dummySchema = new Schema(List.of(), null);
+        Map<String, Map<String, Schema>> tables = Map.of(
+                "s", Map.of("a", dummySchema, "b", dummySchema));
+
+        try (BufferAllocator allocator = new RootAllocator();
+             VectorSchemaRoot root = metadataService().getTablesRoot(
+                     tables, allocator, false, "s", "a")) {
+            assertEquals(1, root.getRowCount());
+        }
+    }
+
+    @Test
+    void getTablesRootEmptyInput() {
+        try (BufferAllocator allocator = new RootAllocator();
+             VectorSchemaRoot root = metadataService().getTablesRoot(
+                     Map.of(), allocator, false, null, null)) {
+            assertEquals(0, root.getRowCount());
+        }
+    }
+
+    // ─── buildAggregationSchema ───────────────────────────────────────────
+
+    @Test
+    void buildAggregationSchemaCountStar() throws Exception {
+        Schema tableSchema = new Schema(List.of(
+                new Field("id", FieldType.nullable(new ArrowType.Int(32, true)), null)));
+
+        MetadataService svc = createMetadataService(tableSchema);
+        ParquetQueryParser pq = ParquetQueryParser.parse("SELECT count(*) FROM s.t");
+        Schema aggSchema = svc.buildAggregationSchema(pq);
+
+        assertEquals(1, aggSchema.getFields().size());
+        assertEquals(new ArrowType.Int(64, true), aggSchema.getFields().get(0).getType(),
+                "count(*) should produce Int64");
+    }
+
+    @Test
+    void buildAggregationSchemaSumAndMin() throws Exception {
+        Schema tableSchema = new Schema(List.of(
+                new Field("amount", FieldType.nullable(new ArrowType.FloatingPoint(
+                        FloatingPointPrecision.DOUBLE)), null),
+                new Field("price", FieldType.nullable(new ArrowType.Int(32, true)), null)));
+
+        MetadataService svc = createMetadataService(tableSchema);
+        ParquetQueryParser pq = ParquetQueryParser.parse(
+                "SELECT sum(amount), min(price) FROM s.t");
+        Schema aggSchema = svc.buildAggregationSchema(pq);
+
+        assertEquals(2, aggSchema.getFields().size());
+        assertEquals(new ArrowType.FloatingPoint(FloatingPointPrecision.DOUBLE),
+                aggSchema.getFields().get(0).getType(), "sum should produce Float64");
+        assertEquals(new ArrowType.Int(32, true),
+                aggSchema.getFields().get(1).getType(), "min should preserve column type");
+    }
+
+    @Test
+    void buildAggregationSchemaGroupsByColumn() throws Exception {
+        Schema tableSchema = new Schema(List.of(
+                new Field("region", FieldType.nullable(new ArrowType.Utf8()), null),
+                new Field("sales", FieldType.nullable(new ArrowType.Int(64, true)), null)));
+
+        MetadataService svc = createMetadataService(tableSchema);
+        ParquetQueryParser pq = ParquetQueryParser.parse(
+                "SELECT region, max(sales) FROM s.t GROUP BY region");
+        Schema aggSchema = svc.buildAggregationSchema(pq);
+
+        assertEquals(2, aggSchema.getFields().size(), "GROUP BY + MAX should produce 2 fields");
+    }
+
+    private static MetadataService createMetadataService(Schema tableSchema) throws Exception {
+        ParquetAdapter adapter = new ParquetAdapter(
+                new AppConfig(4096, 4, 65536, 2, 2, 2, "", false, "", "", "", "",
+                        67108864, 30000L, "/nonexistent-data-dir", null, 31001, 5701, 120,
+                        3, 500, 3),
+                new RawLocalFileSystem() {{
+                    initialize(URI.create("file:///"), new Configuration());
+                }}) {
+            @Override
+            public Schema getTableSchema(String schema, String table) {
+                return tableSchema;
+            }
+        };
+        return new MetadataService(adapter);
     }
 }

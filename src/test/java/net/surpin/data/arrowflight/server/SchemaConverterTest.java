@@ -370,6 +370,46 @@ class SchemaConverterTest {
                 "tinyint_col must NOT be reported as INT32 — that causes ClassCastException in JOIN codegen");
     }
 
+    // ── TypeInfo.toRow ────────────────────────────────────────────────────
+
+    @Test
+    void typeInfoToRowHasExpectedLength() {
+        SchemaConverter.TypeInfo info = SchemaConverter.buildTypeInfo().get(0);
+        Object[] row = info.toRow();
+        assertEquals(18, row.length);
+        assertEquals(info.typeName(), row[0]);
+        assertEquals(info.dataType(), row[1]);
+    }
+
+    // ── convertPrimitive: INT64 + OriginalType.UINT_64 ───────────────────
+
+    @Test
+    void legacyUint64OriginalTypeMapsToInt64Unsigned() {
+        Field f = convert(Types.optional(PrimitiveType.PrimitiveTypeName.INT64)
+                .as(OriginalType.UINT_64).named("uint64_col"));
+        assertEquals(new ArrowType.Int(64, false), f.getType());
+    }
+
+    // ── convert: GroupType ───────────────────────────────────────────────
+
+    @Test
+    void convertRequiredGroupType() {
+        Field f = convert(new GroupType(Type.Repetition.REQUIRED, "group",
+                Types.required(PrimitiveType.PrimitiveTypeName.INT32).named("a")));
+        assertEquals("group", f.getName());
+        assertFalse(f.isNullable());
+        assertEquals(ArrowType.Struct.INSTANCE, f.getType());
+        assertEquals(1, f.getChildren().size());
+    }
+
+    @Test
+    void convertOptionalGroupType() {
+        Field f = convert(new GroupType(Type.Repetition.OPTIONAL, "group",
+                Types.optional(PrimitiveType.PrimitiveTypeName.INT32).named("a")));
+        assertTrue(f.isNullable());
+        assertEquals(ArrowType.Struct.INSTANCE, f.getType());
+    }
+
 
     private static Field convert(org.apache.parquet.schema.Type type) {
         return SchemaConverter.convert(type.getName(), type);
