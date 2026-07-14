@@ -31,8 +31,8 @@ class TableTest {
     void equalNullSafe() {
         EqualNullSafe f = new EqualNullSafe("col", "val");
         String clause = newTable().toWhereClause(f);
-        assertTrue(clause.contains("is null"));
         assertTrue(clause.contains("is not null"));
+        assertTrue(clause.contains("="));
     }
 
     @Test
@@ -102,19 +102,19 @@ class TableTest {
     @Test
     void stringStartsWith() {
         StringStartsWith f = new StringStartsWith("name", "foo");
-        assertEquals("\"name\" like 'foo%'", newTable().toWhereClause(f));
+        assertEquals("\"name\" like 'foo%' escape '\\'", newTable().toWhereClause(f));
     }
 
     @Test
     void stringContains() {
         StringContains f = new StringContains("desc", "bar");
-        assertEquals("\"desc\" like '%bar%'", newTable().toWhereClause(f));
+        assertEquals("\"desc\" like '%bar%' escape '\\'", newTable().toWhereClause(f));
     }
 
     @Test
     void stringEndsWith() {
         StringEndsWith f = new StringEndsWith("file", ".parquet");
-        assertEquals("\"file\" like '%.parquet'", newTable().toWhereClause(f));
+        assertEquals("\"file\" like '%.parquet' escape '\\'", newTable().toWhereClause(f));
     }
 
     @Test

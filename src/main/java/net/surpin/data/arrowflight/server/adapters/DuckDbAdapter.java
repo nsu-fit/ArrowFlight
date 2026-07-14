@@ -22,7 +22,9 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
 
 import net.surpin.data.arrowflight.server.services.ParquetQueryParser;
 import net.surpin.data.arrowflight.server.model.AppConfig;
@@ -518,14 +520,20 @@ public final class DuckDbAdapter {
     public static boolean awaitListenerReady(
             org.apache.arrow.flight.FlightProducer.ServerStreamListener listener)
             throws InterruptedException {
+        if (listener.isCancelled()) {
+            return false;
+        }
+        if (listener.isReady()) {
+            return true;
+        }
+
+        CountDownLatch readyLatch = new CountDownLatch(1);
+        listener.setOnReadyHandler(readyLatch::countDown);
+
         long timeout = 60_000;
-        long deadline = System.currentTimeMillis() + timeout;
-        while (!listener.isReady() && !listener.isCancelled()) {
-            if (System.currentTimeMillis() >= deadline) {
-                LOGGER.warn("Listener readiness timeout after {}ms", timeout);
-                return false;
-            }
-            Thread.sleep(5);
+        if (!readyLatch.await(timeout, TimeUnit.MILLISECONDS)) {
+            LOGGER.warn("Listener readiness timeout after {}ms", timeout);
+            return false;
         }
         return !listener.isCancelled();
     }
