@@ -13,7 +13,7 @@ import java.io.Serializable;
  * Describes the data-structure of flight input-partitions
  */
 public class FlightInputPartition implements InputPartition, Serializable {
-<span class="nc" id="L16">    private static final Logger LOGGER = LoggerFactory.getLogger(FlightInputPartition.class);</span>
+<span class="fc" id="L16">    private static final Logger LOGGER = LoggerFactory.getLogger(FlightInputPartition.class);</span>
 
     /**
      * The input-partition with end-points
@@ -52,9 +52,9 @@ public class FlightInputPartition implements InputPartition, Serializable {
          * @param query - the query for the partition
          */
         public FlightQueryInputPartition(Schema schema, String query) {
-<span class="nc" id="L55">            super(schema);</span>
-<span class="nc" id="L56">            this.query = query;</span>
-<span class="nc" id="L57">        }</span>
+<span class="fc" id="L55">            super(schema);</span>
+<span class="fc" id="L56">            this.query = query;</span>
+<span class="fc" id="L57">        }</span>
 
         /**
          * Get the query of the input-partition
@@ -72,9 +72,9 @@ public class FlightInputPartition implements InputPartition, Serializable {
      * Construct a flight-input-partition
      * @param schema - the schema of the partition
      */
-<span class="nc" id="L75">    protected FlightInputPartition(Schema schema) {</span>
-<span class="nc" id="L76">        this.schema = schema.toJson();</span>
-<span class="nc" id="L77">    }</span>
+<span class="fc" id="L75">    protected FlightInputPartition(Schema schema) {</span>
+<span class="fc" id="L76">        this.schema = schema.toJson();</span>
+<span class="fc" id="L77">    }</span>
 
     /**
      * Get the schema of the partition
@@ -82,7 +82,7 @@ public class FlightInputPartition implements InputPartition, Serializable {
      * @throws IOException - thrown when the schema is in invalid json format.
      */
     public Schema getSchema() throws IOException {
-<span class="nc" id="L85">        return Schema.fromJSON(this.schema);</span>
+<span class="fc" id="L85">        return Schema.fromJSON(this.schema);</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

@@ -1,18 +1,27 @@
 <?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>FlightPartitionReaderFactory.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Hadoop Arrow Flight SQL Server</a> &gt; <a href="index.source.html" class="el_package">net.surpin.data.arrowflight.client.spark.read</a> &gt; <span class="el_source">FlightPartitionReaderFactory.java</span></div><h1>FlightPartitionReaderFactory.java</h1><pre class="source lang-java linenums">package net.surpin.data.arrowflight.client.spark.read;
 
 import net.surpin.data.arrowflight.client.Configuration;
+import org.apache.arrow.vector.types.DateUnit;
+import org.apache.arrow.vector.types.FloatingPointPrecision;
+import org.apache.arrow.vector.types.TimeUnit;
+import org.apache.arrow.vector.types.pojo.ArrowType;
+import org.apache.arrow.vector.types.pojo.Field;
+import org.apache.arrow.vector.types.pojo.Schema;
 import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.connector.read.InputPartition;
 import org.apache.spark.sql.connector.read.PartitionReader;
 import org.apache.spark.sql.connector.read.PartitionReaderFactory;
+import org.apache.spark.sql.vectorized.ColumnarBatch;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
+
 /**
- * The flight partition-reader factory for creating flight partition-readers
+ * Creates row or columnar readers for Flight input partitions.
  */
 public class FlightPartitionReaderFactory implements PartitionReaderFactory {
-<span class="fc" id="L15">    private static final Logger LOGGER = LoggerFactory.getLogger(FlightPartitionReaderFactory.class);</span>
+<span class="fc" id="L24">    private static final Logger LOGGER = LoggerFactory.getLogger(FlightPartitionReaderFactory.class);</span>
 
     private final Configuration configuration;
 
@@ -20,19 +29,84 @@ public class FlightPartitionReaderFactory implements PartitionReaderFactory {
      * Construct a flight partition-reader factory
      * @param configuration - the configuration of remote flight service
      */
-<span class="fc" id="L23">    public FlightPartitionReaderFactory(Configuration configuration) {</span>
-<span class="fc" id="L24">        this.configuration = configuration;</span>
-<span class="fc" id="L25">    }</span>
+<span class="fc" id="L32">    public FlightPartitionReaderFactory(Configuration configuration) {</span>
+<span class="fc" id="L33">        this.configuration = configuration;</span>
+<span class="fc" id="L34">    }</span>
 
     /**
      * Create a reader
      * @param inputPartition - the input-partition for the reader
      * @return - a partition-reader
      */
+    @Override
     public PartitionReader&lt;InternalRow&gt; createReader(InputPartition inputPartition) {
-<span class="nc" id="L33">        LOGGER.info(&quot;{}.createReader()&quot;, this.getClass().getName());</span>
-<span class="nc" id="L34">        return new FlightPartitionReader(this.configuration, inputPartition);</span>
+<span class="nc" id="L43">        LOGGER.info(&quot;{}.createReader()&quot;, this.getClass().getName());</span>
+<span class="nc" id="L44">        return new FlightPartitionReader(this.configuration, inputPartition);</span>
     }
 
+    @Override
+    public boolean supportColumnarReads(InputPartition inputPartition) {
+<span class="fc bfc" id="L49" title="All 2 branches covered.">        if (!(inputPartition instanceof FlightInputPartition flightPartition)) {</span>
+<span class="fc" id="L50">            return false;</span>
+        }
+        try {
+<span class="fc" id="L53">            Schema schema = flightPartition.getSchema();</span>
+<span class="fc" id="L54">            return schema.getFields().stream()</span>
+<span class="fc" id="L55">                    .allMatch(FlightPartitionReaderFactory::isColumnarType);</span>
+<span class="nc" id="L56">        } catch (IOException e) {</span>
+<span class="nc" id="L57">            LOGGER.warn(&quot;Cannot inspect Flight partition schema for columnar read: {}&quot;,</span>
+<span class="nc" id="L58">                    e.getMessage());</span>
+<span class="nc" id="L59">            return false;</span>
+        }
+    }
+
+    @Override
+    public PartitionReader&lt;ColumnarBatch&gt; createColumnarReader(InputPartition inputPartition) {
+<span class="nc" id="L65">        LOGGER.info(&quot;{}.createColumnarReader()&quot;, this.getClass().getName());</span>
+<span class="nc" id="L66">        return new FlightColumnarPartitionReader(this.configuration, inputPartition);</span>
+    }
+
+    /**
+     * Checks whether a field has an exact Spark columnar adapter.
+     * @param field Arrow field
+     * @return true when the field can use the columnar reader
+     */
+    private static boolean isColumnarType(Field field) {
+<span class="pc bpc" id="L75" title="1 of 2 branches missed.">        if (field.getDictionary() != null) {</span>
+<span class="nc" id="L76">            return false;</span>
+        }
+<span class="fc" id="L78">        ArrowType type = field.getType();</span>
+<span class="pc bpc" id="L79" title="3 of 7 branches missed.">        return switch (type.getTypeID()) {</span>
+<span class="fc" id="L80">            case Bool, Utf8, LargeUtf8, Binary, LargeBinary, Null -&gt; true;</span>
+            case FloatingPoint -&gt; {
+<span class="nc" id="L82">                FloatingPointPrecision precision =</span>
+<span class="nc" id="L83">                        ((ArrowType.FloatingPoint) type).getPrecision();</span>
+<span class="nc bnc" id="L84" title="All 4 branches missed.">                yield precision == FloatingPointPrecision.SINGLE</span>
+                        || precision == FloatingPointPrecision.DOUBLE;
+            }
+            case Int -&gt; {
+<span class="fc" id="L88">                ArrowType.Int integer = (ArrowType.Int) type;</span>
+<span class="fc" id="L89">                int bitWidth = integer.getBitWidth();</span>
+<span class="pc bpc" id="L90" title="4 of 10 branches missed.">                yield integer.getIsSigned()</span>
+                        &amp;&amp; (bitWidth == 8 || bitWidth == 16
+                        || bitWidth == 32 || bitWidth == 64);
+            }
+            case Decimal -&gt; {
+<span class="fc" id="L95">                ArrowType.Decimal decimal = (ArrowType.Decimal) type;</span>
+<span class="fc" id="L96">                int precision = decimal.getPrecision();</span>
+<span class="fc" id="L97">                int scale = decimal.getScale();</span>
+<span class="pc bpc" id="L98" title="5 of 10 branches missed.">                yield decimal.getBitWidth() == 128</span>
+                        &amp;&amp; precision &gt;= 1 &amp;&amp; precision &lt;= 38
+                        &amp;&amp; scale &gt;= 0 &amp;&amp; scale &lt;= precision;
+            }
+<span class="pc bpc" id="L102" title="1 of 2 branches missed.">            case Date -&gt; ((ArrowType.Date) type).getUnit() == DateUnit.DAY;</span>
+            case Timestamp -&gt; {
+<span class="nc" id="L104">                ArrowType.Timestamp timestamp = (ArrowType.Timestamp) type;</span>
+<span class="nc bnc" id="L105" title="All 2 branches missed.">                yield timestamp.getUnit() == TimeUnit.MICROSECOND</span>
+<span class="nc bnc" id="L106" title="All 2 branches missed.">                        &amp;&amp; timestamp.getTimezone() != null;</span>
+            }
+<span class="nc" id="L108">            default -&gt; false;</span>
+        };
+    }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>
