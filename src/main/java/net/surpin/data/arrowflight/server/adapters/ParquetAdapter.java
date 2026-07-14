@@ -62,17 +62,7 @@ public class ParquetAdapter {
      * @param fileSystem Hadoop FileSystem instance
      */
     public ParquetAdapter(AppConfig appConfig, FileSystem fileSystem) {
-        this.fileSystem = fileSystem;
-        this.dataDirectory = appConfig.dataDir();
-        this.localhost = "localhost";
-        this.typeFactory = new JavaTypeFactoryImpl(RelDataTypeSystem.DEFAULT);
-
-        try {
-            initSchemaCache();
-            initTableCache();
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
+        this(appConfig, fileSystem, "localhost");
     }
 
     /**
@@ -94,6 +84,7 @@ public class ParquetAdapter {
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
+        initCatalogReader();
     }
 
     /**
@@ -227,10 +218,7 @@ public class ParquetAdapter {
         return result.toString();
     }
 
-    /**
-     * Builds DDL for all tables and populates the DDL cache.
-     * Also warms up Acero JNI and DuckDB connections.
-     */
+    /** Initializes cached DDL definitions for all discovered tables. */
     public void initCatalogReader() {
         Objects.requireNonNull(tableSchemaCache, "Initialize schema cache first");
         Objects.requireNonNull(tableCache, "Initialize table cache first");

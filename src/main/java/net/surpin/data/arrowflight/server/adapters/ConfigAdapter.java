@@ -66,7 +66,7 @@ public class ConfigAdapter {
                 "arrowflight.hazelcast.clusterJoinTimeoutSec", 60, props);
         int clientMaxRetries = getInt("client.maxRetries", null, 3, props);
         int clientRetryBackoffMs = getInt("client.retryBackoffMs", null, 1000, props);
-        int clientConnectTimeoutMs = getInt("client.connectTimeoutMs", null, 30000, props);
+        int clientConnectTimeoutMs = getInt("client.connectTimeoutMs", null, 0, props);
 
         return new AppConfig(
                 batchSize, ioParallelism, ioFileBufferSize,

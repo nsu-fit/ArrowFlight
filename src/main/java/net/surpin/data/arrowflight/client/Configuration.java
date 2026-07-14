@@ -51,7 +51,7 @@ public final class Configuration implements Serializable {
     //retry configuration
     private int maxRetries = 3;
     private long retryBackoffMs = 1000;
-    private long connectTimeoutMs = 30000;
+    private long connectTimeoutMs;
 
     /**
      * Construct a Configuration object
