@@ -1,12 +1,21 @@
 package net.surpin.data.arrowflight.server.services;
 
+import net.surpin.data.arrowflight.server.adapters.HostUtils;
+import net.surpin.data.arrowflight.server.adapters.ParquetAdapter;
 import net.surpin.data.arrowflight.server.model.FileAssignment;
+import org.apache.arrow.flight.FlightEndpoint;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.lang.reflect.Method;
 import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
+@ExtendWith(MockitoExtension.class)
 class QueryPlannerTest {
 
     // ── pickServer ──────────────────────────────────────────────────────────
@@ -128,5 +137,126 @@ class QueryPlannerTest {
         String t2 = QueryPlanner.extractTableFromPath("/data/s2/table_b/f.parquet");
 
         assertNotEquals(t1, t2);
+    }
+
+    // ── filterForQuery (private static, via reflection) ────────────────────
+
+    @Test
+    void filterForQueryKeepsMatchingTableFiles() throws Exception {
+        Map<String, FileAssignment> inventory = new LinkedHashMap<>();
+        inventory.put("s/t/f1.parquet", new FileAssignment(100, Set.of("H1")));
+        inventory.put("other/f2.parquet", new FileAssignment(200, Set.of("H2")));
+
+        ParquetQueryParser pq = ParquetQueryParser.parse("SELECT * FROM s.t");
+        Map<String, FileAssignment> result = invokeFilterForQuery(inventory, pq);
+
+        assertEquals(1, result.size());
+        assertTrue(result.containsKey("s/t/f1.parquet"));
+    }
+
+    @Test
+    void filterForQueryExcludesUnrelatedFiles() throws Exception {
+        Map<String, FileAssignment> inventory = new LinkedHashMap<>();
+        inventory.put("x/y/f.parquet", new FileAssignment(100, Set.of("H1")));
+
+        ParquetQueryParser pq = ParquetQueryParser.parse("SELECT * FROM s.t");
+        Map<String, FileAssignment> result = invokeFilterForQuery(inventory, pq);
+
+        assertTrue(result.isEmpty());
+    }
+
+    // ── belongsToTable (private static, via reflection) ────────────────────
+
+    @Test
+    void belongsToTableWithSchemaMatchesPrefix() throws Exception {
+        assertTrue(invokeBelongsToTable("s/t/f.parquet", "s", "t"));
+        assertTrue(invokeBelongsToTable("s/t/sub/f.parquet", "s", "t"));
+        assertFalse(invokeBelongsToTable("other/t/f.parquet", "s", "t"));
+    }
+
+    @Test
+    void belongsToTableWithoutSchemaMatchesExtractedTable() throws Exception {
+        assertTrue(invokeBelongsToTable("/data/p/q/f.parquet", null, "q"),
+                "last segment should match table name");
+        assertFalse(invokeBelongsToTable("/data/p/q/f.parquet", null, "x"),
+                "unrelated table should not match");
+    }
+
+    @Test
+    void belongsToTableCaseInsensitive() throws Exception {
+        assertTrue(invokeBelongsToTable("Schema/Table/f.parquet", "Schema", "Table"));
+    }
+
+    // ── ownsTableShard (private static, via reflection) ────────────────────
+
+    @Test
+    void ownsTableShardTrueWhenOwnerAndMatch() throws Exception {
+        Map<String, FileAssignment> files = Map.of(
+                "s/t/f.parquet", new FileAssignment(100, Set.of("H1")));
+        assertTrue(invokeOwnsTableShard(files, "H1", "s", "t"));
+    }
+
+    @Test
+    void ownsTableShardFalseWhenWrongOwner() throws Exception {
+        Map<String, FileAssignment> files = Map.of(
+                "s/t/f.parquet", new FileAssignment(100, Set.of("H1")));
+        assertFalse(invokeOwnsTableShard(files, "H2", "s", "t"));
+    }
+
+    @Test
+    void ownsTableShardFalseWhenWrongTable() throws Exception {
+        Map<String, FileAssignment> files = Map.of(
+                "s/t/f.parquet", new FileAssignment(100, Set.of("H1")));
+        assertFalse(invokeOwnsTableShard(files, "H1", "s", "other"));
+    }
+
+    // ── createEndpoint (public, needs ClusterService mock) ─────────────────
+
+    @Mock
+    private ClusterService clusterService;
+
+    @Mock
+    private ParquetAdapter parquetAdapter;
+
+    @Test
+    void createEndpointReturnsValidTicket() throws Exception {
+        when(parquetAdapter.localFileInventory()).thenReturn(Map.of());
+        QueryPlanner planner = new QueryPlanner(parquetAdapter, clusterService);
+        FlightEndpoint ep = planner.createEndpoint(
+                "grpc://127.0.0.1:32010", List.of("s/t/f.parquet"), "SELECT * FROM s.t", 100L);
+
+        assertNotNull(ep);
+        assertNotNull(ep.getTicket());
+        assertEquals(1, ep.getLocations().size());
+        assertEquals("grpc://127.0.0.1:32010",
+                ep.getLocations().get(0).getUri().toString());
+        verify(clusterService).storeHandle(anyString(), any());
+    }
+
+    // ── Reflection helpers ─────────────────────────────────────────────────
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, FileAssignment> invokeFilterForQuery(
+            Map<String, FileAssignment> inventory, ParquetQueryParser query) throws Exception {
+        Method m = QueryPlanner.class.getDeclaredMethod("filterForQuery",
+                Map.class, ParquetQueryParser.class);
+        m.setAccessible(true);
+        return (Map<String, FileAssignment>) m.invoke(null, inventory, query);
+    }
+
+    private static boolean invokeBelongsToTable(String path, String schema, String table)
+            throws Exception {
+        Method m = QueryPlanner.class.getDeclaredMethod("belongsToTable",
+                String.class, String.class, String.class);
+        m.setAccessible(true);
+        return (boolean) m.invoke(null, path, schema, table);
+    }
+
+    private static boolean invokeOwnsTableShard(Map<String, FileAssignment> files,
+            String server, String schema, String table) throws Exception {
+        Method m = QueryPlanner.class.getDeclaredMethod("ownsTableShard",
+                Map.class, String.class, String.class, String.class);
+        m.setAccessible(true);
+        return (boolean) m.invoke(null, files, server, schema, table);
     }
 }

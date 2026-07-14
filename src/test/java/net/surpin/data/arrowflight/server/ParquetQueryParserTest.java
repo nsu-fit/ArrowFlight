@@ -95,4 +95,47 @@ class ParquetQueryParserTest {
         assertTrue(str.contains("filter="), "toString should include filter");
     }
 
+    // ── JOIN parsing ──────────────────────────────────────────────────────
+
+    @Test
+    void parseJoinSelectDetectsJoin() {
+        ParquetQueryParser p = ParquetQueryParser.parse(
+                "SELECT a.id, b.name FROM s.t1 a JOIN s.t2 b ON a.id = b.t1_id");
+        assertTrue(p.isJoin, "JOIN query should have isJoin=true");
+        assertNotNull(p.joinTables, "joinTables should not be null");
+        assertTrue(p.joinTables.size() >= 2, "Should extract at least 2 tables, got: " + p.joinTables);
+    }
+
+    @Test
+    void parseJoinSelectInnerJoin() {
+        ParquetQueryParser p = ParquetQueryParser.parse(
+                "SELECT * FROM s.t1 INNER JOIN s.t2 ON t1.id = t2.id");
+        assertTrue(p.isJoin);
+        assertFalse(p.joinTables.isEmpty(), "INNER JOIN should extract tables");
+    }
+
+    @Test
+    void parseJoinSelectLeftJoin() {
+        ParquetQueryParser p = ParquetQueryParser.parse(
+                "SELECT * FROM t1 LEFT JOIN t2 ON t1.id = t2.id");
+        assertTrue(p.isJoin);
+        assertEquals(2, p.joinTables.size(),
+                "LEFT JOIN should extract 2 tables, got: " + p.joinTables.size());
+    }
+
+    @Test
+    void parseJoinSelectCollectedColumns() {
+        ParquetQueryParser p = ParquetQueryParser.parse(
+                "SELECT t1.col_a, t2.col_b FROM s.t1 t1 JOIN s.t2 t2 ON t1.id = t2.id");
+        assertEquals(List.of("col_a", "col_b"), p.columns,
+                "JOIN query should collect selected columns");
+    }
+
+    @Test
+    void parseJoinSelectHasDuckDbSql() {
+        ParquetQueryParser p = ParquetQueryParser.parse(
+                "SELECT * FROM s.t1 JOIN s.t2 ON t1.id = t2.id");
+        assertNotNull(p.duckDbSql, "JOIN query should have duckDbSql");
+        assertFalse(p.duckDbSql.isBlank(), "duckDbSql should not be blank");
+    }
 }
