@@ -47,7 +47,7 @@ class ConfigAdapterTest {
         assertEquals(0, cfg.clientConnectTimeoutMs());
         assertFalse(cfg.duckDbAllowUnsignedExtensions());
         assertEquals(Integer.MAX_VALUE, cfg.grpcMaxInboundMessageSize());
-        assertEquals(60000, cfg.flightListenerReadyTimeoutMillis());
+        assertEquals(300000, cfg.flightListenerReadyTimeoutMillis());
     }
 
     @Test

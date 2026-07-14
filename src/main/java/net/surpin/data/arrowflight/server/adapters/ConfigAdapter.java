@@ -51,7 +51,7 @@ public class ConfigAdapter {
         int grpcMaxInboundMessageSize = getInt("grpcMaxInboundMessageSize",
                 "arrowflight.grpc.maxInboundMessageSize", Integer.MAX_VALUE, props);
         long flightListenerReadyTimeoutMillis = getLong("flightListenerReadyTimeoutMs",
-                "arrowflight.flight.listenerReadyTimeoutMs", 60_000L, props);
+                "arrowflight.flight.listenerReadyTimeoutMs", 300_000L, props);
         if (flightListenerReadyTimeoutMillis <= 0) {
             throw new IllegalArgumentException(
                     "flightListenerReadyTimeoutMs must be positive: "
