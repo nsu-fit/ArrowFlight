@@ -38,7 +38,7 @@ public final class DuckDbAdapter {
 
     private final ThreadLocal<Connection> threadConn;
     private final ExecutorService ioPool;
-    
+
     private final int batchSize;
     private final int duckDbGroups;
     private final AppConfig appConfig;
@@ -363,7 +363,7 @@ public final class DuckDbAdapter {
             }
             first = false;
             switch (expr.func) {
-                case COUNT_STAR -> sql.append("count(*)");
+                case COUNT_STAR -> sql.append("count(*) AS \"count(*)\"");
                 case COUNT -> sql.append("count(\"").append(expr.inputColumn).append("\")");
                 case SUM -> sql.append("sum(\"").append(expr.inputColumn).append("\")");
                 case MIN -> sql.append("min(\"").append(expr.inputColumn).append("\")");
