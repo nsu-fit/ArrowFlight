@@ -22,9 +22,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.Condition;
-import java.util.concurrent.locks.ReentrantLock;
 
 import net.surpin.data.arrowflight.server.services.ParquetQueryParser;
 import net.surpin.data.arrowflight.server.model.AppConfig;
@@ -522,33 +521,22 @@ public final class DuckDbAdapter {
                     "Flight listener readiness timeout must be positive: " + timeoutMillis);
         }
 
-        ReentrantLock readinessLock = new ReentrantLock();
-        Condition stateChanged = readinessLock.newCondition();
-        Runnable stateChangeHandler = () -> {
-            readinessLock.lock();
-            try {
-                stateChanged.signalAll();
-            } finally {
-                readinessLock.unlock();
-            }
-        };
+        Semaphore stateChanged = new Semaphore(0);
+        Runnable stateChangeHandler = stateChanged::release;
         listener.setOnReadyHandler(stateChangeHandler);
         listener.setOnCancelHandler(stateChangeHandler);
 
-        long remainingNanos = TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
-        readinessLock.lockInterruptibly();
-        try {
-            while (!listener.isCancelled() && !listener.isReady()) {
-                if (remainingNanos <= 0) {
-                    LOGGER.warn("Listener readiness timeout after {}ms", timeoutMillis);
-                    return false;
-                }
-                remainingNanos = stateChanged.awaitNanos(remainingNanos);
+        long deadlineNanos = System.nanoTime()
+                + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
+        while (!listener.isCancelled() && !listener.isReady()) {
+            long remainingNanos = deadlineNanos - System.nanoTime();
+            if (remainingNanos <= 0
+                    || !stateChanged.tryAcquire(remainingNanos, TimeUnit.NANOSECONDS)) {
+                LOGGER.warn("Listener readiness timeout after {}ms", timeoutMillis);
+                return false;
             }
-            return !listener.isCancelled() && listener.isReady();
-        } finally {
-            readinessLock.unlock();
         }
+        return !listener.isCancelled() && listener.isReady();
     }
 
     /**

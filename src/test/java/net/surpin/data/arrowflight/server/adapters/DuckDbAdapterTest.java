@@ -14,6 +14,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import net.surpin.data.arrowflight.server.model.AppConfig;
@@ -88,6 +89,25 @@ class DuckDbAdapterTest {
         assertTimeoutPreemptively(Duration.ofSeconds(1),
                 () -> assertTrue(DuckDbAdapter.awaitListenerReady(listener, 200)));
         verify(listener).setOnReadyHandler(any(Runnable.class));
+    }
+
+    /** Verifies a readiness signal received before waiting remains observable. */
+    @Test
+    void listenerReadinessSignalBeforeWaitIsRetained() {
+        FlightProducer.ServerStreamListener listener =
+                mock(FlightProducer.ServerStreamListener.class);
+        AtomicBoolean ready = new AtomicBoolean();
+        AtomicInteger readinessChecks = new AtomicInteger();
+        when(listener.isReady()).thenAnswer(invocation ->
+                readinessChecks.getAndIncrement() > 0 && ready.get());
+        doAnswer(invocation -> {
+            ready.set(true);
+            ((Runnable) invocation.getArgument(0)).run();
+            return null;
+        }).when(listener).setOnReadyHandler(any(Runnable.class));
+
+        assertTimeoutPreemptively(Duration.ofSeconds(1), () ->
+                assertTrue(DuckDbAdapter.awaitListenerReady(listener, 200)));
     }
 
     /** Verifies a spurious wake-up cannot release a non-ready listener. */
