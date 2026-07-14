@@ -423,15 +423,16 @@ public final class ExecutionService {
 <span class="nc" id="L423">                    listener.start(merged);</span>
                 }
 <span class="nc bnc" id="L425" title="All 2 branches missed.">                if (merged.getRowCount() &gt; 0) {</span>
-<span class="nc bnc" id="L426" title="All 2 branches missed.">                    if (DuckDbAdapter.awaitListenerReady(listener)) {</span>
-<span class="nc" id="L427">                        listener.putNext();</span>
+<span class="nc bnc" id="L426" title="All 2 branches missed.">                    if (DuckDbAdapter.awaitListenerReady(</span>
+<span class="nc" id="L427">                            listener, appConfig.flightListenerReadyTimeoutMillis())) {</span>
+<span class="nc" id="L428">                        listener.putNext();</span>
                     }
                 }
             }
         } finally {
-<span class="nc" id="L432">            partials.forEach(VectorSchemaRoot::close);</span>
+<span class="nc" id="L433">            partials.forEach(VectorSchemaRoot::close);</span>
         }
-<span class="nc" id="L434">    }</span>
+<span class="nc" id="L435">    }</span>
 
     // ── private helpers ──────────────────────────────────────────────────
 
@@ -445,11 +446,11 @@ public final class ExecutionService {
      */
     private List&lt;Path&gt; resolveParquetFiles(ParquetQueryParser pq, String[] fileUris)
             throws IOException {
-<span class="nc" id="L448">        List&lt;Path&gt; files = new ArrayList&lt;&gt;();</span>
-<span class="nc bnc" id="L449" title="All 2 branches missed.">        for (String uri : fileUris) {</span>
-<span class="nc" id="L450">            files.add(new Path(parquetAdapter.dataDirectory(), uri));</span>
+<span class="nc" id="L449">        List&lt;Path&gt; files = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L450" title="All 2 branches missed.">        for (String uri : fileUris) {</span>
+<span class="nc" id="L451">            files.add(new Path(parquetAdapter.dataDirectory(), uri));</span>
         }
-<span class="nc" id="L452">        return files;</span>
+<span class="nc" id="L453">        return files;</span>
     }
 
     /**
@@ -462,20 +463,20 @@ public final class ExecutionService {
      * @throws IOException on HDFS read failure
      */
     private List&lt;String&gt; resolveUris(String[] fileUris) throws IOException {
-<span class="nc" id="L465">        List&lt;String&gt; uris = new ArrayList&lt;&gt;(fileUris.length);</span>
-<span class="nc bnc" id="L466" title="All 2 branches missed.">        for (String rel : fileUris) {</span>
-<span class="nc" id="L467">            org.apache.hadoop.fs.FileStatus status = parquetAdapter.fileSystem()</span>
-<span class="nc" id="L468">                    .getFileStatus(new Path(parquetAdapter.dataDirectory(), rel));</span>
-<span class="nc" id="L469">            uris.add(resolveEngineUri(status));</span>
+<span class="nc" id="L466">        List&lt;String&gt; uris = new ArrayList&lt;&gt;(fileUris.length);</span>
+<span class="nc bnc" id="L467" title="All 2 branches missed.">        for (String rel : fileUris) {</span>
+<span class="nc" id="L468">            org.apache.hadoop.fs.FileStatus status = parquetAdapter.fileSystem()</span>
+<span class="nc" id="L469">                    .getFileStatus(new Path(parquetAdapter.dataDirectory(), rel));</span>
+<span class="nc" id="L470">            uris.add(resolveEngineUri(status));</span>
         }
-<span class="nc" id="L471">        return uris;</span>
+<span class="nc" id="L472">        return uris;</span>
     }
 
     private String resolveEngineUri(org.apache.hadoop.fs.FileStatus status) throws IOException {
-<span class="nc bnc" id="L475" title="All 2 branches missed.">        if (isHdfsData()) {</span>
-<span class="nc" id="L476">            return aceroFileResolver.resolve(status);</span>
+<span class="nc bnc" id="L476" title="All 2 branches missed.">        if (isHdfsData()) {</span>
+<span class="nc" id="L477">            return aceroFileResolver.resolve(status);</span>
         }
-<span class="nc" id="L478">        return status.getPath().toUri().toString();</span>
+<span class="nc" id="L479">        return status.getPath().toUri().toString();</span>
     }
 
     /**
@@ -485,18 +486,18 @@ public final class ExecutionService {
      * @return DuckDB-compatible paths
      */
     static List&lt;String&gt; ducksDbPaths(List&lt;String&gt; uris) {
-<span class="fc" id="L488">        return uris.stream().map(u -&gt; {</span>
-<span class="fc bfc" id="L489" title="All 2 branches covered.">            if (u.startsWith(&quot;file:&quot;)) {</span>
-<span class="fc" id="L490">                int colon = u.indexOf(':');</span>
+<span class="fc" id="L489">        return uris.stream().map(u -&gt; {</span>
+<span class="fc bfc" id="L490" title="All 2 branches covered.">            if (u.startsWith(&quot;file:&quot;)) {</span>
+<span class="fc" id="L491">                int colon = u.indexOf(':');</span>
                 // file:///path → /path,  file:/path → /path
-<span class="fc" id="L492">                String stripped = u.substring(colon + 1);</span>
-<span class="fc bfc" id="L493" title="All 2 branches covered.">                while (stripped.startsWith(&quot;/&quot;)) {</span>
-<span class="fc" id="L494">                    stripped = stripped.substring(1);</span>
+<span class="fc" id="L493">                String stripped = u.substring(colon + 1);</span>
+<span class="fc bfc" id="L494" title="All 2 branches covered.">                while (stripped.startsWith(&quot;/&quot;)) {</span>
+<span class="fc" id="L495">                    stripped = stripped.substring(1);</span>
                 }
-<span class="fc" id="L496">                return &quot;/&quot; + stripped;</span>
+<span class="fc" id="L497">                return &quot;/&quot; + stripped;</span>
             }
-<span class="fc" id="L498">            return u;</span>
-<span class="fc" id="L499">        }).toList();</span>
+<span class="fc" id="L499">            return u;</span>
+<span class="fc" id="L500">        }).toList();</span>
     }
 
     /**
@@ -507,24 +508,24 @@ public final class ExecutionService {
      * @throws IOException on HDFS read failure
      */
     private List&lt;String&gt; resolveTableFiles(String key) throws IOException {
-<span class="nc" id="L510">        int dot = key.indexOf('.');</span>
-<span class="nc bnc" id="L511" title="All 2 branches missed.">        String schema = dot &gt; 0 ? key.substring(0, dot) : null;</span>
-<span class="nc bnc" id="L512" title="All 2 branches missed.">        String table = dot &gt; 0 ? key.substring(dot + 1) : key;</span>
-<span class="nc bnc" id="L513" title="All 2 branches missed.">        Path dir = schema != null</span>
-<span class="nc" id="L514">                ? new Path(parquetAdapter.dataDirectory(), schema + &quot;/&quot; + table)</span>
-<span class="nc" id="L515">                : new Path(parquetAdapter.dataDirectory(), table);</span>
-<span class="nc" id="L516">        List&lt;String&gt; uris = new ArrayList&lt;&gt;();</span>
-<span class="nc" id="L517">        org.apache.hadoop.fs.RemoteIterator&lt;org.apache.hadoop.fs.LocatedFileStatus&gt; it =</span>
-<span class="nc" id="L518">                parquetAdapter.fileSystem().listFiles(dir, true);</span>
-<span class="nc bnc" id="L519" title="All 2 branches missed.">        while (it.hasNext()) {</span>
-<span class="nc" id="L520">            org.apache.hadoop.fs.LocatedFileStatus f = it.next();</span>
-<span class="nc bnc" id="L521" title="All 4 branches missed.">            if (f.isFile() &amp;&amp; f.getPath().getName().endsWith(&quot;.parquet&quot;)) {</span>
-<span class="nc bnc" id="L522" title="All 2 branches missed.">                uris.add(isHdfsData()</span>
-<span class="nc" id="L523">                        ? ducksDbPaths(List.of(aceroFileResolver.resolve(f))).get(0)</span>
-<span class="nc" id="L524">                        : plainDuckDbPath(f.getPath()));</span>
+<span class="nc" id="L511">        int dot = key.indexOf('.');</span>
+<span class="nc bnc" id="L512" title="All 2 branches missed.">        String schema = dot &gt; 0 ? key.substring(0, dot) : null;</span>
+<span class="nc bnc" id="L513" title="All 2 branches missed.">        String table = dot &gt; 0 ? key.substring(dot + 1) : key;</span>
+<span class="nc bnc" id="L514" title="All 2 branches missed.">        Path dir = schema != null</span>
+<span class="nc" id="L515">                ? new Path(parquetAdapter.dataDirectory(), schema + &quot;/&quot; + table)</span>
+<span class="nc" id="L516">                : new Path(parquetAdapter.dataDirectory(), table);</span>
+<span class="nc" id="L517">        List&lt;String&gt; uris = new ArrayList&lt;&gt;();</span>
+<span class="nc" id="L518">        org.apache.hadoop.fs.RemoteIterator&lt;org.apache.hadoop.fs.LocatedFileStatus&gt; it =</span>
+<span class="nc" id="L519">                parquetAdapter.fileSystem().listFiles(dir, true);</span>
+<span class="nc bnc" id="L520" title="All 2 branches missed.">        while (it.hasNext()) {</span>
+<span class="nc" id="L521">            org.apache.hadoop.fs.LocatedFileStatus f = it.next();</span>
+<span class="nc bnc" id="L522" title="All 4 branches missed.">            if (f.isFile() &amp;&amp; f.getPath().getName().endsWith(&quot;.parquet&quot;)) {</span>
+<span class="nc bnc" id="L523" title="All 2 branches missed.">                uris.add(isHdfsData()</span>
+<span class="nc" id="L524">                        ? ducksDbPaths(List.of(aceroFileResolver.resolve(f))).get(0)</span>
+<span class="nc" id="L525">                        : plainDuckDbPath(f.getPath()));</span>
             }
-<span class="nc" id="L526">        }</span>
-<span class="nc" id="L527">        return uris;</span>
+<span class="nc" id="L527">        }</span>
+<span class="nc" id="L528">        return uris;</span>
     }
 
     /**
@@ -534,11 +535,11 @@ public final class ExecutionService {
      * @return quoted DuckDB path
      */
     static String duckDbPath(org.apache.hadoop.fs.Path p) {
-<span class="fc" id="L537">        java.net.URI uri = p.toUri();</span>
-<span class="pc bpc" id="L538" title="1 of 2 branches missed.">        String path = &quot;file&quot;.equals(uri.getScheme())</span>
-<span class="fc" id="L539">                ? uri.getPath()</span>
-<span class="pc" id="L540">                : uri.toString();</span>
-<span class="fc" id="L541">        return &quot;'&quot; + path.replace(&quot;'&quot;, &quot;''&quot;) + &quot;'&quot;;</span>
+<span class="fc" id="L538">        java.net.URI uri = p.toUri();</span>
+<span class="pc bpc" id="L539" title="1 of 2 branches missed.">        String path = &quot;file&quot;.equals(uri.getScheme())</span>
+<span class="fc" id="L540">                ? uri.getPath()</span>
+<span class="pc" id="L541">                : uri.toString();</span>
+<span class="fc" id="L542">        return &quot;'&quot; + path.replace(&quot;'&quot;, &quot;''&quot;) + &quot;'&quot;;</span>
     }
 
     /**
@@ -548,10 +549,10 @@ public final class ExecutionService {
      * @return unquoted DuckDB path
      */
     static String plainDuckDbPath(org.apache.hadoop.fs.Path p) {
-<span class="fc" id="L551">        java.net.URI uri = p.toUri();</span>
-<span class="pc bpc" id="L552" title="1 of 2 branches missed.">        return &quot;file&quot;.equals(uri.getScheme())</span>
-<span class="fc" id="L553">                ? uri.getPath()</span>
-<span class="nc" id="L554">                : uri.toString();</span>
+<span class="fc" id="L552">        java.net.URI uri = p.toUri();</span>
+<span class="pc bpc" id="L553" title="1 of 2 branches missed.">        return &quot;file&quot;.equals(uri.getScheme())</span>
+<span class="fc" id="L554">                ? uri.getPath()</span>
+<span class="nc" id="L555">                : uri.toString();</span>
     }
 
     /**
@@ -561,16 +562,16 @@ public final class ExecutionService {
      * @return projected column names, empty if none needed
      */
     private Optional&lt;String[]&gt; buildProjection(ParquetQueryParser pq) {
-<span class="nc" id="L564">        java.util.Set&lt;String&gt; scanCols = projectedColumns(pq);</span>
-<span class="nc bnc" id="L565" title="All 2 branches missed.">        if (scanCols.isEmpty()) {</span>
-<span class="nc" id="L566">            org.apache.arrow.vector.types.pojo.Schema tSchema =</span>
-<span class="nc" id="L567">                    parquetAdapter.getTableSchema(pq.schema, pq.table);</span>
-<span class="nc bnc" id="L568" title="All 2 branches missed.">            if (!tSchema.getFields().isEmpty()) {</span>
-<span class="nc" id="L569">                scanCols.add(tSchema.getFields().get(0).getName());</span>
+<span class="nc" id="L565">        java.util.Set&lt;String&gt; scanCols = projectedColumns(pq);</span>
+<span class="nc bnc" id="L566" title="All 2 branches missed.">        if (scanCols.isEmpty()) {</span>
+<span class="nc" id="L567">            org.apache.arrow.vector.types.pojo.Schema tSchema =</span>
+<span class="nc" id="L568">                    parquetAdapter.getTableSchema(pq.schema, pq.table);</span>
+<span class="nc bnc" id="L569" title="All 2 branches missed.">            if (!tSchema.getFields().isEmpty()) {</span>
+<span class="nc" id="L570">                scanCols.add(tSchema.getFields().get(0).getName());</span>
             }
         }
-<span class="nc bnc" id="L572" title="All 2 branches missed.">        return scanCols.isEmpty() ? Optional.empty()</span>
-<span class="nc" id="L573">                : Optional.of(scanCols.toArray(new String[0]));</span>
+<span class="nc bnc" id="L573" title="All 2 branches missed.">        return scanCols.isEmpty() ? Optional.empty()</span>
+<span class="nc" id="L574">                : Optional.of(scanCols.toArray(new String[0]));</span>
     }
 
     /**
@@ -580,21 +581,21 @@ public final class ExecutionService {
      * @return columns that must be present in the Acero stream
      */
     static java.util.Set&lt;String&gt; projectedColumns(ParquetQueryParser pq) {
-<span class="fc" id="L583">        java.util.Set&lt;String&gt; scanCols = new java.util.LinkedHashSet&lt;&gt;(pq.groupByColumnNames);</span>
-<span class="fc bfc" id="L584" title="All 2 branches covered.">        for (ParquetQueryParser.SelectExpr e : pq.selectExprs) {</span>
-<span class="pc bpc" id="L585" title="2 of 4 branches missed.">            if (e.func != ParquetQueryParser.SelectExpr.AggFunc.COUNT_STAR</span>
+<span class="fc" id="L584">        java.util.Set&lt;String&gt; scanCols = new java.util.LinkedHashSet&lt;&gt;(pq.groupByColumnNames);</span>
+<span class="fc bfc" id="L585" title="All 2 branches covered.">        for (ParquetQueryParser.SelectExpr e : pq.selectExprs) {</span>
+<span class="pc bpc" id="L586" title="2 of 4 branches missed.">            if (e.func != ParquetQueryParser.SelectExpr.AggFunc.COUNT_STAR</span>
                     &amp;&amp; e.inputColumn != null) {
-<span class="fc" id="L587">                scanCols.add(e.inputColumn);</span>
+<span class="fc" id="L588">                scanCols.add(e.inputColumn);</span>
             }
-<span class="fc" id="L589">        }</span>
-<span class="pc bpc" id="L590" title="2 of 4 branches missed.">        if (pq.filter != null &amp;&amp; !pq.filter.isBlank()) {</span>
-<span class="fc" id="L591">            java.util.regex.Matcher m =</span>
-<span class="fc" id="L592">                    java.util.regex.Pattern.compile(&quot;\&quot;([^\&quot;]+)\&quot;&quot;).matcher(pq.filter);</span>
-<span class="fc bfc" id="L593" title="All 2 branches covered.">            while (m.find()) {</span>
-<span class="fc" id="L594">                scanCols.add(m.group(1));</span>
+<span class="fc" id="L590">        }</span>
+<span class="pc bpc" id="L591" title="2 of 4 branches missed.">        if (pq.filter != null &amp;&amp; !pq.filter.isBlank()) {</span>
+<span class="fc" id="L592">            java.util.regex.Matcher m =</span>
+<span class="fc" id="L593">                    java.util.regex.Pattern.compile(&quot;\&quot;([^\&quot;]+)\&quot;&quot;).matcher(pq.filter);</span>
+<span class="fc bfc" id="L594" title="All 2 branches covered.">            while (m.find()) {</span>
+<span class="fc" id="L595">                scanCols.add(m.group(1));</span>
             }
         }
-<span class="fc" id="L597">        return scanCols;</span>
+<span class="fc" id="L598">        return scanCols;</span>
     }
 
     /**
@@ -604,7 +605,7 @@ public final class ExecutionService {
      * @return filter bytes, may be null
      */
     private byte[] buildFilterBytes(ParquetQueryParser pq) {
-<span class="nc" id="L607">        return filterBuilder.apply(pq);</span>
+<span class="nc" id="L608">        return filterBuilder.apply(pq);</span>
     }
 
     // ── emit ─────────────────────────────────────────────────────────────
@@ -623,50 +624,51 @@ public final class ExecutionService {
             List&lt;Object[]&gt; rows, FlightProducer.ServerStreamListener listener,
             boolean startListener) throws InterruptedException {
 
-<span class="nc bnc" id="L626" title="All 2 branches missed.">        Schema aggSchema = pq.selectExprs.isEmpty()</span>
-<span class="nc" id="L627">                ? metadataService.getQuerySchema(buildSelectExprQuery(pq))</span>
-<span class="nc" id="L628">                : metadataService.buildAggregationSchema(pq);</span>
-<span class="nc" id="L629">        int numGbCols = pq.groupByColumnNames.size();</span>
+<span class="nc bnc" id="L627" title="All 2 branches missed.">        Schema aggSchema = pq.selectExprs.isEmpty()</span>
+<span class="nc" id="L628">                ? metadataService.getQuerySchema(buildSelectExprQuery(pq))</span>
+<span class="nc" id="L629">                : metadataService.buildAggregationSchema(pq);</span>
+<span class="nc" id="L630">        int numGbCols = pq.groupByColumnNames.size();</span>
 
-<span class="nc" id="L631">        List&lt;FieldVector&gt; vectors = new ArrayList&lt;&gt;();</span>
-<span class="nc bnc" id="L632" title="All 2 branches missed.">        for (Field field : aggSchema.getFields()) {</span>
-<span class="nc" id="L633">            FieldVector v = field.createVector(allocator);</span>
-<span class="nc bnc" id="L634" title="All 2 branches missed.">            if (v instanceof FixedWidthVector fv) {</span>
-<span class="nc" id="L635">                fv.allocateNew(rows.size());</span>
-<span class="nc bnc" id="L636" title="All 2 branches missed.">            } else if (v instanceof VariableWidthVector vv) {</span>
-<span class="nc" id="L637">                vv.allocateNew(rows.size() * 16);</span>
+<span class="nc" id="L632">        List&lt;FieldVector&gt; vectors = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L633" title="All 2 branches missed.">        for (Field field : aggSchema.getFields()) {</span>
+<span class="nc" id="L634">            FieldVector v = field.createVector(allocator);</span>
+<span class="nc bnc" id="L635" title="All 2 branches missed.">            if (v instanceof FixedWidthVector fv) {</span>
+<span class="nc" id="L636">                fv.allocateNew(rows.size());</span>
+<span class="nc bnc" id="L637" title="All 2 branches missed.">            } else if (v instanceof VariableWidthVector vv) {</span>
+<span class="nc" id="L638">                vv.allocateNew(rows.size() * 16);</span>
             }
-<span class="nc" id="L639">            vectors.add(v);</span>
-<span class="nc" id="L640">        }</span>
+<span class="nc" id="L640">            vectors.add(v);</span>
+<span class="nc" id="L641">        }</span>
 
-<span class="nc" id="L642">        try (VectorSchemaRoot root = new VectorSchemaRoot(aggSchema.getFields(), vectors)) {</span>
-<span class="nc" id="L643">            root.setRowCount(rows.size());</span>
-<span class="nc" id="L644">            int vecIdx = 0;</span>
-<span class="nc" id="L645">            int aggIdx = 0;</span>
-<span class="nc bnc" id="L646" title="All 2 branches missed.">            for (ParquetQueryParser.SelectExpr expr : pq.selectExprs) {</span>
-<span class="nc" id="L647">                FieldVector vec = vectors.get(vecIdx++);</span>
-<span class="nc bnc" id="L648" title="All 2 branches missed.">                if (expr.func == ParquetQueryParser.SelectExpr.AggFunc.COLUMN) {</span>
-<span class="nc" id="L649">                    int gbPos = pq.groupByColumnNames.indexOf(expr.inputColumn);</span>
-<span class="nc bnc" id="L650" title="All 2 branches missed.">                    for (int r = 0; r &lt; rows.size(); r++) {</span>
-<span class="nc" id="L651">                        setVectorValue(vec, r, rows.get(r)[gbPos]);</span>
+<span class="nc" id="L643">        try (VectorSchemaRoot root = new VectorSchemaRoot(aggSchema.getFields(), vectors)) {</span>
+<span class="nc" id="L644">            root.setRowCount(rows.size());</span>
+<span class="nc" id="L645">            int vecIdx = 0;</span>
+<span class="nc" id="L646">            int aggIdx = 0;</span>
+<span class="nc bnc" id="L647" title="All 2 branches missed.">            for (ParquetQueryParser.SelectExpr expr : pq.selectExprs) {</span>
+<span class="nc" id="L648">                FieldVector vec = vectors.get(vecIdx++);</span>
+<span class="nc bnc" id="L649" title="All 2 branches missed.">                if (expr.func == ParquetQueryParser.SelectExpr.AggFunc.COLUMN) {</span>
+<span class="nc" id="L650">                    int gbPos = pq.groupByColumnNames.indexOf(expr.inputColumn);</span>
+<span class="nc bnc" id="L651" title="All 2 branches missed.">                    for (int r = 0; r &lt; rows.size(); r++) {</span>
+<span class="nc" id="L652">                        setVectorValue(vec, r, rows.get(r)[gbPos]);</span>
                     }
-<span class="nc" id="L653">                } else {</span>
-<span class="nc" id="L654">                    int pos = numGbCols + aggIdx++;</span>
-<span class="nc bnc" id="L655" title="All 2 branches missed.">                    for (int r = 0; r &lt; rows.size(); r++) {</span>
-<span class="nc" id="L656">                        setVectorValue(vec, r, rows.get(r)[pos]);</span>
+<span class="nc" id="L654">                } else {</span>
+<span class="nc" id="L655">                    int pos = numGbCols + aggIdx++;</span>
+<span class="nc bnc" id="L656" title="All 2 branches missed.">                    for (int r = 0; r &lt; rows.size(); r++) {</span>
+<span class="nc" id="L657">                        setVectorValue(vec, r, rows.get(r)[pos]);</span>
                     }
                 }
-<span class="nc" id="L659">            }</span>
-<span class="nc bnc" id="L660" title="All 2 branches missed.">            if (startListener) {</span>
-<span class="nc" id="L661">                listener.start(root);</span>
+<span class="nc" id="L660">            }</span>
+<span class="nc bnc" id="L661" title="All 2 branches missed.">            if (startListener) {</span>
+<span class="nc" id="L662">                listener.start(root);</span>
             }
-<span class="nc bnc" id="L663" title="All 2 branches missed.">            if (!rows.isEmpty()) {</span>
-<span class="nc bnc" id="L664" title="All 2 branches missed.">                if (DuckDbAdapter.awaitListenerReady(listener)) {</span>
-<span class="nc" id="L665">                    listener.putNext();</span>
+<span class="nc bnc" id="L664" title="All 2 branches missed.">            if (!rows.isEmpty()) {</span>
+<span class="nc bnc" id="L665" title="All 2 branches missed.">                if (DuckDbAdapter.awaitListenerReady(</span>
+<span class="nc" id="L666">                        listener, appConfig.flightListenerReadyTimeoutMillis())) {</span>
+<span class="nc" id="L667">                    listener.putNext();</span>
                 }
             }
         }
-<span class="nc" id="L669">    }</span>
+<span class="nc" id="L671">    }</span>
 
     /**
      * Builds a SELECT * query for schema inference.
@@ -675,10 +677,10 @@ public final class ExecutionService {
      * @return SELECT * query string
      */
     private String buildSelectExprQuery(ParquetQueryParser pq) {
-<span class="nc bnc" id="L678" title="All 4 branches missed.">        if (pq.schema != null &amp;&amp; pq.table != null) {</span>
-<span class="nc" id="L679">            return &quot;SELECT * FROM &quot; + pq.schema + &quot;.&quot; + pq.table;</span>
+<span class="nc bnc" id="L680" title="All 4 branches missed.">        if (pq.schema != null &amp;&amp; pq.table != null) {</span>
+<span class="nc" id="L681">            return &quot;SELECT * FROM &quot; + pq.schema + &quot;.&quot; + pq.table;</span>
         }
-<span class="nc" id="L681">        throw new IllegalArgumentException(&quot;Cannot build schema query: missing schema/table&quot;);</span>
+<span class="nc" id="L683">        throw new IllegalArgumentException(&quot;Cannot build schema query: missing schema/table&quot;);</span>
     }
 
     /**
@@ -691,170 +693,170 @@ public final class ExecutionService {
      */
     private VectorSchemaRoot mergeVsrPartials(BufferAllocator allocator,
             ParquetQueryParser pq, List&lt;VectorSchemaRoot&gt; partials) {
-<span class="nc" id="L694">        int numGbCols = pq.groupByColumnNames.size();</span>
-<span class="nc" id="L695">        List&lt;ParquetQueryParser.SelectExpr&gt; exprs = pq.selectExprs;</span>
+<span class="nc" id="L696">        int numGbCols = pq.groupByColumnNames.size();</span>
+<span class="nc" id="L697">        List&lt;ParquetQueryParser.SelectExpr&gt; exprs = pq.selectExprs;</span>
 
-<span class="nc bnc" id="L697" title="All 2 branches missed.">        if (numGbCols == 0) {</span>
-<span class="nc" id="L698">                    Long[] longAccum = new Long[exprs.size()];</span>
-<span class="nc" id="L699">            Double[] dblAccum = new Double[exprs.size()];</span>
-<span class="nc" id="L700">            Object[] objAccum = new Object[exprs.size()];</span>
-<span class="nc bnc" id="L701" title="All 2 branches missed.">            for (int i = 0; i &lt; exprs.size(); i++) {</span>
-<span class="nc" id="L702">                longAccum[i] = 0L;</span>
+<span class="nc bnc" id="L699" title="All 2 branches missed.">        if (numGbCols == 0) {</span>
+<span class="nc" id="L700">                    Long[] longAccum = new Long[exprs.size()];</span>
+<span class="nc" id="L701">            Double[] dblAccum = new Double[exprs.size()];</span>
+<span class="nc" id="L702">            Object[] objAccum = new Object[exprs.size()];</span>
+<span class="nc bnc" id="L703" title="All 2 branches missed.">            for (int i = 0; i &lt; exprs.size(); i++) {</span>
+<span class="nc" id="L704">                longAccum[i] = 0L;</span>
             }
-<span class="nc" id="L704">            boolean any = false;</span>
+<span class="nc" id="L706">            boolean any = false;</span>
 
-<span class="nc bnc" id="L706" title="All 2 branches missed.">            for (VectorSchemaRoot partial : partials) {</span>
-<span class="nc bnc" id="L707" title="All 2 branches missed.">                if (partial.getRowCount() == 0) {</span>
-<span class="nc" id="L708">                    continue;</span>
+<span class="nc bnc" id="L708" title="All 2 branches missed.">            for (VectorSchemaRoot partial : partials) {</span>
+<span class="nc bnc" id="L709" title="All 2 branches missed.">                if (partial.getRowCount() == 0) {</span>
+<span class="nc" id="L710">                    continue;</span>
                 }
-<span class="nc" id="L710">                any = true;</span>
-<span class="nc" id="L711">                int col = 0;</span>
-<span class="nc bnc" id="L712" title="All 2 branches missed.">                for (ParquetQueryParser.SelectExpr expr : exprs) {</span>
-<span class="nc" id="L713">                    FieldVector vec = partial.getVector(col);</span>
-<span class="nc bnc" id="L714" title="All 2 branches missed.">                    if (!vec.isNull(0)) {</span>
-<span class="nc bnc" id="L715" title="All 5 branches missed.">                        switch (expr.func) {</span>
-<span class="nc" id="L716">                            case COUNT_STAR, COUNT -&gt; longAccum[col] = (Long) addLongs(longAccum[col], toLong(vec, 0));</span>
-<span class="nc" id="L717">                            case SUM -&gt; dblAccum[col] = (Double) addDoubles(dblAccum[col], toDouble(vec, 0));</span>
-<span class="nc bnc" id="L718" title="All 2 branches missed.">                            case MIN -&gt; objAccum[col] = objAccum[col] == null</span>
-<span class="nc" id="L719">                                    ? vec.getObject(0) : minOf(objAccum[col], vec.getObject(0));</span>
-<span class="nc bnc" id="L720" title="All 2 branches missed.">                            case MAX -&gt; objAccum[col] = objAccum[col] == null</span>
-<span class="nc" id="L721">                                    ? vec.getObject(0) : maxOf(objAccum[col], vec.getObject(0));</span>
+<span class="nc" id="L712">                any = true;</span>
+<span class="nc" id="L713">                int col = 0;</span>
+<span class="nc bnc" id="L714" title="All 2 branches missed.">                for (ParquetQueryParser.SelectExpr expr : exprs) {</span>
+<span class="nc" id="L715">                    FieldVector vec = partial.getVector(col);</span>
+<span class="nc bnc" id="L716" title="All 2 branches missed.">                    if (!vec.isNull(0)) {</span>
+<span class="nc bnc" id="L717" title="All 5 branches missed.">                        switch (expr.func) {</span>
+<span class="nc" id="L718">                            case COUNT_STAR, COUNT -&gt; longAccum[col] = (Long) addLongs(longAccum[col], toLong(vec, 0));</span>
+<span class="nc" id="L719">                            case SUM -&gt; dblAccum[col] = (Double) addDoubles(dblAccum[col], toDouble(vec, 0));</span>
+<span class="nc bnc" id="L720" title="All 2 branches missed.">                            case MIN -&gt; objAccum[col] = objAccum[col] == null</span>
+<span class="nc" id="L721">                                    ? vec.getObject(0) : minOf(objAccum[col], vec.getObject(0));</span>
+<span class="nc bnc" id="L722" title="All 2 branches missed.">                            case MAX -&gt; objAccum[col] = objAccum[col] == null</span>
+<span class="nc" id="L723">                                    ? vec.getObject(0) : maxOf(objAccum[col], vec.getObject(0));</span>
                             default -&gt; { }
                         }
                     }
-<span class="nc" id="L725">                    col++;</span>
-<span class="nc" id="L726">                }</span>
-<span class="nc" id="L727">            }</span>
+<span class="nc" id="L727">                    col++;</span>
+<span class="nc" id="L728">                }</span>
+<span class="nc" id="L729">            }</span>
 
-<span class="nc bnc" id="L729" title="All 2 branches missed.">            Schema outSchema = pq.selectExprs.isEmpty()</span>
-<span class="nc" id="L730">                    ? metadataService.getQuerySchema(buildSelectExprQuery(pq))</span>
-<span class="nc" id="L731">                    : metadataService.buildAggregationSchema(pq);</span>
-<span class="nc" id="L732">            List&lt;FieldVector&gt; outVecs = new ArrayList&lt;&gt;();</span>
-<span class="nc bnc" id="L733" title="All 2 branches missed.">            for (Field f : outSchema.getFields()) {</span>
-<span class="nc" id="L734">                FieldVector v = f.createVector(allocator);</span>
-<span class="nc bnc" id="L735" title="All 2 branches missed.">                if (v instanceof FixedWidthVector fv) {</span>
-<span class="nc" id="L736">                    fv.allocateNew(1);</span>
-<span class="nc bnc" id="L737" title="All 2 branches missed.">                } else if (v instanceof VariableWidthVector vv) {</span>
-<span class="nc" id="L738">                    vv.allocateNew(32);</span>
+<span class="nc bnc" id="L731" title="All 2 branches missed.">            Schema outSchema = pq.selectExprs.isEmpty()</span>
+<span class="nc" id="L732">                    ? metadataService.getQuerySchema(buildSelectExprQuery(pq))</span>
+<span class="nc" id="L733">                    : metadataService.buildAggregationSchema(pq);</span>
+<span class="nc" id="L734">            List&lt;FieldVector&gt; outVecs = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L735" title="All 2 branches missed.">            for (Field f : outSchema.getFields()) {</span>
+<span class="nc" id="L736">                FieldVector v = f.createVector(allocator);</span>
+<span class="nc bnc" id="L737" title="All 2 branches missed.">                if (v instanceof FixedWidthVector fv) {</span>
+<span class="nc" id="L738">                    fv.allocateNew(1);</span>
+<span class="nc bnc" id="L739" title="All 2 branches missed.">                } else if (v instanceof VariableWidthVector vv) {</span>
+<span class="nc" id="L740">                    vv.allocateNew(32);</span>
                 }
-<span class="nc" id="L740">                outVecs.add(v);</span>
-<span class="nc" id="L741">            }</span>
-<span class="nc bnc" id="L742" title="All 2 branches missed.">            if (any) {</span>
-<span class="nc" id="L743">                int col = 0;</span>
-<span class="nc bnc" id="L744" title="All 2 branches missed.">                for (ParquetQueryParser.SelectExpr expr : exprs) {</span>
-<span class="nc" id="L745">                    FieldVector v = outVecs.get(col);</span>
-<span class="nc bnc" id="L746" title="All 4 branches missed.">                    switch (expr.func) {</span>
+<span class="nc" id="L742">                outVecs.add(v);</span>
+<span class="nc" id="L743">            }</span>
+<span class="nc bnc" id="L744" title="All 2 branches missed.">            if (any) {</span>
+<span class="nc" id="L745">                int col = 0;</span>
+<span class="nc bnc" id="L746" title="All 2 branches missed.">                for (ParquetQueryParser.SelectExpr expr : exprs) {</span>
+<span class="nc" id="L747">                    FieldVector v = outVecs.get(col);</span>
+<span class="nc bnc" id="L748" title="All 4 branches missed.">                    switch (expr.func) {</span>
                         case COUNT_STAR, COUNT -&gt; {
-<span class="nc bnc" id="L748" title="All 2 branches missed.">                            if (longAccum[col] != null) {</span>
-<span class="nc" id="L749">                                ((BigIntVector) v).setSafe(0, longAccum[col]);</span>
+<span class="nc bnc" id="L750" title="All 2 branches missed.">                            if (longAccum[col] != null) {</span>
+<span class="nc" id="L751">                                ((BigIntVector) v).setSafe(0, longAccum[col]);</span>
                             }
                         }
                         case SUM -&gt; {
-<span class="nc bnc" id="L753" title="All 2 branches missed.">                            if (dblAccum[col] != null) {</span>
-<span class="nc" id="L754">                                ((Float8Vector) v).setSafe(0, dblAccum[col]);</span>
+<span class="nc bnc" id="L755" title="All 2 branches missed.">                            if (dblAccum[col] != null) {</span>
+<span class="nc" id="L756">                                ((Float8Vector) v).setSafe(0, dblAccum[col]);</span>
                             }
                         }
-<span class="nc" id="L757">                        case MIN, MAX -&gt; setVectorValue(v, 0, objAccum[col]);</span>
+<span class="nc" id="L759">                        case MIN, MAX -&gt; setVectorValue(v, 0, objAccum[col]);</span>
                         default -&gt; { }
                     }
-<span class="nc" id="L760">                    col++;</span>
-<span class="nc" id="L761">                }</span>
+<span class="nc" id="L762">                    col++;</span>
+<span class="nc" id="L763">                }</span>
             }
-<span class="nc" id="L763">            VectorSchemaRoot r = new VectorSchemaRoot(outSchema.getFields(), outVecs);</span>
-<span class="nc bnc" id="L764" title="All 2 branches missed.">            r.setRowCount(any ? 1 : 0);</span>
-<span class="nc" id="L765">            return r;</span>
+<span class="nc" id="L765">            VectorSchemaRoot r = new VectorSchemaRoot(outSchema.getFields(), outVecs);</span>
+<span class="nc bnc" id="L766" title="All 2 branches missed.">            r.setRowCount(any ? 1 : 0);</span>
+<span class="nc" id="L767">            return r;</span>
         }
 
         // GROUP BY path
-<span class="nc" id="L769">        int numAggExprs = (int) exprs.stream()</span>
-<span class="nc bnc" id="L770" title="All 2 branches missed.">                .filter(e -&gt; e.func != ParquetQueryParser.SelectExpr.AggFunc.COLUMN).count();</span>
-<span class="nc" id="L771">        Map&lt;List&lt;Object&gt;, Object[]&gt; byKey = new LinkedHashMap&lt;&gt;();</span>
+<span class="nc" id="L771">        int numAggExprs = (int) exprs.stream()</span>
+<span class="nc bnc" id="L772" title="All 2 branches missed.">                .filter(e -&gt; e.func != ParquetQueryParser.SelectExpr.AggFunc.COLUMN).count();</span>
+<span class="nc" id="L773">        Map&lt;List&lt;Object&gt;, Object[]&gt; byKey = new LinkedHashMap&lt;&gt;();</span>
 
-<span class="nc bnc" id="L773" title="All 2 branches missed.">        for (VectorSchemaRoot partial : partials) {</span>
-<span class="nc" id="L774">            Schema partialSchema = partial.getSchema();</span>
-<span class="nc" id="L775">            List&lt;Field&gt; partialFields = partialSchema.getFields();</span>
+<span class="nc bnc" id="L775" title="All 2 branches missed.">        for (VectorSchemaRoot partial : partials) {</span>
+<span class="nc" id="L776">            Schema partialSchema = partial.getSchema();</span>
+<span class="nc" id="L777">            List&lt;Field&gt; partialFields = partialSchema.getFields();</span>
 
             // Build name→index map for defensive column lookup
-<span class="nc" id="L778">            Map&lt;String, Integer&gt; colIndexByName = new LinkedHashMap&lt;&gt;();</span>
-<span class="nc bnc" id="L779" title="All 2 branches missed.">            for (int i = 0; i &lt; partialFields.size(); i++) {</span>
-<span class="nc" id="L780">                colIndexByName.put(partialFields.get(i).getName().toLowerCase(java.util.Locale.ROOT), i);</span>
+<span class="nc" id="L780">            Map&lt;String, Integer&gt; colIndexByName = new LinkedHashMap&lt;&gt;();</span>
+<span class="nc bnc" id="L781" title="All 2 branches missed.">            for (int i = 0; i &lt; partialFields.size(); i++) {</span>
+<span class="nc" id="L782">                colIndexByName.put(partialFields.get(i).getName().toLowerCase(java.util.Locale.ROOT), i);</span>
             }
 
-<span class="nc" id="L783">            int rowCount = partial.getRowCount();</span>
-<span class="nc bnc" id="L784" title="All 2 branches missed.">            for (int r = 0; r &lt; rowCount; r++) {</span>
-<span class="nc" id="L785">                List&lt;Object&gt; key = new ArrayList&lt;&gt;(numGbCols);</span>
-<span class="nc bnc" id="L786" title="All 2 branches missed.">                for (int c = 0; c &lt; numGbCols; c++) {</span>
-<span class="nc bnc" id="L787" title="All 4 branches missed.">                    FieldVector gv = numGbCols &gt; c &amp;&amp; c &lt; partialFields.size()</span>
-<span class="nc" id="L788">                            ? partial.getVector(c) : null;</span>
-<span class="nc bnc" id="L789" title="All 2 branches missed.">                    key.add(gv != null ? gv.getObject(r) : null);</span>
+<span class="nc" id="L785">            int rowCount = partial.getRowCount();</span>
+<span class="nc bnc" id="L786" title="All 2 branches missed.">            for (int r = 0; r &lt; rowCount; r++) {</span>
+<span class="nc" id="L787">                List&lt;Object&gt; key = new ArrayList&lt;&gt;(numGbCols);</span>
+<span class="nc bnc" id="L788" title="All 2 branches missed.">                for (int c = 0; c &lt; numGbCols; c++) {</span>
+<span class="nc bnc" id="L789" title="All 4 branches missed.">                    FieldVector gv = numGbCols &gt; c &amp;&amp; c &lt; partialFields.size()</span>
+<span class="nc" id="L790">                            ? partial.getVector(c) : null;</span>
+<span class="nc bnc" id="L791" title="All 2 branches missed.">                    key.add(gv != null ? gv.getObject(r) : null);</span>
                 }
-<span class="nc" id="L791">                Object[] accum = byKey.computeIfAbsent(key, k -&gt; new Object[numAggExprs]);</span>
-<span class="nc" id="L792">                int ai = 0;</span>
-<span class="nc bnc" id="L793" title="All 2 branches missed.">                for (ParquetQueryParser.SelectExpr expr : exprs) {</span>
-<span class="nc bnc" id="L794" title="All 2 branches missed.">                    if (expr.func == ParquetQueryParser.SelectExpr.AggFunc.COLUMN) {</span>
-<span class="nc" id="L795">                        continue;</span>
+<span class="nc" id="L793">                Object[] accum = byKey.computeIfAbsent(key, k -&gt; new Object[numAggExprs]);</span>
+<span class="nc" id="L794">                int ai = 0;</span>
+<span class="nc bnc" id="L795" title="All 2 branches missed.">                for (ParquetQueryParser.SelectExpr expr : exprs) {</span>
+<span class="nc bnc" id="L796" title="All 2 branches missed.">                    if (expr.func == ParquetQueryParser.SelectExpr.AggFunc.COLUMN) {</span>
+<span class="nc" id="L797">                        continue;</span>
                     }
-<span class="nc" id="L797">                    int colPos = numGbCols + ai;</span>
-<span class="nc bnc" id="L798" title="All 2 branches missed.">                    String expectedName = expr.outputName != null ? expr.outputName</span>
-<span class="nc" id="L799">                            : expr.inputColumn;</span>
-<span class="nc bnc" id="L800" title="All 2 branches missed.">                    Integer namedIdx = expectedName != null</span>
-<span class="nc" id="L801">                            ? colIndexByName.get(expectedName.toLowerCase(java.util.Locale.ROOT))</span>
-<span class="nc" id="L802">                            : null;</span>
-<span class="nc bnc" id="L803" title="All 2 branches missed.">                    FieldVector vec = namedIdx != null</span>
-<span class="nc" id="L804">                            ? partial.getVector(namedIdx)</span>
-<span class="nc bnc" id="L805" title="All 2 branches missed.">                            : (colPos &lt; partialFields.size() ? partial.getVector(colPos) : null);</span>
-<span class="nc bnc" id="L806" title="All 4 branches missed.">                    if (vec != null &amp;&amp; !vec.isNull(r)) {</span>
-<span class="nc" id="L807">                        Object val = vec.getObject(r);</span>
-<span class="nc bnc" id="L808" title="All 5 branches missed.">                        switch (expr.func) {</span>
-<span class="nc" id="L809">                            case COUNT_STAR, COUNT -&gt; accum[ai] = addLongs(accum[ai], val);</span>
-<span class="nc" id="L810">                            case SUM -&gt; accum[ai] = addDoubles(accum[ai], val);</span>
-<span class="nc bnc" id="L811" title="All 2 branches missed.">                            case MIN -&gt; accum[ai] = accum[ai] == null ? val : minOf(accum[ai], val);</span>
-<span class="nc bnc" id="L812" title="All 2 branches missed.">                            case MAX -&gt; accum[ai] = accum[ai] == null ? val : maxOf(accum[ai], val);</span>
+<span class="nc" id="L799">                    int colPos = numGbCols + ai;</span>
+<span class="nc bnc" id="L800" title="All 2 branches missed.">                    String expectedName = expr.outputName != null ? expr.outputName</span>
+<span class="nc" id="L801">                            : expr.inputColumn;</span>
+<span class="nc bnc" id="L802" title="All 2 branches missed.">                    Integer namedIdx = expectedName != null</span>
+<span class="nc" id="L803">                            ? colIndexByName.get(expectedName.toLowerCase(java.util.Locale.ROOT))</span>
+<span class="nc" id="L804">                            : null;</span>
+<span class="nc bnc" id="L805" title="All 2 branches missed.">                    FieldVector vec = namedIdx != null</span>
+<span class="nc" id="L806">                            ? partial.getVector(namedIdx)</span>
+<span class="nc bnc" id="L807" title="All 2 branches missed.">                            : (colPos &lt; partialFields.size() ? partial.getVector(colPos) : null);</span>
+<span class="nc bnc" id="L808" title="All 4 branches missed.">                    if (vec != null &amp;&amp; !vec.isNull(r)) {</span>
+<span class="nc" id="L809">                        Object val = vec.getObject(r);</span>
+<span class="nc bnc" id="L810" title="All 5 branches missed.">                        switch (expr.func) {</span>
+<span class="nc" id="L811">                            case COUNT_STAR, COUNT -&gt; accum[ai] = addLongs(accum[ai], val);</span>
+<span class="nc" id="L812">                            case SUM -&gt; accum[ai] = addDoubles(accum[ai], val);</span>
+<span class="nc bnc" id="L813" title="All 2 branches missed.">                            case MIN -&gt; accum[ai] = accum[ai] == null ? val : minOf(accum[ai], val);</span>
+<span class="nc bnc" id="L814" title="All 2 branches missed.">                            case MAX -&gt; accum[ai] = accum[ai] == null ? val : maxOf(accum[ai], val);</span>
                             default -&gt; { }
                         }
                     }
-<span class="nc" id="L816">                    ai++;</span>
-<span class="nc" id="L817">                }</span>
+<span class="nc" id="L818">                    ai++;</span>
+<span class="nc" id="L819">                }</span>
             }
-<span class="nc" id="L819">        }</span>
+<span class="nc" id="L821">        }</span>
 
-<span class="nc bnc" id="L821" title="All 2 branches missed.">        Schema outSchema = pq.selectExprs.isEmpty()</span>
-<span class="nc" id="L822">                ? metadataService.getQuerySchema(buildSelectExprQuery(pq))</span>
-<span class="nc" id="L823">                : metadataService.buildAggregationSchema(pq);</span>
-<span class="nc" id="L824">        int totalRows = byKey.size();</span>
-<span class="nc" id="L825">        List&lt;FieldVector&gt; outVecs = new ArrayList&lt;&gt;();</span>
-<span class="nc bnc" id="L826" title="All 2 branches missed.">        for (Field f : outSchema.getFields()) {</span>
-<span class="nc" id="L827">            FieldVector v = f.createVector(allocator);</span>
-<span class="nc bnc" id="L828" title="All 2 branches missed.">            if (v instanceof FixedWidthVector fv) {</span>
-<span class="nc" id="L829">                fv.allocateNew(totalRows);</span>
-<span class="nc bnc" id="L830" title="All 2 branches missed.">            } else if (v instanceof VariableWidthVector vv) {</span>
-<span class="nc" id="L831">                vv.allocateNew(totalRows * 16);</span>
+<span class="nc bnc" id="L823" title="All 2 branches missed.">        Schema outSchema = pq.selectExprs.isEmpty()</span>
+<span class="nc" id="L824">                ? metadataService.getQuerySchema(buildSelectExprQuery(pq))</span>
+<span class="nc" id="L825">                : metadataService.buildAggregationSchema(pq);</span>
+<span class="nc" id="L826">        int totalRows = byKey.size();</span>
+<span class="nc" id="L827">        List&lt;FieldVector&gt; outVecs = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L828" title="All 2 branches missed.">        for (Field f : outSchema.getFields()) {</span>
+<span class="nc" id="L829">            FieldVector v = f.createVector(allocator);</span>
+<span class="nc bnc" id="L830" title="All 2 branches missed.">            if (v instanceof FixedWidthVector fv) {</span>
+<span class="nc" id="L831">                fv.allocateNew(totalRows);</span>
+<span class="nc bnc" id="L832" title="All 2 branches missed.">            } else if (v instanceof VariableWidthVector vv) {</span>
+<span class="nc" id="L833">                vv.allocateNew(totalRows * 16);</span>
             }
-<span class="nc" id="L833">            outVecs.add(v);</span>
-<span class="nc" id="L834">        }</span>
-<span class="nc" id="L835">        int row = 0;</span>
-<span class="nc bnc" id="L836" title="All 2 branches missed.">        for (Map.Entry&lt;List&lt;Object&gt;, Object[]&gt; entry : byKey.entrySet()) {</span>
-<span class="nc" id="L837">            List&lt;Object&gt; key = entry.getKey();</span>
-<span class="nc" id="L838">            Object[] accum = entry.getValue();</span>
-<span class="nc" id="L839">            int vecIdx = 0;</span>
-<span class="nc" id="L840">            int ai = 0;</span>
-<span class="nc bnc" id="L841" title="All 2 branches missed.">            for (ParquetQueryParser.SelectExpr expr : exprs) {</span>
-<span class="nc" id="L842">                FieldVector v = outVecs.get(vecIdx++);</span>
-<span class="nc bnc" id="L843" title="All 2 branches missed.">                if (expr.func == ParquetQueryParser.SelectExpr.AggFunc.COLUMN) {</span>
-<span class="nc" id="L844">                    int gbPos = pq.groupByColumnNames.indexOf(expr.inputColumn);</span>
-<span class="nc" id="L845">                    setVectorValue(v, row, key.get(gbPos));</span>
-<span class="nc" id="L846">                } else {</span>
-<span class="nc" id="L847">                    setVectorValue(v, row, accum[ai++]);</span>
+<span class="nc" id="L835">            outVecs.add(v);</span>
+<span class="nc" id="L836">        }</span>
+<span class="nc" id="L837">        int row = 0;</span>
+<span class="nc bnc" id="L838" title="All 2 branches missed.">        for (Map.Entry&lt;List&lt;Object&gt;, Object[]&gt; entry : byKey.entrySet()) {</span>
+<span class="nc" id="L839">            List&lt;Object&gt; key = entry.getKey();</span>
+<span class="nc" id="L840">            Object[] accum = entry.getValue();</span>
+<span class="nc" id="L841">            int vecIdx = 0;</span>
+<span class="nc" id="L842">            int ai = 0;</span>
+<span class="nc bnc" id="L843" title="All 2 branches missed.">            for (ParquetQueryParser.SelectExpr expr : exprs) {</span>
+<span class="nc" id="L844">                FieldVector v = outVecs.get(vecIdx++);</span>
+<span class="nc bnc" id="L845" title="All 2 branches missed.">                if (expr.func == ParquetQueryParser.SelectExpr.AggFunc.COLUMN) {</span>
+<span class="nc" id="L846">                    int gbPos = pq.groupByColumnNames.indexOf(expr.inputColumn);</span>
+<span class="nc" id="L847">                    setVectorValue(v, row, key.get(gbPos));</span>
+<span class="nc" id="L848">                } else {</span>
+<span class="nc" id="L849">                    setVectorValue(v, row, accum[ai++]);</span>
                 }
-<span class="nc" id="L849">            }</span>
-<span class="nc" id="L850">            row++;</span>
-<span class="nc" id="L851">        }</span>
-<span class="nc bnc" id="L852" title="All 2 branches missed.">        for (FieldVector v : outVecs) {</span>
-<span class="nc" id="L853">            v.setValueCount(totalRows);</span>
-<span class="nc" id="L854">        }</span>
-<span class="nc" id="L855">        VectorSchemaRoot result = new VectorSchemaRoot(outSchema.getFields(), outVecs);</span>
-<span class="nc" id="L856">        result.setRowCount(totalRows);</span>
-<span class="nc" id="L857">        return result;</span>
+<span class="nc" id="L851">            }</span>
+<span class="nc" id="L852">            row++;</span>
+<span class="nc" id="L853">        }</span>
+<span class="nc bnc" id="L854" title="All 2 branches missed.">        for (FieldVector v : outVecs) {</span>
+<span class="nc" id="L855">            v.setValueCount(totalRows);</span>
+<span class="nc" id="L856">        }</span>
+<span class="nc" id="L857">        VectorSchemaRoot result = new VectorSchemaRoot(outSchema.getFields(), outVecs);</span>
+<span class="nc" id="L858">        result.setRowCount(totalRows);</span>
+<span class="nc" id="L859">        return result;</span>
     }
 
     /**
@@ -871,37 +873,37 @@ public final class ExecutionService {
             List&lt;String&gt; groupByColumnNames,
             List&lt;Future&lt;List&lt;Object[]&gt;&gt;&gt; futures) throws Exception {
 
-<span class="nc" id="L874">        int numGbCols = groupByColumnNames.size();</span>
-<span class="nc bnc" id="L875" title="All 2 branches missed.">        if (numGbCols == 0) {</span>
-<span class="nc" id="L876">            Object[] merged = null;</span>
-<span class="nc bnc" id="L877" title="All 2 branches missed.">            for (Future&lt;List&lt;Object[]&gt;&gt; f : futures) {</span>
-<span class="nc" id="L878">                List&lt;Object[]&gt; rows = f.get();</span>
-<span class="nc bnc" id="L879" title="All 2 branches missed.">                if (rows.isEmpty()) {</span>
-<span class="nc" id="L880">                    continue;</span>
+<span class="nc" id="L876">        int numGbCols = groupByColumnNames.size();</span>
+<span class="nc bnc" id="L877" title="All 2 branches missed.">        if (numGbCols == 0) {</span>
+<span class="nc" id="L878">            Object[] merged = null;</span>
+<span class="nc bnc" id="L879" title="All 2 branches missed.">            for (Future&lt;List&lt;Object[]&gt;&gt; f : futures) {</span>
+<span class="nc" id="L880">                List&lt;Object[]&gt; rows = f.get();</span>
+<span class="nc bnc" id="L881" title="All 2 branches missed.">                if (rows.isEmpty()) {</span>
+<span class="nc" id="L882">                    continue;</span>
                 }
-<span class="nc" id="L882">                Object[] row = rows.get(0);</span>
-<span class="nc bnc" id="L883" title="All 2 branches missed.">                if (merged == null) {</span>
-<span class="nc" id="L884">                    merged = row.clone();</span>
+<span class="nc" id="L884">                Object[] row = rows.get(0);</span>
+<span class="nc bnc" id="L885" title="All 2 branches missed.">                if (merged == null) {</span>
+<span class="nc" id="L886">                    merged = row.clone();</span>
                 } else {
-<span class="nc" id="L886">                    mergeAggCols(exprs, merged, row, 0);</span>
+<span class="nc" id="L888">                    mergeAggCols(exprs, merged, row, 0);</span>
                 }
-<span class="nc" id="L888">            }</span>
-<span class="nc bnc" id="L889" title="All 2 branches missed.">            return merged != null ? Collections.singletonList(merged) : Collections.emptyList();</span>
+<span class="nc" id="L890">            }</span>
+<span class="nc bnc" id="L891" title="All 2 branches missed.">            return merged != null ? Collections.singletonList(merged) : Collections.emptyList();</span>
         }
 
-<span class="nc" id="L892">        Map&lt;List&lt;Object&gt;, Object[]&gt; byKey = new LinkedHashMap&lt;&gt;();</span>
-<span class="nc bnc" id="L893" title="All 2 branches missed.">        for (Future&lt;List&lt;Object[]&gt;&gt; f : futures) {</span>
-<span class="nc bnc" id="L894" title="All 2 branches missed.">            for (Object[] row : f.get()) {</span>
-<span class="nc" id="L895">                List&lt;Object&gt; key = new ArrayList&lt;&gt;(Arrays.asList(row).subList(0, numGbCols));</span>
-<span class="nc" id="L896">                Object[] existing = byKey.get(key);</span>
-<span class="nc bnc" id="L897" title="All 2 branches missed.">                if (existing == null) {</span>
-<span class="nc" id="L898">                    byKey.put(key, row.clone());</span>
+<span class="nc" id="L894">        Map&lt;List&lt;Object&gt;, Object[]&gt; byKey = new LinkedHashMap&lt;&gt;();</span>
+<span class="nc bnc" id="L895" title="All 2 branches missed.">        for (Future&lt;List&lt;Object[]&gt;&gt; f : futures) {</span>
+<span class="nc bnc" id="L896" title="All 2 branches missed.">            for (Object[] row : f.get()) {</span>
+<span class="nc" id="L897">                List&lt;Object&gt; key = new ArrayList&lt;&gt;(Arrays.asList(row).subList(0, numGbCols));</span>
+<span class="nc" id="L898">                Object[] existing = byKey.get(key);</span>
+<span class="nc bnc" id="L899" title="All 2 branches missed.">                if (existing == null) {</span>
+<span class="nc" id="L900">                    byKey.put(key, row.clone());</span>
                 } else {
-<span class="nc" id="L900">                    mergeAggCols(exprs, existing, row, numGbCols);</span>
+<span class="nc" id="L902">                    mergeAggCols(exprs, existing, row, numGbCols);</span>
                 }
-<span class="nc" id="L902">            }</span>
-<span class="nc" id="L903">        }</span>
-<span class="nc" id="L904">        return new ArrayList&lt;&gt;(byKey.values());</span>
+<span class="nc" id="L904">            }</span>
+<span class="nc" id="L905">        }</span>
+<span class="nc" id="L906">        return new ArrayList&lt;&gt;(byKey.values());</span>
     }
 
     /**
@@ -914,21 +916,21 @@ public final class ExecutionService {
      */
     static void mergeAggCols(List&lt;ParquetQueryParser.SelectExpr&gt; exprs,
             Object[] into, Object[] from, int numGbCols) {
-<span class="nc" id="L917">        int aggIdx = 0;</span>
-<span class="nc bnc" id="L918" title="All 2 branches missed.">        for (ParquetQueryParser.SelectExpr expr : exprs) {</span>
-<span class="nc bnc" id="L919" title="All 2 branches missed.">            if (expr.func == ParquetQueryParser.SelectExpr.AggFunc.COLUMN) {</span>
-<span class="nc" id="L920">                continue;</span>
+<span class="nc" id="L919">        int aggIdx = 0;</span>
+<span class="nc bnc" id="L920" title="All 2 branches missed.">        for (ParquetQueryParser.SelectExpr expr : exprs) {</span>
+<span class="nc bnc" id="L921" title="All 2 branches missed.">            if (expr.func == ParquetQueryParser.SelectExpr.AggFunc.COLUMN) {</span>
+<span class="nc" id="L922">                continue;</span>
             }
-<span class="nc" id="L922">            int pos = numGbCols + aggIdx++;</span>
-<span class="nc bnc" id="L923" title="All 5 branches missed.">            switch (expr.func) {</span>
-<span class="nc" id="L924">                case COUNT_STAR, COUNT -&gt; into[pos] = addLongs(into[pos], from[pos]);</span>
-<span class="nc" id="L925">                case SUM -&gt; into[pos] = addDoubles(into[pos], from[pos]);</span>
-<span class="nc" id="L926">                case MIN -&gt; into[pos] = minOf(into[pos], from[pos]);</span>
-<span class="nc" id="L927">                case MAX -&gt; into[pos] = maxOf(into[pos], from[pos]);</span>
+<span class="nc" id="L924">            int pos = numGbCols + aggIdx++;</span>
+<span class="nc bnc" id="L925" title="All 5 branches missed.">            switch (expr.func) {</span>
+<span class="nc" id="L926">                case COUNT_STAR, COUNT -&gt; into[pos] = addLongs(into[pos], from[pos]);</span>
+<span class="nc" id="L927">                case SUM -&gt; into[pos] = addDoubles(into[pos], from[pos]);</span>
+<span class="nc" id="L928">                case MIN -&gt; into[pos] = minOf(into[pos], from[pos]);</span>
+<span class="nc" id="L929">                case MAX -&gt; into[pos] = maxOf(into[pos], from[pos]);</span>
                 default -&gt; { }
             }
-<span class="nc" id="L930">        }</span>
-<span class="nc" id="L931">    }</span>
+<span class="nc" id="L932">        }</span>
+<span class="nc" id="L933">    }</span>
 
     /**
      * Extracts a long value from a FieldVector at the given index.
@@ -938,19 +940,19 @@ public final class ExecutionService {
      * @return long value
      */
     static long toLong(FieldVector vec, int index) {
-<span class="nc bnc" id="L941" title="All 2 branches missed.">        if (vec instanceof BigIntVector v) {</span>
-<span class="nc" id="L942">            return v.get(index);</span>
+<span class="nc bnc" id="L943" title="All 2 branches missed.">        if (vec instanceof BigIntVector v) {</span>
+<span class="nc" id="L944">            return v.get(index);</span>
         }
-<span class="nc bnc" id="L944" title="All 2 branches missed.">        if (vec instanceof IntVector v) {</span>
-<span class="nc" id="L945">            return v.get(index);</span>
+<span class="nc bnc" id="L946" title="All 2 branches missed.">        if (vec instanceof IntVector v) {</span>
+<span class="nc" id="L947">            return v.get(index);</span>
         }
-<span class="nc bnc" id="L947" title="All 2 branches missed.">        if (vec instanceof SmallIntVector v) {</span>
-<span class="nc" id="L948">            return v.get(index);</span>
+<span class="nc bnc" id="L949" title="All 2 branches missed.">        if (vec instanceof SmallIntVector v) {</span>
+<span class="nc" id="L950">            return v.get(index);</span>
         }
-<span class="nc bnc" id="L950" title="All 2 branches missed.">        if (vec instanceof TinyIntVector v) {</span>
-<span class="nc" id="L951">            return v.get(index);</span>
+<span class="nc bnc" id="L952" title="All 2 branches missed.">        if (vec instanceof TinyIntVector v) {</span>
+<span class="nc" id="L953">            return v.get(index);</span>
         }
-<span class="nc" id="L953">        return ((Number) vec.getObject(index)).longValue();</span>
+<span class="nc" id="L955">        return ((Number) vec.getObject(index)).longValue();</span>
     }
 
     /**
@@ -961,13 +963,13 @@ public final class ExecutionService {
      * @return double value
      */
     static double toDouble(FieldVector vec, int index) {
-<span class="nc bnc" id="L964" title="All 2 branches missed.">        if (vec instanceof Float8Vector v) {</span>
-<span class="nc" id="L965">            return v.get(index);</span>
+<span class="nc bnc" id="L966" title="All 2 branches missed.">        if (vec instanceof Float8Vector v) {</span>
+<span class="nc" id="L967">            return v.get(index);</span>
         }
-<span class="nc bnc" id="L967" title="All 2 branches missed.">        if (vec instanceof Float4Vector v) {</span>
-<span class="nc" id="L968">            return v.get(index);</span>
+<span class="nc bnc" id="L969" title="All 2 branches missed.">        if (vec instanceof Float4Vector v) {</span>
+<span class="nc" id="L970">            return v.get(index);</span>
         }
-<span class="nc" id="L970">        return ((Number) vec.getObject(index)).doubleValue();</span>
+<span class="nc" id="L972">        return ((Number) vec.getObject(index)).doubleValue();</span>
     }
 
     /**
@@ -979,13 +981,13 @@ public final class ExecutionService {
      */
     @SuppressWarnings(&quot;unchecked&quot;)
     static Object minOf(Object a, Object b) {
-<span class="fc bfc" id="L982" title="All 2 branches covered.">        if (a == null) {</span>
-<span class="fc" id="L983">            return b;</span>
+<span class="fc bfc" id="L984" title="All 2 branches covered.">        if (a == null) {</span>
+<span class="fc" id="L985">            return b;</span>
         }
-<span class="fc bfc" id="L985" title="All 2 branches covered.">        if (b == null) {</span>
-<span class="fc" id="L986">            return a;</span>
+<span class="fc bfc" id="L987" title="All 2 branches covered.">        if (b == null) {</span>
+<span class="fc" id="L988">            return a;</span>
         }
-<span class="pc bpc" id="L988" title="1 of 2 branches missed.">        return ((Comparable&lt;Object&gt;) a).compareTo(b) &lt;= 0 ? a : b;</span>
+<span class="pc bpc" id="L990" title="1 of 2 branches missed.">        return ((Comparable&lt;Object&gt;) a).compareTo(b) &lt;= 0 ? a : b;</span>
     }
 
     /**
@@ -997,13 +999,13 @@ public final class ExecutionService {
      */
     @SuppressWarnings(&quot;unchecked&quot;)
     static Object maxOf(Object a, Object b) {
-<span class="fc bfc" id="L1000" title="All 2 branches covered.">        if (a == null) {</span>
-<span class="fc" id="L1001">            return b;</span>
+<span class="fc bfc" id="L1002" title="All 2 branches covered.">        if (a == null) {</span>
+<span class="fc" id="L1003">            return b;</span>
         }
-<span class="fc bfc" id="L1003" title="All 2 branches covered.">        if (b == null) {</span>
-<span class="fc" id="L1004">            return a;</span>
+<span class="fc bfc" id="L1005" title="All 2 branches covered.">        if (b == null) {</span>
+<span class="fc" id="L1006">            return a;</span>
         }
-<span class="fc bfc" id="L1006" title="All 2 branches covered.">        return ((Comparable&lt;Object&gt;) a).compareTo(b) &gt;= 0 ? a : b;</span>
+<span class="fc bfc" id="L1008" title="All 2 branches covered.">        return ((Comparable&lt;Object&gt;) a).compareTo(b) &gt;= 0 ? a : b;</span>
     }
 
     /**
@@ -1014,13 +1016,13 @@ public final class ExecutionService {
      * @return sum as Long
      */
     static Object addLongs(Object a, Object b) {
-<span class="fc bfc" id="L1017" title="All 2 branches covered.">        if (a == null) {</span>
-<span class="fc bfc" id="L1018" title="All 2 branches covered.">            return b == null ? 0L : ((Number) b).longValue();</span>
+<span class="fc bfc" id="L1019" title="All 2 branches covered.">        if (a == null) {</span>
+<span class="fc bfc" id="L1020" title="All 2 branches covered.">            return b == null ? 0L : ((Number) b).longValue();</span>
         }
-<span class="fc bfc" id="L1020" title="All 2 branches covered.">        if (b == null) {</span>
-<span class="fc" id="L1021">            return ((Number) a).longValue();</span>
+<span class="fc bfc" id="L1022" title="All 2 branches covered.">        if (b == null) {</span>
+<span class="fc" id="L1023">            return ((Number) a).longValue();</span>
         }
-<span class="fc" id="L1023">        return ((Number) a).longValue() + ((Number) b).longValue();</span>
+<span class="fc" id="L1025">        return ((Number) a).longValue() + ((Number) b).longValue();</span>
     }
 
     /**
@@ -1031,13 +1033,13 @@ public final class ExecutionService {
      * @return sum as Double
      */
     static Object addDoubles(Object a, Object b) {
-<span class="fc bfc" id="L1034" title="All 2 branches covered.">        if (a == null) {</span>
-<span class="fc bfc" id="L1035" title="All 2 branches covered.">            return b == null ? 0.0 : ((Number) b).doubleValue();</span>
+<span class="fc bfc" id="L1036" title="All 2 branches covered.">        if (a == null) {</span>
+<span class="fc bfc" id="L1037" title="All 2 branches covered.">            return b == null ? 0.0 : ((Number) b).doubleValue();</span>
         }
-<span class="fc bfc" id="L1037" title="All 2 branches covered.">        if (b == null) {</span>
-<span class="fc" id="L1038">            return ((Number) a).doubleValue();</span>
+<span class="fc bfc" id="L1039" title="All 2 branches covered.">        if (b == null) {</span>
+<span class="fc" id="L1040">            return ((Number) a).doubleValue();</span>
         }
-<span class="fc" id="L1040">        return ((Number) a).doubleValue() + ((Number) b).doubleValue();</span>
+<span class="fc" id="L1042">        return ((Number) a).doubleValue() + ((Number) b).doubleValue();</span>
     }
 
     /**
@@ -1049,31 +1051,31 @@ public final class ExecutionService {
      */
     @SuppressWarnings(&quot;unchecked&quot;)
     static void setVectorValue(FieldVector vec, int index, Object value) {
-<span class="nc bnc" id="L1052" title="All 2 branches missed.">        if (value == null) {</span>
-<span class="nc" id="L1053">            vec.setNull(index);</span>
-<span class="nc" id="L1054">            return;</span>
+<span class="nc bnc" id="L1054" title="All 2 branches missed.">        if (value == null) {</span>
+<span class="nc" id="L1055">            vec.setNull(index);</span>
+<span class="nc" id="L1056">            return;</span>
         }
-<span class="nc bnc" id="L1056" title="All 2 branches missed.">        if (vec instanceof BigIntVector) {</span>
-<span class="nc" id="L1057">            ((BigIntVector) vec).setSafe(index, ((Number) value).longValue());</span>
-<span class="nc bnc" id="L1058" title="All 2 branches missed.">        } else if (vec instanceof IntVector) {</span>
-<span class="nc" id="L1059">            ((IntVector) vec).setSafe(index, ((Number) value).intValue());</span>
-<span class="nc bnc" id="L1060" title="All 2 branches missed.">        } else if (vec instanceof SmallIntVector) {</span>
-<span class="nc" id="L1061">            ((SmallIntVector) vec).setSafe(index, ((Number) value).shortValue());</span>
-<span class="nc bnc" id="L1062" title="All 2 branches missed.">        } else if (vec instanceof TinyIntVector) {</span>
-<span class="nc" id="L1063">            ((TinyIntVector) vec).setSafe(index, ((Number) value).byteValue());</span>
-<span class="nc bnc" id="L1064" title="All 2 branches missed.">        } else if (vec instanceof Float8Vector) {</span>
-<span class="nc" id="L1065">            ((Float8Vector) vec).setSafe(index, ((Number) value).doubleValue());</span>
-<span class="nc bnc" id="L1066" title="All 2 branches missed.">        } else if (vec instanceof Float4Vector) {</span>
-<span class="nc" id="L1067">            ((Float4Vector) vec).setSafe(index, ((Number) value).floatValue());</span>
-<span class="nc bnc" id="L1068" title="All 2 branches missed.">        } else if (vec instanceof BitVector) {</span>
-<span class="nc bnc" id="L1069" title="All 2 branches missed.">            ((BitVector) vec).setSafe(index, ((Boolean) value) ? 1 : 0);</span>
-<span class="nc bnc" id="L1070" title="All 2 branches missed.">        } else if (vec instanceof VarCharVector) {</span>
-<span class="nc bnc" id="L1071" title="All 2 branches missed.">            byte[] bytes = value instanceof Text</span>
-<span class="nc" id="L1072">                    ? ((Text) value).getBytes()</span>
-<span class="nc" id="L1073">                    : value.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);</span>
-<span class="nc" id="L1074">            ((VarCharVector) vec).setSafe(index, bytes);</span>
+<span class="nc bnc" id="L1058" title="All 2 branches missed.">        if (vec instanceof BigIntVector) {</span>
+<span class="nc" id="L1059">            ((BigIntVector) vec).setSafe(index, ((Number) value).longValue());</span>
+<span class="nc bnc" id="L1060" title="All 2 branches missed.">        } else if (vec instanceof IntVector) {</span>
+<span class="nc" id="L1061">            ((IntVector) vec).setSafe(index, ((Number) value).intValue());</span>
+<span class="nc bnc" id="L1062" title="All 2 branches missed.">        } else if (vec instanceof SmallIntVector) {</span>
+<span class="nc" id="L1063">            ((SmallIntVector) vec).setSafe(index, ((Number) value).shortValue());</span>
+<span class="nc bnc" id="L1064" title="All 2 branches missed.">        } else if (vec instanceof TinyIntVector) {</span>
+<span class="nc" id="L1065">            ((TinyIntVector) vec).setSafe(index, ((Number) value).byteValue());</span>
+<span class="nc bnc" id="L1066" title="All 2 branches missed.">        } else if (vec instanceof Float8Vector) {</span>
+<span class="nc" id="L1067">            ((Float8Vector) vec).setSafe(index, ((Number) value).doubleValue());</span>
+<span class="nc bnc" id="L1068" title="All 2 branches missed.">        } else if (vec instanceof Float4Vector) {</span>
+<span class="nc" id="L1069">            ((Float4Vector) vec).setSafe(index, ((Number) value).floatValue());</span>
+<span class="nc bnc" id="L1070" title="All 2 branches missed.">        } else if (vec instanceof BitVector) {</span>
+<span class="nc bnc" id="L1071" title="All 2 branches missed.">            ((BitVector) vec).setSafe(index, ((Boolean) value) ? 1 : 0);</span>
+<span class="nc bnc" id="L1072" title="All 2 branches missed.">        } else if (vec instanceof VarCharVector) {</span>
+<span class="nc bnc" id="L1073" title="All 2 branches missed.">            byte[] bytes = value instanceof Text</span>
+<span class="nc" id="L1074">                    ? ((Text) value).getBytes()</span>
+<span class="nc" id="L1075">                    : value.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);</span>
+<span class="nc" id="L1076">            ((VarCharVector) vec).setSafe(index, bytes);</span>
         }
-<span class="nc" id="L1076">    }</span>
+<span class="nc" id="L1078">    }</span>
 
     /**
      * Partitions items into numGroups using round-robin distribution.
@@ -1083,14 +1085,14 @@ public final class ExecutionService {
      * @return partitioned lists
      */
     static &lt;T&gt; List&lt;List&lt;T&gt;&gt; partitionIntoGroups(List&lt;T&gt; items, int numGroups) {
-<span class="fc" id="L1086">        List&lt;List&lt;T&gt;&gt; groups = new ArrayList&lt;&gt;(numGroups);</span>
-<span class="fc bfc" id="L1087" title="All 2 branches covered.">        for (int i = 0; i &lt; numGroups; i++) {</span>
-<span class="fc" id="L1088">            groups.add(new ArrayList&lt;&gt;());</span>
+<span class="fc" id="L1088">        List&lt;List&lt;T&gt;&gt; groups = new ArrayList&lt;&gt;(numGroups);</span>
+<span class="fc bfc" id="L1089" title="All 2 branches covered.">        for (int i = 0; i &lt; numGroups; i++) {</span>
+<span class="fc" id="L1090">            groups.add(new ArrayList&lt;&gt;());</span>
         }
-<span class="fc bfc" id="L1090" title="All 2 branches covered.">        for (int i = 0; i &lt; items.size(); i++) {</span>
-<span class="fc" id="L1091">            groups.get(i % numGroups).add(items.get(i));</span>
+<span class="fc bfc" id="L1092" title="All 2 branches covered.">        for (int i = 0; i &lt; items.size(); i++) {</span>
+<span class="fc" id="L1093">            groups.get(i % numGroups).add(items.get(i));</span>
         }
-<span class="fc" id="L1093">        return groups;</span>
+<span class="fc" id="L1095">        return groups;</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

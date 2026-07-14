@@ -93,77 +93,81 @@ final class AceroFileResolver {
 
     private void copyToCache(FileStatus status, java.nio.file.Path destination)
             throws IOException {
-<span class="fc" id="L96">        Files.createDirectories(destination.getParent());</span>
-<span class="fc" id="L97">        java.nio.file.Path temporary = Files.createTempFile(</span>
-<span class="fc" id="L98">                destination.getParent(), &quot;.arrowflight-&quot;, &quot;.part&quot;);</span>
-<span class="fc" id="L99">        LOGGER.info(&quot;Materializing HDFS file for Acero: {} -&gt; {}&quot;, status.getPath(), destination);</span>
+<span class="fc" id="L96">        java.nio.file.Path destinationParent = destination.getParent();</span>
+<span class="pc bpc" id="L97" title="1 of 2 branches missed.">        if (destinationParent == null) {</span>
+<span class="nc" id="L98">            throw new IOException(&quot;Cache destination has no parent directory: &quot; + destination);</span>
+        }
+<span class="fc" id="L100">        Files.createDirectories(destinationParent);</span>
+<span class="fc" id="L101">        java.nio.file.Path temporary = Files.createTempFile(</span>
+                destinationParent, &quot;.arrowflight-&quot;, &quot;.part&quot;);
+<span class="fc" id="L103">        LOGGER.info(&quot;Materializing HDFS file for Acero: {} -&gt; {}&quot;, status.getPath(), destination);</span>
         try {
-<span class="fc" id="L101">            try (InputStream input = fileSystem.open(status.getPath(), bufferSize);</span>
-<span class="fc" id="L102">                    OutputStream output = new BufferedOutputStream(</span>
-<span class="fc" id="L103">                            Files.newOutputStream(temporary), bufferSize)) {</span>
-<span class="fc" id="L104">                byte[] buffer = new byte[bufferSize];</span>
+<span class="fc" id="L105">            try (InputStream input = fileSystem.open(status.getPath(), bufferSize);</span>
+<span class="fc" id="L106">                    OutputStream output = new BufferedOutputStream(</span>
+<span class="fc" id="L107">                            Files.newOutputStream(temporary), bufferSize)) {</span>
+<span class="fc" id="L108">                byte[] buffer = new byte[bufferSize];</span>
                 int read;
-<span class="fc bfc" id="L106" title="All 2 branches covered.">                while ((read = input.read(buffer)) &gt;= 0) {</span>
-<span class="pc bpc" id="L107" title="1 of 2 branches missed.">                    if (read &gt; 0) {</span>
-<span class="fc" id="L108">                        output.write(buffer, 0, read);</span>
+<span class="fc bfc" id="L110" title="All 2 branches covered.">                while ((read = input.read(buffer)) &gt;= 0) {</span>
+<span class="pc bpc" id="L111" title="1 of 2 branches missed.">                    if (read &gt; 0) {</span>
+<span class="fc" id="L112">                        output.write(buffer, 0, read);</span>
                     }
                 }
             }
-<span class="fc" id="L112">            long copiedLength = Files.size(temporary);</span>
-<span class="pc bpc" id="L113" title="1 of 2 branches missed.">            if (copiedLength != status.getLen()) {</span>
-<span class="nc" id="L114">                throw new IOException(&quot;Incomplete Hadoop file copy for &quot; + status.getPath()</span>
-<span class="nc" id="L115">                        + &quot;: expected &quot; + status.getLen() + &quot; bytes, copied &quot; + copiedLength);</span>
+<span class="fc" id="L116">            long copiedLength = Files.size(temporary);</span>
+<span class="pc bpc" id="L117" title="1 of 2 branches missed.">            if (copiedLength != status.getLen()) {</span>
+<span class="nc" id="L118">                throw new IOException(&quot;Incomplete Hadoop file copy for &quot; + status.getPath()</span>
+<span class="nc" id="L119">                        + &quot;: expected &quot; + status.getLen() + &quot; bytes, copied &quot; + copiedLength);</span>
             }
-<span class="fc" id="L117">            moveIntoPlace(temporary, destination);</span>
+<span class="fc" id="L121">            moveIntoPlace(temporary, destination);</span>
         } finally {
-<span class="fc" id="L119">            Files.deleteIfExists(temporary);</span>
+<span class="fc" id="L123">            Files.deleteIfExists(temporary);</span>
         }
-<span class="fc" id="L121">    }</span>
+<span class="fc" id="L125">    }</span>
 
     private static void moveIntoPlace(java.nio.file.Path source,
             java.nio.file.Path destination) throws IOException {
         try {
-<span class="fc" id="L126">            Files.move(source, destination, StandardCopyOption.ATOMIC_MOVE,</span>
+<span class="fc" id="L130">            Files.move(source, destination, StandardCopyOption.ATOMIC_MOVE,</span>
                     StandardCopyOption.REPLACE_EXISTING);
-<span class="nc" id="L128">        } catch (AtomicMoveNotSupportedException ignored) {</span>
-<span class="nc" id="L129">            Files.move(source, destination, StandardCopyOption.REPLACE_EXISTING);</span>
-<span class="fc" id="L130">        }</span>
-<span class="fc" id="L131">    }</span>
+<span class="nc" id="L132">        } catch (AtomicMoveNotSupportedException ignored) {</span>
+<span class="nc" id="L133">            Files.move(source, destination, StandardCopyOption.REPLACE_EXISTING);</span>
+<span class="fc" id="L134">        }</span>
+<span class="fc" id="L135">    }</span>
 
     private String relativePath(Path source) throws IOException {
-<span class="fc" id="L134">        URI qualifiedSource = fileSystem.makeQualified(source).toUri().normalize();</span>
-<span class="pc bpc" id="L135" title="1 of 2 branches missed.">        if (!sameLocation(qualifiedDataRoot, qualifiedSource)) {</span>
-<span class="nc" id="L136">            throw new IOException(&quot;Hadoop file is outside configured data directory: &quot; + source);</span>
+<span class="fc" id="L138">        URI qualifiedSource = fileSystem.makeQualified(source).toUri().normalize();</span>
+<span class="pc bpc" id="L139" title="1 of 2 branches missed.">        if (!sameLocation(qualifiedDataRoot, qualifiedSource)) {</span>
+<span class="nc" id="L140">            throw new IOException(&quot;Hadoop file is outside configured data directory: &quot; + source);</span>
         }
 
-<span class="fc" id="L139">        String rootPath = qualifiedDataRoot.getPath();</span>
-<span class="pc bpc" id="L140" title="1 of 2 branches missed.">        if (!rootPath.endsWith(&quot;/&quot;)) {</span>
-<span class="nc" id="L141">            rootPath += &quot;/&quot;;</span>
+<span class="fc" id="L143">        String rootPath = qualifiedDataRoot.getPath();</span>
+<span class="pc bpc" id="L144" title="1 of 2 branches missed.">        if (!rootPath.endsWith(&quot;/&quot;)) {</span>
+<span class="nc" id="L145">            rootPath += &quot;/&quot;;</span>
         }
-<span class="fc" id="L143">        String sourcePath = qualifiedSource.getPath();</span>
-<span class="pc bpc" id="L144" title="2 of 4 branches missed.">        if (!sourcePath.startsWith(rootPath) || sourcePath.length() == rootPath.length()) {</span>
-<span class="nc" id="L145">            throw new IOException(&quot;Hadoop file is outside configured data directory: &quot; + source);</span>
+<span class="fc" id="L147">        String sourcePath = qualifiedSource.getPath();</span>
+<span class="pc bpc" id="L148" title="2 of 4 branches missed.">        if (!sourcePath.startsWith(rootPath) || sourcePath.length() == rootPath.length()) {</span>
+<span class="nc" id="L149">            throw new IOException(&quot;Hadoop file is outside configured data directory: &quot; + source);</span>
         }
-<span class="fc" id="L147">        return sourcePath.substring(rootPath.length());</span>
+<span class="fc" id="L151">        return sourcePath.substring(rootPath.length());</span>
     }
 
     private static boolean sameLocation(URI root, URI source) {
-<span class="pc bpc" id="L151" title="1 of 2 branches missed.">        return java.util.Objects.equals(root.getScheme(), source.getScheme())</span>
-<span class="pc bpc" id="L152" title="1 of 2 branches missed.">                &amp;&amp; java.util.Objects.equals(root.getAuthority(), source.getAuthority());</span>
+<span class="pc bpc" id="L155" title="1 of 2 branches missed.">        return java.util.Objects.equals(root.getScheme(), source.getScheme())</span>
+<span class="pc bpc" id="L156" title="1 of 2 branches missed.">                &amp;&amp; java.util.Objects.equals(root.getAuthority(), source.getAuthority());</span>
     }
 
     private static java.nio.file.Path safeResolve(java.nio.file.Path root, String relative)
             throws IOException {
-<span class="fc" id="L157">        java.nio.file.Path resolved = root.resolve(relative).normalize();</span>
-<span class="pc bpc" id="L158" title="1 of 2 branches missed.">        if (!resolved.startsWith(root)) {</span>
-<span class="nc" id="L159">            throw new IOException(&quot;Unsafe relative Hadoop path: &quot; + relative);</span>
+<span class="fc" id="L161">        java.nio.file.Path resolved = root.resolve(relative).normalize();</span>
+<span class="pc bpc" id="L162" title="1 of 2 branches missed.">        if (!resolved.startsWith(root)) {</span>
+<span class="nc" id="L163">            throw new IOException(&quot;Unsafe relative Hadoop path: &quot; + relative);</span>
         }
-<span class="fc" id="L161">        return resolved;</span>
+<span class="fc" id="L165">        return resolved;</span>
     }
 
     private static boolean isExpectedFile(java.nio.file.Path file, long expectedLength)
             throws IOException {
-<span class="pc bpc" id="L166" title="1 of 4 branches missed.">        return Files.isRegularFile(file) &amp;&amp; Files.size(file) == expectedLength;</span>
+<span class="pc bpc" id="L170" title="1 of 4 branches missed.">        return Files.isRegularFile(file) &amp;&amp; Files.size(file) == expectedLength;</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>
