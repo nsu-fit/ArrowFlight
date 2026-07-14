@@ -78,6 +78,11 @@ hadoop_classpath() {
 flight_server_command() {
   local hadoop_cp
   hadoop_cp="$(hadoop_classpath)"
+  local runtime_classpath="${APP_JAR}:${HADOOP_CONF_DIR}:${hadoop_cp}:${SPARK_HOME}/jars/*"
+  # Arrow Dataset's native HDFS implementation loads libhdfs at runtime.
+  # libhdfs reads CLASSPATH from the process environment; java's -cp alone
+  # is not sufficient for native code started from Arrow C++ worker threads.
+  export CLASSPATH="${runtime_classpath}${CLASSPATH:+:${CLASSPATH}}"
   local java_opts=("${DEFAULT_SERVER_JAVA_OPTS[@]}")
   if [[ -n "${JAVA_OPTS:-}" ]]; then
     local extra_java_opts=()
@@ -86,7 +91,7 @@ flight_server_command() {
   fi
 
   local command=(java "${java_opts[@]}" \
-    -cp "${APP_JAR}:${HADOOP_CONF_DIR}:${hadoop_cp}:${SPARK_HOME}/jars/*" \
+    -cp "${runtime_classpath}" \
     net.surpin.data.arrowflight.server.HadoopArrowFlightServer \
     --data-dir "${FLIGHT_DATA_DIR:-/data/parquet}" \
     --port "${FLIGHT_PORT:-32010}" \

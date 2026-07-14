@@ -155,10 +155,12 @@ public final class ExecutionService {
                 "hdfs-filter", 0, Long.MAX_VALUE)) {
             Connection conn = duckDbAdapter.connection();
             DuckDBConnection duckConn = conn.unwrap(DuckDBConnection.class);
-            aceroAdapter.exportToDuckDb(child, resolvedUris, null, buildProjection(pq), duckConn);
-            String duckSql = DuckDbAdapter.buildSelectSql(
-                    pq, arrowStreamsFromClause(resolvedUris.size()));
-            duckDbAdapter.streamSql(allocator, duckSql, listener, startListener);
+            try (AceroAdapter.RegisteredArrowStreams streams = aceroAdapter.exportToDuckDb(
+                    child, resolvedUris, null, buildProjection(pq), duckConn)) {
+                String duckSql = DuckDbAdapter.buildSelectSql(
+                        pq, arrowStreamsFromClause(streams.aliases().size()));
+                duckDbAdapter.streamSql(allocator, duckSql, listener, startListener);
+            }
         }
     }
 
@@ -390,15 +392,15 @@ public final class ExecutionService {
                 try {
                     Connection conn = duckDbAdapter.connection();
                     DuckDBConnection duckConn = conn.unwrap(DuckDBConnection.class);
-                    List<String> aliases = aceroAdapter.exportToDuckDb(
-                            child, group, filterBytes, cols, duckConn);
-                    try (Statement stmt = conn.createStatement()) {
-                        org.duckdb.DuckDBResultSet drs =
-                                (org.duckdb.DuckDBResultSet) stmt.executeQuery(duckSql);
-                        try (ArrowReader arrowReader = (ArrowReader) drs.arrowExportStream(
-                                allocator, duckDbAdapter.batchSize())) {
-                            return AceroAdapter.concatBatches(allocator, arrowReader);
-                        }
+                    try (AceroAdapter.RegisteredArrowStreams streams =
+                                    aceroAdapter.exportToDuckDb(
+                                            child, group, filterBytes, cols, duckConn);
+                            Statement stmt = conn.createStatement();
+                            org.duckdb.DuckDBResultSet drs =
+                                    (org.duckdb.DuckDBResultSet) stmt.executeQuery(duckSql);
+                            ArrowReader arrowReader = (ArrowReader) drs.arrowExportStream(
+                                    allocator, duckDbAdapter.batchSize())) {
+                        return AceroAdapter.concatBatches(allocator, arrowReader);
                     }
                 } catch (Exception e) {
                     throw new RuntimeException(e);

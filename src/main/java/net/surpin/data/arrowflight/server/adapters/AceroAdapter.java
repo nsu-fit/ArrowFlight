@@ -167,17 +167,17 @@ public final class AceroAdapter {
 
     /**
      * Scans a group of Parquet files with Acero and exports each as Arrow C streams.
-     * Returns a list of ArrowArrayStreams registered with DuckDB for aggregation.
+     * Returns registered Arrow streams that must stay open while DuckDB consumes them.
      *
      * @param allocator   Arrow buffer allocator
      * @param fileUris    Parquet file URIs
      * @param filterBytes optional Substrait filter bytes
      * @param cols        optional column projection
      * @param duckConn    DuckDB connection for stream registration
-     * @return list of registered stream aliases used in queries
+     * @return registered streams and their aliases
      * @throws Exception on scan or registration failure
      */
-    public List<String> exportToDuckDb(BufferAllocator allocator, List<String> fileUris,
+    public RegisteredArrowStreams exportToDuckDb(BufferAllocator allocator, List<String> fileUris,
             byte[] filterBytes, Optional<String[]> cols, DuckDBConnection duckConn)
             throws Exception {
 
@@ -185,9 +185,11 @@ public final class AceroAdapter {
         List<FileSystemDatasetFactory> factories = new ArrayList<>(n);
         List<Dataset> datasets = new ArrayList<>(n);
         List<Scanner> scanners = new ArrayList<>(n);
-        List<ArrowReader> readers = new ArrayList<>(n);
+        List<ArrowReader> unexportedReaders = new ArrayList<>(n);
         List<ArrowArrayStream> cStreams = new ArrayList<>(n);
         List<String> aliases = new ArrayList<>(n);
+        RegisteredArrowStreams registered = new RegisteredArrowStreams(
+                aliases, cStreams, unexportedReaders, scanners, datasets, factories);
         boolean success = false;
 
         try {
@@ -208,51 +210,110 @@ public final class AceroAdapter {
                 Scanner scanner = dataset.newScan(optBuilder.build());
                 scanners.add(scanner);
                 ArrowReader reader = scanner.scanBatches();
-                readers.add(reader);
+                unexportedReaders.add(reader);
                 ArrowArrayStream cStream = ArrowArrayStream.allocateNew(allocator);
                 cStreams.add(cStream);
+                // The exporter takes ownership of the reader, including on export failure.
+                unexportedReaders.remove(reader);
                 Data.exportArrayStream(allocator, reader, cStream);
                 String alias = "t" + i;
                 duckConn.registerArrowStream(alias, cStream);
                 aliases.add(alias);
             }
             success = true;
-            return aliases;
+            return registered;
         } finally {
             if (!success) {
-                // On failure only, close everything.
-                for (int i = cStreams.size() - 1; i >= 0; i--) {
-                    try {
-                        cStreams.get(i).close();
-                    } catch (Exception ignored) {
-                    }
-                }
-            }
-            // Readers, scanners, datasets, factories safe to close either way.
-            for (int i = readers.size() - 1; i >= 0; i--) {
                 try {
-                    readers.get(i).close();
+                    registered.close();
                 } catch (Exception ignored) {
                 }
             }
-            for (int i = scanners.size() - 1; i >= 0; i--) {
+        }
+    }
+
+    /**
+     * Owns the native and Java resources behind Arrow streams registered in DuckDB.
+     * DuckDB pulls from registered streams lazily, so this object must remain open
+     * until the query using its aliases has finished.
+     */
+    public static final class RegisteredArrowStreams implements AutoCloseable {
+        private final List<String> aliases;
+        private final List<ArrowArrayStream> streams;
+        private final List<ArrowReader> unexportedReaders;
+        private final List<Scanner> scanners;
+        private final List<Dataset> datasets;
+        private final List<FileSystemDatasetFactory> factories;
+        private boolean closed;
+
+        RegisteredArrowStreams(List<String> aliases, List<ArrowArrayStream> streams,
+                List<ArrowReader> unexportedReaders, List<Scanner> scanners,
+                List<Dataset> datasets, List<FileSystemDatasetFactory> factories) {
+            this.aliases = aliases;
+            this.streams = streams;
+            this.unexportedReaders = unexportedReaders;
+            this.scanners = scanners;
+            this.datasets = datasets;
+            this.factories = factories;
+        }
+
+        /**
+         * Returns aliases registered in DuckDB.
+         *
+         * @return immutable alias list
+         */
+        public List<String> aliases() {
+            return Collections.unmodifiableList(aliases);
+        }
+
+        @Override
+        public void close() throws Exception {
+            if (closed) {
+                return;
+            }
+            closed = true;
+
+            Exception failure = null;
+            for (int i = streams.size() - 1; i >= 0; i--) {
+                ArrowArrayStream stream = streams.get(i);
                 try {
-                    scanners.get(i).close();
-                } catch (Exception ignored) {
+                    stream.release();
+                } catch (Exception e) {
+                    failure = appendFailure(failure, e);
+                }
+                try {
+                    stream.close();
+                } catch (Exception e) {
+                    failure = appendFailure(failure, e);
                 }
             }
-            for (int i = datasets.size() - 1; i >= 0; i--) {
+            failure = closeAll(unexportedReaders, failure);
+            failure = closeAll(scanners, failure);
+            failure = closeAll(datasets, failure);
+            failure = closeAll(factories, failure);
+            if (failure != null) {
+                throw failure;
+            }
+        }
+
+        private static Exception closeAll(List<? extends AutoCloseable> resources,
+                Exception failure) {
+            for (int i = resources.size() - 1; i >= 0; i--) {
                 try {
-                    datasets.get(i).close();
-                } catch (Exception ignored) {
+                    resources.get(i).close();
+                } catch (Exception e) {
+                    failure = appendFailure(failure, e);
                 }
             }
-            for (int i = factories.size() - 1; i >= 0; i--) {
-                try {
-                    factories.get(i).close();
-                } catch (Exception ignored) {
-                }
+            return failure;
+        }
+
+        private static Exception appendFailure(Exception failure, Exception next) {
+            if (failure == null) {
+                return next;
             }
+            failure.addSuppressed(next);
+            return failure;
         }
     }
 
