@@ -75,7 +75,7 @@ public final class FilterConverter {
             LocalDate date = LocalDate.parse(RexLiteral.stringValue(literal));
             return Optional.of(ExpressionCreator.date(
                     call.getType().isNullable(), Math.toIntExact(date.toEpochDay())));
-        } catch (DateTimeParseException | ClassCastException | NullPointerException exception) {
+        } catch (DateTimeParseException | ClassCastException exception) {
             return Optional.empty();
         }
     }
