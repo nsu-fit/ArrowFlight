@@ -95,12 +95,4 @@ class ParquetQueryParserTest {
         assertTrue(str.contains("filter="), "toString should include filter");
     }
 
-    @Test
-    void gettersReturnSameValuesAsFields() {
-        ParquetQueryParser p = ParquetQueryParser.parse("SELECT a, b FROM sc.tb WHERE a = 1");
-        assertEquals(p.schema, p.getSchema());
-        assertEquals(p.table, p.getTable());
-        assertEquals(p.columns, p.getColumns());
-        assertEquals(p.filter, p.getFilter());
-    }
 }

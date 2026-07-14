@@ -912,9 +912,9 @@ public final class ArrowConversion implements Serializable {
     };
 
     //base converters
-    private static final Function<BigDecimal, Decimal> bigDecimalToDecimal = Decimal::apply;
-    private static final Function<String, UTF8String> stringToUtf8String = UTF8String::fromString;
-    private static final Function<Integer, Integer> dateDayToInt = (dd) -> DateTimeUtils.fromJavaDate(java.sql.Date.valueOf(LocalDate.ofEpochDay(dd)));
+    static final Function<BigDecimal, Decimal> bigDecimalToDecimal = Decimal::apply;
+    static final Function<String, UTF8String> stringToUtf8String = UTF8String::fromString;
+    static final Function<Integer, Integer> dateDayToInt = (dd) -> DateTimeUtils.fromJavaDate(java.sql.Date.valueOf(LocalDate.ofEpochDay(dd)));
     private static final Function<LocalDateTime, Integer> localDateTimeToInt = (ldt) -> DateTimeUtils.fromJavaDate(java.sql.Date.valueOf(ldt.toLocalDate()));
     private static final Function<LocalDateTime, Long> localDateTimeToLong = (ldt) -> DateTimeUtils.fromJavaTimestamp(Timestamp.valueOf(ldt));
     private static final BiFunction<Long, String, Long> timestampSecTZToLong = (ss, zone) -> DateTimeUtils.fromJavaTimestamp(Timestamp.valueOf(LocalDateTime.from(Instant.ofEpochSecond(ss).atZone(ZoneId.of(zone)))));
@@ -922,14 +922,14 @@ public final class ArrowConversion implements Serializable {
     private static final BiFunction<Long, String, Long> timestampNanoTZToLong = (ns, zone) -> DateTimeUtils.fromJavaTimestamp(Timestamp.valueOf(LocalDateTime.from(Instant.ofEpochMilli(ns / 1000000L).atZone(ZoneId.of(zone)))));
     private static final BiFunction<Long, String, Long> timestampMicroTZToLong = (ms, zone) -> DateTimeUtils.fromJavaTimestamp(Timestamp.valueOf(LocalDateTime.from(Instant.ofEpochMilli(ms / 1000L).atZone(ZoneId.of(zone))).plusNanos(ms % 1_000 * 1000L)));
     private static final Function<Timestamp, Long> timestampToLong = DateTimeUtils::fromJavaTimestamp;
-    private static final Function<Integer, UTF8String> timeSecToString = (ts) -> {
+    static final Function<Integer, UTF8String> timeSecToString = (ts) -> {
         int hours = ts / 3600;
         int minutes = (ts - hours * 3600) / 60;
         int seconds = (ts - hours * 3600 - minutes * 60);
         return ArrowConversion.stringToUtf8String.apply(String.format("%02d:%02d:%02d", hours, minutes, seconds));
     };
-    private static final Function<LocalDateTime, UTF8String> timeMilliToString = (ldt) -> ArrowConversion.stringToUtf8String.apply(String.format("%02d:%02d:%02d.%03d", ldt.getHour(), ldt.getMinute(), ldt.getSecond(), ldt.getNano() / 1000000L));
-    private static final Function<Long, UTF8String> timeMicroToString = (ms) -> {
+    static final Function<LocalDateTime, UTF8String> timeMilliToString = (ldt) -> ArrowConversion.stringToUtf8String.apply(String.format("%02d:%02d:%02d.%03d", ldt.getHour(), ldt.getMinute(), ldt.getSecond(), ldt.getNano() / 1000000L));
+    static final Function<Long, UTF8String> timeMicroToString = (ms) -> {
         int totalSeconds = (int) (ms / 1000000L);
         long microSeconds = ms - totalSeconds * 1000000L;
         int hours = totalSeconds / 3600;
@@ -937,7 +937,7 @@ public final class ArrowConversion implements Serializable {
         int seconds = (totalSeconds - hours * 3600 - minutes * 60);
         return ArrowConversion.stringToUtf8String.apply(String.format("%02d:%02d:%02d.%06d", hours, minutes, seconds, microSeconds));
     };
-    private static final Function<Long, UTF8String> timeNanoToString = (ns) -> {
+    static final Function<Long, UTF8String> timeNanoToString = (ns) -> {
         int totalSeconds = (int) (ns / 1000000000L);
         long nanoSeconds = totalSeconds * 1000000000L;
         int hours = totalSeconds / 3600;
@@ -1051,19 +1051,19 @@ public final class ArrowConversion implements Serializable {
         return new ArrayBasedMapData(ArrayData.toArrayData(keys.toArray()), ArrayData.toArrayData(values.toArray()));
     };
     private static final ConvertFrom<List<?>, ListVector, FieldType.ListType, ArrayData> translateList = (l, v, t) -> ArrayData.toArrayData(l.stream().map(e -> ArrowConversion.translate.apply(t.getChildType(), e, v.getDataVector())).toArray());
-    private static final Function<Long, Long> microsToNanos = (micros) -> ArrowConversion.microsToMillis.apply(micros) * 1000L;
-    private static final Function<Long, Long> microsToMillis = DateTimeUtils::microsToMillis;
-    private static final Function<Long, Long> microsToSecs = (micros) -> ArrowConversion.microsToMillis.apply(micros) / 1000L;
+    static final Function<Long, Long> microsToNanos = (micros) -> ArrowConversion.microsToMillis.apply(micros) * 1000L;
+    static final Function<Long, Long> microsToMillis = DateTimeUtils::microsToMillis;
+    static final Function<Long, Long> microsToSecs = (micros) -> ArrowConversion.microsToMillis.apply(micros) / 1000L;
     private static final BiFunction<Integer, ZoneId, Long> daysToMicros = (days, zone) -> DateTimeUtils.daysToMicros(days, ZoneId.systemDefault());
     private static final Function<Long, Long> microsToEpochNanos = (micros) -> {
         Instant t = DateTimeUtils.microsToLocalDateTime(micros).withYear(1970).withMonth(1).withDayOfMonth(1).atZone(ZoneId.systemDefault()).toInstant();
         return t.toEpochMilli() * 1000000L + (long) t.getNano();
     };
-    private static final Function<String, Long> timestrToNanos = (ts) -> {
+    static final Function<String, Long> timestrToNanos = (ts) -> {
         Instant t = LocalDateTime.of(LocalDate.of(1970, 1, 1), LocalTime.parse(ts)).atZone(ZoneId.systemDefault()).toInstant();
         return t.toEpochMilli() * 1000000L + (long) t.getNano();
     };
-    private static final BiFunction<Object, Object, Object> o1ElseO2 = (o1, o2) -> (o1 != null) ? o1 : o2;
+    static final BiFunction<Object, Object, Object> o1ElseO2 = (o1, o2) -> (o1 != null) ? o1 : o2;
 
     //the singleton instance
     private static ArrowConversion inst = null;

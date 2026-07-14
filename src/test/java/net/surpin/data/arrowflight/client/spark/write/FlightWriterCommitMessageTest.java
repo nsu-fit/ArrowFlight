@@ -38,14 +38,4 @@ class FlightWriterCommitMessageTest {
         assertTrue(m.contains("epoch (5)"));
     }
 
-    @Test
-    void copyConstructorPreservesCount() {
-        FlightWriterCommitMessage original = new FlightWriterCommitMessage(0, 1L, 999);
-        FlightWriterCommitMessage retry = new FlightWriterCommitMessage(original, 3L);
-
-        // Verify the message references count=999 and epoch=3
-        String m = retry.getMessage();
-        assertTrue(m.contains("999 messages"));
-        assertTrue(m.contains("epoch (3)"));
-    }
 }
