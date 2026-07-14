@@ -21,6 +21,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
@@ -61,17 +62,7 @@ public class ParquetAdapter {
      * @param fileSystem Hadoop FileSystem instance
      */
     public ParquetAdapter(AppConfig appConfig, FileSystem fileSystem) {
-        this.fileSystem = fileSystem;
-        this.dataDirectory = appConfig.dataDir();
-        this.localhost = "localhost";
-        this.typeFactory = new JavaTypeFactoryImpl(RelDataTypeSystem.DEFAULT);
-
-        try {
-            initSchemaCache();
-            initTableCache();
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
+        this(appConfig, fileSystem, "localhost");
     }
 
     /**
@@ -93,6 +84,7 @@ public class ParquetAdapter {
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
+        initCatalogReader();
     }
 
     /**
@@ -226,15 +218,13 @@ public class ParquetAdapter {
         return result.toString();
     }
 
-    /**
-     * Builds DDL for all tables and populates the DDL cache.
-     * Also warms up Acero JNI and DuckDB connections.
-     */
+    /** Initializes cached DDL definitions for all discovered tables. */
     public void initCatalogReader() {
         Objects.requireNonNull(tableSchemaCache, "Initialize schema cache first");
         Objects.requireNonNull(tableCache, "Initialize table cache first");
 
         StringBuilder ddlBuilder = new StringBuilder();
+        List<String> unqualifiedDdls = new ArrayList<>();
         tableCache.forEach((schemaName, tablesMap) -> {
             tableDdlCache.putIfAbsent(schemaName, new HashMap<>());
             tablesMap.forEach((tableName, path) -> {
@@ -242,10 +232,12 @@ public class ParquetAdapter {
                 String ddl = arrowSchemaToDDL(schemaName, tableName, schema);
                 tableDdlCache.get(schemaName).put(tableName, ddl);
                 ddlBuilder.append(ddl).append(";\n");
+                unqualifiedDdls.add(ddl.replace(schemaName + ".", ""));
             });
         });
 
         LOGGER.info("Parsed DDL: {}", ddlBuilder.toString());
+        FilterConverter.warmUp(unqualifiedDdls);
     }
 
     /**

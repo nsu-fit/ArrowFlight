@@ -149,6 +149,16 @@ class FilterConverterTest {
         assertTrue(buf.capacity() > 0);
     }
 
+    /** Verifies the TPC-H Q1 date predicate can be pushed into Acero. */
+    @Test
+    void datePredicateProducesNonEmptyBuffer() throws SqlParseException {
+        ByteBuffer buf = FilterConverter.toByteBuffer(
+                "\"l_shipdate\" <= DATE '1998-09-02'",
+                List.of("CREATE TABLE lineitem(\"l_shipdate\" DATE)"));
+        assertNotNull(buf);
+        assertTrue(buf.capacity() > 0);
+    }
+
     @Test
     void multipleCreateStatements() throws SqlParseException {
         String other = "CREATE TABLE other(\"x\" INTEGER)";

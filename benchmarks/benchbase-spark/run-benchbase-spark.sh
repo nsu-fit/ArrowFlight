@@ -242,7 +242,7 @@ prepare_execute_config() {
   EXEC_CONFIG_IN_CONTAINER="/benchbase/config/custom/${BENCHMARK}.xml"
   local db_schema="${BENCHBASE_DB_SCHEMA:-${BENCHMARK}}"
 
-  if [[ -z "${QUERY_SET}" && -z "${BENCHBASE_TIME_SECONDS}" && -z "${BENCHBASE_TERMINALS}" && "${db_schema}" == "${BENCHMARK}" ]]; then
+  if [[ -z "${QUERY_SET}" && -z "${BENCHBASE_TIME_SECONDS}" && -z "${BENCHBASE_TERMINALS}" && "${db_schema}" == "${BENCHMARK}" && "${BENCHMARK_SCALE_FACTOR}" == "0.01" ]]; then
     return
   fi
 
@@ -260,6 +260,8 @@ prepare_execute_config() {
   GENERATED_CONFIG_LOCAL="${CONFIG_DIR}/.${BENCHMARK}-${safe_schema}-${safe_selector}-${BENCHBASE_TIME_SECONDS:-serial}.xml"
   cp "${base_config}" "${GENERATED_CONFIG_LOCAL}"
   GENERATED_CONFIGS+=("${GENERATED_CONFIG_LOCAL}")
+
+  sed -i "s#<scalefactor>.*</scalefactor>#  <scalefactor>${BENCHMARK_SCALE_FACTOR}</scalefactor>#" "${GENERATED_CONFIG_LOCAL}"
 
   if [[ -n "${QUERY_SET}" ]]; then
     local weights

@@ -24,6 +24,12 @@ public final class HiveExecuteDriverSelfTest {
                 "SELECT 'engine' AS name, 'Spark SQL' AS setting, 'BenchBase JDBC target' AS description",
                 "SHOW ALL");
         assertRewrite(
+                "SELECT CAST(NULL AS STRING) AS unsupported_metric WHERE FALSE",
+                "SELECT * FROM pg_stat_archiver");
+        assertRewrite(
+                "SELECT CAST(NULL AS STRING) AS unsupported_metric WHERE FALSE",
+                "select * from pg_catalog.pg_statio_user_indexes;");
+        assertRewrite(
                 "SELECT DATE '1998-12-01' - INTERVAL ? day",
                 "SELECT DATE '1998-12-01' - concat(?,' day')::interval");
         assertRewrite(

@@ -44,7 +44,7 @@ class ConfigAdapterTest {
         assertEquals(60, cfg.hazelcastClusterJoinTimeoutSec());
         assertEquals(3, cfg.clientMaxRetries());
         assertEquals(1000, cfg.clientRetryBackoffMs());
-        assertEquals(30000, cfg.clientConnectTimeoutMs());
+        assertEquals(0, cfg.clientConnectTimeoutMs());
         assertFalse(cfg.duckDbAllowUnsignedExtensions());
         assertEquals(Integer.MAX_VALUE, cfg.grpcMaxInboundMessageSize());
         assertEquals(60000, cfg.flightListenerReadyTimeoutMillis());

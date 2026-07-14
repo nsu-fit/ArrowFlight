@@ -218,6 +218,10 @@ public final class HiveExecuteDriver implements Driver {
                 return "SELECT 'engine' AS name, 'Spark SQL' AS setting, "
                         + "'BenchBase JDBC target' AS description";
             }
+            if (withoutSemicolon.matches(
+                    "(?i)SELECT\\s+\\*\\s+FROM\\s+(?:pg_catalog\\.)?pg_(?:stat|statio)_[a-z0-9_]+")) {
+                return "SELECT CAST(NULL AS STRING) AS unsupported_metric WHERE FALSE";
+            }
 
             String result = sql;
             result = result.replaceAll("(?i)\\?\\s*::\\s*date", "CAST(? AS DATE)");
