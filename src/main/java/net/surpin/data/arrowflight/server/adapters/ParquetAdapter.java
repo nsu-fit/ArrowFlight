@@ -21,6 +21,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
@@ -235,6 +236,7 @@ public class ParquetAdapter {
         Objects.requireNonNull(tableCache, "Initialize table cache first");
 
         StringBuilder ddlBuilder = new StringBuilder();
+        List<String> strippedDdls = new ArrayList<>();
         tableCache.forEach((schemaName, tablesMap) -> {
             tableDdlCache.putIfAbsent(schemaName, new HashMap<>());
             tablesMap.forEach((tableName, path) -> {
@@ -242,10 +244,12 @@ public class ParquetAdapter {
                 String ddl = arrowSchemaToDDL(schemaName, tableName, schema);
                 tableDdlCache.get(schemaName).put(tableName, ddl);
                 ddlBuilder.append(ddl).append(";\n");
+                strippedDdls.add(ddl.replace(schemaName + ".", ""));
             });
         });
 
         LOGGER.info("Parsed DDL: {}", ddlBuilder.toString());
+        FilterConverter.warmUp(strippedDdls);
     }
 
     /**
