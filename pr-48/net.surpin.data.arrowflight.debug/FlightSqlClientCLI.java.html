@@ -1,0 +1,249 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>FlightSqlClientCLI.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Hadoop Arrow Flight SQL Server</a> &gt; <a href="index.source.html" class="el_package">net.surpin.data.arrowflight.debug</a> &gt; <span class="el_source">FlightSqlClientCLI.java</span></div><h1>FlightSqlClientCLI.java</h1><pre class="source lang-java linenums">package net.surpin.data.arrowflight.debug;
+
+
+import java.io.PrintStream;
+import java.util.ArrayList;
+import java.util.List;
+import org.apache.arrow.flight.CallOption;
+import org.apache.arrow.flight.FlightClient;
+import org.apache.arrow.flight.FlightEndpoint;
+import org.apache.arrow.flight.FlightInfo;
+import org.apache.arrow.flight.FlightStream;
+import org.apache.arrow.flight.Location;
+import org.apache.arrow.flight.sql.FlightSqlClient;
+import org.apache.arrow.flight.sql.util.TableRef;
+import org.apache.arrow.memory.BufferAllocator;
+import org.apache.arrow.memory.RootAllocator;
+import org.apache.arrow.vector.VectorSchemaRoot;
+import org.apache.commons.cli.BasicParser;
+import org.apache.commons.cli.CommandLine;
+import org.apache.commons.cli.CommandLineParser;
+import org.apache.commons.cli.HelpFormatter;
+import org.apache.commons.cli.Option;
+import org.apache.commons.cli.Options;
+import org.apache.commons.cli.ParseException;
+
+/**
+ * Command-line client for testing Flight SQL server operations.
+ */
+public class FlightSqlClientCLI implements AutoCloseable {
+<span class="nc" id="L30">    public final List&lt;CallOption&gt; callOptions = new ArrayList&lt;&gt;();</span>
+    public final BufferAllocator allocator;
+    private FlightSqlClient flightSqlClient;
+
+    /**
+     * @param bufferAllocator Arrow buffer allocator
+     */
+<span class="nc" id="L37">    public FlightSqlClientCLI(BufferAllocator bufferAllocator) {</span>
+<span class="nc" id="L38">        this.allocator = bufferAllocator;</span>
+<span class="nc" id="L39">    }</span>
+
+    public static void main(String... args) throws Exception {
+<span class="nc bnc" id="L42" title="All 2 branches missed.">        if (args.length == 0) {</span>
+<span class="nc" id="L43">            args = new String[] {&quot;--host&quot;, &quot;localhost&quot;, &quot;--port&quot;, &quot;32010&quot;, &quot;--command&quot;, &quot;Execute&quot;, &quot;--query&quot;, &quot;select * from test_schema.test_table&quot;, &quot;--catalog&quot;, &quot;PARQUET_ARROW_FLIGHT_CATALOG&quot;, &quot;--schema&quot;, &quot;test_schema&quot;};</span>
+        }
+
+<span class="nc" id="L46">        Options options = new Options();</span>
+
+<span class="nc" id="L48">        Option hostOption = new Option(&quot;host&quot;, &quot;host&quot;, true, &quot;Host to connect to&quot;);</span>
+<span class="nc" id="L49">        hostOption.setRequired(true);</span>
+<span class="nc" id="L50">        options.addOption(hostOption);</span>
+
+<span class="nc" id="L52">        Option portOption = new Option(&quot;port&quot;, &quot;port&quot;, true, &quot;Port to connect to&quot;);</span>
+<span class="nc" id="L53">        portOption.setRequired(true);</span>
+<span class="nc" id="L54">        options.addOption(portOption);</span>
+
+<span class="nc" id="L56">        Option commandOption = new Option(&quot;command&quot;, &quot;command&quot;, true, &quot;Method to run&quot;);</span>
+<span class="nc" id="L57">        commandOption.setRequired(true);</span>
+<span class="nc" id="L58">        options.addOption(commandOption);</span>
+
+<span class="nc" id="L60">        options.addOption(&quot;query&quot;, &quot;query&quot;, true, &quot;Query&quot;);</span>
+<span class="nc" id="L61">        options.addOption(&quot;catalog&quot;, &quot;catalog&quot;, true, &quot;Catalog&quot;);</span>
+<span class="nc" id="L62">        options.addOption(&quot;schema&quot;, &quot;schema&quot;, true, &quot;Schema&quot;);</span>
+<span class="nc" id="L63">        options.addOption(&quot;table&quot;, &quot;table&quot;, true, &quot;Table&quot;);</span>
+
+<span class="nc" id="L65">        CommandLineParser parser = new BasicParser();</span>
+<span class="nc" id="L66">        HelpFormatter formatter = new HelpFormatter();</span>
+
+        try {
+<span class="nc" id="L69">            CommandLine cmd = parser.parse(options, args);</span>
+
+<span class="nc" id="L71">            try (org.apache.arrow.flight.sql.example.FlightSqlClientDemoApp thisApp = new org.apache.arrow.flight.sql.example.FlightSqlClientDemoApp(new RootAllocator(2147483647L))) {</span>
+<span class="nc" id="L72">                thisApp.executeApp(cmd);</span>
+            }
+
+<span class="nc" id="L75">        } catch (ParseException e) {</span>
+<span class="nc" id="L76">            System.out.println(e.getMessage());</span>
+<span class="nc" id="L77">            formatter.printHelp(&quot;FlightSqlClientDemoApp -host localhost -port 32010 ...&quot;, options);</span>
+<span class="nc" id="L78">            throw e;</span>
+<span class="nc" id="L79">        }</span>
+<span class="nc" id="L80">    }</span>
+
+    /**
+     * @return call options as an array
+     */
+    public CallOption[] getCallOptions() {
+<span class="nc" id="L86">        return (CallOption[]) this.callOptions.toArray(new CallOption[0]);</span>
+    }
+
+    /**
+     * @param cmd parsed command-line arguments
+     * @throws Exception if execution or connection fails
+     */
+    public void executeApp(CommandLine cmd) throws Exception {
+<span class="nc" id="L94">        String host = cmd.getOptionValue(&quot;host&quot;).trim();</span>
+<span class="nc" id="L95">        int port = Integer.parseInt(cmd.getOptionValue(&quot;port&quot;).trim());</span>
+<span class="nc" id="L96">        this.createFlightSqlClient(host, port);</span>
+<span class="nc" id="L97">        this.executeCommand(cmd);</span>
+<span class="nc" id="L98">    }</span>
+
+    /**
+     * @param cmd parsed command-line arguments
+     * @throws Exception if command dispatch or execution fails
+     */
+    public void executeCommand(CommandLine cmd) throws Exception {
+<span class="nc bnc" id="L105" title="All 10 branches missed.">        switch (cmd.getOptionValue(&quot;command&quot;).trim()) {</span>
+            case &quot;Execute&quot;:
+<span class="nc" id="L107">                this.exampleExecute(cmd.getOptionValue(&quot;query&quot;));</span>
+<span class="nc" id="L108">                break;</span>
+            case &quot;ExecuteUpdate&quot;:
+<span class="nc" id="L110">                this.exampleExecuteUpdate(cmd.getOptionValue(&quot;query&quot;));</span>
+<span class="nc" id="L111">                break;</span>
+            case &quot;GetCatalogs&quot;:
+<span class="nc" id="L113">                this.exampleGetCatalogs();</span>
+<span class="nc" id="L114">                break;</span>
+            case &quot;GetSchemas&quot;:
+<span class="nc" id="L116">                this.exampleGetSchemas(cmd.getOptionValue(&quot;catalog&quot;), cmd.getOptionValue(&quot;schema&quot;));</span>
+<span class="nc" id="L117">                break;</span>
+            case &quot;GetTableTypes&quot;:
+<span class="nc" id="L119">                this.exampleGetTableTypes();</span>
+<span class="nc" id="L120">                break;</span>
+            case &quot;GetTables&quot;:
+<span class="nc" id="L122">                this.exampleGetTables(cmd.getOptionValue(&quot;catalog&quot;), cmd.getOptionValue(&quot;schema&quot;), cmd.getOptionValue(&quot;table&quot;));</span>
+<span class="nc" id="L123">                break;</span>
+            case &quot;GetExportedKeys&quot;:
+<span class="nc" id="L125">                this.exampleGetExportedKeys(cmd.getOptionValue(&quot;catalog&quot;), cmd.getOptionValue(&quot;schema&quot;), cmd.getOptionValue(&quot;table&quot;));</span>
+<span class="nc" id="L126">                break;</span>
+            case &quot;GetImportedKeys&quot;:
+<span class="nc" id="L128">                this.exampleGetImportedKeys(cmd.getOptionValue(&quot;catalog&quot;), cmd.getOptionValue(&quot;schema&quot;), cmd.getOptionValue(&quot;table&quot;));</span>
+<span class="nc" id="L129">                break;</span>
+            case &quot;GetPrimaryKeys&quot;:
+<span class="nc" id="L131">                this.exampleGetPrimaryKeys(cmd.getOptionValue(&quot;catalog&quot;), cmd.getOptionValue(&quot;schema&quot;), cmd.getOptionValue(&quot;table&quot;));</span>
+<span class="nc" id="L132">                break;</span>
+            default:
+<span class="nc" id="L134">                System.out.println(&quot;Command used is not valid! Please use one of: \n[\&quot;ExecuteUpdate\&quot;,\n\&quot;Execute\&quot;,\n\&quot;GetCatalogs\&quot;,\n\&quot;GetSchemas\&quot;,\n\&quot;GetTableTypes\&quot;,\n\&quot;GetTables\&quot;,\n\&quot;GetExportedKeys\&quot;,\n\&quot;GetImportedKeys\&quot;,\n\&quot;GetPrimaryKeys\&quot;]&quot;);</span>
+        }
+
+<span class="nc" id="L137">    }</span>
+
+    /**
+     * @param host server hostname
+     * @param port server port
+     */
+    public void createFlightSqlClient(String host, int port) {
+<span class="nc" id="L144">        Location clientLocation = Location.forGrpcInsecure(host, port);</span>
+<span class="nc" id="L145">        this.flightSqlClient = new FlightSqlClient(FlightClient.builder(this.allocator, clientLocation).build());</span>
+<span class="nc" id="L146">    }</span>
+
+    /**
+     * @param query SQL query string
+     * @throws Exception if query execution fails
+     */
+    private void exampleExecute(String query) throws Exception {
+<span class="nc" id="L153">        this.printFlightInfoResults(this.flightSqlClient.execute(query, this.getCallOptions()));</span>
+<span class="nc" id="L154">    }</span>
+
+    /**
+     * @param query SQL update statement
+     */
+    private void exampleExecuteUpdate(String query) {
+<span class="nc" id="L160">        PrintStream var10000 = System.out;</span>
+<span class="nc" id="L161">        long var10001 = this.flightSqlClient.executeUpdate(query, this.getCallOptions());</span>
+<span class="nc" id="L162">        var10000.println(&quot;Updated: &quot; + var10001 + &quot;rows.&quot;);</span>
+<span class="nc" id="L163">    }</span>
+
+    /**
+     * @throws Exception if catalog retrieval fails
+     */
+    private void exampleGetCatalogs() throws Exception {
+<span class="nc" id="L169">        this.printFlightInfoResults(this.flightSqlClient.getCatalogs(this.getCallOptions()));</span>
+<span class="nc" id="L170">    }</span>
+
+    /**
+     * @param catalog catalog filter
+     * @param schema schema filter pattern
+     * @throws Exception if schema retrieval fails
+     */
+    private void exampleGetSchemas(String catalog, String schema) throws Exception {
+<span class="nc" id="L178">        this.printFlightInfoResults(this.flightSqlClient.getSchemas(catalog, schema, this.getCallOptions()));</span>
+<span class="nc" id="L179">    }</span>
+
+    /**
+     * @throws Exception if table type retrieval fails
+     */
+    private void exampleGetTableTypes() throws Exception {
+<span class="nc" id="L185">        this.printFlightInfoResults(this.flightSqlClient.getTableTypes(this.getCallOptions()));</span>
+<span class="nc" id="L186">    }</span>
+
+    /**
+     * @param catalog catalog filter
+     * @param schema schema filter pattern
+     * @param table table name filter
+     * @throws Exception if table retrieval fails
+     */
+    private void exampleGetTables(String catalog, String schema, String table) throws Exception {
+<span class="nc" id="L195">        this.printFlightInfoResults(this.flightSqlClient.getTables(catalog, schema, table, (List) null, false, this.getCallOptions()));</span>
+<span class="nc" id="L196">    }</span>
+
+    /**
+     * @param catalog catalog name
+     * @param schema schema name
+     * @param table table name
+     * @throws Exception if key retrieval fails
+     */
+    private void exampleGetExportedKeys(String catalog, String schema, String table) throws Exception {
+<span class="nc" id="L205">        this.printFlightInfoResults(this.flightSqlClient.getExportedKeys(TableRef.of(catalog, schema, table), this.getCallOptions()));</span>
+<span class="nc" id="L206">    }</span>
+
+    /**
+     * @param catalog catalog name
+     * @param schema schema name
+     * @param table table name
+     * @throws Exception if key retrieval fails
+     */
+    private void exampleGetImportedKeys(String catalog, String schema, String table) throws Exception {
+<span class="nc" id="L215">        this.printFlightInfoResults(this.flightSqlClient.getImportedKeys(TableRef.of(catalog, schema, table), this.getCallOptions()));</span>
+<span class="nc" id="L216">    }</span>
+
+    /**
+     * @param catalog catalog name
+     * @param schema schema name
+     * @param table table name
+     * @throws Exception if key retrieval fails
+     */
+    private void exampleGetPrimaryKeys(String catalog, String schema, String table) throws Exception {
+<span class="nc" id="L225">        this.printFlightInfoResults(this.flightSqlClient.getPrimaryKeys(TableRef.of(catalog, schema, table), this.getCallOptions()));</span>
+<span class="nc" id="L226">    }</span>
+
+    /**
+     * @param flightInfo flight info to stream and print
+     * @throws Exception if streaming fails
+     */
+    private void printFlightInfoResults(FlightInfo flightInfo) throws Exception {
+<span class="nc" id="L233">        FlightStream stream = this.flightSqlClient.getStream(((FlightEndpoint) flightInfo.getEndpoints().get(0)).getTicket(), this.getCallOptions());</span>
+
+<span class="nc bnc" id="L235" title="All 2 branches missed.">        while (stream.next()) {</span>
+<span class="nc" id="L236">            try (VectorSchemaRoot root = stream.getRoot()) {</span>
+<span class="nc" id="L237">                System.out.println(root.contentToTSVString());</span>
+            }
+        }
+
+<span class="nc" id="L241">        stream.close();</span>
+<span class="nc" id="L242">    }</span>
+
+    public void close() throws Exception {
+<span class="nc" id="L245">        this.flightSqlClient.close();</span>
+<span class="nc" id="L246">        this.allocator.close();</span>
+<span class="nc" id="L247">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>
