@@ -59,6 +59,7 @@ public final class ClusterService implements AutoCloseable {
         });
         heartbeatExecutor.scheduleAtFixedRate(() -> {
             try {
+                hazelcast.serverRegistry().putIfAbsent(serverUri, 0L);
                 hazelcast.serverHeartbeats().put(serverUri, System.currentTimeMillis());
             } catch (Exception e) {
                 LOGGER.warn("Failed to update heartbeat for {}: {}", serverUri, e.getMessage());
@@ -94,8 +95,9 @@ public final class ClusterService implements AutoCloseable {
         for (String uri : serverUris) {
             Long lastHb = heartbeats.get(uri);
             if (lastHb == null) {
-                LOGGER.warn("Server {} has no heartbeat, removing from pool", uri);
-                hazelcast.serverRegistry().remove(uri);
+                // Registration and the first heartbeat are separate distributed-map writes.
+                // Keep a newly registered node eligible during that short window.
+                live.add(uri);
             } else if (lastHb >= deadline) {
                 live.add(uri);
             } else {

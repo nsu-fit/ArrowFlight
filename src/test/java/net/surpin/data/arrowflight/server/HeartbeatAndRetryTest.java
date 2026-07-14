@@ -147,6 +147,8 @@ class HeartbeatAndRetryTest {
         Long firstHb = heartbeats.get(selfUri);
         assertNotNull(firstHb);
 
+        registry.remove(selfUri);
+
         // Wait for one heartbeat cycle (15s interval)
         Thread.sleep(16_000);
 
@@ -154,5 +156,7 @@ class HeartbeatAndRetryTest {
         assertNotNull(secondHb);
         assertTrue(secondHb > firstHb,
                 "Heartbeat should have been updated. First: " + firstHb + ", Second: " + secondHb);
+        assertTrue(registry.containsKey(selfUri),
+                "Heartbeat should re-register a server that recovered");
     }
 }

@@ -60,6 +60,7 @@ class MultiNodeFailoverTest {
 
     @Test @Order(4)
     void staleHeartbeatServerIsExcluded() throws Exception {
+        IMap<String, Long> registry = helper.hazelcastAdapter.serverRegistry();
         IMap<String, Long> heartbeats = helper.hazelcastAdapter.serverHeartbeats();
         String selfUri = helper.location.getUri().toString();
 
@@ -70,7 +71,8 @@ class MultiNodeFailoverTest {
         Set<String> live = helper.clusterService.filterLiveServers(Set.of(selfUri));
         assertTrue(live.isEmpty(), "Server with stale heartbeat should be excluded");
 
-        // Restore heartbeat for subsequent tests
+        // Simulate the node's registration and heartbeat after recovery.
+        registry.put(selfUri, 0L);
         heartbeats.put(selfUri, now);
     }
 
