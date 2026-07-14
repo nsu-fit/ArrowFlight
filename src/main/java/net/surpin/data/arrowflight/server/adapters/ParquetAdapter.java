@@ -224,7 +224,7 @@ public class ParquetAdapter {
         Objects.requireNonNull(tableCache, "Initialize table cache first");
 
         StringBuilder ddlBuilder = new StringBuilder();
-        List<String> unqualifiedDdls = new ArrayList<>();
+        List<String> strippedDdls = new ArrayList<>();
         tableCache.forEach((schemaName, tablesMap) -> {
             tableDdlCache.putIfAbsent(schemaName, new HashMap<>());
             tablesMap.forEach((tableName, path) -> {
@@ -232,12 +232,12 @@ public class ParquetAdapter {
                 String ddl = arrowSchemaToDDL(schemaName, tableName, schema);
                 tableDdlCache.get(schemaName).put(tableName, ddl);
                 ddlBuilder.append(ddl).append(";\n");
-                unqualifiedDdls.add(ddl.replace(schemaName + ".", ""));
+                strippedDdls.add(ddl.replace(schemaName + ".", ""));
             });
         });
 
         LOGGER.info("Parsed DDL: {}", ddlBuilder.toString());
-        FilterConverter.warmUp(unqualifiedDdls);
+        FilterConverter.warmUp(strippedDdls);
     }
 
     /**

@@ -116,7 +116,11 @@ public final class ClusterService implements AutoCloseable {
      * @return map of URI to load (bytes)
      */
     public Map<String, Long> allServerLoads() {
-        return hazelcast.serverRegistry().getAll(hazelcast.serverRegistry().keySet());
+        Map<String, Long> result = new LinkedHashMap<>();
+        for (Map.Entry<String, Long> entry : hazelcast.serverRegistry().entrySet()) {
+            result.put(entry.getKey(), entry.getValue());
+        }
+        return result;
     }
 
     /**
@@ -147,8 +151,10 @@ public final class ClusterService implements AutoCloseable {
      * @return relative path to size and owning servers
      */
     public Map<String, FileAssignment> fileLocations() {
-        Set<String> inventoryServers = hazelcast.serverFiles().keySet();
-        Map<String, Map<String, Long>> inventories = hazelcast.serverFiles().getAll(inventoryServers);
+        Map<String, Map<String, Long>> inventories = new LinkedHashMap<>();
+        for (Map.Entry<String, Map<String, Long>> entry : hazelcast.serverFiles().entrySet()) {
+            inventories.put(entry.getKey(), entry.getValue());
+        }
         Map<String, FileAssignment> result = new LinkedHashMap<>();
         for (Map.Entry<String, Map<String, Long>> server : inventories.entrySet()) {
             String serverUri = server.getKey();
