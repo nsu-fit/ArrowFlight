@@ -115,11 +115,11 @@ join_by_comma() {
 read_cluster_nodes() {
   local props="${REPO_ROOT}/src/main/resources/arrowflight.properties"
   local nodes
-  nodes="$(awk -F= '/^[[:space:]]*clusterNodes[[:space:]]*=/ {gsub(/[[:space:]]/, "", $2); print $2; exit}' "${props}")"
+  nodes="$(awk -F= '/^[[:space:]]*numServers[[:space:]]*=/ {gsub(/[[:space:]]/, "", $2); print $2; exit}' "${props}")"
   nodes="${nodes:-3}"
 
-  if [[ ! "${nodes}" =~ ^[0-9]+$ ]] || (( nodes < 1 || nodes > 3 )); then
-    echo "Bad clusterNodes=${nodes}. Supported: 1..3." >&2
+  if [[ ! "${nodes}" =~ ^[0-9]+$ ]] || (( nodes < 1 )); then
+    echo "Bad numServers=${nodes}. Supported: >= 1." >&2
     exit 2
   fi
 

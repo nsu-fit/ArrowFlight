@@ -295,14 +295,14 @@ services:
       FLIGHT_LOCALHOST: flight-server-10
       FLIGHT_LOCAL_STORAGE_HOST: server-node-10
       SPARK_LOCAL_HOSTNAME: server-node-10
-      SPARK_WORKER_WEBUI_PORT: "80810"
+      SPARK_WORKER_WEBUI_PORT: "8090"
     volumes:
       - server-node-10-staging:/staging:ro
       - hdfs-datanode-10-data:/var/lib/hadoop-hdfs/data
       - spark-warehouse:/spark-warehouse
     ports:
       - "32019:32010"
-      - "80810:80810"
+      - "8090:8090"
       - "9873:9864"
     networks:
       default:
