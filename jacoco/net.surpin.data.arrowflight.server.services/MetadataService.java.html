@@ -413,19 +413,23 @@ public final class MetadataService {
                 case COUNT_STAR, COUNT -&gt;
 <span class="fc" id="L414">                    resultFields.add(new Field(expr.outputName,</span>
 <span class="fc" id="L415">                            FieldType.nullable(new ArrowType.Int(64, true)), null));</span>
-                case SUM -&gt;
-<span class="fc" id="L417">                    resultFields.add(new Field(expr.outputName,</span>
-<span class="fc" id="L418">                            FieldType.nullable(new ArrowType.FloatingPoint(</span>
-                                    org.apache.arrow.vector.types.FloatingPointPrecision.DOUBLE)), null));
+                case SUM -&gt; {
+<span class="fc bfc" id="L417" title="All 2 branches covered.">                    ArrowType sumType = expr.decimalScale == null</span>
+<span class="fc" id="L418">                            ? new ArrowType.FloatingPoint(</span>
+                                    org.apache.arrow.vector.types.FloatingPointPrecision.DOUBLE)
+<span class="fc" id="L420">                            : new ArrowType.Decimal(38, expr.decimalScale, 128);</span>
+<span class="fc" id="L421">                    resultFields.add(new Field(expr.outputName,</span>
+<span class="fc" id="L422">                            FieldType.nullable(sumType), null));</span>
+<span class="fc" id="L423">                }</span>
                 case MIN, MAX -&gt; {
-<span class="fc" id="L421">                    Field src = resolveColumn(colFieldMap, expr.inputColumn);</span>
-<span class="fc" id="L422">                    resultFields.add(new Field(expr.outputName,</span>
-<span class="fc" id="L423">                            FieldType.nullable(src.getType()), null));</span>
-<span class="fc" id="L424">                }</span>
+<span class="fc" id="L425">                    Field src = resolveColumn(colFieldMap, expr.inputColumn);</span>
+<span class="fc" id="L426">                    resultFields.add(new Field(expr.outputName,</span>
+<span class="fc" id="L427">                            FieldType.nullable(src.getType()), null));</span>
+<span class="fc" id="L428">                }</span>
                 default -&gt; { }
             }
-<span class="fc" id="L427">        }</span>
-<span class="fc" id="L428">        return new org.apache.arrow.vector.types.pojo.Schema(resultFields);</span>
+<span class="fc" id="L431">        }</span>
+<span class="fc" id="L432">        return new org.apache.arrow.vector.types.pojo.Schema(resultFields);</span>
     }
 
     /**
@@ -436,17 +440,17 @@ public final class MetadataService {
      * @return resolved Arrow field
      */
     private static Field resolveColumn(Map&lt;String, Field&gt; colFieldMap, String inputColumn) {
-<span class="fc" id="L439">        Field src = colFieldMap.get(inputColumn);</span>
-<span class="pc bpc" id="L440" title="1 of 2 branches missed.">        if (src != null) {</span>
-<span class="fc" id="L441">            return src;</span>
+<span class="fc" id="L443">        Field src = colFieldMap.get(inputColumn);</span>
+<span class="pc bpc" id="L444" title="1 of 2 branches missed.">        if (src != null) {</span>
+<span class="fc" id="L445">            return src;</span>
         }
-<span class="nc bnc" id="L443" title="All 2 branches missed.">        for (Map.Entry&lt;String, Field&gt; entry : colFieldMap.entrySet()) {</span>
-<span class="nc bnc" id="L444" title="All 2 branches missed.">            if (entry.getKey().equalsIgnoreCase(inputColumn)) {</span>
-<span class="nc" id="L445">                return entry.getValue();</span>
+<span class="nc bnc" id="L447" title="All 2 branches missed.">        for (Map.Entry&lt;String, Field&gt; entry : colFieldMap.entrySet()) {</span>
+<span class="nc bnc" id="L448" title="All 2 branches missed.">            if (entry.getKey().equalsIgnoreCase(inputColumn)) {</span>
+<span class="nc" id="L449">                return entry.getValue();</span>
             }
-<span class="nc" id="L447">        }</span>
-<span class="nc" id="L448">        throw new IllegalArgumentException(</span>
-<span class="nc" id="L449">                &quot;Column '&quot; + inputColumn + &quot;' not found. Available: &quot; + colFieldMap.keySet());</span>
+<span class="nc" id="L451">        }</span>
+<span class="nc" id="L452">        throw new IllegalArgumentException(</span>
+<span class="nc" id="L453">                &quot;Column '&quot; + inputColumn + &quot;' not found. Available: &quot; + colFieldMap.keySet());</span>
     }
 
     // ── vector helpers ────────────────────────────────────────────────────
@@ -463,11 +467,11 @@ public final class MetadataService {
     private static VectorSchemaRoot getRoot(
             List&lt;? extends Map&lt;String, ?&gt;&gt; data, BufferAllocator allocator,
             String fieldVectorName, String columnName) {
-<span class="fc" id="L466">        final VarCharVector dataVector = new VarCharVector(fieldVectorName,</span>
-<span class="fc" id="L467">                FieldType.notNullable(Types.MinorType.VARCHAR.getType()), allocator);</span>
-<span class="fc" id="L468">        saveToVectors(ImmutableMap.of(dataVector, columnName), data);</span>
-<span class="fc" id="L469">        dataVector.setValueCount(dataVector.getValueCount());</span>
-<span class="fc" id="L470">        return new VectorSchemaRoot(singletonList(dataVector));</span>
+<span class="fc" id="L470">        final VarCharVector dataVector = new VarCharVector(fieldVectorName,</span>
+<span class="fc" id="L471">                FieldType.notNullable(Types.MinorType.VARCHAR.getType()), allocator);</span>
+<span class="fc" id="L472">        saveToVectors(ImmutableMap.of(dataVector, columnName), data);</span>
+<span class="fc" id="L473">        dataVector.setValueCount(dataVector.getValueCount());</span>
+<span class="fc" id="L474">        return new VectorSchemaRoot(singletonList(dataVector));</span>
     }
 
     /**
@@ -479,8 +483,8 @@ public final class MetadataService {
     private static &lt;T extends FieldVector&gt; void saveToVectors(
             final Map&lt;T, String&gt; vectorToColumnName,
             List&lt;? extends Map&lt;String, ?&gt;&gt; data) {
-<span class="fc" id="L482">        saveToVectors(vectorToColumnName, data, none -&gt; true);</span>
-<span class="fc" id="L483">    }</span>
+<span class="fc" id="L486">        saveToVectors(vectorToColumnName, data, none -&gt; true);</span>
+<span class="fc" id="L487">    }</span>
 
     /**
      * Writes data to vectors with optional row filtering.
@@ -495,58 +499,58 @@ public final class MetadataService {
             Map&lt;T, String&gt; vectorToColumnName,
             List&lt;? extends Map&lt;String, ?&gt;&gt; data,
             Predicate&lt;Map&lt;String, ?&gt;&gt; rowPredicate) {
-<span class="fc" id="L498">        Objects.requireNonNull(vectorToColumnName);</span>
-<span class="fc" id="L499">        Objects.requireNonNull(data);</span>
-<span class="fc" id="L500">        final Set&lt;Map.Entry&lt;T, String&gt;&gt; entrySet = vectorToColumnName.entrySet();</span>
-<span class="fc" id="L501">        int rows = 0;</span>
+<span class="fc" id="L502">        Objects.requireNonNull(vectorToColumnName);</span>
+<span class="fc" id="L503">        Objects.requireNonNull(data);</span>
+<span class="fc" id="L504">        final Set&lt;Map.Entry&lt;T, String&gt;&gt; entrySet = vectorToColumnName.entrySet();</span>
+<span class="fc" id="L505">        int rows = 0;</span>
 
-<span class="fc bfc" id="L503" title="All 2 branches covered.">        for (Map&lt;String, ?&gt; row : data) {</span>
-<span class="pc bpc" id="L504" title="1 of 2 branches missed.">            if (!rowPredicate.test(row)) {</span>
-<span class="nc" id="L505">                continue;</span>
+<span class="fc bfc" id="L507" title="All 2 branches covered.">        for (Map&lt;String, ?&gt; row : data) {</span>
+<span class="pc bpc" id="L508" title="1 of 2 branches missed.">            if (!rowPredicate.test(row)) {</span>
+<span class="nc" id="L509">                continue;</span>
             }
-<span class="fc bfc" id="L507" title="All 2 branches covered.">            for (final Map.Entry&lt;T, String&gt; vectorToColumn : entrySet) {</span>
-<span class="fc" id="L508">                final T vector = vectorToColumn.getKey();</span>
-<span class="fc" id="L509">                final String columnName = vectorToColumn.getValue();</span>
-<span class="pc bpc" id="L510" title="1 of 2 branches missed.">                if (vector instanceof VarCharVector) {</span>
-<span class="fc" id="L511">                    saveToVector((String) row.get(columnName), (VarCharVector) vector, rows);</span>
-<span class="nc bnc" id="L512" title="All 2 branches missed.">                } else if (vector instanceof IntVector) {</span>
-<span class="nc" id="L513">                    saveToVector((Integer) row.get(columnName), (IntVector) vector, rows);</span>
-<span class="nc bnc" id="L514" title="All 2 branches missed.">                } else if (vector instanceof UInt1Vector) {</span>
-<span class="nc" id="L515">                    saveToVector((Byte) row.get(columnName), (UInt1Vector) vector, rows);</span>
-<span class="nc bnc" id="L516" title="All 2 branches missed.">                } else if (vector instanceof org.apache.arrow.vector.BitVector) {</span>
-<span class="nc" id="L517">                    saveToVector((Byte) row.get(columnName), (org.apache.arrow.vector.BitVector) vector, rows);</span>
-<span class="nc bnc" id="L518" title="All 2 branches missed.">                } else if (vector instanceof ListVector) {</span>
-<span class="nc" id="L519">                    String createParamsValues = (String) row.get(columnName);</span>
-<span class="nc" id="L520">                    UnionListWriter writer = ((ListVector) vector).getWriter();</span>
-<span class="nc" id="L521">                    BufferAllocator vecAllocator = vector.getAllocator();</span>
-<span class="nc" id="L522">                    final org.apache.arrow.memory.ArrowBuf buf = vecAllocator.buffer(1024);</span>
-<span class="nc" id="L523">                    writer.setPosition(rows);</span>
-<span class="nc" id="L524">                    writer.startList();</span>
-<span class="nc bnc" id="L525" title="All 2 branches missed.">                    if (createParamsValues != null) {</span>
-<span class="nc" id="L526">                        String[] split = createParamsValues.split(&quot;,&quot;);</span>
-<span class="nc bnc" id="L527" title="All 2 branches missed.">                        for (String s : split) {</span>
-<span class="nc" id="L528">                            byte[] bytes = s.getBytes(StandardCharsets.UTF_8);</span>
-<span class="nc bnc" id="L529" title="All 2 branches missed.">                            com.google.common.base.Preconditions.checkState(</span>
+<span class="fc bfc" id="L511" title="All 2 branches covered.">            for (final Map.Entry&lt;T, String&gt; vectorToColumn : entrySet) {</span>
+<span class="fc" id="L512">                final T vector = vectorToColumn.getKey();</span>
+<span class="fc" id="L513">                final String columnName = vectorToColumn.getValue();</span>
+<span class="pc bpc" id="L514" title="1 of 2 branches missed.">                if (vector instanceof VarCharVector) {</span>
+<span class="fc" id="L515">                    saveToVector((String) row.get(columnName), (VarCharVector) vector, rows);</span>
+<span class="nc bnc" id="L516" title="All 2 branches missed.">                } else if (vector instanceof IntVector) {</span>
+<span class="nc" id="L517">                    saveToVector((Integer) row.get(columnName), (IntVector) vector, rows);</span>
+<span class="nc bnc" id="L518" title="All 2 branches missed.">                } else if (vector instanceof UInt1Vector) {</span>
+<span class="nc" id="L519">                    saveToVector((Byte) row.get(columnName), (UInt1Vector) vector, rows);</span>
+<span class="nc bnc" id="L520" title="All 2 branches missed.">                } else if (vector instanceof org.apache.arrow.vector.BitVector) {</span>
+<span class="nc" id="L521">                    saveToVector((Byte) row.get(columnName), (org.apache.arrow.vector.BitVector) vector, rows);</span>
+<span class="nc bnc" id="L522" title="All 2 branches missed.">                } else if (vector instanceof ListVector) {</span>
+<span class="nc" id="L523">                    String createParamsValues = (String) row.get(columnName);</span>
+<span class="nc" id="L524">                    UnionListWriter writer = ((ListVector) vector).getWriter();</span>
+<span class="nc" id="L525">                    BufferAllocator vecAllocator = vector.getAllocator();</span>
+<span class="nc" id="L526">                    final org.apache.arrow.memory.ArrowBuf buf = vecAllocator.buffer(1024);</span>
+<span class="nc" id="L527">                    writer.setPosition(rows);</span>
+<span class="nc" id="L528">                    writer.startList();</span>
+<span class="nc bnc" id="L529" title="All 2 branches missed.">                    if (createParamsValues != null) {</span>
+<span class="nc" id="L530">                        String[] split = createParamsValues.split(&quot;,&quot;);</span>
+<span class="nc bnc" id="L531" title="All 2 branches missed.">                        for (String s : split) {</span>
+<span class="nc" id="L532">                            byte[] bytes = s.getBytes(StandardCharsets.UTF_8);</span>
+<span class="nc bnc" id="L533" title="All 2 branches missed.">                            com.google.common.base.Preconditions.checkState(</span>
                                     bytes.length &lt; 1024,
                                     &quot;Amount of bytes is greater than ArrowBuf supports&quot;);
-<span class="nc" id="L532">                            buf.setBytes(0, bytes);</span>
-<span class="nc" id="L533">                            writer.varChar().writeVarChar(0, bytes.length, buf);</span>
+<span class="nc" id="L536">                            buf.setBytes(0, bytes);</span>
+<span class="nc" id="L537">                            writer.varChar().writeVarChar(0, bytes.length, buf);</span>
                         }
                     }
-<span class="nc" id="L536">                    buf.close();</span>
-<span class="nc" id="L537">                    writer.endList();</span>
-<span class="nc" id="L538">                } else {</span>
-<span class="nc" id="L539">                    throw CallStatus.INVALID_ARGUMENT</span>
-<span class="nc" id="L540">                            .withDescription(&quot;Provided vector not supported&quot;)</span>
-<span class="nc" id="L541">                            .toRuntimeException();</span>
+<span class="nc" id="L540">                    buf.close();</span>
+<span class="nc" id="L541">                    writer.endList();</span>
+<span class="nc" id="L542">                } else {</span>
+<span class="nc" id="L543">                    throw CallStatus.INVALID_ARGUMENT</span>
+<span class="nc" id="L544">                            .withDescription(&quot;Provided vector not supported&quot;)</span>
+<span class="nc" id="L545">                            .toRuntimeException();</span>
                 }
-<span class="fc" id="L543">            }</span>
-<span class="fc" id="L544">            rows++;</span>
-<span class="fc" id="L545">        }</span>
-<span class="fc bfc" id="L546" title="All 2 branches covered.">        for (final Map.Entry&lt;T, String&gt; vectorToColumn : entrySet) {</span>
-<span class="fc" id="L547">            vectorToColumn.getKey().setValueCount(rows);</span>
-<span class="fc" id="L548">        }</span>
-<span class="fc" id="L549">        return rows;</span>
+<span class="fc" id="L547">            }</span>
+<span class="fc" id="L548">            rows++;</span>
+<span class="fc" id="L549">        }</span>
+<span class="fc bfc" id="L550" title="All 2 branches covered.">        for (final Map.Entry&lt;T, String&gt; vectorToColumn : entrySet) {</span>
+<span class="fc" id="L551">            vectorToColumn.getKey().setValueCount(rows);</span>
+<span class="fc" id="L552">        }</span>
+<span class="fc" id="L553">        return rows;</span>
     }
 
     /**
@@ -557,10 +561,10 @@ public final class MetadataService {
      * @param index  row index
      */
     private static void saveToVector(Byte data, UInt1Vector vector, int index) {
-<span class="nc" id="L560">        vectorConsumer(data, vector,</span>
-<span class="nc" id="L561">                fv -&gt; fv.setNull(index),</span>
-<span class="nc" id="L562">                (theData, fv) -&gt; fv.setSafe(index, theData));</span>
-<span class="nc" id="L563">    }</span>
+<span class="nc" id="L564">        vectorConsumer(data, vector,</span>
+<span class="nc" id="L565">                fv -&gt; fv.setNull(index),</span>
+<span class="nc" id="L566">                (theData, fv) -&gt; fv.setSafe(index, theData));</span>
+<span class="nc" id="L567">    }</span>
 
     /**
      * Writes a Byte to a BitVector at the given index.
@@ -570,10 +574,10 @@ public final class MetadataService {
      * @param index  row index
      */
     private static void saveToVector(Byte data, org.apache.arrow.vector.BitVector vector, int index) {
-<span class="nc" id="L573">        vectorConsumer(data, vector,</span>
-<span class="nc" id="L574">                fv -&gt; fv.setNull(index),</span>
-<span class="nc" id="L575">                (theData, fv) -&gt; fv.setSafe(index, theData));</span>
-<span class="nc" id="L576">    }</span>
+<span class="nc" id="L577">        vectorConsumer(data, vector,</span>
+<span class="nc" id="L578">                fv -&gt; fv.setNull(index),</span>
+<span class="nc" id="L579">                (theData, fv) -&gt; fv.setSafe(index, theData));</span>
+<span class="nc" id="L580">    }</span>
 
     /**
      * Writes a String to a VarCharVector at the given index.
@@ -583,11 +587,11 @@ public final class MetadataService {
      * @param index  row index
      */
     private static void saveToVector(String data, VarCharVector vector, int index) {
-<span class="fc" id="L586">        preconditionCheckSaveToVector(vector, index);</span>
-<span class="fc" id="L587">        vectorConsumer(data, vector,</span>
-<span class="nc" id="L588">                fv -&gt; fv.setNull(index),</span>
-<span class="fc" id="L589">                (theData, fv) -&gt; fv.setSafe(index, new Text(theData)));</span>
-<span class="fc" id="L590">    }</span>
+<span class="fc" id="L590">        preconditionCheckSaveToVector(vector, index);</span>
+<span class="fc" id="L591">        vectorConsumer(data, vector,</span>
+<span class="nc" id="L592">                fv -&gt; fv.setNull(index),</span>
+<span class="fc" id="L593">                (theData, fv) -&gt; fv.setSafe(index, new Text(theData)));</span>
+<span class="fc" id="L594">    }</span>
 
     /**
      * Writes an Integer to an IntVector at the given index.
@@ -597,11 +601,11 @@ public final class MetadataService {
      * @param index  row index
      */
     private static void saveToVector(Integer data, IntVector vector, int index) {
-<span class="nc" id="L600">        preconditionCheckSaveToVector(vector, index);</span>
-<span class="nc" id="L601">        vectorConsumer(data, vector,</span>
-<span class="nc" id="L602">                fv -&gt; fv.setNull(index),</span>
-<span class="nc" id="L603">                (theData, fv) -&gt; fv.setSafe(index, theData));</span>
-<span class="nc" id="L604">    }</span>
+<span class="nc" id="L604">        preconditionCheckSaveToVector(vector, index);</span>
+<span class="nc" id="L605">        vectorConsumer(data, vector,</span>
+<span class="nc" id="L606">                fv -&gt; fv.setNull(index),</span>
+<span class="nc" id="L607">                (theData, fv) -&gt; fv.setSafe(index, theData));</span>
+<span class="nc" id="L608">    }</span>
 
     /**
      * Writes a byte array to a VarBinaryVector at the given index.
@@ -611,11 +615,11 @@ public final class MetadataService {
      * @param index  row index
      */
     private static void saveToVector(byte[] data, VarBinaryVector vector, int index) {
-<span class="nc" id="L614">        preconditionCheckSaveToVector(vector, index);</span>
-<span class="nc" id="L615">        vectorConsumer(data, vector,</span>
-<span class="nc" id="L616">                fv -&gt; fv.setNull(index),</span>
-<span class="nc" id="L617">                (theData, fv) -&gt; fv.setSafe(index, theData));</span>
-<span class="nc" id="L618">    }</span>
+<span class="nc" id="L618">        preconditionCheckSaveToVector(vector, index);</span>
+<span class="nc" id="L619">        vectorConsumer(data, vector,</span>
+<span class="nc" id="L620">                fv -&gt; fv.setNull(index),</span>
+<span class="nc" id="L621">                (theData, fv) -&gt; fv.setSafe(index, theData));</span>
+<span class="nc" id="L622">    }</span>
 
     /**
      * Validates vector and index preconditions.
@@ -624,9 +628,9 @@ public final class MetadataService {
      * @param index  row index
      */
     private static void preconditionCheckSaveToVector(FieldVector vector, int index) {
-<span class="fc" id="L627">        Objects.requireNonNull(vector, &quot;vector cannot be null.&quot;);</span>
-<span class="pc bpc" id="L628" title="1 of 2 branches missed.">        com.google.common.base.Preconditions.checkState(index &gt;= 0, &quot;Index must be a positive number!&quot;);</span>
-<span class="fc" id="L629">    }</span>
+<span class="fc" id="L631">        Objects.requireNonNull(vector, &quot;vector cannot be null.&quot;);</span>
+<span class="pc bpc" id="L632" title="1 of 2 branches missed.">        com.google.common.base.Preconditions.checkState(index &gt;= 0, &quot;Index must be a positive number!&quot;);</span>
+<span class="fc" id="L633">    }</span>
 
     /**
      * Applies null-safe vector write using the appropriate consumer.
@@ -640,11 +644,11 @@ public final class MetadataService {
             T data, V vector,
             Consumer&lt;V&gt; consumerIfNullable,
             BiConsumer&lt;T, V&gt; defaultConsumer) {
-<span class="pc bpc" id="L643" title="1 of 2 branches missed.">        if (Objects.isNull(data)) {</span>
-<span class="nc" id="L644">            consumerIfNullable.accept(vector);</span>
-<span class="nc" id="L645">            return;</span>
+<span class="pc bpc" id="L647" title="1 of 2 branches missed.">        if (Objects.isNull(data)) {</span>
+<span class="nc" id="L648">            consumerIfNullable.accept(vector);</span>
+<span class="nc" id="L649">            return;</span>
         }
-<span class="fc" id="L647">        defaultConsumer.accept(data, vector);</span>
-<span class="fc" id="L648">    }</span>
+<span class="fc" id="L651">        defaultConsumer.accept(data, vector);</span>
+<span class="fc" id="L652">    }</span>
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>
