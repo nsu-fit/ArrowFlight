@@ -20,10 +20,43 @@ import java.net.URI;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class ExecutionServiceTest {
+
+    @Test
+    void joinFilesByTableUsesOnlyPlannedShards() {
+        ParquetQueryParser query = ParquetQueryParser.parse(
+                "SELECT l.id, r.id FROM sales.left_table l "
+                        + "JOIN sales.right_table r ON l.id = r.id");
+
+        Map<String, List<String>> result = ExecutionService.joinFilesByTable(query,
+                new String[] {
+                    "sales/left_table/l1.parquet",
+                    "sales/right_table/r1.parquet",
+                    "sales/unrelated/u1.parquet"
+                });
+
+        assertEquals(List.of("sales/left_table/l1.parquet"),
+                result.get("sales.left_table"));
+        assertEquals(List.of("sales/right_table/r1.parquet"),
+                result.get("sales.right_table"));
+        assertEquals(2, result.size());
+    }
+
+    @Test
+    void joinFilesByTableSharesSelfJoinShardsAcrossAliases() {
+        ParquetQueryParser query = ParquetQueryParser.parse(
+                "SELECT a.id, b.id FROM sales.items a "
+                        + "JOIN sales.items b ON a.id = b.id");
+
+        Map<String, List<String>> result = ExecutionService.joinFilesByTable(query,
+                new String[] {"sales/items/part.parquet"});
+
+        assertEquals(Map.of("sales.items", List.of("sales/items/part.parquet")), result);
+    }
 
     // ── minOf / maxOf ───────────────────────────────────────────────────────
 

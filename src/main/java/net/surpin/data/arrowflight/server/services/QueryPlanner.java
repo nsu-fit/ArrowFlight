@@ -65,7 +65,7 @@ public final class QueryPlanner {
 
     /**
      * Determines Flight endpoints for a SQL query, distributing files across live servers.
-     * Handles JOIN queries only when one node owns every required shard.
+     * Routes JOIN queries to one coordinator that reads every required shard.
      *
      * @param query SQL query
      * @return list of Flight endpoints
@@ -112,18 +112,16 @@ public final class QueryPlanner {
         requireShardCoverage(pathLocations, parsed, allServerUris);
 
         if (parsed.isJoin) {
-            String allFilesServer = findServerWithAllFiles(pathLocations, allServerUris);
-            if (allFilesServer != null) {
-                long addedBytes = pathLocations.values().stream()
-                        .mapToLong(FileAssignment::size).sum();
-                FlightEndpoint ep = createEndpoint(
-                        allFilesServer, new ArrayList<>(pathLocations.keySet()), query, addedBytes);
-                clusterService.addLoad(allFilesServer, addedBytes);
-                return List.of(ep);
-            }
-            throw new IOException(
-                    "Server-side joins require all input shards on one Flight node; "
-                            + "Spark must execute this distributed join");
+            String coordinator = pickJoinCoordinator(pathLocations, serverLoad);
+            long addedBytes = pathLocations.values().stream()
+                    .mapToLong(FileAssignment::size).sum();
+            FlightEndpoint endpoint = createEndpoint(
+                    coordinator, new ArrayList<>(pathLocations.keySet()), query, addedBytes);
+            clusterService.addLoad(coordinator, addedBytes);
+            LOGGER.info("qid={} node={} planning=joinCoordinator server={} files={} bytes={} query='{}'",
+                    LogUtil.qid(), LogUtil.node(), coordinator,
+                    pathLocations.size(), addedBytes, query);
+            return List.of(endpoint);
         }
 
         Map<String, List<String>> serverToFiles = new LinkedHashMap<>();
@@ -172,7 +170,15 @@ public final class QueryPlanner {
         return result;
     }
 
-    private static boolean belongsToTable(String path, String schema, String table) {
+    /**
+     * Checks whether a relative shard path belongs to a physical table.
+     *
+     * @param path relative shard path
+     * @param schema schema name
+     * @param table table name
+     * @return whether the path belongs to the table
+     */
+    static boolean belongsToTable(String path, String schema, String table) {
         String normalized = path.replace('\\', '/');
         if (schema == null || schema.isEmpty()) {
             String parent = extractTableFromPath(normalized);
@@ -190,19 +196,34 @@ public final class QueryPlanner {
      */
     private static void requireShardCoverage(Map<String, FileAssignment> files,
             ParquetQueryParser query, Set<String> liveServers) throws IOException {
-        for (String server : liveServers) {
-            if (query.isJoin) {
-                for (ParquetQueryParser.JoinTable table : query.joinTables) {
-                    if (!ownsTableShard(files, server, table.schema(), table.table())) {
-                        throw new IOException("Flight node " + server
-                                + " has no shard for required table " + table.table());
-                    }
+        if (query.isJoin) {
+            for (ParquetQueryParser.JoinTable table : query.joinTables) {
+                boolean hasShard = files.keySet().stream().anyMatch(path ->
+                        belongsToTable(path, table.schema(), table.table()));
+                if (!hasShard) {
+                    throw new IOException("No distributed Parquet shard found for required table "
+                            + qualifiedTableName(table.schema(), table.table()));
                 }
-            } else if (!ownsTableShard(files, server, query.schema, query.table)) {
+            }
+            return;
+        }
+        for (String server : liveServers) {
+            if (!ownsTableShard(files, server, query.schema, query.table)) {
                 throw new IOException("Flight node " + server
                         + " has no shard for required table " + query.table);
             }
         }
+    }
+
+    /**
+     * Returns a schema-qualified table name when a schema is present.
+     *
+     * @param schema schema name
+     * @param table table name
+     * @return qualified table name
+     */
+    private static String qualifiedTableName(String schema, String table) {
+        return schema == null || schema.isEmpty() ? table : schema + "." + table;
     }
 
     private static boolean ownsTableShard(Map<String, FileAssignment> files,
@@ -284,32 +305,38 @@ public final class QueryPlanner {
     }
 
     /**
-     * Finds a server that has ALL files in the map, or null if none.
+     * Picks the JOIN coordinator that must fetch the fewest remote bytes.
      *
      * @param pathLocations file to host assignments
-     * @param allServerUris all registered server URIs
-     * @return server URI with all files, or null
+     * @param serverLoad current server loads
+     * @return selected coordinator URI
      */
-    private String findServerWithAllFiles(
-            Map<String, FileAssignment> pathLocations, Set<String> allServerUris) {
-        outer:
-        for (String serverUri : allServerUris) {
-            String normServer = HostUtils.normalize(serverUri);
-            for (FileAssignment fa : pathLocations.values()) {
-                boolean hasHost = false;
-                for (String host : fa.hosts()) {
-                    if (HostUtils.normalize(host).equals(normServer)) {
-                        hasHost = true;
-                        break;
-                    }
-                }
-                if (!hasHost) {
-                    continue outer;
-                }
-            }
-            return serverUri;
-        }
-        return null;
+    static String pickJoinCoordinator(Map<String, FileAssignment> pathLocations,
+            Map<String, Long> serverLoad) {
+        return serverLoad.keySet().stream()
+                .min(Comparator
+                        .comparingLong((String server) -> remoteBytes(server, pathLocations))
+                        .thenComparingLong(serverLoad::get)
+                        .thenComparing(Comparator.naturalOrder()))
+                .orElseThrow();
+    }
+
+    /**
+     * Counts bytes whose shards are not local to a server.
+     *
+     * @param serverUri server URI
+     * @param pathLocations file to host assignments
+     * @return remote byte count
+     */
+    private static long remoteBytes(String serverUri,
+            Map<String, FileAssignment> pathLocations) {
+        String normalizedServer = HostUtils.normalize(serverUri);
+        return pathLocations.values().stream()
+                .filter(file -> file.hosts().stream()
+                        .map(HostUtils::normalize)
+                        .noneMatch(normalizedServer::equals))
+                .mapToLong(FileAssignment::size)
+                .sum();
     }
 
     /**

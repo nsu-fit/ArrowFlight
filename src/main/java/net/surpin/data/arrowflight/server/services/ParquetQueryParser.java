@@ -262,11 +262,6 @@ public class ParquetQueryParser {
         DSLContext noQuoteCtx = DSL.using(SQLDialect.DEFAULT,
                 new Settings().withRenderQuotedNames(RenderQuotedNames.NEVER));
 
-        if (fromTables.size() > 1) {
-            throw new IllegalArgumentException(
-                    "Can only select from ONE table, but got query: " + select.getSQL());
-        }
-
         // Detect JOIN via jOOQ rendered output
         boolean isJoin = hasJoinKeywords(select);
 
@@ -309,6 +304,11 @@ public class ParquetQueryParser {
             "^(\\w+(?:\\.\\w+)?)(?:\\s+(?:AS\\s+)?(\\w+))?",
             Pattern.CASE_INSENSITIVE);
 
+    private static final Pattern FROM_CLAUSE = Pattern.compile(
+            "\\bFROM\\b(.+?)(?=\\bWHERE\\b|\\bGROUP\\s+BY\\b|\\bHAVING\\b|"
+                    + "\\bORDER\\s+BY\\b|\\bLIMIT\\b|\\bOFFSET\\b|$)",
+            Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+
     /**
      * @param sql SQL query string
      * @return list of extracted join tables
@@ -317,21 +317,80 @@ public class ParquetQueryParser {
         List<JoinTable> tables = new ArrayList<>();
         Matcher kw = JOIN_KEYWORD.matcher(sql);
         while (kw.find()) {
-            String rest = sql.substring(kw.end()).trim();
-            Matcher tr = TABLE_REF.matcher(rest);
-            if (tr.find()) {
-                String qualified = tr.group(1);
-                String alias = tr.group(2);
-                int dot = qualified.indexOf('.');
-                String schema = dot > 0 ? qualified.substring(0, dot) : null;
-                String table = dot > 0 ? qualified.substring(dot + 1) : qualified;
-                if (alias == null) {
-                    alias = table;
-                }
-                tables.add(new JoinTable(schema, table, alias));
-            }
+            addTableRef(tables, sql.substring(kw.end()).trim());
+        }
+        if (tables.size() > 1) {
+            return tables;
+        }
+
+        Matcher fromClause = FROM_CLAUSE.matcher(sql);
+        if (!fromClause.find()) {
+            return tables;
+        }
+        List<String> commaSources = splitTopLevelComma(fromClause.group(1));
+        if (commaSources.size() <= 1) {
+            return tables;
+        }
+        tables.clear();
+        for (String source : commaSources) {
+            addTableRef(tables, source.trim());
         }
         return tables;
+    }
+
+    /**
+     * Adds a simple table reference to a JOIN table list.
+     *
+     * @param tables target table list
+     * @param source SQL beginning with a table reference
+     */
+    private static void addTableRef(List<JoinTable> tables, String source) {
+        Matcher tableRef = TABLE_REF.matcher(source);
+        if (!tableRef.find()) {
+            return;
+        }
+        String qualified = tableRef.group(1);
+        String alias = tableRef.group(2);
+        int dot = qualified.indexOf('.');
+        String schema = dot > 0 ? qualified.substring(0, dot) : null;
+        String table = dot > 0 ? qualified.substring(dot + 1) : qualified;
+        tables.add(new JoinTable(schema, table, alias == null ? table : alias));
+    }
+
+    /**
+     * Splits a SQL fragment on commas outside parentheses and quoted strings.
+     *
+     * @param sql SQL fragment
+     * @return top-level comma-separated parts
+     */
+    private static List<String> splitTopLevelComma(String sql) {
+        List<String> result = new ArrayList<>();
+        int start = 0;
+        int depth = 0;
+        char quote = 0;
+        for (int i = 0; i < sql.length(); i++) {
+            char current = sql.charAt(i);
+            if (quote != 0) {
+                if (current == quote) {
+                    if (i + 1 < sql.length() && sql.charAt(i + 1) == quote) {
+                        i++;
+                    } else {
+                        quote = 0;
+                    }
+                }
+            } else if (current == '\'' || current == '"' || current == '`') {
+                quote = current;
+            } else if (current == '(') {
+                depth++;
+            } else if (current == ')') {
+                depth--;
+            } else if (current == ',' && depth == 0) {
+                result.add(sql.substring(start, i));
+                start = i + 1;
+            }
+        }
+        result.add(sql.substring(start));
+        return result;
     }
 
     /**
@@ -500,8 +559,8 @@ public class ParquetQueryParser {
                     ? jt.schema() + "." + jt.table() : jt.table();
             if (!jt.alias().equals(jt.table())) {
                 result = result.replaceAll(
-                        "(?i)(\\b" + JOIN_ANY_RE + "\\s+)" + Pattern.quote(qualified)
-                                + "\\s+(?:AS\\s+)?" + Pattern.quote(jt.alias()),
+                        "(?i)(\\b" + JOIN_ANY_RE + "\\s+|,\\s*)" + Pattern.quote(qualified)
+                                + "\\s+(?:AS\\s+)?" + Pattern.quote(jt.alias()) + "\\b",
                         "$1" + Matcher.quoteReplacement(jt.alias()));
             } else {
                 result = result.replaceAll(

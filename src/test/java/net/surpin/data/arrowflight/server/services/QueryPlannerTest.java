@@ -3,6 +3,7 @@ package net.surpin.data.arrowflight.server.services;
 import net.surpin.data.arrowflight.server.adapters.HostUtils;
 import net.surpin.data.arrowflight.server.adapters.ParquetAdapter;
 import net.surpin.data.arrowflight.server.model.FileAssignment;
+import net.surpin.data.arrowflight.server.model.HandleState;
 import org.apache.arrow.flight.FlightEndpoint;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -114,6 +115,32 @@ class QueryPlannerTest {
                 Map.of(), Map.of(S1, 0L));
 
         assertTrue(result.isEmpty());
+    }
+
+    // ── pickJoinCoordinator ────────────────────────────────────────────────
+
+    @Test
+    void pickJoinCoordinatorMinimizesRemoteBytes() {
+        Map<String, FileAssignment> locations = new LinkedHashMap<>();
+        locations.put("s/a/a.parquet", new FileAssignment(100, Set.of(S1)));
+        locations.put("s/b/b.parquet", new FileAssignment(10, Set.of(S2)));
+
+        Map<String, Long> load = new LinkedHashMap<>();
+        load.put(S1, 1000L);
+        load.put(S2, 0L);
+
+        assertEquals(S1, QueryPlanner.pickJoinCoordinator(locations, load));
+    }
+
+    @Test
+    void pickJoinCoordinatorUsesLoadWhenRemoteBytesMatch() {
+        Map<String, FileAssignment> locations = Map.of(
+                "s/a/a.parquet", new FileAssignment(100, Set.of(S1, S2)));
+        Map<String, Long> load = new LinkedHashMap<>();
+        load.put(S1, 100L);
+        load.put(S2, 10L);
+
+        assertEquals(S2, QueryPlanner.pickJoinCoordinator(locations, load));
     }
 
     // ── extractTableFromPath ────────────────────────────────────────────────
@@ -231,6 +258,37 @@ class QueryPlannerTest {
         assertEquals("grpc://127.0.0.1:32010",
                 ep.getLocations().get(0).getUri().toString());
         verify(clusterService).storeHandle(anyString(), any());
+    }
+
+    @Test
+    void determineEndpointsRoutesDistributedJoinToOneCoordinator() throws Exception {
+        when(parquetAdapter.localFileInventory()).thenReturn(Map.of());
+        Map<String, Long> loads = new LinkedHashMap<>();
+        loads.put(S1, 0L);
+        loads.put(S2, 0L);
+        when(clusterService.allServerLoads()).thenReturn(loads);
+        when(clusterService.filterLiveServers(loads.keySet()))
+                .thenReturn(new LinkedHashSet<>(loads.keySet()));
+        when(clusterService.hasFileInventory(S1)).thenReturn(true);
+        when(clusterService.hasFileInventory(S2)).thenReturn(true);
+
+        Map<String, FileAssignment> locations = new LinkedHashMap<>();
+        locations.put("s/left/l.parquet", new FileAssignment(100, Set.of(S1)));
+        locations.put("s/right/r.parquet", new FileAssignment(10, Set.of(S2)));
+        when(clusterService.fileLocations()).thenReturn(locations);
+
+        QueryPlanner planner = new QueryPlanner(parquetAdapter, clusterService);
+        List<FlightEndpoint> endpoints = planner.determineEndpoints(
+                "SELECT l.id, r.id FROM s.left l JOIN s.right r ON l.id = r.id");
+
+        assertEquals(1, endpoints.size());
+        assertEquals(S1, endpoints.get(0).getLocations().get(0).getUri().toString());
+        var stateCaptor = org.mockito.ArgumentCaptor.forClass(HandleState.class);
+        verify(clusterService).storeHandle(anyString(), stateCaptor.capture());
+        assertArrayEquals(new String[] {
+                "s/left/l.parquet", "s/right/r.parquet"
+        }, stateCaptor.getValue().filePaths());
+        verify(clusterService).addLoad(S1, 110L);
     }
 
     // ── Reflection helpers ─────────────────────────────────────────────────

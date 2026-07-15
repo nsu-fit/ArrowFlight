@@ -64,6 +64,12 @@ Ticket не содержит сами файлы и не является пол
 
 Для каждой группы файлов создается отдельный endpoint.
 
+Для `JOIN` создаётся один endpoint на coordinator-ноде. Planner выбирает живую
+ноду, которой потребуется прочитать минимум удалённых shard-ов по числу байт;
+при равенстве учитывается текущая нагрузка. Ticket содержит все нужные shard-ы
+всех исходных таблиц, поэтому клиент получает готовый результат `JOIN`, а не
+отдельные full scan-ы таблиц.
+
 ## Чтение по ticket
 
 Когда клиент вызывает `DoGet`, сервер попадает в `FlightSqlProducer.getStreamStatement`.
@@ -125,7 +131,7 @@ DuckDB используется для запросов, где нужен SQL e
 
 Для single-table запросов `ExecutionService` строит SQL поверх DuckDB table function `read_parquet([...])`.
 
-Для join-запросов `ExecutionService` создает временные DuckDB views для alias-ов таблиц. Каждая view читает свои файлы через `read_parquet([...])`. После этого выполняется переписанный join SQL.
+Для join-запросов `ExecutionService` группирует точный список файлов из ticket по физическим таблицам, при необходимости локализует удалённые HDFS shard-ы через cache и создаёт временные DuckDB views для alias-ов таблиц. Каждая view читает только свои файлы через `read_parquet([...])`. После этого выполняется переписанный explicit JOIN или comma-style SQL.
 
 DuckDB возвращает результат через `DuckDBResultSet.arrowExportStream`. Сервер копирует строки из DuckDB Arrow stream в Flight batches и отправляет клиенту.
 
