@@ -123,13 +123,8 @@ public final class DaggerServerComponent {
     }
 
     @Override
-    public DuckDbAdapter duckDb() {
-<span class="nc" id="L127">      return duckDbProvider.get();</span>
-    }
-
-    @Override
     public BufferAllocator allocator() {
-<span class="nc" id="L132">      return allocatorProvider.get();</span>
+<span class="nc" id="L127">      return allocatorProvider.get();</span>
     }
   }
 }

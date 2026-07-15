@@ -52,8 +52,8 @@ public class ParquetAdapter {
     private final String localhost;
     private final JavaTypeFactoryImpl typeFactory;
 
-    private final Map&lt;String, Path&gt; tableSchemaCache;
-    private final Map&lt;String, Map&lt;String, Path&gt;&gt; tableCache;
+    private Map&lt;String, Path&gt; tableSchemaCache;
+    private Map&lt;String, Map&lt;String, Path&gt;&gt; tableCache;
 <span class="fc" id="L57">    private final Map&lt;String, Map&lt;String, String&gt;&gt; tableDdlCache = new HashMap&lt;&gt;();</span>
 
     /**
@@ -80,8 +80,8 @@ public class ParquetAdapter {
 <span class="fc" id="L80">        this.typeFactory = new JavaTypeFactoryImpl(RelDataTypeSystem.DEFAULT);</span>
 
         try {
-<span class="fc" id="L83">            this.tableSchemaCache = Collections.unmodifiableMap(scanSchemas());</span>
-<span class="fc" id="L84">            this.tableCache = Collections.unmodifiableMap(scanTables());</span>
+<span class="fc" id="L83">            initSchemaCache();</span>
+<span class="fc" id="L84">            initTableCache();</span>
 <span class="nc" id="L85">        } catch (IOException e) {</span>
 <span class="nc" id="L86">            throw new UncheckedIOException(e);</span>
 <span class="fc" id="L87">        }</span>
@@ -96,10 +96,10 @@ public class ParquetAdapter {
      * @throws IOException on HDFS read failure
      */
     public Map&lt;String, Path&gt; getSchemas(String filterExpression) throws IOException {
-<span class="nc" id="L99">        java.util.function.Predicate&lt;String&gt; schemaPredicate = createLikePredicate(filterExpression);</span>
-<span class="nc" id="L100">        return tableSchemaCache.entrySet().stream()</span>
-<span class="nc bnc" id="L101" title="All 4 branches missed.">                .filter(entry -&gt; filterExpression == null || schemaPredicate.test(entry.getKey()))</span>
-<span class="nc" id="L102">                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));</span>
+<span class="fc" id="L99">        java.util.function.Predicate&lt;String&gt; schemaPredicate = createLikePredicate(filterExpression);</span>
+<span class="fc" id="L100">        return tableSchemaCache.entrySet().stream()</span>
+<span class="pc bpc" id="L101" title="3 of 4 branches missed.">                .filter(entry -&gt; filterExpression == null || schemaPredicate.test(entry.getKey()))</span>
+<span class="fc" id="L102">                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));</span>
     }
 
     /**
@@ -428,49 +428,53 @@ public class ParquetAdapter {
      *
      * @throws IOException on HDFS read failure
      */
-    private Map&lt;String, Path&gt; scanSchemas() throws IOException {
+    private void initSchemaCache() throws IOException {
 <span class="fc" id="L432">        LOGGER.info(&quot;Initializing schema cache for data directory: {}&quot;, dataDirectory);</span>
 <span class="fc" id="L433">        Path dirPath = new Path(dataDirectory);</span>
 
 <span class="fc bfc" id="L435" title="All 2 branches covered.">        if (!fileSystem.exists(dirPath)) {</span>
-<span class="fc" id="L436">            LOGGER.info(&quot;Data directory does not exist: {}&quot;, dataDirectory);</span>
-<span class="fc" id="L437">            return Collections.emptyMap();</span>
+<span class="fc" id="L436">            tableSchemaCache = Collections.emptyMap();</span>
+<span class="fc" id="L437">            LOGGER.info(&quot;Data directory does not exist: {}&quot;, dataDirectory);</span>
+<span class="fc" id="L438">            return;</span>
         }
 
-<span class="fc" id="L440">        Map&lt;String, Path&gt; result = Arrays.stream(fileSystem.listStatus(dirPath))</span>
-<span class="fc" id="L441">                .filter(FileStatus::isDirectory)</span>
-<span class="fc" id="L442">                .collect(Collectors.toMap(status -&gt; status.getPath().getName(), FileStatus::getPath));</span>
+<span class="fc" id="L441">        tableSchemaCache = Arrays.stream(fileSystem.listStatus(dirPath))</span>
+<span class="fc" id="L442">                .filter(FileStatus::isDirectory)</span>
+<span class="fc" id="L443">                .collect(Collectors.toMap(status -&gt; status.getPath().getName(), FileStatus::getPath));</span>
 
-<span class="fc" id="L444">        LOGGER.info(&quot;Collected schemas: {}&quot;, result);</span>
-<span class="fc" id="L445">        return result;</span>
-    }
+<span class="fc" id="L445">        LOGGER.info(&quot;Collected schemas: {}&quot;, tableSchemaCache);</span>
+<span class="fc" id="L446">    }</span>
 
     /**
      * Scans each schema directory for table directories and caches them.
      *
      * @throws IOException on HDFS read failure
      */
-    private Map&lt;String, Map&lt;String, Path&gt;&gt; scanTables() throws IOException {
+    private void initTableCache() throws IOException {
 <span class="fc" id="L454">        LOGGER.info(&quot;Initializing table cache for data directory: {}&quot;, dataDirectory);</span>
 <span class="fc" id="L455">        Path schemaPath = new Path(dataDirectory);</span>
 
 <span class="fc bfc" id="L457" title="All 2 branches covered.">        if (!fileSystem.exists(schemaPath)) {</span>
-<span class="fc" id="L458">            LOGGER.info(&quot;Data directory does not exist: {}&quot;, dataDirectory);</span>
-<span class="fc" id="L459">            return Collections.emptyMap();</span>
+<span class="fc" id="L458">            tableCache = Collections.emptyMap();</span>
+<span class="fc" id="L459">            LOGGER.info(&quot;Data directory does not exist: {}&quot;, dataDirectory);</span>
+<span class="fc" id="L460">            return;</span>
         }
 
-<span class="fc" id="L462">        Map&lt;String, Map&lt;String, Path&gt;&gt; result = new HashMap&lt;&gt;();</span>
-<span class="fc bfc" id="L463" title="All 2 branches covered.">        for (Map.Entry&lt;String, Path&gt; schema : tableSchemaCache.entrySet()) {</span>
-<span class="fc" id="L464">            LOGGER.info(&quot;Collecting tables for schema: {} at path {}&quot;, schema.getKey(), schema.getValue());</span>
-<span class="fc" id="L465">            Map&lt;String, Path&gt; tables = Arrays.stream(fileSystem.listStatus(schema.getValue()))</span>
-<span class="fc" id="L466">                    .filter(FileStatus::isDirectory)</span>
-<span class="fc" id="L467">                    .collect(Collectors.toMap(status -&gt; status.getPath().getName(), FileStatus::getPath));</span>
-<span class="fc" id="L468">            result.put(schema.getKey(), tables);</span>
-<span class="fc" id="L469">        }</span>
+<span class="fc" id="L463">        tableCache = new HashMap&lt;&gt;();</span>
+<span class="fc" id="L464">        getSchemas(null).forEach((key, value) -&gt; {</span>
+<span class="fc" id="L465">            LOGGER.info(&quot;Collecting tables for schema: {} at path {}&quot;, key, value);</span>
+            try {
+<span class="fc" id="L467">                Map&lt;String, Path&gt; tables = Arrays.stream(fileSystem.listStatus(value))</span>
+<span class="fc" id="L468">                        .filter(FileStatus::isDirectory)</span>
+<span class="fc" id="L469">                        .collect(Collectors.toMap(status -&gt; status.getPath().getName(), FileStatus::getPath));</span>
+<span class="fc" id="L470">                tableCache.put(key, tables);</span>
+<span class="nc" id="L471">            } catch (IOException e) {</span>
+<span class="nc" id="L472">                throw new UncheckedIOException(e);</span>
+<span class="fc" id="L473">            }</span>
+<span class="fc" id="L474">        });</span>
 
-<span class="fc" id="L471">        LOGGER.info(&quot;Collected tables: {}&quot;, result);</span>
-<span class="fc" id="L472">        return result;</span>
-    }
+<span class="fc" id="L476">        LOGGER.info(&quot;Collected tables: {}&quot;, tableCache);</span>
+<span class="fc" id="L477">    }</span>
 
     /**
      * Creates a predicate from a SQL LIKE pattern.
@@ -479,17 +483,17 @@ public class ParquetAdapter {
      * @return predicate
      */
     private static java.util.function.Predicate&lt;String&gt; createLikePredicate(String pattern) {
-<span class="pc bpc" id="L482" title="1 of 6 branches missed.">        if (pattern == null || pattern.isEmpty() || pattern.equals(&quot;%&quot;)) {</span>
-<span class="fc" id="L483">            return s -&gt; true;</span>
+<span class="pc bpc" id="L486" title="1 of 6 branches missed.">        if (pattern == null || pattern.isEmpty() || pattern.equals(&quot;%&quot;)) {</span>
+<span class="fc" id="L487">            return s -&gt; true;</span>
         }
-<span class="fc" id="L485">        String regex = pattern</span>
-<span class="fc" id="L486">                .replace(&quot;\\&quot;, &quot;\\\\&quot;)</span>
-<span class="fc" id="L487">                .replace(&quot;.&quot;, &quot;\\.&quot;)</span>
-<span class="fc" id="L488">                .replace(&quot;%&quot;, &quot;.*&quot;)</span>
-<span class="fc" id="L489">                .replace(&quot;_&quot;, &quot;.&quot;);</span>
-<span class="fc" id="L490">        java.util.regex.Pattern p = java.util.regex.Pattern.compile(regex,</span>
+<span class="fc" id="L489">        String regex = pattern</span>
+<span class="fc" id="L490">                .replace(&quot;\\&quot;, &quot;\\\\&quot;)</span>
+<span class="fc" id="L491">                .replace(&quot;.&quot;, &quot;\\.&quot;)</span>
+<span class="fc" id="L492">                .replace(&quot;%&quot;, &quot;.*&quot;)</span>
+<span class="fc" id="L493">                .replace(&quot;_&quot;, &quot;.&quot;);</span>
+<span class="fc" id="L494">        java.util.regex.Pattern p = java.util.regex.Pattern.compile(regex,</span>
                 java.util.regex.Pattern.CASE_INSENSITIVE);
-<span class="fc" id="L492">        return s -&gt; p.matcher(s).matches();</span>
+<span class="fc" id="L496">        return s -&gt; p.matcher(s).matches();</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>
