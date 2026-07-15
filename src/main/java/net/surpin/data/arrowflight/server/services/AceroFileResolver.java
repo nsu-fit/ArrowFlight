@@ -88,12 +88,15 @@ final class AceroFileResolver {
         java.nio.file.Path versionRoot = cacheRoot.resolve(
                 status.getModificationTime() + "-" + status.getLen());
         java.nio.file.Path cached = safeResolve(versionRoot, relative);
-        Object lock = copyLocks.computeIfAbsent(cached.toString(), ignored -> new Object());
-        synchronized (lock) {
+        Object lock = new Object();
+        Object existing = copyLocks.putIfAbsent(cached.toString(), lock);
+        Object actual = existing != null ? existing : lock;
+        synchronized (actual) {
             if (!isExpectedFile(cached, status.getLen())) {
                 copyToCache(status, cached);
             }
         }
+        copyLocks.remove(cached.toString(), lock);
         LOGGER.debug("qid={} node={} resolve=cached source={} cached={} size={} modTime={} elapsed={}",
                 qid, LogUtil.node(), status.getPath(), cached,
                 status.getLen(), status.getModificationTime(),

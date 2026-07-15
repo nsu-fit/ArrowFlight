@@ -2,6 +2,7 @@ package net.surpin.data.arrowflight.client.spark.read;
 
 import net.surpin.data.arrowflight.client.Configuration;
 import org.apache.arrow.vector.types.DateUnit;
+import org.apache.arrow.vector.types.IntervalUnit;
 import org.apache.arrow.vector.types.TimeUnit;
 import org.apache.arrow.vector.types.pojo.ArrowType;
 import org.apache.arrow.vector.types.pojo.Field;
@@ -51,9 +52,8 @@ class FlightPartitionReaderFactoryTest {
     @Test
     void rejectsTypesWithoutExactColumnarAdapter() {
         Schema schema = new Schema(List.of(
-                field("unsigned_id", new ArrowType.Int(32, false)),
-                field("event_time", new ArrowType.Timestamp(
-                        TimeUnit.MILLISECOND, null))));
+                field("ti", new ArrowType.Time(TimeUnit.MICROSECOND, 64)),
+                field("iv", new ArrowType.Interval(IntervalUnit.DAY_TIME))));
 
         assertFalse(factory().supportColumnarReads(partition(schema)));
     }

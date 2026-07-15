@@ -21,6 +21,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
@@ -33,10 +34,11 @@ import net.surpin.data.arrowflight.server.LogUtil;
  * Manages DuckDB connection pool and SQL execution.
  * Each Java worker thread gets its own DuckDB in-memory connection.
  */
-public final class DuckDbAdapter {
+public final class DuckDbAdapter implements AutoCloseable {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(DuckDbAdapter.class);
     private final ThreadLocal<Connection> threadConn;
+    private final Set<Connection> allConnections = ConcurrentHashMap.newKeySet();
     private final ExecutorService ioPool;
 
     private final int batchSize;
@@ -59,6 +61,7 @@ public final class DuckDbAdapter {
             try {
                 Connection conn = DriverManager.getConnection("jdbc:duckdb:");
                 configureConnection(conn);
+                allConnections.add(conn);
                 return conn;
             } catch (Exception e) {
                 throw new RuntimeException("Failed to create thread-local DuckDB connection", e);
@@ -613,5 +616,20 @@ public final class DuckDbAdapter {
             return a;
         }
         return ((Comparable<Object>) a).compareTo(b) >= 0 ? a : b;
+    }
+
+    /**
+     * Closes all DuckDB connections created by the thread-local pool.
+     */
+    @Override
+    public void close() {
+        for (Connection conn : allConnections) {
+            try {
+                conn.close();
+            } catch (Exception e) {
+                LOGGER.warn("Failed to close DuckDB connection", e);
+            }
+        }
+        allConnections.clear();
     }
 }

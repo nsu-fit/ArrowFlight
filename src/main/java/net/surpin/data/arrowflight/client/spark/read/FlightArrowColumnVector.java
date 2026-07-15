@@ -4,8 +4,10 @@ import net.surpin.data.arrowflight.client.model.FieldType;
 import org.apache.arrow.vector.BigIntVector;
 import org.apache.arrow.vector.BitVector;
 import org.apache.arrow.vector.DateDayVector;
+import org.apache.arrow.vector.DateMilliVector;
 import org.apache.arrow.vector.DecimalVector;
 import org.apache.arrow.vector.FieldVector;
+import org.apache.arrow.vector.FixedSizeBinaryVector;
 import org.apache.arrow.vector.Float4Vector;
 import org.apache.arrow.vector.Float8Vector;
 import org.apache.arrow.vector.IntVector;
@@ -14,12 +16,22 @@ import org.apache.arrow.vector.LargeVarCharVector;
 import org.apache.arrow.vector.NullVector;
 import org.apache.arrow.vector.SmallIntVector;
 import org.apache.arrow.vector.TimeStampMicroTZVector;
+import org.apache.arrow.vector.TimeStampMicroVector;
+import org.apache.arrow.vector.TimeStampMilliTZVector;
+import org.apache.arrow.vector.TimeStampMilliVector;
+import org.apache.arrow.vector.TimeStampNanoTZVector;
+import org.apache.arrow.vector.TimeStampNanoVector;
+import org.apache.arrow.vector.TimeStampSecTZVector;
+import org.apache.arrow.vector.TimeStampSecVector;
 import org.apache.arrow.vector.TinyIntVector;
+import org.apache.arrow.vector.UInt1Vector;
+import org.apache.arrow.vector.UInt2Vector;
+import org.apache.arrow.vector.UInt4Vector;
+import org.apache.arrow.vector.UInt8Vector;
 import org.apache.arrow.vector.VarBinaryVector;
 import org.apache.arrow.vector.VarCharVector;
 import org.apache.arrow.vector.types.DateUnit;
 import org.apache.arrow.vector.types.FloatingPointPrecision;
-import org.apache.arrow.vector.types.TimeUnit;
 import org.apache.arrow.vector.types.pojo.ArrowType;
 import org.apache.spark.sql.types.DataType;
 import org.apache.spark.sql.types.Decimal;
@@ -83,6 +95,12 @@ final class FlightArrowColumnVector extends ColumnVector {
 
     @Override
     public short getShort(int rowId) {
+        if (this.vector instanceof TinyIntVector v) {
+            return v.get(rowId);
+        }
+        if (this.vector instanceof UInt1Vector uintVector) {
+            return (short) (uintVector.get(rowId) & 0xFF);
+        }
         return require(SmallIntVector.class).get(rowId);
     }
 
@@ -94,6 +112,12 @@ final class FlightArrowColumnVector extends ColumnVector {
         if (this.vector instanceof DateDayVector dateVector) {
             return dateVector.get(rowId);
         }
+        if (this.vector instanceof DateMilliVector dateVector) {
+            return Math.toIntExact(Math.floorDiv(dateVector.get(rowId), 86_400_000L));
+        }
+        if (this.vector instanceof UInt2Vector uintVector) {
+            return uintVector.get(rowId) & 0xFFFF;
+        }
         throw unsupported("getInt");
     }
 
@@ -104,6 +128,33 @@ final class FlightArrowColumnVector extends ColumnVector {
         }
         if (this.vector instanceof TimeStampMicroTZVector timestampVector) {
             return timestampVector.get(rowId);
+        }
+        if (this.vector instanceof TimeStampMicroVector timestampVector) {
+            return timestampVector.get(rowId);
+        }
+        if (this.vector instanceof TimeStampMilliVector timestampVector) {
+            return Math.multiplyExact(timestampVector.get(rowId), 1_000L);
+        }
+        if (this.vector instanceof TimeStampMilliTZVector timestampVector) {
+            return Math.multiplyExact(timestampVector.get(rowId), 1_000L);
+        }
+        if (this.vector instanceof TimeStampSecVector timestampVector) {
+            return Math.multiplyExact(timestampVector.get(rowId), 1_000_000L);
+        }
+        if (this.vector instanceof TimeStampSecTZVector timestampVector) {
+            return Math.multiplyExact(timestampVector.get(rowId), 1_000_000L);
+        }
+        if (this.vector instanceof TimeStampNanoVector timestampVector) {
+            return Math.floorDiv(timestampVector.get(rowId), 1_000L);
+        }
+        if (this.vector instanceof TimeStampNanoTZVector timestampVector) {
+            return Math.floorDiv(timestampVector.get(rowId), 1_000L);
+        }
+        if (this.vector instanceof UInt4Vector uintVector) {
+            return Integer.toUnsignedLong(uintVector.get(rowId));
+        }
+        if (this.vector instanceof UInt8Vector uintVector) {
+            return uintVector.get(rowId);
         }
         throw unsupported("getLong");
     }
@@ -152,6 +203,9 @@ final class FlightArrowColumnVector extends ColumnVector {
         if (this.vector instanceof LargeVarBinaryVector binaryVector) {
             return binaryVector.get(rowId);
         }
+        if (this.vector instanceof FixedSizeBinaryVector binaryVector) {
+            return binaryVector.get(rowId);
+        }
         throw unsupported("getBinary");
     }
 
@@ -188,6 +242,7 @@ final class FlightArrowColumnVector extends ColumnVector {
             case LargeUtf8 -> vector instanceof LargeVarCharVector;
             case Binary -> vector instanceof VarBinaryVector;
             case LargeBinary -> vector instanceof LargeVarBinaryVector;
+            case FixedSizeBinary -> vector instanceof FixedSizeBinaryVector;
             case Null -> vector instanceof NullVector;
             case FloatingPoint -> {
                 FloatingPointPrecision precision = ((ArrowType.FloatingPoint) type).getPrecision();
@@ -197,11 +252,20 @@ final class FlightArrowColumnVector extends ColumnVector {
             }
             case Int -> {
                 ArrowType.Int integer = (ArrowType.Int) type;
-                yield integer.getIsSigned() && switch (integer.getBitWidth()) {
-                    case 8 -> vector instanceof TinyIntVector;
-                    case 16 -> vector instanceof SmallIntVector;
-                    case 32 -> vector instanceof IntVector;
-                    case 64 -> vector instanceof BigIntVector;
+                if (integer.getIsSigned()) {
+                    yield switch (integer.getBitWidth()) {
+                        case 8 -> vector instanceof TinyIntVector;
+                        case 16 -> vector instanceof SmallIntVector;
+                        case 32 -> vector instanceof IntVector;
+                        case 64 -> vector instanceof BigIntVector;
+                        default -> false;
+                    };
+                }
+                yield switch (integer.getBitWidth()) {
+                    case 8 -> vector instanceof UInt1Vector;
+                    case 16 -> vector instanceof UInt2Vector;
+                    case 32 -> vector instanceof UInt4Vector;
+                    case 64 -> vector instanceof UInt8Vector;
                     default -> false;
                 };
             }
@@ -214,13 +278,24 @@ final class FlightArrowColumnVector extends ColumnVector {
                         && scale >= 0 && scale <= precision
                         && vector instanceof DecimalVector;
             }
-            case Date -> ((ArrowType.Date) type).getUnit() == DateUnit.DAY
-                    && vector instanceof DateDayVector;
+            case Date -> {
+                DateUnit unit = ((ArrowType.Date) type).getUnit();
+                yield (unit == DateUnit.DAY && vector instanceof DateDayVector)
+                        || (unit == DateUnit.MILLISECOND && vector instanceof DateMilliVector);
+            }
             case Timestamp -> {
                 ArrowType.Timestamp timestamp = (ArrowType.Timestamp) type;
-                yield timestamp.getUnit() == TimeUnit.MICROSECOND
-                        && timestamp.getTimezone() != null
-                        && vector instanceof TimeStampMicroTZVector;
+                String tz = timestamp.getTimezone();
+                yield switch (timestamp.getUnit()) {
+                    case SECOND -> tz != null ? vector instanceof TimeStampSecTZVector
+                            : vector instanceof TimeStampSecVector;
+                    case MILLISECOND -> tz != null ? vector instanceof TimeStampMilliTZVector
+                            : vector instanceof TimeStampMilliVector;
+                    case MICROSECOND -> tz != null ? vector instanceof TimeStampMicroTZVector
+                            : vector instanceof TimeStampMicroVector;
+                    case NANOSECOND -> tz != null ? vector instanceof TimeStampNanoTZVector
+                            : vector instanceof TimeStampNanoVector;
+                };
             }
             default -> false;
         };

@@ -154,6 +154,11 @@ public class HadoopArrowFlightServer {
         }
         if (component != null) {
             try {
+                component.duckDb().close();
+            } catch (Exception e) {
+                LOGGER.error("Error closing DuckDB adapter", e);
+            }
+            try {
                 component.clusterService().close();
             } catch (Exception e) {
                 LOGGER.error("Error closing cluster service", e);
