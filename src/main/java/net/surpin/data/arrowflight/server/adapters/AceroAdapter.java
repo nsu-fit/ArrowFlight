@@ -273,7 +273,9 @@ public final class AceroAdapter {
             if (!success) {
                 try {
                     registered.close();
-                } catch (Exception ignored) {
+                } catch (Exception closeException) {
+                    LOGGER.warn("qid={} Failed to close Acero resources during cleanup",
+                            qid, closeException);
                 }
             }
         }

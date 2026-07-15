@@ -6,6 +6,7 @@ import net.surpin.data.arrowflight.client.model.Field;
 import net.surpin.data.arrowflight.client.model.FieldType;
 import net.surpin.data.arrowflight.client.query.Endpoint;
 import net.surpin.data.arrowflight.client.query.QueryEndpoints;
+import net.surpin.data.arrowflight.server.LogUtil;
 import org.apache.arrow.flight.FlightStream;
 import org.apache.arrow.vector.*;
 import org.apache.arrow.vector.types.pojo.Schema;
@@ -490,12 +491,60 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
             return null;
         }
 
-        // Int-based vectors — coerce to the Java type Spark's codegen expects.
-        // The `field` parameter carries the FlightInfo schema type (what Spark compiled against).
-        // Acero may return a narrower vector (e.g. TinyIntVector for a column the old server
-        // reported as Int32); without coercion Spark's getInt() would ClassCastException on Byte.
-        if (vector instanceof TinyIntVector) {
-            byte b = ((TinyIntVector) vector).get(rowIndex);
+        Object result;
+        result = extractInt(vector, rowIndex, field);
+        if (result != null) {
+            return result;
+        }
+        result = extractFloat(vector, rowIndex);
+        if (result != null) {
+            return result;
+        }
+        result = extractDecimal(vector, rowIndex, field);
+        if (result != null) {
+            return result;
+        }
+        result = extractString(vector, rowIndex);
+        if (result != null) {
+            return result;
+        }
+        if (vector instanceof BitVector bitVector) {
+            return bitVector.get(rowIndex) != 0;
+        }
+        result = extractDate(vector, rowIndex);
+        if (result != null) {
+            return result;
+        }
+        result = extractTime(vector, rowIndex);
+        if (result != null) {
+            return result;
+        }
+        result = extractTimestamp(vector, rowIndex);
+        if (result != null) {
+            return result;
+        }
+        result = extractBinary(vector, rowIndex);
+        if (result != null) {
+            return result;
+        }
+        result = extractUInt(vector, rowIndex);
+        if (result != null) {
+            return result;
+        }
+        result = extractInterval(vector, rowIndex);
+        if (result != null) {
+            return result;
+        }
+        if (vector instanceof NullVector) {
+            return null;
+        }
+        return vector.getObject(rowIndex);
+    }
+
+    private static Object extractInt(
+            org.apache.arrow.vector.FieldVector vector, int rowIndex, Field field) {
+        if (vector instanceof TinyIntVector vec) {
+            byte b = vec.get(rowIndex);
             if (field != null) {
                 switch (field.getType().getTypeID()) {
                     case INT:   return (int) b;
@@ -506,8 +555,8 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
             }
             return b;
         }
-        if (vector instanceof SmallIntVector) {
-            short s = ((SmallIntVector) vector).get(rowIndex);
+        if (vector instanceof SmallIntVector vec) {
+            short s = vec.get(rowIndex);
             if (field != null) {
                 switch (field.getType().getTypeID()) {
                     case INT:   return (int) s;
@@ -517,8 +566,8 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
             }
             return s;
         }
-        if (vector instanceof IntVector) {
-            int i = ((IntVector) vector).get(rowIndex);
+        if (vector instanceof IntVector vec) {
+            int i = vec.get(rowIndex);
             if (field != null) {
                 switch (field.getType().getTypeID()) {
                     case LONG: case BIGINT: return (long) i;
@@ -529,138 +578,145 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
             }
             return i;
         }
-        if (vector instanceof BigIntVector) {
-            return ((BigIntVector) vector).get(rowIndex);
+        if (vector instanceof BigIntVector vec) {
+            return vec.get(rowIndex);
         }
+        return null;
+    }
 
-        // Float-based
-        if (vector instanceof Float4Vector) {
-            return ((Float4Vector) vector).get(rowIndex);
+    private static Object extractFloat(
+            org.apache.arrow.vector.FieldVector vector, int rowIndex) {
+        if (vector instanceof Float4Vector vec) {
+            return vec.get(rowIndex);
         }
-        if (vector instanceof Float8Vector) {
-            return ((Float8Vector) vector).get(rowIndex);
+        if (vector instanceof Float8Vector vec) {
+            return vec.get(rowIndex);
         }
+        return null;
+    }
 
-        // Decimal
-        if (vector instanceof DecimalVector) {
-            BigDecimal bd = ((DecimalVector) vector).getObject(rowIndex);
-            return toSparkDecimal(bd, field);
+    private static Object extractDecimal(
+            org.apache.arrow.vector.FieldVector vector, int rowIndex, Field field) {
+        if (vector instanceof DecimalVector vec) {
+            return toSparkDecimal(vec.getObject(rowIndex), field);
         }
-        if (vector instanceof Decimal256Vector) {
-            BigDecimal bd = ((Decimal256Vector) vector).getObject(rowIndex);
-            return toSparkDecimal(bd, field);
+        if (vector instanceof Decimal256Vector vec) {
+            return toSparkDecimal(vec.getObject(rowIndex), field);
         }
+        return null;
+    }
 
-        // String
-        if (vector instanceof VarCharVector) {
-            return UTF8String.fromString(
-                    ((VarCharVector) vector).getObject(rowIndex).toString()
-            );
+    private static Object extractString(
+            org.apache.arrow.vector.FieldVector vector, int rowIndex) {
+        if (vector instanceof VarCharVector vec) {
+            return UTF8String.fromString(vec.getObject(rowIndex).toString());
         }
-        if (vector instanceof LargeVarCharVector) {
-            return UTF8String.fromString(
-                    ((LargeVarCharVector) vector).getObject(rowIndex).toString()
-            );
+        if (vector instanceof LargeVarCharVector vec) {
+            return UTF8String.fromString(vec.getObject(rowIndex).toString());
         }
+        return null;
+    }
 
-        // Boolean
-        if (vector instanceof BitVector) {
-            return ((BitVector) vector).get(rowIndex) != 0;
+    private static Object extractDate(
+            org.apache.arrow.vector.FieldVector vector, int rowIndex) {
+        if (vector instanceof DateDayVector vec) {
+            return vec.get(rowIndex);
         }
+        if (vector instanceof DateMilliVector vec) {
+            return Math.toIntExact(Math.floorDiv(vec.get(rowIndex), 86_400_000L));
+        }
+        return null;
+    }
 
-        // Date
-        if (vector instanceof DateDayVector) {
-            // Epoch days
-            return ((DateDayVector) vector).get(rowIndex);
+    private static Object extractTime(
+            org.apache.arrow.vector.FieldVector vector, int rowIndex) {
+        if (vector instanceof TimeSecVector vec) {
+            return vec.getObject(rowIndex).toString();
         }
-        if (vector instanceof DateMilliVector) {
-            long millis = ((DateMilliVector) vector).get(rowIndex);
-            return Math.toIntExact(Math.floorDiv(millis, 86_400_000L));
+        if (vector instanceof TimeMilliVector vec) {
+            return vec.getObject(rowIndex).toString();
         }
+        if (vector instanceof TimeMicroVector vec) {
+            return vec.getObject(rowIndex).toString();
+        }
+        if (vector instanceof TimeNanoVector vec) {
+            return vec.getObject(rowIndex).toString();
+        }
+        return null;
+    }
 
-        // Time
-        if (vector instanceof TimeSecVector) {
-            return ((TimeSecVector) vector).getObject(rowIndex).toString();
+    private static Object extractTimestamp(
+            org.apache.arrow.vector.FieldVector vector, int rowIndex) {
+        if (vector instanceof TimeStampSecVector vec) {
+            return Math.multiplyExact(vec.get(rowIndex), 1_000_000L);
         }
-        if (vector instanceof TimeMilliVector) {
-            return ((TimeMilliVector) vector).getObject(rowIndex).toString();
+        if (vector instanceof TimeStampSecTZVector vec) {
+            return Math.multiplyExact(vec.get(rowIndex), 1_000_000L);
         }
-        if (vector instanceof TimeMicroVector) {
-            return ((TimeMicroVector) vector).getObject(rowIndex).toString();
+        if (vector instanceof TimeStampMilliVector vec) {
+            return Math.multiplyExact(vec.get(rowIndex), 1_000L);
         }
-        if (vector instanceof TimeNanoVector) {
-            return ((TimeNanoVector) vector).getObject(rowIndex).toString();
+        if (vector instanceof TimeStampMilliTZVector vec) {
+            return Math.multiplyExact(vec.get(rowIndex), 1_000L);
         }
+        if (vector instanceof TimeStampMicroVector vec) {
+            return vec.get(rowIndex);
+        }
+        if (vector instanceof TimeStampMicroTZVector vec) {
+            return vec.get(rowIndex);
+        }
+        if (vector instanceof TimeStampNanoVector vec) {
+            return Math.floorDiv(vec.get(rowIndex), 1_000L);
+        }
+        if (vector instanceof TimeStampNanoTZVector vec) {
+            return Math.floorDiv(vec.get(rowIndex), 1_000L);
+        }
+        return null;
+    }
 
-        // Timestamp
-        if (vector instanceof TimeStampSecVector) {
-            return Math.multiplyExact(((TimeStampSecVector) vector).get(rowIndex), 1_000_000L);
+    private static Object extractBinary(
+            org.apache.arrow.vector.FieldVector vector, int rowIndex) {
+        if (vector instanceof VarBinaryVector vec) {
+            return vec.getObject(rowIndex);
         }
-        if (vector instanceof TimeStampSecTZVector) {
-            return Math.multiplyExact(((TimeStampSecTZVector) vector).get(rowIndex), 1_000_000L);
+        if (vector instanceof LargeVarBinaryVector vec) {
+            return vec.getObject(rowIndex);
         }
-        if (vector instanceof TimeStampMilliVector) {
-            return Math.multiplyExact(((TimeStampMilliVector) vector).get(rowIndex), 1_000L);
+        if (vector instanceof FixedSizeBinaryVector vec) {
+            return vec.getObject(rowIndex);
         }
-        if (vector instanceof TimeStampMilliTZVector) {
-            return Math.multiplyExact(((TimeStampMilliTZVector) vector).get(rowIndex), 1_000L);
-        }
-        if (vector instanceof TimeStampMicroVector) {
-            return ((TimeStampMicroVector) vector).get(rowIndex);
-        }
-        if (vector instanceof TimeStampMicroTZVector) {
-            return ((TimeStampMicroTZVector) vector).get(rowIndex);
-        }
-        if (vector instanceof TimeStampNanoVector) {
-            return Math.floorDiv(((TimeStampNanoVector) vector).get(rowIndex), 1_000L);
-        }
-        if (vector instanceof TimeStampNanoTZVector) {
-            return Math.floorDiv(((TimeStampNanoTZVector) vector).get(rowIndex), 1_000L);
-        }
+        return null;
+    }
 
-        // Binary
-        if (vector instanceof VarBinaryVector) {
-            return ((VarBinaryVector) vector).getObject(rowIndex);
+    private static Object extractUInt(
+            org.apache.arrow.vector.FieldVector vector, int rowIndex) {
+        if (vector instanceof UInt1Vector vec) {
+            return (int) vec.get(rowIndex);
         }
-        if (vector instanceof LargeVarBinaryVector) {
-            return ((LargeVarBinaryVector) vector).getObject(rowIndex);
+        if (vector instanceof UInt2Vector vec) {
+            return (int) vec.get(rowIndex);
         }
-        if (vector instanceof FixedSizeBinaryVector) {
-            return ((FixedSizeBinaryVector) vector).getObject(rowIndex);
+        if (vector instanceof UInt4Vector vec) {
+            return (int) vec.get(rowIndex);
         }
+        if (vector instanceof UInt8Vector vec) {
+            return vec.get(rowIndex);
+        }
+        return null;
+    }
 
-        // UInt
-        if (vector instanceof UInt1Vector) {
-            return (int) ((UInt1Vector) vector).get(rowIndex);
+    private static Object extractInterval(
+            org.apache.arrow.vector.FieldVector vector, int rowIndex) {
+        if (vector instanceof DurationVector vec) {
+            return vec.getObject(rowIndex);
         }
-        if (vector instanceof UInt2Vector) {
-            return (int) ((UInt2Vector) vector).get(rowIndex);
+        if (vector instanceof IntervalYearVector vec) {
+            return vec.get(rowIndex);
         }
-        if (vector instanceof UInt4Vector) {
-            return (int) ((UInt4Vector) vector).get(rowIndex);
+        if (vector instanceof IntervalDayVector vec) {
+            return vec.getObject(rowIndex);
         }
-        if (vector instanceof UInt8Vector) {
-            return ((UInt8Vector) vector).get(rowIndex);
-        }
-
-        // Duration, Interval
-        if (vector instanceof DurationVector) {
-            return ((DurationVector) vector).getObject(rowIndex);
-        }
-        if (vector instanceof IntervalYearVector) {
-            return ((IntervalYearVector) vector).get(rowIndex);
-        }
-        if (vector instanceof IntervalDayVector) {
-            return ((IntervalDayVector) vector).getObject(rowIndex);
-        }
-
-        // Null
-        if (vector instanceof NullVector) {
-            return null;
-        }
-
-        // Default fallback — getObject
-        return vector.getObject(rowIndex);
+        return null;
     }
 
     private static Decimal toSparkDecimal(BigDecimal value, Field field) {
@@ -677,17 +733,7 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
      * Formats elapsed nanoseconds as a human-readable duration.
      */
     private static String elapsedNanos(long startNanos) {
-        long nanos = System.nanoTime() - startNanos;
-        if (nanos < 1_000) {
-            return nanos + "ns";
-        }
-        if (nanos < 1_000_000) {
-            return String.format("%.1fµs", nanos / 1000.0);
-        }
-        if (nanos < 1_000_000_000) {
-            return String.format("%.2fms", nanos / 1_000_000.0);
-        }
-        return String.format("%.3fs", nanos / 1_000_000_000.0);
+        return LogUtil.elapsedNanos(startNanos);
     }
 
     /**
