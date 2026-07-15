@@ -77,6 +77,32 @@ docker compose --profile test up spark-client
 
 ## Usage
 
+### Remote Grafana over SSH
+
+Start the observability stack on the Linux server:
+
+```bash
+docker compose --profile observability up -d \
+  prometheus grafana node-exporter cadvisor
+```
+
+If the server exposes only an SSH port, create a tunnel from a terminal on the
+local computer and keep that terminal open:
+
+```bash
+ssh -L 13000:127.0.0.1:3000 \
+  -p 30105 ssamokhin@84.237.52.100
+```
+
+Then open the provisioned dashboard in the local browser:
+
+```text
+http://localhost:13000/d/arrowflight-benchmark
+```
+
+Replace the SSH user, address, and port with values for another server. The
+Grafana port does not need to be exposed publicly when the SSH tunnel is used.
+
 ### Server Parameters
 
 | Parameter | Description | Default |
