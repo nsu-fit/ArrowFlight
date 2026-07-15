@@ -55,7 +55,7 @@ public final class Client implements AutoCloseable {
     //the factory
 <span class="nc" id="L56">    private static final ClientIncomingAuthHeaderMiddleware.Factory factory = new ClientIncomingAuthHeaderMiddleware.Factory(new ClientBearerHeaderHandler());</span>
     //the existing objects of client
-<span class="nc" id="L58">    private static final java.util.Map&lt;String, Client&gt; clients = new java.util.HashMap&lt;&gt;();</span>
+<span class="nc" id="L58">    private static final ConcurrentMap&lt;String, Client&gt; clients = new ConcurrentHashMap&lt;&gt;();</span>
 
     //the flight client
     private final FlightClient client;
@@ -317,28 +317,26 @@ public final class Client implements AutoCloseable {
      */
     @Override
     public void close() {
-<span class="nc" id="L320">        synchronized (Client.class) {</span>
-<span class="nc" id="L321">            Client.clients.remove(this.connectionString);</span>
-<span class="nc" id="L322">        }</span>
+<span class="nc" id="L320">        clients.remove(this.connectionString);</span>
 
-<span class="nc" id="L324">        Set&lt;FlightClient&gt; routedClients = new HashSet&lt;&gt;(this.endpointClients.values());</span>
-<span class="nc" id="L325">        this.endpointClients.clear();</span>
-<span class="nc bnc" id="L326" title="All 2 branches missed.">        for (FlightClient routedClient : routedClients) {</span>
+<span class="nc" id="L322">        Set&lt;FlightClient&gt; routedClients = new HashSet&lt;&gt;(this.endpointClients.values());</span>
+<span class="nc" id="L323">        this.endpointClients.clear();</span>
+<span class="nc bnc" id="L324" title="All 2 branches missed.">        for (FlightClient routedClient : routedClients) {</span>
             try {
-<span class="nc" id="L328">                routedClient.close();</span>
-<span class="nc" id="L329">            } catch (Exception ex) {</span>
-<span class="nc" id="L330">                LOGGER.warn(&quot;Error closing routed Flight client: {}&quot;, ex.getMessage());</span>
-<span class="nc" id="L331">            }</span>
-<span class="nc" id="L332">        }</span>
+<span class="nc" id="L326">                routedClient.close();</span>
+<span class="nc" id="L327">            } catch (Exception ex) {</span>
+<span class="nc" id="L328">                LOGGER.warn(&quot;Error closing routed Flight client: {}&quot;, ex.getMessage());</span>
+<span class="nc" id="L329">            }</span>
+<span class="nc" id="L330">        }</span>
 
         try {
-<span class="nc" id="L335">            this.client.close();</span>
-<span class="nc" id="L336">            this.allocator.getChildAllocators().forEach(BufferAllocator::close);</span>
-<span class="nc" id="L337">            AutoCloseables.close(this.allocator);</span>
-<span class="nc" id="L338">        } catch (Exception ex) {</span>
-<span class="nc" id="L339">            LoggerFactory.getLogger(this.getClass()).warn(ex.getMessage() + Arrays.toString(ex.getStackTrace()));</span>
-<span class="nc" id="L340">        }</span>
-<span class="nc" id="L341">    }</span>
+<span class="nc" id="L333">            this.client.close();</span>
+<span class="nc" id="L334">            this.allocator.getChildAllocators().forEach(BufferAllocator::close);</span>
+<span class="nc" id="L335">            AutoCloseables.close(this.allocator);</span>
+<span class="nc" id="L336">        } catch (Exception ex) {</span>
+<span class="nc" id="L337">            LoggerFactory.getLogger(this.getClass()).warn(ex.getMessage() + Arrays.toString(ex.getStackTrace()));</span>
+<span class="nc" id="L338">        }</span>
+<span class="nc" id="L339">    }</span>
 
     /**
      * Get a client object
@@ -351,31 +349,30 @@ public final class Client implements AutoCloseable {
      */
     private static final long DEFAULT_MAX_ALLOCATION = 2L * 1024 * 1024 * 1024; // 2GB
 
-    public static synchronized Client getOrCreate(Configuration config) {
-<span class="nc" id="L355">        String cs = config.getConnectionString();</span>
-<span class="nc bnc" id="L356" title="All 2 branches missed.">        if (!Client.clients.containsKey(cs)) {</span>
-<span class="nc bnc" id="L357" title="All 2 branches missed.">            long maxAllocation = config.getAllocationLimit() &gt; 0</span>
-<span class="nc" id="L358">                    ? config.getAllocationLimit()</span>
-<span class="nc" id="L359">                    : DEFAULT_MAX_ALLOCATION;</span>
+    public static Client getOrCreate(Configuration config) {
+<span class="nc" id="L353">        String cs = config.getConnectionString();</span>
+<span class="nc" id="L354">        return clients.computeIfAbsent(cs, key -&gt; {</span>
+<span class="nc bnc" id="L355" title="All 2 branches missed.">            long maxAllocation = config.getAllocationLimit() &gt; 0</span>
+<span class="nc" id="L356">                    ? config.getAllocationLimit()</span>
+<span class="nc" id="L357">                    : DEFAULT_MAX_ALLOCATION;</span>
 
-<span class="nc" id="L361">            final BufferAllocator allocator = new RootAllocator(maxAllocation);</span>
-<span class="nc" id="L362">            final FlightClient client = Client.create(config, allocator);</span>
+<span class="nc" id="L359">            final BufferAllocator allocator = new RootAllocator(maxAllocation);</span>
+<span class="nc" id="L360">            final FlightClient client = Client.create(config, allocator);</span>
 
-<span class="nc" id="L364">            final CallHeaders callHeaders = new FlightCallHeaders();</span>
-<span class="nc bnc" id="L365" title="All 4 branches missed.">            if (config.getDefaultSchema() != null &amp;&amp; !config.getDefaultSchema().isEmpty()) {</span>
-<span class="nc" id="L366">                callHeaders.insert(&quot;SCHEMA&quot;, config.getDefaultSchema());</span>
+<span class="nc" id="L362">            final CallHeaders callHeaders = new FlightCallHeaders();</span>
+<span class="nc bnc" id="L363" title="All 4 branches missed.">            if (config.getDefaultSchema() != null &amp;&amp; !config.getDefaultSchema().isEmpty()) {</span>
+<span class="nc" id="L364">                callHeaders.insert(&quot;SCHEMA&quot;, config.getDefaultSchema());</span>
             }
-<span class="nc bnc" id="L368" title="All 4 branches missed.">            if (config.getRoutingTag() != null &amp;&amp; !config.getRoutingTag().isEmpty()) {</span>
-<span class="nc" id="L369">                callHeaders.insert(&quot;ROUTING_TAG&quot;, config.getRoutingTag());</span>
+<span class="nc bnc" id="L366" title="All 4 branches missed.">            if (config.getRoutingTag() != null &amp;&amp; !config.getRoutingTag().isEmpty()) {</span>
+<span class="nc" id="L367">                callHeaders.insert(&quot;ROUTING_TAG&quot;, config.getRoutingTag());</span>
             }
-<span class="nc bnc" id="L371" title="All 4 branches missed.">            if (config.getRoutingQueue() != null &amp;&amp; !config.getRoutingQueue().isEmpty()) {</span>
-<span class="nc" id="L372">                callHeaders.insert(&quot;ROUTING_QUEUE&quot;, config.getRoutingQueue());</span>
+<span class="nc bnc" id="L369" title="All 4 branches missed.">            if (config.getRoutingQueue() != null &amp;&amp; !config.getRoutingQueue().isEmpty()) {</span>
+<span class="nc" id="L370">                callHeaders.insert(&quot;ROUTING_QUEUE&quot;, config.getRoutingQueue());</span>
             }
-<span class="nc bnc" id="L374" title="All 2 branches missed.">            final HeaderCallOption clientProperties = (!callHeaders.keys().isEmpty()) ? new HeaderCallOption(callHeaders) : null;</span>
+<span class="nc bnc" id="L372" title="All 2 branches missed.">            final HeaderCallOption clientProperties = (!callHeaders.keys().isEmpty()) ? new HeaderCallOption(callHeaders) : null;</span>
 
-<span class="nc" id="L376">            Client.clients.put(cs, new Client(client, authenticate(client, config.getUser(), config.getPassword(), config.getBearerToken(), clientProperties), cs, allocator, config));</span>
-        }
-<span class="nc" id="L378">        return Client.clients.get(cs);</span>
+<span class="nc" id="L374">            return new Client(client, authenticate(client, config.getUser(), config.getPassword(), config.getBearerToken(), clientProperties), cs, allocator, config);</span>
+        });
     }
 
     /**
@@ -386,10 +383,10 @@ public final class Client implements AutoCloseable {
      * @return FlightClient
      */
     private static FlightClient create(Configuration config, BufferAllocator allocator) {
-<span class="nc bnc" id="L389" title="All 2 branches missed.">        Location location = config.getTlsEnabled()</span>
-<span class="nc" id="L390">                ? Location.forGrpcTls(config.getFlightHost(), config.getFlightPort())</span>
-<span class="nc" id="L391">                : Location.forGrpcInsecure(config.getFlightHost(), config.getFlightPort());</span>
-<span class="nc bnc" id="L392" title="All 4 branches missed.">        return create(config, allocator, location, config.getPassword() != null &amp;&amp; !config.getPassword().isEmpty());</span>
+<span class="nc bnc" id="L386" title="All 2 branches missed.">        Location location = config.getTlsEnabled()</span>
+<span class="nc" id="L387">                ? Location.forGrpcTls(config.getFlightHost(), config.getFlightPort())</span>
+<span class="nc" id="L388">                : Location.forGrpcInsecure(config.getFlightHost(), config.getFlightPort());</span>
+<span class="nc bnc" id="L389" title="All 4 branches missed.">        return create(config, allocator, location, config.getPassword() != null &amp;&amp; !config.getPassword().isEmpty());</span>
     }
 
     /**
@@ -399,30 +396,30 @@ public final class Client implements AutoCloseable {
      */
     private static FlightClient create(Configuration config, BufferAllocator allocator,
             Location location, boolean captureBearerToken) {
-<span class="nc" id="L402">        URI uri = location.getUri();</span>
-<span class="nc bnc" id="L403" title="All 2 branches missed.">        String scheme = uri.getScheme() == null ? &quot;&quot; : uri.getScheme().toLowerCase(Locale.ROOT);</span>
-<span class="nc" id="L404">        FlightClient.Builder builder = FlightClient.builder().allocator(allocator).location(location);</span>
+<span class="nc" id="L399">        URI uri = location.getUri();</span>
+<span class="nc bnc" id="L400" title="All 2 branches missed.">        String scheme = uri.getScheme() == null ? &quot;&quot; : uri.getScheme().toLowerCase(Locale.ROOT);</span>
+<span class="nc" id="L401">        FlightClient.Builder builder = FlightClient.builder().allocator(allocator).location(location);</span>
 
-<span class="nc bnc" id="L406" title="All 2 branches missed.">        if (&quot;grpc+tls&quot;.equals(scheme)) {</span>
-<span class="nc" id="L407">            builder.useTls();</span>
-<span class="nc bnc" id="L408" title="All 4 branches missed.">            if (config.getTruststoreJks() == null || config.getTruststoreJks().isEmpty()) {</span>
-<span class="nc" id="L409">                builder.verifyServer(config.verifyServer());</span>
+<span class="nc bnc" id="L403" title="All 2 branches missed.">        if (&quot;grpc+tls&quot;.equals(scheme)) {</span>
+<span class="nc" id="L404">            builder.useTls();</span>
+<span class="nc bnc" id="L405" title="All 4 branches missed.">            if (config.getTruststoreJks() == null || config.getTruststoreJks().isEmpty()) {</span>
+<span class="nc" id="L406">                builder.verifyServer(config.verifyServer());</span>
             } else {
-<span class="nc" id="L411">                builder.trustedCertificates(new ByteArrayInputStream(config.getCertificateBytes()));</span>
+<span class="nc" id="L408">                builder.trustedCertificates(new ByteArrayInputStream(config.getCertificateBytes()));</span>
             }
-<span class="nc bnc" id="L413" title="All 4 branches missed.">        } else if (&quot;grpc+tcp&quot;.equals(scheme) || &quot;grpc+unix&quot;.equals(scheme)) {</span>
-<span class="nc bnc" id="L414" title="All 2 branches missed.">            if (config.getTlsEnabled()) {</span>
-<span class="nc" id="L415">                throw new IllegalArgumentException(</span>
+<span class="nc bnc" id="L410" title="All 4 branches missed.">        } else if (&quot;grpc+tcp&quot;.equals(scheme) || &quot;grpc+unix&quot;.equals(scheme)) {</span>
+<span class="nc bnc" id="L411" title="All 2 branches missed.">            if (config.getTlsEnabled()) {</span>
+<span class="nc" id="L412">                throw new IllegalArgumentException(</span>
                         &quot;Refusing to forward Flight credentials from TLS to plaintext endpoint &quot; + uri);
             }
         } else {
-<span class="nc" id="L419">            throw new IllegalArgumentException(&quot;Unsupported Flight endpoint location: &quot; + uri);</span>
+<span class="nc" id="L416">            throw new IllegalArgumentException(&quot;Unsupported Flight endpoint location: &quot; + uri);</span>
         }
 
-<span class="nc bnc" id="L422" title="All 2 branches missed.">        if (captureBearerToken) {</span>
-<span class="nc" id="L423">            builder.intercept(Client.factory);</span>
+<span class="nc bnc" id="L419" title="All 2 branches missed.">        if (captureBearerToken) {</span>
+<span class="nc" id="L420">            builder.intercept(Client.factory);</span>
         }
-<span class="nc" id="L425">        return builder.build();</span>
+<span class="nc" id="L422">        return builder.build();</span>
     }
 
     /**
@@ -436,20 +433,20 @@ public final class Client implements AutoCloseable {
      * @return credential call option
      */
     static CredentialCallOption authenticate(FlightClient client, String user, String password, String bearerToken, HeaderCallOption clientProperties) {
-<span class="nc" id="L439">        final java.util.List&lt;CallOption&gt; callOptions = new java.util.ArrayList&lt;&gt;();</span>
+<span class="nc" id="L436">        final java.util.List&lt;CallOption&gt; callOptions = new java.util.ArrayList&lt;&gt;();</span>
 
-<span class="nc" id="L441">        LOGGER.info(&quot;Client.authenticate: clientProperties={}&quot;, clientProperties);</span>
-<span class="nc bnc" id="L442" title="All 2 branches missed.">        if (clientProperties != null) {</span>
-<span class="nc" id="L443">            callOptions.add(clientProperties);</span>
+<span class="nc" id="L438">        LOGGER.info(&quot;Client.authenticate: clientProperties={}&quot;, clientProperties);</span>
+<span class="nc bnc" id="L439" title="All 2 branches missed.">        if (clientProperties != null) {</span>
+<span class="nc" id="L440">            callOptions.add(clientProperties);</span>
         }
-<span class="nc bnc" id="L445" title="All 4 branches missed.">        boolean usePassword = (password != null &amp;&amp; !password.isEmpty());</span>
-<span class="nc" id="L446">        CredentialCallOption credentialOption = new CredentialCallOption(</span>
-<span class="nc bnc" id="L447" title="All 2 branches missed.">                usePassword ? new BasicAuthCredentialWriter(user, password) : new BearerCredentialWriter(bearerToken));</span>
-<span class="nc" id="L448">        callOptions.add(credentialOption);</span>
-<span class="nc" id="L449">        LOGGER.info(&quot;Client.authenticate: callOptions={}&quot;, callOptions);</span>
-<span class="nc" id="L450">        client.handshake(callOptions.toArray(new CallOption[0]));</span>
-<span class="nc" id="L451">        LOGGER.info(&quot;Client.authenticate: handshake finished&quot;);</span>
-<span class="nc bnc" id="L452" title="All 2 branches missed.">        return usePassword ? Client.factory.getCredentialCallOption() : credentialOption;</span>
+<span class="nc bnc" id="L442" title="All 4 branches missed.">        boolean usePassword = (password != null &amp;&amp; !password.isEmpty());</span>
+<span class="nc" id="L443">        CredentialCallOption credentialOption = new CredentialCallOption(</span>
+<span class="nc bnc" id="L444" title="All 2 branches missed.">                usePassword ? new BasicAuthCredentialWriter(user, password) : new BearerCredentialWriter(bearerToken));</span>
+<span class="nc" id="L445">        callOptions.add(credentialOption);</span>
+<span class="nc" id="L446">        LOGGER.info(&quot;Client.authenticate: callOptions={}&quot;, callOptions);</span>
+<span class="nc" id="L447">        client.handshake(callOptions.toArray(new CallOption[0]));</span>
+<span class="nc" id="L448">        LOGGER.info(&quot;Client.authenticate: handshake finished&quot;);</span>
+<span class="nc bnc" id="L449" title="All 2 branches missed.">        return usePassword ? Client.factory.getCredentialCallOption() : credentialOption;</span>
     }
 
     @FunctionalInterface
@@ -465,41 +462,41 @@ public final class Client implements AutoCloseable {
      * @return result
      */
     &lt;T&gt; T retryWithBackoff(RetryableCall&lt;T&gt; callable, String operation) {
-<span class="nc" id="L468">        int maxRetries = config.getMaxRetries();</span>
-<span class="nc" id="L469">        long backoffMs = config.getRetryBackoffMs();</span>
-<span class="nc" id="L470">        Exception lastException = null;</span>
+<span class="nc" id="L465">        int maxRetries = config.getMaxRetries();</span>
+<span class="nc" id="L466">        long backoffMs = config.getRetryBackoffMs();</span>
+<span class="nc" id="L467">        Exception lastException = null;</span>
 
-<span class="nc bnc" id="L472" title="All 2 branches missed.">        for (int attempt = 0; attempt &lt;= maxRetries; attempt++) {</span>
+<span class="nc bnc" id="L469" title="All 2 branches missed.">        for (int attempt = 0; attempt &lt;= maxRetries; attempt++) {</span>
             try {
-<span class="nc bnc" id="L474" title="All 2 branches missed.">                if (attempt &gt; 0) {</span>
-<span class="nc" id="L475">                    long delay = backoffMs * (1L &lt;&lt; (attempt - 1));</span>
-<span class="nc" id="L476">                    LOGGER.info(&quot;Retry attempt {} for '{}', waiting {}ms&quot;, attempt, operation, delay);</span>
-<span class="nc" id="L477">                    Thread.sleep(delay);</span>
+<span class="nc bnc" id="L471" title="All 2 branches missed.">                if (attempt &gt; 0) {</span>
+<span class="nc" id="L472">                    long delay = backoffMs * (1L &lt;&lt; (attempt - 1));</span>
+<span class="nc" id="L473">                    LOGGER.info(&quot;Retry attempt {} for '{}', waiting {}ms&quot;, attempt, operation, delay);</span>
+<span class="nc" id="L474">                    Thread.sleep(delay);</span>
                 }
-<span class="nc" id="L479">                return callable.call();</span>
-<span class="nc" id="L480">            } catch (InterruptedException e) {</span>
-<span class="nc" id="L481">                Thread.currentThread().interrupt();</span>
-<span class="nc" id="L482">                throw new RuntimeException(&quot;Interrupted during retry of &quot; + operation, e);</span>
-<span class="nc" id="L483">            } catch (FlightRuntimeException e) {</span>
-<span class="nc" id="L484">                lastException = e;</span>
-<span class="nc" id="L485">                LOGGER.warn(&quot;Flight error in '{}' (attempt {} of {}): {}&quot;, operation, attempt, maxRetries + 1, e.getMessage());</span>
-<span class="nc bnc" id="L486" title="All 4 branches missed.">                if (isInternalError(e) &amp;&amp; attempt &lt; maxRetries) {</span>
-<span class="nc" id="L487">                    continue;</span>
+<span class="nc" id="L476">                return callable.call();</span>
+<span class="nc" id="L477">            } catch (InterruptedException e) {</span>
+<span class="nc" id="L478">                Thread.currentThread().interrupt();</span>
+<span class="nc" id="L479">                throw new RuntimeException(&quot;Interrupted during retry of &quot; + operation, e);</span>
+<span class="nc" id="L480">            } catch (FlightRuntimeException e) {</span>
+<span class="nc" id="L481">                lastException = e;</span>
+<span class="nc" id="L482">                LOGGER.warn(&quot;Flight error in '{}' (attempt {} of {}): {}&quot;, operation, attempt, maxRetries + 1, e.getMessage());</span>
+<span class="nc bnc" id="L483" title="All 4 branches missed.">                if (isInternalError(e) &amp;&amp; attempt &lt; maxRetries) {</span>
+<span class="nc" id="L484">                    continue;</span>
                 }
-<span class="nc" id="L489">                break;</span>
-<span class="nc" id="L490">            } catch (Exception e) {</span>
-<span class="nc" id="L491">                lastException = e;</span>
-<span class="nc" id="L492">                LOGGER.warn(&quot;Error in '{}' (attempt {} of {}): {}&quot;, operation, attempt, maxRetries + 1, e.getMessage());</span>
-<span class="nc bnc" id="L493" title="All 2 branches missed.">                if (attempt &lt; maxRetries) {</span>
-<span class="nc" id="L494">                    continue;</span>
+<span class="nc" id="L486">                break;</span>
+<span class="nc" id="L487">            } catch (Exception e) {</span>
+<span class="nc" id="L488">                lastException = e;</span>
+<span class="nc" id="L489">                LOGGER.warn(&quot;Error in '{}' (attempt {} of {}): {}&quot;, operation, attempt, maxRetries + 1, e.getMessage());</span>
+<span class="nc bnc" id="L490" title="All 2 branches missed.">                if (attempt &lt; maxRetries) {</span>
+<span class="nc" id="L491">                    continue;</span>
                 }
             }
         }
 
-<span class="nc bnc" id="L499" title="All 2 branches missed.">        if (lastException instanceof RuntimeException) {</span>
-<span class="nc" id="L500">            throw (RuntimeException) lastException;</span>
+<span class="nc bnc" id="L496" title="All 2 branches missed.">        if (lastException instanceof RuntimeException) {</span>
+<span class="nc" id="L497">            throw (RuntimeException) lastException;</span>
         }
-<span class="nc" id="L502">        throw new RuntimeException(&quot;Failed &quot; + operation + &quot; after &quot; + (maxRetries + 1) + &quot; attempts&quot;, lastException);</span>
+<span class="nc" id="L499">        throw new RuntimeException(&quot;Failed &quot; + operation + &quot; after &quot; + (maxRetries + 1) + &quot; attempts&quot;, lastException);</span>
     }
 
     /**
@@ -509,16 +506,16 @@ public final class Client implements AutoCloseable {
      * @return true if retryable
      */
     private static boolean isInternalError(FlightRuntimeException e) {
-<span class="nc" id="L512">        Throwable cause = e.getCause();</span>
-<span class="nc bnc" id="L513" title="All 2 branches missed.">        if (cause instanceof io.grpc.StatusRuntimeException) {</span>
-<span class="nc" id="L514">            io.grpc.Status.Code code = ((io.grpc.StatusRuntimeException) cause).getStatus().getCode();</span>
-<span class="nc bnc" id="L515" title="All 10 branches missed.">            return code == io.grpc.Status.Code.INTERNAL</span>
+<span class="nc" id="L509">        Throwable cause = e.getCause();</span>
+<span class="nc bnc" id="L510" title="All 2 branches missed.">        if (cause instanceof io.grpc.StatusRuntimeException) {</span>
+<span class="nc" id="L511">            io.grpc.Status.Code code = ((io.grpc.StatusRuntimeException) cause).getStatus().getCode();</span>
+<span class="nc bnc" id="L512" title="All 10 branches missed.">            return code == io.grpc.Status.Code.INTERNAL</span>
                     || code == io.grpc.Status.Code.UNAVAILABLE
                     || code == io.grpc.Status.Code.RESOURCE_EXHAUSTED
                     || code == io.grpc.Status.Code.DEADLINE_EXCEEDED
                     || code == io.grpc.Status.Code.ABORTED;
         }
-<span class="nc" id="L521">        return false;</span>
+<span class="nc" id="L518">        return false;</span>
     }
 
     /**
@@ -529,46 +526,46 @@ public final class Client implements AutoCloseable {
      * @throws Exception on stream open failure
      */
     public FlightStream openStream(FlightEndpoint fep) throws Exception {
-<span class="nc" id="L532">        String ticketHex = ticketHex(fep.getTicket());</span>
-<span class="nc" id="L533">        LOGGER.debug(&quot;node={} client=openStream ticket={} locations={}&quot;,</span>
-<span class="nc" id="L534">                NODE, ticketHex, fep.getLocations());</span>
+<span class="nc" id="L529">        String ticketHex = ticketHex(fep.getTicket());</span>
+<span class="nc" id="L530">        LOGGER.debug(&quot;node={} client=openStream ticket={} locations={}&quot;,</span>
+<span class="nc" id="L531">                NODE, ticketHex, fep.getLocations());</span>
 
-<span class="nc bnc" id="L536" title="All 2 branches missed.">        if (fep.getLocations().isEmpty()) {</span>
-<span class="nc" id="L537">            LOGGER.debug(&quot;node={} client=openStreamPrimary ticket={}&quot;, NODE, ticketHex);</span>
-<span class="nc" id="L538">            return this.client.getStream(fep.getTicket(), callOptions());</span>
+<span class="nc bnc" id="L533" title="All 2 branches missed.">        if (fep.getLocations().isEmpty()) {</span>
+<span class="nc" id="L534">            LOGGER.debug(&quot;node={} client=openStreamPrimary ticket={}&quot;, NODE, ticketHex);</span>
+<span class="nc" id="L535">            return this.client.getStream(fep.getTicket(), callOptions());</span>
         }
 
-<span class="nc" id="L541">        IllegalArgumentException unsupported = null;</span>
-<span class="nc bnc" id="L542" title="All 2 branches missed.">        for (Location location : fep.getLocations()) {</span>
-<span class="nc bnc" id="L543" title="All 4 branches missed.">            if (Location.reuseConnection().equals(location) || isPrimaryLocation(location)) {</span>
-<span class="nc" id="L544">                LOGGER.debug(&quot;node={} client=openStreamPrimary ticket={} location={}&quot;,</span>
-<span class="nc" id="L545">                        NODE, ticketHex, location.getUri());</span>
-<span class="nc" id="L546">                return this.client.getStream(fep.getTicket(), callOptions());</span>
+<span class="nc" id="L538">        IllegalArgumentException unsupported = null;</span>
+<span class="nc bnc" id="L539" title="All 2 branches missed.">        for (Location location : fep.getLocations()) {</span>
+<span class="nc bnc" id="L540" title="All 4 branches missed.">            if (Location.reuseConnection().equals(location) || isPrimaryLocation(location)) {</span>
+<span class="nc" id="L541">                LOGGER.debug(&quot;node={} client=openStreamPrimary ticket={} location={}&quot;,</span>
+<span class="nc" id="L542">                        NODE, ticketHex, location.getUri());</span>
+<span class="nc" id="L543">                return this.client.getStream(fep.getTicket(), callOptions());</span>
             }
             try {
-<span class="nc" id="L549">                LOGGER.info(&quot;node={} client=routeStream ticket={} location={}&quot;,</span>
-<span class="nc" id="L550">                        NODE, ticketHex, location.getUri());</span>
-<span class="nc" id="L551">                FlightClient routedClient = this.endpointClients.computeIfAbsent(</span>
-<span class="nc" id="L552">                        location.getUri(), uri -&gt; create(this.config, this.allocator, location, false));</span>
-<span class="nc" id="L553">                return routedClient.getStream(fep.getTicket(), callOptions());</span>
-<span class="nc" id="L554">            } catch (IllegalArgumentException ex) {</span>
-<span class="nc" id="L555">                unsupported = ex;</span>
+<span class="nc" id="L546">                LOGGER.info(&quot;node={} client=routeStream ticket={} location={}&quot;,</span>
+<span class="nc" id="L547">                        NODE, ticketHex, location.getUri());</span>
+<span class="nc" id="L548">                FlightClient routedClient = this.endpointClients.computeIfAbsent(</span>
+<span class="nc" id="L549">                        location.getUri(), uri -&gt; create(this.config, this.allocator, location, false));</span>
+<span class="nc" id="L550">                return routedClient.getStream(fep.getTicket(), callOptions());</span>
+<span class="nc" id="L551">            } catch (IllegalArgumentException ex) {</span>
+<span class="nc" id="L552">                unsupported = ex;</span>
             }
-<span class="nc" id="L557">        }</span>
+<span class="nc" id="L554">        }</span>
 
-<span class="nc bnc" id="L559" title="All 2 branches missed.">        if (unsupported != null) {</span>
-<span class="nc" id="L560">            throw unsupported;</span>
+<span class="nc bnc" id="L556" title="All 2 branches missed.">        if (unsupported != null) {</span>
+<span class="nc" id="L557">            throw unsupported;</span>
         }
-<span class="nc" id="L562">        throw new IllegalArgumentException(&quot;Flight endpoint has no usable location: &quot; + fep);</span>
+<span class="nc" id="L559">        throw new IllegalArgumentException(&quot;Flight endpoint has no usable location: &quot; + fep);</span>
     }
 
     private boolean isPrimaryLocation(Location location) {
-<span class="nc" id="L566">        URI uri = location.getUri();</span>
-<span class="nc bnc" id="L567" title="All 2 branches missed.">        String expectedScheme = this.config.getTlsEnabled() ? &quot;grpc+tls&quot; : &quot;grpc+tcp&quot;;</span>
-<span class="nc bnc" id="L568" title="All 2 branches missed.">        return expectedScheme.equalsIgnoreCase(uri.getScheme())</span>
-<span class="nc bnc" id="L569" title="All 2 branches missed.">                &amp;&amp; this.config.getFlightPort() == uri.getPort()</span>
-<span class="nc bnc" id="L570" title="All 2 branches missed.">                &amp;&amp; uri.getHost() != null</span>
-<span class="nc bnc" id="L571" title="All 2 branches missed.">                &amp;&amp; uri.getHost().equalsIgnoreCase(this.config.getFlightHost());</span>
+<span class="nc" id="L563">        URI uri = location.getUri();</span>
+<span class="nc bnc" id="L564" title="All 2 branches missed.">        String expectedScheme = this.config.getTlsEnabled() ? &quot;grpc+tls&quot; : &quot;grpc+tcp&quot;;</span>
+<span class="nc bnc" id="L565" title="All 2 branches missed.">        return expectedScheme.equalsIgnoreCase(uri.getScheme())</span>
+<span class="nc bnc" id="L566" title="All 2 branches missed.">                &amp;&amp; this.config.getFlightPort() == uri.getPort()</span>
+<span class="nc bnc" id="L567" title="All 2 branches missed.">                &amp;&amp; uri.getHost() != null</span>
+<span class="nc bnc" id="L568" title="All 2 branches missed.">                &amp;&amp; uri.getHost().equalsIgnoreCase(this.config.getFlightHost());</span>
     }
 
     /**
@@ -577,49 +574,49 @@ public final class Client implements AutoCloseable {
      * @return configuration
      */
     public Configuration getConfig() {
-<span class="nc" id="L580">        return this.config;</span>
+<span class="nc" id="L577">        return this.config;</span>
     }
 
     /**
      * Formats elapsed nanoseconds as human-readable duration.
      */
     private static String elapsedNanos(long startNanos) {
-<span class="nc" id="L587">        long nanos = System.nanoTime() - startNanos;</span>
-<span class="nc bnc" id="L588" title="All 2 branches missed.">        if (nanos &lt; 1_000) {</span>
-<span class="nc" id="L589">            return nanos + &quot;ns&quot;;</span>
+<span class="nc" id="L584">        long nanos = System.nanoTime() - startNanos;</span>
+<span class="nc bnc" id="L585" title="All 2 branches missed.">        if (nanos &lt; 1_000) {</span>
+<span class="nc" id="L586">            return nanos + &quot;ns&quot;;</span>
         }
-<span class="nc bnc" id="L591" title="All 2 branches missed.">        if (nanos &lt; 1_000_000) {</span>
-<span class="nc" id="L592">            return String.format(&quot;%.1fµs&quot;, nanos / 1000.0);</span>
+<span class="nc bnc" id="L588" title="All 2 branches missed.">        if (nanos &lt; 1_000_000) {</span>
+<span class="nc" id="L589">            return String.format(&quot;%.1fµs&quot;, nanos / 1000.0);</span>
         }
-<span class="nc bnc" id="L594" title="All 2 branches missed.">        if (nanos &lt; 1_000_000_000) {</span>
-<span class="nc" id="L595">            return String.format(&quot;%.2fms&quot;, nanos / 1_000_000.0);</span>
+<span class="nc bnc" id="L591" title="All 2 branches missed.">        if (nanos &lt; 1_000_000_000) {</span>
+<span class="nc" id="L592">            return String.format(&quot;%.2fms&quot;, nanos / 1_000_000.0);</span>
         }
-<span class="nc" id="L597">        return String.format(&quot;%.3fs&quot;, nanos / 1_000_000_000.0);</span>
+<span class="nc" id="L594">        return String.format(&quot;%.3fs&quot;, nanos / 1_000_000_000.0);</span>
     }
 
     /**
      * Converts a Flight ticket to hex string for logging.
      */
     private static String ticketHex(Ticket ticket) {
-<span class="nc bnc" id="L604" title="All 2 branches missed.">        if (ticket == null) {</span>
-<span class="nc" id="L605">            return &quot;null&quot;;</span>
+<span class="nc bnc" id="L601" title="All 2 branches missed.">        if (ticket == null) {</span>
+<span class="nc" id="L602">            return &quot;null&quot;;</span>
         }
-<span class="nc" id="L607">        byte[] bytes = ticket.getBytes();</span>
-<span class="nc bnc" id="L608" title="All 4 branches missed.">        if (bytes == null || bytes.length == 0) {</span>
-<span class="nc" id="L609">            return &quot;empty&quot;;</span>
+<span class="nc" id="L604">        byte[] bytes = ticket.getBytes();</span>
+<span class="nc bnc" id="L605" title="All 4 branches missed.">        if (bytes == null || bytes.length == 0) {</span>
+<span class="nc" id="L606">            return &quot;empty&quot;;</span>
         }
-<span class="nc" id="L611">        int len = Math.min(bytes.length, 8);</span>
-<span class="nc" id="L612">        StringBuilder sb = new StringBuilder(len * 2);</span>
-<span class="nc bnc" id="L613" title="All 2 branches missed.">        for (byte b : bytes) {</span>
-<span class="nc" id="L614">            sb.append(String.format(&quot;%02x&quot;, b &amp; 0xFF));</span>
-<span class="nc bnc" id="L615" title="All 2 branches missed.">            if (sb.length() &gt;= 16) {</span>
-<span class="nc" id="L616">                break;</span>
+<span class="nc" id="L608">        int len = Math.min(bytes.length, 8);</span>
+<span class="nc" id="L609">        StringBuilder sb = new StringBuilder(len * 2);</span>
+<span class="nc bnc" id="L610" title="All 2 branches missed.">        for (byte b : bytes) {</span>
+<span class="nc" id="L611">            sb.append(String.format(&quot;%02x&quot;, b &amp; 0xFF));</span>
+<span class="nc bnc" id="L612" title="All 2 branches missed.">            if (sb.length() &gt;= 16) {</span>
+<span class="nc" id="L613">                break;</span>
             }
         }
-<span class="nc bnc" id="L619" title="All 2 branches missed.">        if (bytes.length &gt; 8) {</span>
-<span class="nc" id="L620">            sb.append(&quot;..&quot;);</span>
+<span class="nc bnc" id="L616" title="All 2 branches missed.">        if (bytes.length &gt; 8) {</span>
+<span class="nc" id="L617">            sb.append(&quot;..&quot;);</span>
         }
-<span class="nc" id="L622">        return sb.toString();</span>
+<span class="nc" id="L619">        return sb.toString();</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>
