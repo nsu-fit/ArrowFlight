@@ -63,7 +63,9 @@ def read_csv(path):
     if not path.exists():
         return []
     with path.open(newline="", encoding="utf-8") as file:
-        return list(csv.DictReader(file))
+        # Beeline can emit NUL padding that Python's csv parser rejects.
+        sanitized_lines = (line.replace("\0", "") for line in file)
+        return list(csv.DictReader(sanitized_lines))
 
 
 def read_json(path):
