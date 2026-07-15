@@ -9,6 +9,7 @@ x-server-node-env: &server-node-env
   FLIGHT_LOCAL_DATA_DIR: "/staging"
   FLIGHT_PORT: "32010"
   FLIGHT_METRICS_PORT: "9404"
+  FLIGHT_METRICS_ENABLED: "${BENCHMARK_OBSERVABILITY:-}"
   FLIGHT_HOSTS: "${FLIGHT_HOSTS:-flight-server-1,flight-server-2,flight-server-3,flight-server-4,flight-server-5,flight-server-6,flight-server-7,flight-server-8,flight-server-9,flight-server-10}"
   HAZELCAST_PORT: "5701"
   HDFS_NAMENODE_HOST: hdfs-namenode

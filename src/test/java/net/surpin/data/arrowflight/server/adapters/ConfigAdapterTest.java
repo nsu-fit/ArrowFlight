@@ -47,6 +47,7 @@ class ConfigAdapterTest {
         assertEquals(1000, cfg.clientRetryBackoffMs());
         assertEquals(0, cfg.clientConnectTimeoutMs());
         assertFalse(cfg.duckDbAllowUnsignedExtensions());
+        assertTrue(cfg.metricsEnabled());
         assertEquals(Integer.MAX_VALUE, cfg.grpcMaxInboundMessageSize());
         assertEquals(300000, cfg.flightListenerReadyTimeoutMillis());
     }
@@ -174,6 +175,15 @@ class ConfigAdapterTest {
 
         AppConfig cfg = ConfigAdapter.getConfig();
         assertEquals(1048576, cfg.grpcMaxInboundMessageSize());
+    }
+
+    /** Verifies benchmark metrics can be disabled with a system property. */
+    @Test
+    void getConfigMetricsDisabled() {
+        setProp("metricsEnabled", "false");
+
+        AppConfig cfg = ConfigAdapter.getConfig();
+        assertFalse(cfg.metricsEnabled());
     }
 
     @Test
