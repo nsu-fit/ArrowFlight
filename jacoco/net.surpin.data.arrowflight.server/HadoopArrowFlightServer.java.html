@@ -166,17 +166,22 @@ import net.surpin.data.arrowflight.server.model.AppConfig;
         }
 <span class="nc bnc" id="L167" title="All 2 branches missed.">        if (component != null) {</span>
             try {
-<span class="nc" id="L169">                component.clusterService().close();</span>
+<span class="nc" id="L169">                component.duckDb().close();</span>
 <span class="nc" id="L170">            } catch (Exception e) {</span>
-<span class="nc" id="L171">                LOGGER.error(&quot;Error closing cluster service&quot;, e);</span>
+<span class="nc" id="L171">                LOGGER.error(&quot;Error closing DuckDB adapter&quot;, e);</span>
 <span class="nc" id="L172">            }</span>
             try {
-<span class="nc" id="L174">                component.allocator().close();</span>
+<span class="nc" id="L174">                component.clusterService().close();</span>
 <span class="nc" id="L175">            } catch (Exception e) {</span>
-<span class="nc" id="L176">                LOGGER.error(&quot;Error closing allocator&quot;, e);</span>
+<span class="nc" id="L176">                LOGGER.error(&quot;Error closing cluster service&quot;, e);</span>
 <span class="nc" id="L177">            }</span>
+            try {
+<span class="nc" id="L179">                component.allocator().close();</span>
+<span class="nc" id="L180">            } catch (Exception e) {</span>
+<span class="nc" id="L181">                LOGGER.error(&quot;Error closing allocator&quot;, e);</span>
+<span class="nc" id="L182">            }</span>
         }
-<span class="nc" id="L179">    }</span>
+<span class="nc" id="L184">    }</span>
 
     /**
      * Waits for all Hazelcast cluster nodes to connect.
@@ -185,52 +190,52 @@ import net.surpin.data.arrowflight.server.model.AppConfig;
      * @throws IllegalStateException if timeout reached or interrupted
      */
     private void waitForCluster(String[] hosts, int timeoutSec) {
-<span class="nc" id="L188">        HazelcastInstance hazelcast = component.clusterService().getHazelcastInstance();</span>
-<span class="nc" id="L189">        long started = System.nanoTime();</span>
-<span class="nc" id="L190">        ReentrantLock membershipLock = new ReentrantLock();</span>
-<span class="nc" id="L191">        Condition membershipChanged = membershipLock.newCondition();</span>
+<span class="nc" id="L193">        HazelcastInstance hazelcast = component.clusterService().getHazelcastInstance();</span>
+<span class="nc" id="L194">        long started = System.nanoTime();</span>
+<span class="nc" id="L195">        ReentrantLock membershipLock = new ReentrantLock();</span>
+<span class="nc" id="L196">        Condition membershipChanged = membershipLock.newCondition();</span>
 
-<span class="nc" id="L193">        LOGGER.info(&quot;Waiting up to {}s for {} nodes to connect (hosts: {})&quot;,</span>
-<span class="nc" id="L194">                timeoutSec, hosts.length, Arrays.toString(hosts));</span>
+<span class="nc" id="L198">        LOGGER.info(&quot;Waiting up to {}s for {} nodes to connect (hosts: {})&quot;,</span>
+<span class="nc" id="L199">                timeoutSec, hosts.length, Arrays.toString(hosts));</span>
 
-<span class="nc" id="L196">        java.util.UUID listenerId = hazelcast.getCluster().addMembershipListener(</span>
-<span class="nc" id="L197">                new MembershipAdapter() {</span>
+<span class="nc" id="L201">        java.util.UUID listenerId = hazelcast.getCluster().addMembershipListener(</span>
+<span class="nc" id="L202">                new MembershipAdapter() {</span>
                     @Override
                     public void memberAdded(MembershipEvent e) {
-<span class="nc" id="L200">                        membershipLock.lock();</span>
+<span class="nc" id="L205">                        membershipLock.lock();</span>
                         try {
-<span class="nc" id="L202">                            membershipChanged.signalAll();</span>
+<span class="nc" id="L207">                            membershipChanged.signalAll();</span>
                         } finally {
-<span class="nc" id="L204">                            membershipLock.unlock();</span>
+<span class="nc" id="L209">                            membershipLock.unlock();</span>
                         }
-<span class="nc" id="L206">                    }</span>
+<span class="nc" id="L211">                    }</span>
                 });
 
         try {
-<span class="nc" id="L210">            boolean joined = awaitMemberCount(</span>
-<span class="nc" id="L211">                    () -&gt; hazelcast.getCluster().getMembers().size(),</span>
+<span class="nc" id="L215">            boolean joined = awaitMemberCount(</span>
+<span class="nc" id="L216">                    () -&gt; hazelcast.getCluster().getMembers().size(),</span>
                     membershipLock, membershipChanged, hosts.length,
-<span class="nc" id="L213">                    TimeUnit.SECONDS.toMillis(timeoutSec));</span>
-<span class="nc bnc" id="L214" title="All 2 branches missed.">            if (!joined) {</span>
-<span class="nc" id="L215">                long elapsed = TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - started);</span>
-<span class="nc" id="L216">                int connected = hazelcast.getCluster().getMembers().size();</span>
-<span class="nc" id="L217">                String msg = String.format(</span>
+<span class="nc" id="L218">                    TimeUnit.SECONDS.toMillis(timeoutSec));</span>
+<span class="nc bnc" id="L219" title="All 2 branches missed.">            if (!joined) {</span>
+<span class="nc" id="L220">                long elapsed = TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - started);</span>
+<span class="nc" id="L221">                int connected = hazelcast.getCluster().getMembers().size();</span>
+<span class="nc" id="L222">                String msg = String.format(</span>
                         &quot;Cluster join timeout after %ds: only %d of %d nodes connected. &quot;
                                 + &quot;Expected hosts: %s.&quot;,
-<span class="nc" id="L220">                        elapsed, connected, hosts.length, Arrays.toString(hosts));</span>
-<span class="nc" id="L221">                LOGGER.error(msg);</span>
-<span class="nc" id="L222">                throw new IllegalStateException(msg);</span>
+<span class="nc" id="L225">                        elapsed, connected, hosts.length, Arrays.toString(hosts));</span>
+<span class="nc" id="L226">                LOGGER.error(msg);</span>
+<span class="nc" id="L227">                throw new IllegalStateException(msg);</span>
             }
-<span class="nc" id="L224">        } catch (InterruptedException e) {</span>
-<span class="nc" id="L225">            Thread.currentThread().interrupt();</span>
-<span class="nc" id="L226">            throw new IllegalStateException(&quot;Interrupted while waiting for cluster join&quot;, e);</span>
+<span class="nc" id="L229">        } catch (InterruptedException e) {</span>
+<span class="nc" id="L230">            Thread.currentThread().interrupt();</span>
+<span class="nc" id="L231">            throw new IllegalStateException(&quot;Interrupted while waiting for cluster join&quot;, e);</span>
         } finally {
-<span class="nc" id="L228">            hazelcast.getCluster().removeMembershipListener(listenerId);</span>
+<span class="nc" id="L233">            hazelcast.getCluster().removeMembershipListener(listenerId);</span>
         }
 
-<span class="nc" id="L231">        long totalSec = TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - started);</span>
-<span class="nc" id="L232">        LOGGER.info(&quot;All {} nodes connected in {}s. Initializing...&quot;, hosts.length, totalSec);</span>
-<span class="nc" id="L233">    }</span>
+<span class="nc" id="L236">        long totalSec = TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - started);</span>
+<span class="nc" id="L237">        LOGGER.info(&quot;All {} nodes connected in {}s. Initializing...&quot;, hosts.length, totalSec);</span>
+<span class="nc" id="L238">    }</span>
 
     /**
      * Waits until a changing member count reaches the expected value.
@@ -247,23 +252,23 @@ import net.surpin.data.arrowflight.server.model.AppConfig;
     static boolean awaitMemberCount(IntSupplier memberCount, ReentrantLock lock,
             Condition membershipChanged, int expected, long timeoutMillis)
             throws InterruptedException {
-<span class="pc bpc" id="L250" title="2 of 4 branches missed.">        if (expected &lt;= 0 || timeoutMillis &lt;= 0) {</span>
-<span class="nc" id="L251">            throw new IllegalArgumentException(</span>
+<span class="pc bpc" id="L255" title="2 of 4 branches missed.">        if (expected &lt;= 0 || timeoutMillis &lt;= 0) {</span>
+<span class="nc" id="L256">            throw new IllegalArgumentException(</span>
                     &quot;Expected member count and timeout must be positive&quot;);
         }
 
-<span class="fc" id="L255">        long remainingNanos = TimeUnit.MILLISECONDS.toNanos(timeoutMillis);</span>
-<span class="fc" id="L256">        lock.lockInterruptibly();</span>
+<span class="fc" id="L260">        long remainingNanos = TimeUnit.MILLISECONDS.toNanos(timeoutMillis);</span>
+<span class="fc" id="L261">        lock.lockInterruptibly();</span>
         try {
-<span class="fc bfc" id="L258" title="All 2 branches covered.">            while (memberCount.getAsInt() &lt; expected) {</span>
-<span class="fc bfc" id="L259" title="All 2 branches covered.">                if (remainingNanos &lt;= 0) {</span>
-<span class="fc" id="L260">                    return false;</span>
+<span class="fc bfc" id="L263" title="All 2 branches covered.">            while (memberCount.getAsInt() &lt; expected) {</span>
+<span class="fc bfc" id="L264" title="All 2 branches covered.">                if (remainingNanos &lt;= 0) {</span>
+<span class="fc" id="L265">                    return false;</span>
                 }
-<span class="fc" id="L262">                remainingNanos = membershipChanged.awaitNanos(remainingNanos);</span>
+<span class="fc" id="L267">                remainingNanos = membershipChanged.awaitNanos(remainingNanos);</span>
             }
-<span class="fc" id="L264">            return true;</span>
+<span class="fc" id="L269">            return true;</span>
         } finally {
-<span class="fc" id="L266">            lock.unlock();</span>
+<span class="fc" id="L271">            lock.unlock();</span>
         }
     }
 
@@ -275,12 +280,12 @@ import net.surpin.data.arrowflight.server.model.AppConfig;
      * @return argument value or default
      */
     private String getArgValue(String[] args, String key, String defaultValue) {
-<span class="fc bfc" id="L278" title="All 2 branches covered.">        for (int i = 0; i &lt; args.length; i++) {</span>
-<span class="fc bfc" id="L279" title="All 4 branches covered.">            if (args[i].equals(key) &amp;&amp; i + 1 &lt; args.length) {</span>
-<span class="fc" id="L280">                return args[i + 1];</span>
+<span class="fc bfc" id="L283" title="All 2 branches covered.">        for (int i = 0; i &lt; args.length; i++) {</span>
+<span class="fc bfc" id="L284" title="All 4 branches covered.">            if (args[i].equals(key) &amp;&amp; i + 1 &lt; args.length) {</span>
+<span class="fc" id="L285">                return args[i + 1];</span>
             }
         }
-<span class="fc" id="L283">        return defaultValue;</span>
+<span class="fc" id="L288">        return defaultValue;</span>
     }
 
     /**
@@ -290,8 +295,8 @@ import net.surpin.data.arrowflight.server.model.AppConfig;
      * @throws Exception on startup failure
      */
     public static void main(String... args) throws Exception {
-<span class="nc" id="L293">        HadoopArrowFlightServer server = new HadoopArrowFlightServer();</span>
-<span class="nc" id="L294">        server.start(args);</span>
-<span class="nc" id="L295">    }</span>
+<span class="nc" id="L298">        HadoopArrowFlightServer server = new HadoopArrowFlightServer();</span>
+<span class="nc" id="L299">        server.start(args);</span>
+<span class="nc" id="L300">    }</span>
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>
