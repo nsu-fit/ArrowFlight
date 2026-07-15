@@ -32,7 +32,6 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
@@ -128,7 +127,7 @@ public final class ExecutionService {
                 hasFilter, hasGroupBy, numFiles, parsedQuery.isJoin, query);
 
         if (parsedQuery.isJoin) {
-            executeJoin(allocator, query, parsedQuery, fileUris, listener, startListener);
+            executeJoin(allocator, parsedQuery, fileUris, listener, startListener);
             return;
         }
 
@@ -331,38 +330,36 @@ public final class ExecutionService {
      * Executes JOIN queries by registering temp views in DuckDB and streaming the result.
      *
      * @param allocator     Arrow buffer allocator
-     * @param query         original SQL query
      * @param pq            parsed query with join tables
      * @param fileUris      relative file paths
      * @param listener      Flight stream listener
      * @param startListener whether to call listener.start()
      * @throws Exception on execution failure
      */
-    private void executeJoin(BufferAllocator allocator, String query, ParquetQueryParser pq,
+    private void executeJoin(BufferAllocator allocator, ParquetQueryParser pq,
             String[] fileUris, FlightProducer.ServerStreamListener listener,
             boolean startListener) throws Exception {
-
-        if (fileUris == null) {
-            fileUris = parquetAdapter.locationsForQuery(query)
-                    .keySet().toArray(new String[0]);
-        }
 
         Connection conn = duckDbAdapter.connection();
         List<String> registeredAliases = new ArrayList<>();
         try {
-            Map<String, List<String>> relativeTableFiles = joinFilesByTable(pq, fileUris);
             Map<String, List<String>> tableFiles = new LinkedHashMap<>();
-            for (Map.Entry<String, List<String>> entry : relativeTableFiles.entrySet()) {
-                tableFiles.put(entry.getKey(), ducksDbPaths(resolveUris(
-                        entry.getValue().toArray(new String[0]))));
+            for (ParquetQueryParser.JoinTable jt : pq.joinTables) {
+                String key = (jt.schema() != null ? jt.schema() + "." : "") + jt.table();
+                tableFiles.computeIfAbsent(key, k -> {
+                    try {
+                        return resolveTableFiles(k);
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                });
             }
 
             for (ParquetQueryParser.JoinTable jt : pq.joinTables) {
-                String key = joinTableKey(jt.schema(), jt.table());
+                String key = (jt.schema() != null ? jt.schema() + "." : "") + jt.table();
                 List<String> duckDbPaths = tableFiles.get(key);
                 if (duckDbPaths.isEmpty()) {
-                    throw new IOException("No planned Parquet files found for table: "
-                            + qualifiedTableName(jt.schema(), jt.table()));
+                    throw new IOException("No Parquet files found for table: " + key);
                 }
                 try (Statement stmt = conn.createStatement()) {
                     stmt.execute("CREATE OR REPLACE TEMP VIEW "
@@ -373,8 +370,6 @@ public final class ExecutionService {
                 registeredAliases.add(jt.alias());
             }
 
-            LOGGER.info("qid={} node={} execution=engine engine=DuckDB(join) tables={} files={}",
-                    LogUtil.qid(), LogUtil.node(), tableFiles.size(), fileUris.length);
             duckDbAdapter.streamSql(allocator, pq.duckDbSql, listener, startListener);
         } finally {
             try (Statement stmt = conn.createStatement()) {
@@ -387,57 +382,6 @@ public final class ExecutionService {
                 }
             }
         }
-    }
-
-    /**
-     * Groups planned JOIN shards by physical table.
-     *
-     * @param query parsed JOIN query
-     * @param fileUris planned relative file paths
-     * @return physical table key to relative file paths
-     */
-    static Map<String, List<String>> joinFilesByTable(ParquetQueryParser query,
-            String[] fileUris) {
-        Map<String, List<String>> result = new LinkedHashMap<>();
-        for (ParquetQueryParser.JoinTable table : query.joinTables) {
-            String key = joinTableKey(table.schema(), table.table());
-            result.computeIfAbsent(key, ignored -> new ArrayList<>());
-        }
-        for (String fileUri : fileUris) {
-            for (ParquetQueryParser.JoinTable table : query.joinTables) {
-                if (QueryPlanner.belongsToTable(
-                        fileUri, table.schema(), table.table())) {
-                    List<String> files = result.get(joinTableKey(table.schema(), table.table()));
-                    if (!files.contains(fileUri)) {
-                        files.add(fileUri);
-                    }
-                    break;
-                }
-            }
-        }
-        return result;
-    }
-
-    /**
-     * Builds a case-insensitive key for a physical table.
-     *
-     * @param schema schema name
-     * @param table table name
-     * @return physical table key
-     */
-    private static String joinTableKey(String schema, String table) {
-        return qualifiedTableName(schema, table).toLowerCase(Locale.ROOT);
-    }
-
-    /**
-     * Returns a schema-qualified table name when a schema is present.
-     *
-     * @param schema schema name
-     * @param table table name
-     * @return qualified table name
-     */
-    private static String qualifiedTableName(String schema, String table) {
-        return schema == null || schema.isEmpty() ? table : schema + "." + table;
     }
 
     // ── parallel aggregation ──────────────────────────────────────────────
@@ -598,6 +542,34 @@ public final class ExecutionService {
             }
             return u;
         }).toList();
+    }
+
+    /**
+     * Recursively lists Parquet files for a schema.table key.
+     *
+     * @param key schema.table or table name
+     * @return DuckDB-compatible file paths
+     * @throws IOException on HDFS read failure
+     */
+    private List<String> resolveTableFiles(String key) throws IOException {
+        int dot = key.indexOf('.');
+        String schema = dot > 0 ? key.substring(0, dot) : null;
+        String table = dot > 0 ? key.substring(dot + 1) : key;
+        Path dir = schema != null
+                ? new Path(parquetAdapter.dataDirectory(), schema + "/" + table)
+                : new Path(parquetAdapter.dataDirectory(), table);
+        List<String> uris = new ArrayList<>();
+        org.apache.hadoop.fs.RemoteIterator<org.apache.hadoop.fs.LocatedFileStatus> it =
+                parquetAdapter.fileSystem().listFiles(dir, true);
+        while (it.hasNext()) {
+            org.apache.hadoop.fs.LocatedFileStatus f = it.next();
+            if (f.isFile() && f.getPath().getName().endsWith(".parquet")) {
+                uris.add(isHdfsData()
+                        ? ducksDbPaths(List.of(aceroFileResolver.resolve(f))).get(0)
+                        : plainDuckDbPath(f.getPath()));
+            }
+        }
+        return uris;
     }
 
     /**

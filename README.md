@@ -66,6 +66,8 @@ docker compose --profile test up spark-client
 | `spark-master` | 7077, 8080 | Spark cluster master |
 | `spark-worker-1` | 8081 | Spark worker |
 | `spark-worker-2` | 8082 | Spark worker |
+| `grafana` | 3000 | Benchmark dashboard (`observability` profile) |
+| `prometheus` | 9090 | Metrics storage (`observability` profile) |
 | `data-generator` | — | Generates and distributes test Parquet files |
 | `spark-client` | — | Profiled (`--profile test`), runs `query_flight.py` |
 

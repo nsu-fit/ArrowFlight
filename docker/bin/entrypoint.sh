@@ -5,7 +5,7 @@ mode="${1:-server}"
 shift || true
 
 DEFAULT_SERVER_JAVA_OPTS=(
-  --add-modules java.se
+  --add-modules java.se,jdk.httpserver
   --add-exports java.base/jdk.internal.ref=ALL-UNNAMED
   --add-opens java.base/java.lang=ALL-UNNAMED
   --add-opens java.base/sun.nio.ch=ALL-UNNAMED
@@ -99,6 +99,7 @@ flight_server_command() {
     --localhost "${FLIGHT_LOCALHOST:-$(hostname -f)}" \
     --storage-host "${FLIGHT_LOCAL_STORAGE_HOST:-$(hostname -f)}" \
     --hazelcast-port "${HAZELCAST_PORT:-5701}" \
+    --metrics-port "${FLIGHT_METRICS_PORT:-9404}" \
     "$@")
   if [[ "${FLIGHT_SERVER_EXEC:-false}" == "true" ]]; then
     exec "${command[@]}"

@@ -19,6 +19,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import net.surpin.data.arrowflight.server.LogUtil;
+import net.surpin.data.arrowflight.server.metrics.MetricsService;
 
 /**
  * Resolves Hadoop files to local URIs that Arrow Dataset JNI can open.
@@ -103,6 +104,9 @@ final class AceroFileResolver {
 
     private void copyToCache(FileStatus status, java.nio.file.Path destination)
             throws IOException {
+        long startedNanos = System.nanoTime();
+        long copiedLength = 0L;
+        boolean successful = false;
         java.nio.file.Path destinationParent = destination.getParent();
         if (destinationParent == null) {
             throw new IOException("Cache destination has no parent directory: " + destination);
@@ -121,17 +125,21 @@ final class AceroFileResolver {
                 while ((read = input.read(buffer)) >= 0) {
                     if (read > 0) {
                         output.write(buffer, 0, read);
+                        copiedLength += read;
                     }
                 }
             }
-            long copiedLength = Files.size(temporary);
+            copiedLength = Files.size(temporary);
             if (copiedLength != status.getLen()) {
                 throw new IOException("Incomplete Hadoop file copy for " + status.getPath()
                         + ": expected " + status.getLen() + " bytes, copied " + copiedLength);
             }
             moveIntoPlace(temporary, destination);
+            successful = true;
         } finally {
             Files.deleteIfExists(temporary);
+            MetricsService.recordMaterialization(copiedLength,
+                    System.nanoTime() - startedNanos, successful);
         }
     }
 

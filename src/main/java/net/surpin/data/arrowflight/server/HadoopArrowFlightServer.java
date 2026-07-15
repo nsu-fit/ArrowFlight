@@ -19,6 +19,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.IntSupplier;
 
 import net.surpin.data.arrowflight.server.adapters.ConfigAdapter;
+import net.surpin.data.arrowflight.server.metrics.MetricsService;
 import net.surpin.data.arrowflight.server.model.AppConfig;
 
 /**
@@ -66,11 +67,12 @@ public class HadoopArrowFlightServer {
 
     private FlightServer server;
     private ServerComponent component;
+    private MetricsService metricsService;
 
     /**
      * Starts the server with command-line arguments.
      *
-     * @param args CLI arguments: --data-dir, --port, --hosts, --localhost
+     * @param args CLI arguments including data, Flight, cluster, and metrics settings
      */
     public void start(String... args) {
         AppConfig config = ConfigAdapter.getConfig();
@@ -82,6 +84,7 @@ public class HadoopArrowFlightServer {
         String storageHost = getArgValue(args, "--storage-host", localhost);
         int hazelcastPort = Integer.parseInt(
                 getArgValue(args, "--hazelcast-port", String.valueOf(config.hazelcastPort())));
+        int metricsPort = Integer.parseInt(getArgValue(args, "--metrics-port", "9404"));
 
         // Generate default host list from numServers if --hosts not explicitly set
         String hostsRaw = getArgValue(args, "--hosts", null);
@@ -130,7 +133,11 @@ public class HadoopArrowFlightServer {
                     .build();
             server.start();
 
+            metricsService = new MetricsService(metricsPort);
+            metricsService.start();
+
             LOGGER.info("Server Arrow Flight SQL started on {}", location);
+            LOGGER.info("Prometheus metrics started on 0.0.0.0:{}", metricsPort);
 
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                 LOGGER.info("Shutting down server...");
@@ -148,6 +155,11 @@ public class HadoopArrowFlightServer {
      * Stops the server and releases resources.
      */
     public void stop() {
+        if (metricsService != null) {
+            metricsService.close();
+            metricsService = null;
+            LOGGER.info("Prometheus metrics stopped");
+        }
         if (server != null) {
             server.shutdown();
             LOGGER.info("Flight SQL server stopped");

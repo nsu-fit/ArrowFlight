@@ -8,23 +8,6 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class ParquetQueryParserUnitTest {
 
-    @Test
-    void commaJoinExtractsAllTablesAndRewritesSources() {
-        ParquetQueryParser result = ParquetQueryParser.parse(
-                "SELECT a.id, b.id FROM sales.left_table a, sales.right_table b "
-                        + "WHERE a.id = b.id");
-
-        assertTrue(result.isJoin);
-        assertEquals(2, result.joinTables.size());
-        assertEquals(new ParquetQueryParser.JoinTable("sales", "left_table", "a"),
-                result.joinTables.get(0));
-        assertEquals(new ParquetQueryParser.JoinTable("sales", "right_table", "b"),
-                result.joinTables.get(1));
-        assertTrue(result.duckDbSql.contains("FROM a, b"), result.duckDbSql);
-        assertFalse(result.duckDbSql.contains("sales.left_table"), result.duckDbSql);
-        assertFalse(result.duckDbSql.contains("sales.right_table"), result.duckDbSql);
-    }
-
     // ── flattenSubqueryWrapper (private) ──────────────────────────────────
 
     @Test

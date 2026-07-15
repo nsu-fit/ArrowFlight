@@ -78,6 +78,7 @@ BENCHBASE_RATE=unlimited        # лимит requests/sec
 BENCHBASE_QUERY_TIMEOUT_SECONDS=120   # timeout BenchBase query через JDBC
 BENCHBASE_CAPTURE_TIMEOUT_SECONDS=120 # timeout повторного query для HTML-проверки
 BENCHBASE_UPDATE_PAGES=false    # не обновлять локальную pages/
+BENCHMARK_OBSERVABILITY=true    # автоматически запустить Grafana/Prometheus
 HDFS_BLOCK_SIZE_BYTES=1073741824 # shard обязан помещаться в один HDFS block
 ```
 
@@ -113,6 +114,51 @@ BENCHBASE_UPDATE_PAGES=false \
 ```
 
 ## Диагностика и остановка
+
+## Grafana и Prometheus
+
+Benchmark script по умолчанию сам запускает observability stack. Его можно
+отключить через `BENCHMARK_OBSERVABILITY=false`. Ручной запуск:
+
+```bash
+docker compose --profile observability up -d \
+  prometheus grafana node-exporter cadvisor
+```
+
+Открой `http://<linux-server>:3000/d/arrowflight-benchmark`. Dashboard
+`ArrowFlight Benchmark` создаётся автоматически. Prometheus доступен на порту
+`9090`; Grafana разрешает anonymous read-only доступ, поэтому закрой порты
+`3000` и `9090` firewall-ом от публичного интернета.
+
+Dashboard показывает:
+
+- загрузку каждого Linux CPU core, host RAM, число процессов и потоков;
+- CPU, working-set RAM и network I/O каждого Docker container;
+- heap, non-heap и потоки каждого Flight JVM;
+- active queries, failures, query rate и p95/mean server execution time;
+- logical Parquet throughput, physical disk throughput и скорость HDFS-to-Acero cache copy.
+
+`Parquet query/read duration` измеряет полный server path: получение файлов,
+scan, filter/aggregation и отправку результата. Это полезное benchmark-время, но
+не чистый kernel I/O wait. Чистый физический поток чтения смотри в
+`Linux disk I/O`; planned размер Parquet input — в `Parquet logical throughput`.
+
+Проверка targets:
+
+```bash
+curl -fsS http://localhost:9090/-/ready
+curl -fsS http://localhost:9404/metrics  # если порт Flight node опубликован вручную
+docker compose --profile observability ps
+```
+
+Остановка monitoring без удаления истории:
+
+```bash
+docker compose --profile observability stop \
+  grafana prometheus node-exporter cadvisor
+```
+
+История хранится в volumes `grafana-data` и `prometheus-data` (по умолчанию 15 дней).
 
 Логи всех benchmark services:
 

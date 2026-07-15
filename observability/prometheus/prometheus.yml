@@ -1,0 +1,30 @@
+global:
+  scrape_interval: 2s
+  evaluation_interval: 2s
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["prometheus:9090"]
+
+  - job_name: linux-host
+    static_configs:
+      - targets: ["node-exporter:9100"]
+
+  - job_name: docker-containers
+    static_configs:
+      - targets: ["cadvisor:8080"]
+
+  - job_name: arrowflight
+    static_configs:
+      - targets:
+          - server-node-1:9404
+          - server-node-2:9404
+          - server-node-3:9404
+          - server-node-4:9404
+          - server-node-5:9404
+          - server-node-6:9404
+          - server-node-7:9404
+          - server-node-8:9404
+          - server-node-9:9404
+          - server-node-10:9404

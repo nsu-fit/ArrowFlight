@@ -29,6 +29,7 @@ import java.util.List;
 import java.util.Map;
 
 import net.surpin.data.arrowflight.server.model.HandleState;
+import net.surpin.data.arrowflight.server.metrics.MetricsService;
 import net.surpin.data.arrowflight.server.services.ClusterService;
 import net.surpin.data.arrowflight.server.services.ExecutionService;
 import net.surpin.data.arrowflight.server.services.MetadataService;
@@ -117,13 +118,13 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
         long bytes = state.bytes();
         long started = System.currentTimeMillis();
         LogUtil.setQid(qid);
-        long startNanos = System.nanoTime();
-
         LOGGER.info("qid={} node={} thread={} execution=start server={} files={} bytes={} endpoint={} query='{}'",
                 qid, LogUtil.node(), Thread.currentThread().getName(),
                 serverUri, filePaths.length, bytes, qid, query);
 
         MDC.put("qid", qid);
+        MetricsService.QueryObservation observation =
+                MetricsService.observeQuery(query, bytes);
         try {
             executionService.readParquet(allocator, query, filePaths, listener, true);
             listener.completed();
@@ -132,6 +133,7 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
                     qid, LogUtil.node(), Thread.currentThread().getName(),
                     serverUri, elapsed, filePaths.length, query);
         } catch (Exception e) {
+            observation.markFailed();
             long elapsed = System.currentTimeMillis() - started;
             String failure = failureDescription(e);
             LOGGER.error("qid={} node={} thread={} execution=failed server={} elapsedMs={} files={} result=failed error='{}'",
@@ -142,6 +144,7 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
                     .withCause(e)
                     .toRuntimeException());
         } finally {
+            observation.close();
             MDC.remove("qid");
             LogUtil.setQid(null);
             if (state.serverUri() != null) {

@@ -24,6 +24,7 @@ BENCHBASE_RATE="${BENCHBASE_RATE:-unlimited}"
 BENCHBASE_DB_SCHEMA="${BENCHBASE_DB_SCHEMA:-}"
 BENCHBASE_UPDATE_PAGES="${BENCHBASE_UPDATE_PAGES:-true}"
 BENCHBASE_CAPTURE_TIMEOUT_SECONDS="${BENCHBASE_CAPTURE_TIMEOUT_SECONDS:-${BENCHBASE_QUERY_TIMEOUT_SECONDS:-120}}"
+BENCHMARK_OBSERVABILITY="${BENCHMARK_OBSERVABILITY:-true}"
 PYTHON_CMD=()
 
 usage() {
@@ -317,6 +318,15 @@ wait_service_healthy() {
 start_storage_cluster() {
   compose up --build -d hdfs-namenode spark-master "${FLIGHT_SERVER_SERVICES[@]}"
   wait_service_healthy hdfs-namenode 180
+  start_observability
+}
+
+start_observability() {
+  if [[ "${BENCHMARK_OBSERVABILITY,,}" != "true" ]]; then
+    return
+  fi
+  compose --profile observability up -d prometheus grafana node-exporter cadvisor
+  echo "Grafana: http://localhost:${GRAFANA_PORT:-3000}/d/arrowflight-benchmark"
 }
 
 start_thrift() {
@@ -726,18 +736,21 @@ case "${MODE}" in
     ;;
   run)
     BENCHBASE_DB_SCHEMA="${BENCHMARK}"
+    start_observability
     start_thrift
     verify_spark_flight
     benchbase_execute
     ;;
   run-flight)
     BENCHBASE_DB_SCHEMA="${BENCHMARK}_flight"
+    start_observability
     start_thrift
     verify_spark_schema "${BENCHBASE_DB_SCHEMA}" "FlightSource"
     benchbase_execute
     ;;
   run-direct)
     BENCHBASE_DB_SCHEMA="${BENCHMARK}_direct"
+    start_observability
     start_thrift
     verify_spark_schema "${BENCHBASE_DB_SCHEMA}" "direct Parquet"
     benchbase_execute

@@ -71,11 +71,6 @@ If a Flight server runs on a host that stores the file blocks, that node is pref
 
 The result of this phase is a grouping of files by server. A separate endpoint is created for each group.
 
-JOIN queries use a single coordinator endpoint. The planner chooses the live node
-that must fetch the fewest remote shard bytes, using current load as a tie-breaker.
-The endpoint ticket contains every required shard from every source table, so the
-client receives the final JOIN result instead of separate table scans.
-
 ## Endpoint and Location
 
 `Location` is the network address of a Flight server. It tells the client which node should be contacted to read a specific part of the result.
@@ -149,7 +144,7 @@ DuckDB is used for query shapes that need SQL execution beyond a simple scan:
 - aggregates that cannot use footer statistics
 - joins
 
-For single-table queries, `ExecutionService` builds SQL over DuckDB's `read_parquet([...])` table function. For joins, it groups the exact files from the endpoint ticket by physical table, resolves remote HDFS shards through the local cache when necessary, and creates a temporary DuckDB view for each table alias. DuckDB then executes the rewritten explicit or comma-style join SQL against those views.
+For single-table queries, `ExecutionService` builds SQL over DuckDB's `read_parquet([...])` table function. For joins, it creates temporary DuckDB views for each table alias, each view backed by `read_parquet([...])`, and then executes the rewritten join SQL against those views.
 
 DuckDB returns results through `DuckDBResultSet.arrowExportStream`. The server copies rows from DuckDB's Arrow stream into Flight batches and sends them to the client.
 

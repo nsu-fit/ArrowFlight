@@ -8,6 +8,7 @@ x-server-node-env: &server-node-env
   FLIGHT_DATA_DIR: "${HDFS_DATA_DIR:-hdfs://hdfs-namenode:8020/bench}"
   FLIGHT_LOCAL_DATA_DIR: "/staging"
   FLIGHT_PORT: "32010"
+  FLIGHT_METRICS_PORT: "9404"
   FLIGHT_HOSTS: "${FLIGHT_HOSTS:-flight-server-1,flight-server-2,flight-server-3,flight-server-4,flight-server-5,flight-server-6,flight-server-7,flight-server-8,flight-server-9,flight-server-10}"
   HAZELCAST_PORT: "5701"
   HDFS_NAMENODE_HOST: hdfs-namenode
@@ -404,6 +405,64 @@ services:
       - ./benchmarks/benchbase-spark/config:/benchbase/config/custom:ro
       - ./benchmarks/benchbase-spark/results:/benchbase/results
 
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    profiles: ["observability"]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-15d}
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.5.2
+    profiles: ["observability"]
+    depends_on:
+      - prometheus
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_AUTH_BASIC_ENABLED: "${GRAFANA_BASIC_AUTH_ENABLED:-false}"
+      GF_AUTH_DISABLE_LOGIN_FORM: "${GRAFANA_DISABLE_LOGIN_FORM:-true}"
+      GF_USERS_DEFAULT_THEME: dark
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    restart: unless-stopped
+
+  node-exporter:
+    image: quay.io/prometheus/node-exporter:v1.8.2
+    profiles: ["observability"]
+    command:
+      - --path.rootfs=/host
+      - --collector.processes
+    pid: host
+    volumes:
+      - /:/host:ro,rslave
+    restart: unless-stopped
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.2
+    profiles: ["observability"]
+    privileged: true
+    devices:
+      - /dev/kmsg:/dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
+    restart: unless-stopped
+
 volumes:
   hdfs-namenode-data:
   hdfs-datanode-1-data:
@@ -427,3 +486,5 @@ volumes:
   server-node-9-staging:
   server-node-10-staging:
   spark-warehouse:
+  prometheus-data:
+  grafana-data:
