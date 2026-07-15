@@ -52,8 +52,8 @@ public class ParquetAdapter {
     private final String localhost;
     private final JavaTypeFactoryImpl typeFactory;
 
-    private Map<String, Path> tableSchemaCache;
-    private Map<String, Map<String, Path>> tableCache;
+    private final Map<String, Path> tableSchemaCache;
+    private final Map<String, Map<String, Path>> tableCache;
     private final Map<String, Map<String, String>> tableDdlCache = new HashMap<>();
 
     /**
@@ -80,8 +80,8 @@ public class ParquetAdapter {
         this.typeFactory = new JavaTypeFactoryImpl(RelDataTypeSystem.DEFAULT);
 
         try {
-            initSchemaCache();
-            initTableCache();
+            this.tableSchemaCache = Collections.unmodifiableMap(scanSchemas());
+            this.tableCache = Collections.unmodifiableMap(scanTables());
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
@@ -428,21 +428,21 @@ public class ParquetAdapter {
      *
      * @throws IOException on HDFS read failure
      */
-    private void initSchemaCache() throws IOException {
+    private Map<String, Path> scanSchemas() throws IOException {
         LOGGER.info("Initializing schema cache for data directory: {}", dataDirectory);
         Path dirPath = new Path(dataDirectory);
 
         if (!fileSystem.exists(dirPath)) {
-            tableSchemaCache = Collections.emptyMap();
             LOGGER.info("Data directory does not exist: {}", dataDirectory);
-            return;
+            return Collections.emptyMap();
         }
 
-        tableSchemaCache = Arrays.stream(fileSystem.listStatus(dirPath))
+        Map<String, Path> result = Arrays.stream(fileSystem.listStatus(dirPath))
                 .filter(FileStatus::isDirectory)
                 .collect(Collectors.toMap(status -> status.getPath().getName(), FileStatus::getPath));
 
-        LOGGER.info("Collected schemas: {}", tableSchemaCache);
+        LOGGER.info("Collected schemas: {}", result);
+        return result;
     }
 
     /**
@@ -450,30 +450,26 @@ public class ParquetAdapter {
      *
      * @throws IOException on HDFS read failure
      */
-    private void initTableCache() throws IOException {
+    private Map<String, Map<String, Path>> scanTables() throws IOException {
         LOGGER.info("Initializing table cache for data directory: {}", dataDirectory);
         Path schemaPath = new Path(dataDirectory);
 
         if (!fileSystem.exists(schemaPath)) {
-            tableCache = Collections.emptyMap();
             LOGGER.info("Data directory does not exist: {}", dataDirectory);
-            return;
+            return Collections.emptyMap();
         }
 
-        tableCache = new HashMap<>();
-        getSchemas(null).forEach((key, value) -> {
-            LOGGER.info("Collecting tables for schema: {} at path {}", key, value);
-            try {
-                Map<String, Path> tables = Arrays.stream(fileSystem.listStatus(value))
-                        .filter(FileStatus::isDirectory)
-                        .collect(Collectors.toMap(status -> status.getPath().getName(), FileStatus::getPath));
-                tableCache.put(key, tables);
-            } catch (IOException e) {
-                throw new UncheckedIOException(e);
-            }
-        });
+        Map<String, Map<String, Path>> result = new HashMap<>();
+        for (Map.Entry<String, Path> schema : tableSchemaCache.entrySet()) {
+            LOGGER.info("Collecting tables for schema: {} at path {}", schema.getKey(), schema.getValue());
+            Map<String, Path> tables = Arrays.stream(fileSystem.listStatus(schema.getValue()))
+                    .filter(FileStatus::isDirectory)
+                    .collect(Collectors.toMap(status -> status.getPath().getName(), FileStatus::getPath));
+            result.put(schema.getKey(), tables);
+        }
 
-        LOGGER.info("Collected tables: {}", tableCache);
+        LOGGER.info("Collected tables: {}", result);
+        return result;
     }
 
     /**

@@ -55,7 +55,7 @@ public final class Client implements AutoCloseable {
     //the factory
     private static final ClientIncomingAuthHeaderMiddleware.Factory factory = new ClientIncomingAuthHeaderMiddleware.Factory(new ClientBearerHeaderHandler());
     //the existing objects of client
-    private static final java.util.Map<String, Client> clients = new java.util.HashMap<>();
+    private static final ConcurrentMap<String, Client> clients = new ConcurrentHashMap<>();
 
     //the flight client
     private final FlightClient client;
@@ -317,9 +317,7 @@ public final class Client implements AutoCloseable {
      */
     @Override
     public void close() {
-        synchronized (Client.class) {
-            Client.clients.remove(this.connectionString);
-        }
+        clients.remove(this.connectionString);
 
         Set<FlightClient> routedClients = new HashSet<>(this.endpointClients.values());
         this.endpointClients.clear();
@@ -351,9 +349,9 @@ public final class Client implements AutoCloseable {
      */
     private static final long DEFAULT_MAX_ALLOCATION = 2L * 1024 * 1024 * 1024; // 2GB
 
-    public static synchronized Client getOrCreate(Configuration config) {
+    public static Client getOrCreate(Configuration config) {
         String cs = config.getConnectionString();
-        if (!Client.clients.containsKey(cs)) {
+        return clients.computeIfAbsent(cs, key -> {
             long maxAllocation = config.getAllocationLimit() > 0
                     ? config.getAllocationLimit()
                     : DEFAULT_MAX_ALLOCATION;
@@ -373,9 +371,8 @@ public final class Client implements AutoCloseable {
             }
             final HeaderCallOption clientProperties = (!callHeaders.keys().isEmpty()) ? new HeaderCallOption(callHeaders) : null;
 
-            Client.clients.put(cs, new Client(client, authenticate(client, config.getUser(), config.getPassword(), config.getBearerToken(), clientProperties), cs, allocator, config));
-        }
-        return Client.clients.get(cs);
+            return new Client(client, authenticate(client, config.getUser(), config.getPassword(), config.getBearerToken(), clientProperties), cs, allocator, config);
+        });
     }
 
     /**

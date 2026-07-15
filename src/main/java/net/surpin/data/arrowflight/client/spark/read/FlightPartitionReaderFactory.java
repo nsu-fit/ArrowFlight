@@ -3,7 +3,6 @@ package net.surpin.data.arrowflight.client.spark.read;
 import net.surpin.data.arrowflight.client.Configuration;
 import org.apache.arrow.vector.types.DateUnit;
 import org.apache.arrow.vector.types.FloatingPointPrecision;
-import org.apache.arrow.vector.types.TimeUnit;
 import org.apache.arrow.vector.types.pojo.ArrowType;
 import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.arrow.vector.types.pojo.Schema;
@@ -77,7 +76,7 @@ public class FlightPartitionReaderFactory implements PartitionReaderFactory {
         }
         ArrowType type = field.getType();
         return switch (type.getTypeID()) {
-            case Bool, Utf8, LargeUtf8, Binary, LargeBinary, Null -> true;
+            case Bool, Utf8, LargeUtf8, Binary, LargeBinary, Null, FixedSizeBinary, Timestamp -> true;
             case FloatingPoint -> {
                 FloatingPointPrecision precision =
                         ((ArrowType.FloatingPoint) type).getPrecision();
@@ -87,9 +86,8 @@ public class FlightPartitionReaderFactory implements PartitionReaderFactory {
             case Int -> {
                 ArrowType.Int integer = (ArrowType.Int) type;
                 int bitWidth = integer.getBitWidth();
-                yield integer.getIsSigned()
-                        && (bitWidth == 8 || bitWidth == 16
-                        || bitWidth == 32 || bitWidth == 64);
+                yield bitWidth == 8 || bitWidth == 16
+                        || bitWidth == 32 || bitWidth == 64;
             }
             case Decimal -> {
                 ArrowType.Decimal decimal = (ArrowType.Decimal) type;
@@ -99,11 +97,9 @@ public class FlightPartitionReaderFactory implements PartitionReaderFactory {
                         && precision >= 1 && precision <= 38
                         && scale >= 0 && scale <= precision;
             }
-            case Date -> ((ArrowType.Date) type).getUnit() == DateUnit.DAY;
-            case Timestamp -> {
-                ArrowType.Timestamp timestamp = (ArrowType.Timestamp) type;
-                yield timestamp.getUnit() == TimeUnit.MICROSECOND
-                        && timestamp.getTimezone() != null;
+            case Date -> {
+                DateUnit unit = ((ArrowType.Date) type).getUnit();
+                yield unit == DateUnit.DAY || unit == DateUnit.MILLISECOND;
             }
             default -> false;
         };

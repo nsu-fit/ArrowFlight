@@ -5,6 +5,7 @@ import javax.inject.Singleton;
 
 import org.apache.arrow.memory.BufferAllocator;
 
+import net.surpin.data.arrowflight.server.adapters.DuckDbAdapter;
 import net.surpin.data.arrowflight.server.adapters.FlightSqlProducer;
 import net.surpin.data.arrowflight.server.services.ClusterService;
 
@@ -29,6 +30,13 @@ public interface ServerComponent {
      * @return cluster service
      */
     ClusterService clusterService();
+
+    /**
+     * Returns the DuckDB adapter for lifecycle management.
+     *
+     * @return duckdb adapter
+     */
+    DuckDbAdapter duckDb();
 
     /**
      * Returns the Arrow buffer allocator.
