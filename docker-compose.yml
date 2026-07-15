@@ -228,7 +228,7 @@ services:
     ports:
       - "32016:32010"
       - "8087:8087"
-      - "9870:9864"
+      - "9871:9864"
     networks:
       default:
         aliases:
@@ -253,7 +253,7 @@ services:
     ports:
       - "32017:32010"
       - "8088:8088"
-      - "9871:9864"
+      - "9872:9864"
     networks:
       default:
         aliases:
@@ -278,7 +278,7 @@ services:
     ports:
       - "32018:32010"
       - "8089:8089"
-      - "9872:9864"
+      - "9873:9864"
     networks:
       default:
         aliases:
@@ -303,7 +303,7 @@ services:
     ports:
       - "32019:32010"
       - "8090:8090"
-      - "9873:9864"
+      - "9874:9864"
     networks:
       default:
         aliases:
