@@ -275,6 +275,7 @@ public final class ServerModule {
                 bb.get(bytes);
                 return bytes;
             } catch (Exception e) {
+                LOGGER.warn("Substrait filter conversion failed: {}", e.getMessage());
                 return null;
             }
         };

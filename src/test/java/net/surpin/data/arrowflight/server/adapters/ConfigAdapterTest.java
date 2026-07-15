@@ -33,7 +33,7 @@ class ConfigAdapterTest {
     void getConfigDefaults() {
         AppConfig cfg = ConfigAdapter.getConfig();
 
-        assertEquals(3, cfg.numServers());
+        assertEquals(4, cfg.numServers());
         assertEquals(4096, cfg.batchSize());
         assertEquals(131072, cfg.ioFileBufferSize());
         assertTrue(cfg.ioParallelism() >= 1 && cfg.ioParallelism() <= 64);
@@ -61,9 +61,9 @@ class ConfigAdapterTest {
 
     @Test
     void getConfigNumServersDefaults() {
-        // No explicit property set, should default to 3 from arrowflight.properties
+        // No explicit property set, should default to 4 from arrowflight.properties
         AppConfig cfg = ConfigAdapter.getConfig();
-        assertEquals(3, cfg.numServers());
+        assertEquals(4, cfg.numServers());
     }
 
     @Test

@@ -74,65 +74,87 @@ public final class QueryPlanner {
     public List<FlightEndpoint> determineEndpoints(String query)
             throws IOException {
         ParquetQueryParser parsed = ParquetQueryParser.parse(query);
+        Set<String> allServerUris = validatedServerUris();
+        Map<String, Long> serverLoad = validatedServerLoad(allServerUris);
+        Map<String, FileAssignment> pathLocations = validatedPathLocations(parsed, allServerUris);
 
-        Map<String, Long> allServers = clusterService.allServerLoads();
-        if (allServers.isEmpty()) {
+        if (parsed.isJoin) {
+            return joinEndpoints(query, pathLocations, allServerUris);
+        }
+        return distributeEndpoints(query, pathLocations, serverLoad);
+    }
+
+    private Set<String> validatedServerUris() throws IOException {
+        Map<String, Long> registry = clusterService.allServerLoads();
+        if (registry.isEmpty()) {
             throw new IOException("Flight server registry is empty");
         }
-
-        Set<String> allServerUris = new LinkedHashSet<>(clusterService.filterLiveServers(allServers.keySet()));
-        if (allServerUris.isEmpty()) {
+        Set<String> uris = new LinkedHashSet<>(clusterService.filterLiveServers(registry.keySet()));
+        if (uris.isEmpty()) {
             throw new IOException("No live Flight servers are registered");
         }
-
-        Map<String, Long> serverLoad = new HashMap<>();
-        for (String uri : allServerUris) {
-            Long load = allServers.get(uri);
-            serverLoad.put(uri, load != null ? load : 0L);
-        }
-
-        Set<String> missingInventories = allServerUris.stream()
+        Set<String> missing = uris.stream()
                 .filter(uri -> !clusterService.hasFileInventory(uri))
                 .collect(Collectors.toCollection(LinkedHashSet::new));
-        if (!missingInventories.isEmpty()) {
-            throw new IOException("Flight nodes have not published file inventories: " + missingInventories);
+        if (!missing.isEmpty()) {
+            throw new IOException("Flight nodes have not published file inventories: " + missing);
         }
+        return uris;
+    }
 
+    private Map<String, Long> validatedServerLoad(Set<String> serverUris) {
+        Map<String, Long> allLoads = clusterService.allServerLoads();
+        Map<String, Long> serverLoad = new HashMap<>();
+        for (String uri : serverUris) {
+            Long load = allLoads.get(uri);
+            serverLoad.put(uri, load != null ? load : 0L);
+        }
+        return serverLoad;
+    }
+
+    private Map<String, FileAssignment> validatedPathLocations(
+            ParquetQueryParser parsed, Set<String> allServerUris) throws IOException {
         Map<String, FileAssignment> pathLocations = filterForQuery(
                 clusterService.fileLocations(), parsed);
         if (pathLocations.isEmpty()) {
-            throw new IOException("No distributed Parquet files found for query: " + query);
+            throw new IOException("No distributed Parquet files found for query: " + parsed);
         }
         for (Map.Entry<String, FileAssignment> file : pathLocations.entrySet()) {
-            boolean hasLiveOwner = file.getValue().hosts().stream().anyMatch(allServerUris::contains);
+            boolean hasLiveOwner = file.getValue().hosts().stream()
+                    .anyMatch(allServerUris::contains);
             if (!hasLiveOwner) {
                 throw new IOException("No live Flight node owns required shard: " + file.getKey());
             }
         }
         requireShardCoverage(pathLocations, parsed, allServerUris);
+        return pathLocations;
+    }
 
-        if (parsed.isJoin) {
-            String allFilesServer = findServerWithAllFiles(pathLocations, allServerUris);
-            if (allFilesServer != null) {
-                long addedBytes = pathLocations.values().stream()
-                        .mapToLong(FileAssignment::size).sum();
-                FlightEndpoint ep = createEndpoint(
-                        allFilesServer, new ArrayList<>(pathLocations.keySet()), query, addedBytes);
-                clusterService.addLoad(allFilesServer, addedBytes);
-                return List.of(ep);
-            }
+    private List<FlightEndpoint> joinEndpoints(String query,
+            Map<String, FileAssignment> pathLocations, Set<String> allServerUris)
+            throws IOException {
+        String allFilesServer = findServerWithAllFiles(pathLocations, allServerUris);
+        if (allFilesServer == null) {
             throw new IOException(
                     "Server-side joins require all input shards on one Flight node; "
                             + "Spark must execute this distributed join");
         }
+        long addedBytes = pathLocations.values().stream()
+                .mapToLong(FileAssignment::size).sum();
+        FlightEndpoint ep = createEndpoint(allFilesServer,
+                new ArrayList<>(pathLocations.keySet()), query, addedBytes);
+        clusterService.addLoad(allFilesServer, addedBytes);
+        return List.of(ep);
+    }
 
+    private List<FlightEndpoint> distributeEndpoints(String query,
+            Map<String, FileAssignment> pathLocations, Map<String, Long> serverLoad) {
         Map<String, List<String>> serverToFiles = new LinkedHashMap<>();
         Map<String, Long> serverAdditions = new HashMap<>();
         for (Map.Entry<String, FileAssignment> entry : pathLocations.entrySet()) {
-            String path = entry.getKey();
             FileAssignment fa = entry.getValue();
             String bestServer = pickServer(fa.hosts(), serverLoad);
-            serverToFiles.computeIfAbsent(bestServer, k -> new ArrayList<>()).add(path);
+            serverToFiles.computeIfAbsent(bestServer, k -> new ArrayList<>()).add(entry.getKey());
             serverLoad.merge(bestServer, fa.size(), Long::sum);
             serverAdditions.merge(bestServer, fa.size(), Long::sum);
         }
@@ -142,15 +164,7 @@ public final class QueryPlanner {
             long addedBytes = serverAdditions.getOrDefault(entry.getKey(), 0L);
             endpoints.add(createEndpoint(entry.getKey(), entry.getValue(), query, addedBytes));
             clusterService.addLoad(entry.getKey(), addedBytes);
-            List<String> fileList = entry.getValue();
-            LOGGER.info("qid={} node={} planning=endpoint server={} files={} bytes={} paths={}",
-                    LogUtil.qid(), LogUtil.node(), entry.getKey(),
-                    fileList.size(), addedBytes, fileList);
         }
-        LOGGER.info("qid={} node={} planning=complete servers={} endpoints={} files={} totalBytes={} query='{}'",
-                LogUtil.qid(), LogUtil.node(),
-                allServerUris.size(), endpoints.size(), pathLocations.size(),
-                pathLocations.values().stream().mapToLong(FileAssignment::size).sum(), query);
         return endpoints;
     }
 
