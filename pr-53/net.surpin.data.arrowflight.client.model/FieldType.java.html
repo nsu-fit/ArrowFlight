@@ -1,0 +1,420 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>FieldType.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Hadoop Arrow Flight SQL Server</a> &gt; <a href="index.source.html" class="el_package">net.surpin.data.arrowflight.client.model</a> &gt; <span class="el_source">FieldType.java</span></div><h1>FieldType.java</h1><pre class="source lang-java linenums">package net.surpin.data.arrowflight.client.model;
+
+import org.apache.arrow.vector.types.pojo.ArrowType;
+import org.apache.spark.sql.types.DataTypes;
+import org.apache.spark.sql.types.Metadata;
+import java.io.Serializable;
+import java.util.Arrays;
+import java.util.Map;
+import java.util.function.Function;
+import org.apache.spark.sql.types.YearMonthIntervalType;
+import org.apache.spark.sql.types.DayTimeIntervalType;
+
+/**
+ * Describes the data-type of a Field
+ */
+public class FieldType implements Serializable {
+    /**
+     * The ID of each type
+     */
+<span class="fc" id="L20">    public enum IDs {</span>
+<span class="fc" id="L21">        NULL,                           //Null object</span>
+<span class="fc" id="L22">        BOOLEAN,                        //Boolean</span>
+<span class="fc" id="L23">        BYTE,                           //Byte</span>
+<span class="fc" id="L24">        CHAR,                           //Character</span>
+<span class="fc" id="L25">        SHORT,                          //Short</span>
+<span class="fc" id="L26">        INT,                            //Integer</span>
+<span class="fc" id="L27">        LONG,                           //Long</span>
+<span class="fc" id="L28">        BIGINT,                         //Big Integer</span>
+<span class="fc" id="L29">        FLOAT,                          //Float</span>
+<span class="fc" id="L30">        DOUBLE,                         //Double</span>
+<span class="fc" id="L31">        DECIMAL,                        //BidDecimal</span>
+<span class="fc" id="L32">        VARCHAR,                        //String</span>
+<span class="fc" id="L33">        BYTES,                          //byte[]</span>
+<span class="fc" id="L34">        DATE,                           //LocalDate</span>
+<span class="fc" id="L35">        TIME,                           //LocalTime</span>
+<span class="fc" id="L36">        TIMESTAMP,                      //TimeStamp</span>
+<span class="fc" id="L37">        PERIOD_YEAR_MONTH,              //Period - year with month</span>
+<span class="fc" id="L38">        DURATION_DAY_TIME,              //Period - day with time</span>
+<span class="fc" id="L39">        PERIOD_DURATION_MONTH_DAY_TIME, //Period - month with day</span>
+<span class="fc" id="L40">        LIST,                           //List&lt;?&gt;</span>
+<span class="fc" id="L41">        MAP,                            //Map&lt;String, ?&gt;</span>
+<span class="fc" id="L42">        STRUCT                          //Struct</span>
+    }
+
+    /**
+     * Decimal Type
+     */
+    public static class DecimalType extends FieldType {
+        private final int precision;
+        private final int scale;
+
+        /**
+         * Constructs a DecimalType with given precision and scale.
+         * @param precision decimal precision
+         * @param scale decimal scale
+         */
+        public DecimalType(int precision, int scale) {
+<span class="fc" id="L58">            super(IDs.DECIMAL);</span>
+<span class="fc" id="L59">            this.precision = precision;</span>
+<span class="fc" id="L60">            this.scale = scale;</span>
+<span class="fc" id="L61">        }</span>
+
+        /**
+         * Gets the decimal precision.
+         * @return precision
+         */
+        public int getPrecision() {
+<span class="fc" id="L68">            return this.precision;</span>
+        }
+        /**
+         * Gets the decimal scale.
+         * @return scale
+         */
+        public int getScale() {
+<span class="fc" id="L75">            return this.scale;</span>
+        }
+    }
+
+    /**
+     * Binary Type
+     */
+    public static class BinaryType extends FieldType {
+        private final int byteWidth;
+
+        /**
+         * Constructs a BinaryType with fixed byte width.
+         * @param byteWidth byte width (-1 for variable)
+         */
+        public BinaryType(int byteWidth) {
+<span class="fc" id="L90">            super(IDs.BYTES);</span>
+<span class="fc" id="L91">            this.byteWidth = byteWidth;</span>
+<span class="fc" id="L92">        }</span>
+
+        /**
+         * Gets the byte width of the binary type.
+         * @return byte width
+         */
+        public int getByteWidth() {
+<span class="fc" id="L99">            return this.byteWidth;</span>
+        }
+    }
+
+    /**
+     * List Type
+     */
+    public static class ListType extends FieldType {
+        private final int length;
+        private final FieldType childType;
+
+        /**
+         * Constructs a fixed-size ListType.
+         * @param length fixed length (-1 for dynamic)
+         * @param childType element type
+         */
+        public ListType(int length, FieldType childType) {
+<span class="fc" id="L116">            super(IDs.LIST);</span>
+<span class="fc" id="L117">            this.length = length;</span>
+<span class="fc" id="L118">            this.childType = childType;</span>
+<span class="fc" id="L119">        }</span>
+        /**
+         * Constructs a dynamic-size ListType.
+         * @param childType element type
+         */
+        public ListType(FieldType childType) {
+            //dynamic size of list
+<span class="fc" id="L126">            this(-1, childType);</span>
+<span class="fc" id="L127">        }</span>
+
+        /**
+         * Gets the fixed length of the list.
+         * @return length (-1 if dynamic)
+         */
+        public int getLength() {
+<span class="fc" id="L134">            return this.length;</span>
+        }
+        /**
+         * Gets the element type of the list.
+         * @return child field type
+         */
+        public FieldType getChildType() {
+<span class="fc" id="L141">            return this.childType;</span>
+        }
+    }
+
+    /**
+     * May Type
+     */
+    public static class MapType extends FieldType {
+        private final FieldType keyType;
+        private final FieldType valueType;
+
+        /**
+         * Constructs a MapType with key and value types.
+         * @param keyType key field type
+         * @param valueType value field type
+         */
+        public MapType(FieldType keyType, FieldType valueType) {
+<span class="fc" id="L158">            super(IDs.MAP);</span>
+<span class="fc" id="L159">            this.keyType = keyType;</span>
+<span class="fc" id="L160">            this.valueType = valueType;</span>
+<span class="fc" id="L161">        }</span>
+
+        /**
+         * Gets the key type of the map.
+         * @return key field type
+         */
+        public FieldType getKeyType() {
+<span class="fc" id="L168">            return this.keyType;</span>
+        }
+        /**
+         * Gets the value type of the map.
+         * @return value field type
+         */
+        public FieldType getValueType() {
+<span class="fc" id="L175">            return this.valueType;</span>
+        }
+    }
+
+    /**
+     * Struct Type
+     */
+    public static class StructType extends FieldType {
+        private final Map&lt;String, FieldType&gt; childrenType;
+
+        /**
+         * Constructs a StructType with child fields.
+         * @param childrenType map of field name to field type
+         */
+        public StructType(Map&lt;String, FieldType&gt; childrenType) {
+<span class="fc" id="L190">            super(IDs.STRUCT);</span>
+<span class="fc" id="L191">            this.childrenType = childrenType;</span>
+<span class="fc" id="L192">        }</span>
+
+        /**
+         * Gets the child field types.
+         * @return map of field name to field type
+         */
+        public Map&lt;String, FieldType&gt; getChildrenType() {
+<span class="fc" id="L199">            return this.childrenType;</span>
+        }
+    }
+
+    /**
+     * Union Type
+     */
+    public static class UnionType extends StructType {
+        /**
+         * Constructs a UnionType with child fields.
+         * @param childrenType map of field name to field type
+         */
+        public UnionType(Map&lt;String, FieldType&gt; childrenType) {
+<span class="fc" id="L212">            super(childrenType);</span>
+<span class="fc" id="L213">        }</span>
+    }
+
+    //the type value
+    private final IDs typeId;
+
+    /**
+     * Construct a FieldType object
+     * @param typeId - the id of the type
+     */
+<span class="fc" id="L223">    public FieldType(IDs typeId) {</span>
+<span class="fc" id="L224">        this.typeId = typeId;</span>
+<span class="fc" id="L225">    }</span>
+
+    /**
+     * Get the Type ID
+     * @return - the type ID
+     */
+    public IDs getTypeID() {
+<span class="fc" id="L232">        return this.typeId;</span>
+    }
+
+    /**
+     * Convert an arrow-type to field-type
+     * @param at - the arrow type
+     * @param children - any children of the arrow-type
+     * @return - the converted field-type
+     */
+    public static FieldType fromArrow(ArrowType at, java.util.List&lt;org.apache.arrow.vector.types.pojo.Field&gt; children) {
+<span class="fc bfc" id="L242" title="All 16 branches covered.">        switch (at.getTypeID()) {</span>
+            case Int:
+<span class="fc" id="L244">                ArrowType.Int it = (ArrowType.Int) at;</span>
+<span class="fc bfc" id="L245" title="All 4 branches covered.">                switch (it.getBitWidth()) {</span>
+                    case 8:
+<span class="fc bfc" id="L247" title="All 2 branches covered.">                        return new FieldType(it.getIsSigned() ? IDs.BYTE : IDs.SHORT);</span>
+                    case 16:
+<span class="fc bfc" id="L249" title="All 2 branches covered.">                        return new FieldType(it.getIsSigned() ? IDs.SHORT : IDs.INT);</span>
+                    case 64:
+<span class="fc bfc" id="L251" title="All 2 branches covered.">                        return new FieldType(it.getIsSigned() ? IDs.LONG : IDs.BIGINT);</span>
+                    case 32:
+                    default:
+<span class="fc bfc" id="L254" title="All 2 branches covered.">                        return new FieldType(it.getIsSigned() ? IDs.INT : IDs.LONG);</span>
+                }
+            case Utf8:
+            case LargeUtf8:
+<span class="fc" id="L258">                return new FieldType(IDs.VARCHAR);</span>
+            case Decimal:
+<span class="fc" id="L260">                ArrowType.Decimal d = (ArrowType.Decimal) at;</span>
+<span class="fc" id="L261">                return new DecimalType(d.getPrecision(), d.getScale());</span>
+            case Date:
+<span class="fc" id="L263">                return new FieldType(IDs.DATE);</span>
+            case Time:
+<span class="fc" id="L265">                return new FieldType(IDs.TIME);</span>
+            case Timestamp:
+<span class="fc" id="L267">                return new FieldType(IDs.TIMESTAMP);</span>
+            case FloatingPoint:
+<span class="fc bfc" id="L269" title="All 2 branches covered.">                switch (((ArrowType.FloatingPoint) at).getPrecision()) {</span>
+                    case HALF:
+                    case SINGLE:
+<span class="fc" id="L272">                        return new FieldType(IDs.FLOAT);</span>
+                    case DOUBLE:
+                    default:
+<span class="fc" id="L275">                        return new FieldType(IDs.DOUBLE);</span>
+                }
+            case Interval:
+<span class="fc bfc" id="L278" title="All 3 branches covered.">                switch (((ArrowType.Interval) at).getUnit()) {</span>
+                    case YEAR_MONTH:
+<span class="fc" id="L280">                        return new FieldType(IDs.PERIOD_YEAR_MONTH);</span>
+                    case DAY_TIME:
+<span class="fc" id="L282">                        return new FieldType(IDs.DURATION_DAY_TIME);</span>
+                    case MONTH_DAY_NANO:
+                    default:
+<span class="fc" id="L285">                        return new FieldType(IDs.PERIOD_DURATION_MONTH_DAY_TIME);</span>
+                }
+            case Duration:
+<span class="fc" id="L288">                return new FieldType(IDs.PERIOD_DURATION_MONTH_DAY_TIME);</span>
+            case Bool:
+<span class="fc" id="L290">                return new FieldType(IDs.BOOLEAN);</span>
+            case Struct:
+            case Union:
+<span class="fc" id="L293">                Map&lt;String, FieldType&gt; scType = new java.util.LinkedHashMap&lt;&gt;();</span>
+<span class="fc bfc" id="L294" title="All 2 branches covered.">                if (children != null) {</span>
+<span class="fc" id="L295">                    children.forEach(c -&gt; scType.put(c.getName(), FieldType.fromArrow(c.getType(), c.getChildren())));</span>
+                }
+<span class="fc bfc" id="L297" title="All 2 branches covered.">                return (at.getTypeID() == ArrowType.ArrowTypeID.Struct) ? new StructType(scType) : new UnionType(scType);</span>
+            case Map:
+<span class="fc" id="L299">                FieldType keyType = null;</span>
+<span class="fc" id="L300">                FieldType valueType = null;</span>
+<span class="pc bpc" id="L301" title="1 of 2 branches missed.">                if (children != null) {</span>
+<span class="fc bfc" id="L302" title="All 2 branches covered.">                    if (children.size() == 1) {</span>
+<span class="fc" id="L303">                        FieldType mcType = FieldType.fromArrow(children.get(0).getType(), children.get(0).getChildren());</span>
+<span class="pc bpc" id="L304" title="1 of 2 branches missed.">                        if (mcType.getTypeID() == IDs.STRUCT)  {</span>
+<span class="fc" id="L305">                            Map&lt;String, FieldType&gt; cldType = ((StructType) mcType).getChildrenType();</span>
+<span class="fc" id="L306">                            String[] keys = cldType.keySet().toArray(new String[0]);</span>
+<span class="pc bpc" id="L307" title="3 of 6 branches missed.">                            if (keys.length == 2 &amp;&amp; keys[0].equalsIgnoreCase(&quot;Key&quot;) &amp;&amp; keys[1].equalsIgnoreCase(&quot;value&quot;)) {</span>
+<span class="fc" id="L308">                                keyType = cldType.get(&quot;key&quot;);</span>
+<span class="fc" id="L309">                                valueType = cldType.get(&quot;value&quot;);</span>
+                            }
+                        }
+<span class="fc bfc" id="L312" title="All 2 branches covered.">                    } else if (children.size() == 2) {</span>
+<span class="fc" id="L313">                        keyType = FieldType.fromArrow(children.get(0).getType(), children.get(0).getChildren());</span>
+<span class="fc" id="L314">                        valueType = FieldType.fromArrow(children.get(1).getType(), children.get(1).getChildren());</span>
+                    }
+                }
+<span class="pc bpc" id="L317" title="1 of 4 branches missed.">                if (keyType == null || valueType == null) {</span>
+<span class="fc" id="L318">                    throw new RuntimeException(&quot;Invalid map-type.&quot;);</span>
+                }
+<span class="fc" id="L320">                return new MapType(keyType, valueType);</span>
+            case List:
+            case LargeList:
+            case FixedSizeList:
+<span class="pc bpc" id="L324" title="1 of 4 branches missed.">                FieldType lcType = (children != null &amp;&amp; children.size() &gt; 0) ? FieldType.fromArrow(children.get(0).getType(), children.get(0).getChildren()) : null;</span>
+<span class="fc bfc" id="L325" title="All 2 branches covered.">                return (at.getTypeID() == ArrowType.ArrowTypeID.FixedSizeList) ? new ListType(((ArrowType.FixedSizeList) at).getListSize(), lcType) : new ListType(lcType);</span>
+            case Binary:
+            case LargeBinary:
+<span class="fc" id="L328">                return new BinaryType(-1);</span>
+            case FixedSizeBinary:
+<span class="fc" id="L330">                return new BinaryType(((ArrowType.FixedSizeBinary) at).getByteWidth());</span>
+            case Null:
+            case NONE:
+            default:
+<span class="fc" id="L334">                return new FieldType(IDs.NULL);</span>
+        }
+    }
+
+    //Convert to Spark DecimalType
+<span class="fc" id="L339">    private static final Function&lt;FieldType, org.apache.spark.sql.types.DecimalType&gt; toDecimalType = t -&gt; {</span>
+<span class="fc" id="L340">        DecimalType dt = (DecimalType) t;</span>
+<span class="fc" id="L341">        return new org.apache.spark.sql.types.DecimalType(dt.getPrecision(), dt.getScale());</span>
+    };
+<span class="fc" id="L343">    private static final Function&lt;StructType, org.apache.spark.sql.types.DataType&gt; toStructType = t -&gt; {</span>
+<span class="fc" id="L344">        org.apache.spark.sql.types.MapType mt = null;</span>
+<span class="fc" id="L345">        java.util.List&lt;Map.Entry&lt;String, FieldType&gt;&gt; entries = new java.util.ArrayList&lt;&gt;(t.getChildrenType().entrySet());</span>
+<span class="pc bpc" id="L346" title="5 of 6 branches missed.">        if (entries.size() == 1 &amp;&amp; entries.get(0).getKey().equals(&quot;map&quot;) &amp;&amp; entries.get(0).getValue().getTypeID() == IDs.LIST) {</span>
+<span class="nc" id="L347">            ListType lt = (ListType) entries.get(0).getValue();</span>
+<span class="nc bnc" id="L348" title="All 2 branches missed.">            if (lt.getChildType().getTypeID() == IDs.STRUCT) {</span>
+<span class="nc" id="L349">                StructType st = (StructType) lt.getChildType();</span>
+<span class="nc bnc" id="L350" title="All 2 branches missed.">                if (st.getTypeID() == IDs.STRUCT) {</span>
+<span class="nc" id="L351">                    java.util.List&lt;Map.Entry&lt;String, FieldType&gt;&gt; children = new java.util.ArrayList&lt;&gt;(st.getChildrenType().entrySet());</span>
+<span class="nc bnc" id="L352" title="All 6 branches missed.">                    if (children.size() == 2 &amp;&amp; children.get(0).getKey().equals(&quot;key&quot;) &amp;&amp; children.get(1).getKey().equals(&quot;value&quot;)) {</span>
+<span class="nc" id="L353">                        mt = new org.apache.spark.sql.types.MapType(FieldType.toSpark(children.get(0).getValue()), FieldType.toSpark(children.get(1).getValue()), true);</span>
+                    }
+                }
+            }
+        }
+<span class="pc bpc" id="L358" title="1 of 2 branches missed.">        return (mt != null) ? mt : new org.apache.spark.sql.types.StructType(t.getChildrenType().entrySet().stream().map(e -&gt; new org.apache.spark.sql.types.StructField(e.getKey(), FieldType.toSpark(e.getValue()), true, Metadata.empty())).toArray(org.apache.spark.sql.types.StructField[]::new));</span>
+    };
+    //convert to Spark ListType
+<span class="fc" id="L361">    private static final Function&lt;ListType, org.apache.spark.sql.types.ArrayType&gt; toListType = t -&gt; org.apache.spark.sql.types.ArrayType.apply(FieldType.toSpark(t.getChildType()));</span>
+    //convert to Spark MapType
+<span class="fc" id="L363">    private static final Function&lt;MapType, org.apache.spark.sql.types.MapType&gt; toMapType = t -&gt; org.apache.spark.sql.types.MapType.apply(FieldType.toSpark(t.getKeyType()), FieldType.toSpark(t.getValueType()));</span>
+
+    /**
+     * Converts a FieldType to a Spark DataType.
+     * @param ft the field type to convert
+     * @return corresponding Spark DataType
+     */
+    public static org.apache.spark.sql.types.DataType toSpark(FieldType ft) {
+<span class="fc bfc" id="L371" title="All 19 branches covered.">        switch (ft.getTypeID()) {</span>
+            case INT:
+<span class="fc" id="L373">                return DataTypes.IntegerType;</span>
+            case CHAR:
+            case VARCHAR:
+            case TIME:
+<span class="fc" id="L377">                return DataTypes.StringType;</span>
+            case LONG:
+            case BIGINT:
+<span class="fc" id="L380">                return DataTypes.LongType;</span>
+            case FLOAT:
+<span class="fc" id="L382">                return DataTypes.FloatType;</span>
+            case DOUBLE:
+<span class="fc" id="L384">                return DataTypes.DoubleType;</span>
+            case DECIMAL:
+<span class="fc" id="L386">                return toDecimalType.apply(ft);</span>
+            case DATE:
+<span class="fc" id="L388">                return DataTypes.DateType;</span>
+            case TIMESTAMP:
+<span class="fc" id="L390">                return DataTypes.TimestampType;</span>
+            case BOOLEAN:
+<span class="fc" id="L392">                return DataTypes.BooleanType;</span>
+            case BYTE:
+<span class="fc" id="L394">                return DataTypes.ByteType;</span>
+            case SHORT:
+<span class="fc" id="L396">                return DataTypes.ShortType;</span>
+            case BYTES:
+<span class="fc" id="L398">                return DataTypes.BinaryType;</span>
+            case PERIOD_YEAR_MONTH:
+<span class="fc" id="L400">                return new YearMonthIntervalType(YearMonthIntervalType.YEAR(), YearMonthIntervalType.MONTH());</span>
+            case DURATION_DAY_TIME:
+<span class="fc" id="L402">                return new DayTimeIntervalType(DayTimeIntervalType.DAY(), DayTimeIntervalType.SECOND());</span>
+            case PERIOD_DURATION_MONTH_DAY_TIME:
+<span class="fc" id="L404">                return new org.apache.spark.sql.types.StructType(Arrays.stream(new org.apache.spark.sql.types.StructField[] {</span>
+<span class="fc" id="L405">                    new org.apache.spark.sql.types.StructField(&quot;period&quot;, new YearMonthIntervalType(YearMonthIntervalType.YEAR(), YearMonthIntervalType.MONTH()), true, Metadata.empty()),</span>
+<span class="fc" id="L406">                    new org.apache.spark.sql.types.StructField(&quot;duration&quot;, new DayTimeIntervalType(DayTimeIntervalType.DAY(), DayTimeIntervalType.SECOND()), true, Metadata.empty())</span>
+<span class="fc" id="L407">                }).toArray(org.apache.spark.sql.types.StructField[]::new));</span>
+            case LIST:
+<span class="fc" id="L409">                return toListType.apply((ListType) ft);</span>
+            case MAP:
+<span class="fc" id="L411">                return toMapType.apply((MapType) ft);</span>
+            case STRUCT:
+<span class="fc" id="L413">                return toStructType.apply((StructType) ft);</span>
+            case NULL:
+            default:
+<span class="fc" id="L416">                return DataTypes.NullType;</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

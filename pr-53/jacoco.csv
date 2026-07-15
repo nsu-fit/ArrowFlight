@@ -1,0 +1,91 @@
+GROUP,PACKAGE,CLASS,INSTRUCTION_MISSED,INSTRUCTION_COVERED,BRANCH_MISSED,BRANCH_COVERED,LINE_MISSED,LINE_COVERED,COMPLEXITY_MISSED,COMPLEXITY_COVERED,METHOD_MISSED,METHOD_COVERED
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client,Client,1493,0,134,0,256,0,109,0,42,0
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client,Configuration,143,251,7,15,48,47,29,14,24,8
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.query,QueryEndpoints,6,17,0,0,2,6,2,2,2,2
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.query,Endpoint,6,62,1,3,2,14,3,3,2,2
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.query,QueryStatement,4,118,2,26,0,14,2,15,0,3
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.query,PushAggregation,0,25,0,0,0,10,0,4,0,4
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.spark,FlightSessionCatalog,153,0,14,0,31,0,12,0,5,0
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.spark,FlightTable,340,0,22,0,41,0,34,0,23,0
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.spark,FlightSource,265,0,28,0,45,0,21,0,7,0
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.spark,FlightRelation.FlightRowIterator,99,0,14,0,32,0,13,0,6,0
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.spark,FlightRelation,257,0,20,0,56,0,27,0,17,0
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.model,HandleState,0,31,0,0,0,3,0,3,0,3
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.model,AppConfig,0,72,0,0,0,1,0,1,0,1
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.model,FileAssignment,0,9,0,0,0,1,0,1,0,1
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.write,WriteProtocol,0,15,0,0,0,3,0,1,0,1
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.write,PartitionBehavior.Bound,12,91,1,1,0,8,1,5,0,5
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.write,WriteStatement,5439,208,165,13,214,51,278,12,195,6
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.write,WriteBehavior,9,49,0,6,3,13,3,7,3,4
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.write,PartitionBehavior,10,487,15,33,4,46,14,32,0,22
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.services,MetadataService,663,568,52,31,134,132,56,34,25,22
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.services,ExecutionService,2608,440,349,74,495,96,217,46,30,16
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.services,ParquetQueryParser.JoinTable,0,12,0,0,0,1,0,1,0,1
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.services,ParquetQueryParser.SelectExpr,0,36,0,2,0,11,0,3,0,2
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.services,ParquetQueryParser.SelectExpr.AggFunc,0,39,0,0,0,1,0,1,0,1
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.services,ParquetQueryParser,55,925,17,87,16,208,20,50,4,14
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.services,QueryPlanner,516,328,50,24,92,60,33,22,6,12
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.services,ClusterService,201,258,21,9,41,57,19,17,7,14
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.services,AceroFileResolver,110,418,17,23,16,79,17,13,1,9
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.model,FieldType.ListType,0,21,0,0,0,8,0,4,0,4
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.model,RowSet.Row,0,20,0,0,0,6,0,3,0,3
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.model,Table,376,667,47,79,51,114,44,57,13,25
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.model,Field,25,61,1,5,2,15,4,9,3,7
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.model,FieldType.BinaryType,0,10,0,0,0,4,0,2,0,2
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.model,FieldType.DecimalType,0,16,0,0,0,6,0,3,0,3
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.model,FieldType.MapType,0,16,0,0,0,6,0,3,0,3
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.model,FieldVector,25,0,0,0,7,0,4,0,4,0
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.model,FieldType,88,517,23,75,7,85,16,63,0,13
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.model,FieldType.IDs,0,135,0,0,0,23,0,1,0,1
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.model,FieldType.UnionType,0,4,0,0,0,2,0,1,0,1
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.model,ArrowConversion,6535,620,473,2,542,195,505,8,263,7
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.model,FieldType.StructType,0,10,0,0,0,4,0,2,0,2
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.model,RowSet,3,41,0,2,1,11,1,5,1,4
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.metrics,MetricsService.QueryMetrics,0,30,0,0,0,6,0,1,0,1
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.metrics,MetricsService,34,579,15,13,9,130,13,22,0,21
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.metrics,MetricsService.QueryObservation,1,93,3,5,1,23,3,5,0,4
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.spark.write,FlightDataWriter,327,0,16,0,63,0,19,0,11,0
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.spark.write,FlightDataWriterFactory,110,0,6,0,18,0,7,0,4,0
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.spark.write,FlightWriteBuilder,32,0,0,0,9,0,3,0,3,0
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.spark.write,FlightWriterCommitMessage,0,107,1,3,0,20,1,5,0,4
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.spark.write,FlightWrite,165,0,8,0,28,0,21,0,17,0
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.spark.write,FlightWriteAbortException,0,59,0,0,0,6,0,4,0,4
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.spark.read,FlightInputPartition,0,15,0,0,0,5,0,3,0,3
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.spark.read,FlightPartitionReaderFactory,59,99,18,18,12,23,17,9,2,4
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.spark.read,FlightInputPartition.FlightQueryInputPartition,3,7,0,0,1,3,1,1,1,1
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.spark.read,FlightPartitionReader,1673,0,191,0,352,0,118,0,20,0
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.spark.read,FlightBatch,112,0,2,0,16,0,9,0,8,0
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.spark.read,FlightScan,41,0,0,0,10,0,5,0,5,0
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.spark.read,FlightColumnarPartitionReader,197,0,26,0,47,0,20,0,7,0
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.spark.read,FlightColumnarPartitionReader.FlightOwnedColumnarBatch,6,0,0,0,3,0,2,0,2,0
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.spark.read,FlightArrowColumnVector,675,0,127,0,124,0,95,0,22,0
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.spark.read,FlightInputPartition.FlightEndpointInputPartition,10,0,0,0,4,0,2,0,2,0
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.spark.read,FlightScanBuilder,195,814,69,91,39,147,56,47,2,21
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.adapters,HostUtils,2,82,3,15,1,23,3,8,0,2
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.adapters,DuckDbAdapter,642,632,96,76,134,129,67,50,10,16
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.adapters,HazelcastAdapter,110,4,2,0,27,1,9,1,8,1
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.adapters,AceroAdapter.RegisteredArrowStreams,122,0,10,0,40,0,10,0,5,0
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.adapters,FilterConverter.1.new ScalarFunctionConverter() {...},12,102,2,10,1,13,3,7,1,3
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.adapters,SchemaConverter.TypeInfo,121,157,0,0,20,4,1,2,1,2
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.adapters,ParquetAdapter,754,402,56,18,129,91,46,25,16,18
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.adapters,SchemaConverter,278,835,35,51,32,78,26,35,0,9
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.adapters,FlightSqlProducer,861,0,58,0,225,0,51,0,22,0
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.adapters,AceroAdapter,772,0,40,0,155,0,28,0,8,0
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.adapters,DuckDbAdapter.new InputFile() {...},22,0,0,0,3,0,3,0,3,0
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.adapters,DuckDbAdapter.new InputFile() {...},22,0,0,0,3,0,3,0,3,0
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.adapters,ConfigAdapter,35,428,24,52,7,81,23,24,0,9
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.adapters,FilterConverter.new ConverterProvider() {...},0,28,0,0,0,5,0,2,0,2
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.adapters,ParquetAdapter.new InputFile() {...},23,0,0,0,3,0,3,0,3,0
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.adapters,FilterConverter,34,66,6,4,8,20,4,5,0,4
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server,DaggerServerComponent.Builder,17,0,0,0,4,0,2,0,2,0
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server,HadoopArrowFlightServer.new MembershipAdapter() {...},19,0,0,0,5,0,2,0,2,0
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server,DaggerServerComponent.ServerComponentImpl,154,0,0,0,23,0,6,0,6,0
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server,ServerModule,214,0,6,0,49,0,20,0,17,0
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server,ServerModule.new AbstractExecutorService() {...},153,0,4,0,29,0,11,0,9,0
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server,LogUtil,96,64,15,5,26,15,14,5,5,4
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server,HadoopArrowFlightServer,463,129,29,17,111,29,24,10,6,5
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.debug,SparkArrowClientBenchmark,1324,0,58,0,249,0,50,0,21,0
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.debug,SparkArrowClientBenchmark.new Record() {...},15,0,0,0,1,0,1,0,1,0
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.debug,FlightSqlClientCLI,442,0,14,0,90,0,28,0,17,0
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.debug,DataGenerator,365,0,2,0,62,0,3,0,2,0
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.debug,SparkArrowClientBenchmark.new SimpleFileVisitor() {...},17,0,0,0,3,0,2,0,2,0

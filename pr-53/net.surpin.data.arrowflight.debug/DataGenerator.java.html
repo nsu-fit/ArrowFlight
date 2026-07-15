@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>DataGenerator.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Hadoop Arrow Flight SQL Server</a> &gt; <a href="index.source.html" class="el_package">net.surpin.data.arrowflight.debug</a> &gt; <span class="el_source">DataGenerator.java</span></div><h1>DataGenerator.java</h1><pre class="source lang-java linenums">package net.surpin.data.arrowflight.debug;
+
+import org.apache.spark.SparkConf;
+import org.apache.spark.sql.Dataset;
+import org.apache.spark.sql.Row;
+import org.apache.spark.sql.SparkSession;
+import org.apache.spark.sql.functions;
+
+/**
+ * Генератор данных для тестирования Arrow Flight SQL.
+ * Генерирует большие объемы данных без shuffle операций.
+ *
+ * Использование:
+ *   spark-submit --class server.net.surpin.data.arrowflight.debug.DataGenerator &lt;jar&gt; &lt;num_rows&gt; &lt;output_path&gt; &lt;num_partitions&gt;
+ *   Пример: spark-submit --class server.net.surpin.data.arrowflight.debug.DataGenerator target/hadoop-arrow-flight.jar 10000000000 hdfs:///data/vsurpin/test_db/test_1tb_table 2000
+ */
+<span class="nc" id="L17">public class DataGenerator {</span>
+
+    /**
+     * Generates Parquet test data with various column types without shuffle.
+     * @param args CLI arguments: num_rows output_path num_partitions
+     */
+    public static void main(String[] args) {
+<span class="nc bnc" id="L24" title="All 2 branches missed.">        if (args.length &lt; 3) {</span>
+<span class="nc" id="L25">            System.err.println(&quot;Usage: DataGenerator &lt;num_rows&gt; &lt;output_path&gt; &lt;num_partitions&gt;&quot;);</span>
+<span class="nc" id="L26">            System.err.println(&quot;Example: DataGenerator 10000000000 hdfs:///data/vsurpin/test_db/test_1tb_table 2000&quot;);</span>
+<span class="nc" id="L27">            System.exit(1);</span>
+        }
+
+<span class="nc" id="L30">        long numRows = Long.parseLong(args[0]);</span>
+<span class="nc" id="L31">        String outputPath = args[1];</span>
+<span class="nc" id="L32">        int numPartitions = Integer.parseInt(args[2]);</span>
+
+<span class="nc" id="L34">        SparkConf conf = new SparkConf()</span>
+<span class="nc" id="L35">                .setAppName(&quot;DataGenerator&quot;)</span>
+<span class="nc" id="L36">                .setMaster(&quot;local[*]&quot;)</span>
+<span class="nc" id="L37">                .set(&quot;spark.sql.committer-protocol-class&quot;, &quot;org.apache.spark.internal.io.FileCommitProtocol&quot;)</span>
+<span class="nc" id="L38">                .set(&quot;spark.hadoop.mapreduce.fileoutputcommitter.algorithm.version&quot;, &quot;2&quot;)</span>
+<span class="nc" id="L39">                .set(&quot;spark.sql.legacy.replaceDatabricksSparkAvro.allowUnsupportedTypes&quot;, &quot;true&quot;)</span>
+<span class="nc" id="L40">                .set(&quot;spark.sql.adaptive.enabled&quot;, &quot;true&quot;)</span>
+<span class="nc" id="L41">                .set(&quot;spark.sql.adaptive.coalescePartitions.enabled&quot;, &quot;true&quot;)</span>
+<span class="nc" id="L42">                .set(&quot;spark.sql.adaptive.skewJoin.enabled&quot;, &quot;true&quot;)</span>
+<span class="nc" id="L43">                .set(&quot;spark.sql.adaptive.localShuffleReader.enabled&quot;, &quot;true&quot;);</span>
+
+<span class="nc" id="L45">        SparkSession spark = SparkSession.builder()</span>
+<span class="nc" id="L46">                .config(conf)</span>
+<span class="nc" id="L47">                .getOrCreate();</span>
+
+        try {
+            // Генерируем данные БЕЗ SHUFFLE:
+            // 1. spark.range() создает DataFrame с уникальными ID без shuffle (range partitioning)
+            // 2. Данные распределяются по partitionам без data shuffle
+<span class="nc" id="L53">            Dataset&lt;Row&gt; df = spark.range(0, numRows, 1, numPartitions)</span>
+<span class="nc" id="L54">                    .select(</span>
+                            // id: уникальные значения от 0 до numRows-1
+<span class="nc" id="L56">                            functions.col(&quot;id&quot;).cast(&quot;integer&quot;).alias(&quot;id&quot;),</span>
+                            // bool_col: true, если id чётное
+<span class="nc" id="L58">                            functions.col(&quot;id&quot;).mod(2).equalTo(0).alias(&quot;bool_col&quot;),</span>
+                            // tinyint_col, smallint_col, int_col: остаток от деления id на 10
+<span class="nc" id="L60">                            functions.col(&quot;id&quot;).mod(10).cast(&quot;tinyint&quot;).alias(&quot;tinyint_col&quot;),</span>
+<span class="nc" id="L61">                            functions.col(&quot;id&quot;).mod(10).cast(&quot;smallint&quot;).alias(&quot;smallint_col&quot;),</span>
+<span class="nc" id="L62">                            functions.col(&quot;id&quot;).mod(10).cast(&quot;integer&quot;).alias(&quot;int_col&quot;),</span>
+                            // bigint_col: остаток от деления на 10, умноженный на 10
+<span class="nc" id="L64">                            functions.col(&quot;id&quot;).mod(10).multiply(10).cast(&quot;bigint&quot;).alias(&quot;bigint_col&quot;),</span>
+                            // float_col: случайное float значение от 0 до 1
+<span class="nc" id="L66">                            functions.rand(47).cast(&quot;float&quot;).alias(&quot;float_col&quot;),</span>
+                            // double_col: случайное double значение от 0 до 1
+<span class="nc" id="L68">                            functions.rand(48).cast(&quot;double&quot;).alias(&quot;double_col&quot;),</span>
+                            // date_string_col: случайная дата в формате &quot;yyyy-MM-dd&quot;
+<span class="nc" id="L70">                            functions.concat(</span>
+<span class="nc" id="L71">                                    functions.lit(&quot;20&quot;),</span>
+<span class="nc" id="L72">                                    functions.format_string(&quot;%02d&quot;, functions.floor(functions.rand(49).multiply(24)).plus(1).cast(&quot;integer&quot;)),</span>
+<span class="nc" id="L73">                                    functions.lit(&quot;-&quot;),</span>
+<span class="nc" id="L74">                                    functions.format_string(&quot;%02d&quot;, functions.floor(functions.rand(50).multiply(12)).plus(1).cast(&quot;integer&quot;)),</span>
+<span class="nc" id="L75">                                    functions.lit(&quot;-&quot;),</span>
+<span class="nc" id="L76">                                    functions.format_string(&quot;%02d&quot;, functions.floor(functions.rand(51).multiply(28)).plus(1).cast(&quot;integer&quot;))</span>
+<span class="nc" id="L77">                            ).alias(&quot;date_string_col&quot;),</span>
+                            // string_col: случайная строка в формате &quot;str_&lt;num&gt;&quot;
+<span class="nc" id="L79">                            functions.concat(</span>
+<span class="nc" id="L80">                                    functions.lit(&quot;str_&quot;),</span>
+<span class="nc" id="L81">                                    functions.lpad(functions.rand(52).multiply(1000000).cast(&quot;integer&quot;).cast(&quot;string&quot;), 6, &quot;0&quot;)</span>
+<span class="nc" id="L82">                            ).alias(&quot;string_col&quot;),</span>
+                            // timestamp_col: случайный timestamp как bigint (в миллисекундах)
+<span class="nc" id="L84">                            functions.floor(functions.rand(53).multiply(1000000000000L)).cast(&quot;bigint&quot;).alias(&quot;timestamp_col&quot;),</span>
+                            // year: случайный год от 2000 до 2024
+<span class="nc" id="L86">                            functions.floor(functions.rand(54).multiply(25)).plus(2000).cast(&quot;integer&quot;).alias(&quot;year&quot;),</span>
+                            // month: случайный месяц от 1 до 12
+<span class="nc" id="L88">                            functions.floor(functions.rand(55).multiply(12)).plus(1).cast(&quot;integer&quot;).alias(&quot;month&quot;)</span>
+                    );
+
+            // Сохраняем в Parquet (перезаписываем если существует)
+<span class="nc" id="L92">            df.write()</span>
+<span class="nc" id="L93">                    .mode(&quot;overwrite&quot;)</span>
+<span class="nc" id="L94">                    .format(&quot;parquet&quot;)</span>
+<span class="nc" id="L95">                    .save(outputPath);</span>
+
+            // Считаем количество строк (только для подтверждения)
+<span class="nc" id="L98">            long count = df.count();</span>
+<span class="nc" id="L99">            System.out.println(&quot;===========================================&quot;);</span>
+<span class="nc" id="L100">            System.out.println(&quot;Генерация завершена!&quot;);</span>
+<span class="nc" id="L101">            System.out.println(&quot;Rows generated: &quot; + count);</span>
+<span class="nc" id="L102">            System.out.println(&quot;Output path: &quot; + outputPath);</span>
+<span class="nc" id="L103">            System.out.println(&quot;Partitions: &quot; + df.rdd().getNumPartitions());</span>
+<span class="nc" id="L104">            System.out.println(&quot;===========================================&quot;);</span>
+
+<span class="nc" id="L106">        } catch (Exception e) {</span>
+<span class="nc" id="L107">            e.printStackTrace();</span>
+<span class="nc" id="L108">            System.exit(1);</span>
+        } finally {
+<span class="nc" id="L110">            spark.stop();</span>
+        }
+<span class="nc" id="L112">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>
