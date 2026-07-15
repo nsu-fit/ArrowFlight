@@ -11,7 +11,7 @@ Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.spark.read,Fli
 Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.spark.read,FlightInputPartition.FlightEndpointInputPartition,10,0,0,0,4,0,2,0,2,0
 Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.spark.read,FlightScanBuilder,195,814,69,91,39,147,56,47,2,21
 Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.adapters,HostUtils,2,82,3,15,1,23,3,8,0,2
-Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.adapters,DuckDbAdapter,618,605,92,72,126,124,63,49,9,16
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.adapters,DuckDbAdapter,618,624,94,76,126,127,65,50,9,16
 Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.adapters,HazelcastAdapter,110,4,2,0,27,1,9,1,8,1
 Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.adapters,AceroAdapter.RegisteredArrowStreams,122,0,10,0,40,0,10,0,5,0
 Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.adapters,FilterConverter.1.new ScalarFunctionConverter() {...},12,102,2,10,1,13,3,7,1,3
@@ -50,7 +50,7 @@ Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.services,Execu
 Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.services,ParquetQueryParser.JoinTable,0,12,0,0,0,1,0,1,0,1
 Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.services,ParquetQueryParser.SelectExpr,0,36,0,2,0,11,0,3,0,2
 Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.services,ParquetQueryParser.SelectExpr.AggFunc,0,39,0,0,0,1,0,1,0,1
-Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.services,ParquetQueryParser,55,906,17,85,16,203,20,49,4,14
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.services,ParquetQueryParser,55,925,17,87,16,208,20,50,4,14
 Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.services,QueryPlanner,516,328,50,24,92,60,33,22,6,12
 Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.services,ClusterService,201,258,21,9,41,57,19,17,7,14
 Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.services,AceroFileResolver,108,388,16,22,16,69,16,14,1,10
