@@ -117,9 +117,9 @@ public final class ClusterService implements AutoCloseable {
      */
     public Map&lt;String, Long&gt; allServerLoads() {
 <span class="fc" id="L119">        Map&lt;String, Long&gt; result = new LinkedHashMap&lt;&gt;();</span>
-<span class="pc bpc" id="L120" title="1 of 2 branches missed.">        for (Map.Entry&lt;String, Long&gt; entry : hazelcast.serverRegistry().entrySet()) {</span>
-<span class="nc" id="L121">            result.put(entry.getKey(), entry.getValue());</span>
-<span class="nc" id="L122">        }</span>
+<span class="fc bfc" id="L120" title="All 2 branches covered.">        for (Map.Entry&lt;String, Long&gt; entry : hazelcast.serverRegistry().entrySet()) {</span>
+<span class="fc" id="L121">            result.put(entry.getKey(), entry.getValue());</span>
+<span class="fc" id="L122">        }</span>
 <span class="fc" id="L123">        return result;</span>
     }
 
@@ -152,28 +152,28 @@ public final class ClusterService implements AutoCloseable {
      */
     public Map&lt;String, FileAssignment&gt; fileLocations() {
 <span class="fc" id="L154">        Map&lt;String, Map&lt;String, Long&gt;&gt; inventories = new LinkedHashMap&lt;&gt;();</span>
-<span class="pc bpc" id="L155" title="1 of 2 branches missed.">        for (Map.Entry&lt;String, Map&lt;String, Long&gt;&gt; entry : hazelcast.serverFiles().entrySet()) {</span>
-<span class="nc" id="L156">            inventories.put(entry.getKey(), entry.getValue());</span>
-<span class="nc" id="L157">        }</span>
+<span class="fc bfc" id="L155" title="All 2 branches covered.">        for (Map.Entry&lt;String, Map&lt;String, Long&gt;&gt; entry : hazelcast.serverFiles().entrySet()) {</span>
+<span class="fc" id="L156">            inventories.put(entry.getKey(), entry.getValue());</span>
+<span class="fc" id="L157">        }</span>
 <span class="fc" id="L158">        Map&lt;String, FileAssignment&gt; result = new LinkedHashMap&lt;&gt;();</span>
-<span class="pc bpc" id="L159" title="1 of 2 branches missed.">        for (Map.Entry&lt;String, Map&lt;String, Long&gt;&gt; server : inventories.entrySet()) {</span>
-<span class="nc" id="L160">            String serverUri = server.getKey();</span>
-<span class="nc bnc" id="L161" title="All 2 branches missed.">            for (Map.Entry&lt;String, Long&gt; file : server.getValue().entrySet()) {</span>
-<span class="nc" id="L162">                result.compute(file.getKey(), (path, current) -&gt; {</span>
-<span class="nc" id="L163">                    Set&lt;String&gt; owners = new LinkedHashSet&lt;&gt;();</span>
-<span class="nc" id="L164">                    long size = file.getValue();</span>
-<span class="nc bnc" id="L165" title="All 2 branches missed.">                    if (current != null) {</span>
-<span class="nc bnc" id="L166" title="All 2 branches missed.">                        if (current.size() != size) {</span>
-<span class="nc" id="L167">                            throw new IllegalStateException(</span>
+<span class="fc bfc" id="L159" title="All 2 branches covered.">        for (Map.Entry&lt;String, Map&lt;String, Long&gt;&gt; server : inventories.entrySet()) {</span>
+<span class="fc" id="L160">            String serverUri = server.getKey();</span>
+<span class="fc bfc" id="L161" title="All 2 branches covered.">            for (Map.Entry&lt;String, Long&gt; file : server.getValue().entrySet()) {</span>
+<span class="fc" id="L162">                result.compute(file.getKey(), (path, current) -&gt; {</span>
+<span class="fc" id="L163">                    Set&lt;String&gt; owners = new LinkedHashSet&lt;&gt;();</span>
+<span class="fc" id="L164">                    long size = file.getValue();</span>
+<span class="fc bfc" id="L165" title="All 2 branches covered.">                    if (current != null) {</span>
+<span class="fc bfc" id="L166" title="All 2 branches covered.">                        if (current.size() != size) {</span>
+<span class="fc" id="L167">                            throw new IllegalStateException(</span>
                                     &quot;Conflicting sizes for replicated file &quot; + path);
                         }
-<span class="nc" id="L170">                        owners.addAll(current.hosts());</span>
+<span class="fc" id="L170">                        owners.addAll(current.hosts());</span>
                     }
-<span class="nc" id="L172">                    owners.add(serverUri);</span>
-<span class="nc" id="L173">                    return new FileAssignment(size, owners);</span>
+<span class="fc" id="L172">                    owners.add(serverUri);</span>
+<span class="fc" id="L173">                    return new FileAssignment(size, owners);</span>
                 });
-<span class="nc" id="L175">            }</span>
-<span class="nc" id="L176">        }</span>
+<span class="fc" id="L175">            }</span>
+<span class="fc" id="L176">        }</span>
 <span class="fc" id="L177">        return result;</span>
     }
 

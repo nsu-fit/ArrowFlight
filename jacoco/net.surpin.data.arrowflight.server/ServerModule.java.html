@@ -275,7 +275,8 @@ public final class ServerModule {
 <span class="nc" id="L275">                bb.get(bytes);</span>
 <span class="nc" id="L276">                return bytes;</span>
 <span class="nc" id="L277">            } catch (Exception e) {</span>
-<span class="nc" id="L278">                return null;</span>
+<span class="nc" id="L278">                LOGGER.warn(&quot;Substrait filter conversion failed: {}&quot;, e.getMessage());</span>
+<span class="nc" id="L279">                return null;</span>
             }
         };
     }
@@ -287,7 +288,7 @@ public final class ServerModule {
     @Provides
     @Singleton
     BufferAllocator allocator() {
-<span class="nc" id="L290">        return new RootAllocator(Long.MAX_VALUE);</span>
+<span class="nc" id="L291">        return new RootAllocator(Long.MAX_VALUE);</span>
     }
 
     /**
@@ -305,10 +306,10 @@ public final class ServerModule {
     FlightSqlProducer producer(AppConfig config, BufferAllocator allocator,
             MetadataService metadataService, QueryPlanner queryPlanner,
             ExecutionService executionService, ClusterService clusterService) {
-<span class="nc" id="L308">        int port = config.port();</span>
-<span class="nc" id="L309">        String localhost = &quot;0.0.0.0&quot;;</span>
-<span class="nc" id="L310">        Location location = Location.forGrpcInsecure(localhost, port);</span>
-<span class="nc" id="L311">        return new FlightSqlProducer(location, allocator, metadataService,</span>
+<span class="nc" id="L309">        int port = config.port();</span>
+<span class="nc" id="L310">        String localhost = &quot;0.0.0.0&quot;;</span>
+<span class="nc" id="L311">        Location location = Location.forGrpcInsecure(localhost, port);</span>
+<span class="nc" id="L312">        return new FlightSqlProducer(location, allocator, metadataService,</span>
                 queryPlanner, executionService, clusterService);
     }
 
@@ -329,7 +330,7 @@ public final class ServerModule {
             AceroAdapter aceroAdapter, MetadataService metadataService,
             AppConfig appConfig, ExecutorService ioPool,
             Function&lt;ParquetQueryParser, byte[]&gt; filterBuilder) {
-<span class="nc" id="L332">        return new ExecutionService(parquetAdapter, duckDbAdapter, aceroAdapter,</span>
+<span class="nc" id="L333">        return new ExecutionService(parquetAdapter, duckDbAdapter, aceroAdapter,</span>
                 metadataService, appConfig, ioPool, filterBuilder);
     }
 }
