@@ -5,6 +5,7 @@ package net.surpin.data.arrowflight.server.model;
  * Values are resolved from arrowflight.properties, system properties, and environment variables.
  */
 public record AppConfig(
+    int numServers,
     int batchSize,
     int ioParallelism,
     int ioFileBufferSize,

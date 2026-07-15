@@ -83,6 +83,17 @@ public class HadoopArrowFlightServer {
         int hazelcastPort = Integer.parseInt(
                 getArgValue(args, "--hazelcast-port", String.valueOf(config.hazelcastPort())));
 
+        // Generate default host list from numServers if --hosts not explicitly set
+        String hostsRaw = getArgValue(args, "--hosts", null);
+        if (hostsRaw == null && config.numServers() > 1) {
+            String[] defaultHosts = new String[config.numServers()];
+            for (int i = 0; i < defaultHosts.length; i++) {
+                defaultHosts[i] = "flight-server-" + (i + 1);
+            }
+            hosts = String.join(",", defaultHosts);
+            LOGGER.info("Generated --hosts from numServers={}: {}", config.numServers(), hosts);
+        }
+
         // Push CLI overrides into system properties so ConfigAdapter picks them up
         System.setProperty("dataDir", dataDirectory);
         System.setProperty("port", String.valueOf(port));

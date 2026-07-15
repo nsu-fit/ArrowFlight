@@ -28,6 +28,9 @@ spotbugsXml.xml
 __pycache__/
 *.py[cod]
 
+# Python virtual environment
+venv/
+
 # Logs and runtime dumps
 *.log
 *.pid

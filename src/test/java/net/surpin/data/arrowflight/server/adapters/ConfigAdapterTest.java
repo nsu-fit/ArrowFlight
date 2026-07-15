@@ -33,6 +33,7 @@ class ConfigAdapterTest {
     void getConfigDefaults() {
         AppConfig cfg = ConfigAdapter.getConfig();
 
+        assertEquals(3, cfg.numServers());
         assertEquals(4096, cfg.batchSize());
         assertEquals(131072, cfg.ioFileBufferSize());
         assertTrue(cfg.ioParallelism() >= 1 && cfg.ioParallelism() <= 64);
@@ -48,6 +49,21 @@ class ConfigAdapterTest {
         assertFalse(cfg.duckDbAllowUnsignedExtensions());
         assertEquals(Integer.MAX_VALUE, cfg.grpcMaxInboundMessageSize());
         assertEquals(300000, cfg.flightListenerReadyTimeoutMillis());
+    }
+
+    @Test
+    void getConfigNumServersViaSysProp() {
+        setProp("numServers", "10");
+
+        AppConfig cfg = ConfigAdapter.getConfig();
+        assertEquals(10, cfg.numServers());
+    }
+
+    @Test
+    void getConfigNumServersDefaults() {
+        // No explicit property set, should default to 3 from arrowflight.properties
+        AppConfig cfg = ConfigAdapter.getConfig();
+        assertEquals(3, cfg.numServers());
     }
 
     @Test

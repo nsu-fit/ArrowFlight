@@ -28,6 +28,7 @@ public class ConfigAdapter {
     public static AppConfig getConfig() {
         Properties props = loadProperties();
         int ioParallelism = computeIoParallelism(props);
+        int numServers = getInt("numServers", "arrowflight.cluster.numServers", 3, props);
         int batchSize = getInt("batchSize", "arrowflight.duckdb.batchSize", 4096, props);
         int ioFileBufferSize = getInt("ioFileBufferSize", null, 131072, props);
         int duckDbWarmConnections = getInt("duckDbWarmConnections",
@@ -69,7 +70,7 @@ public class ConfigAdapter {
         int clientConnectTimeoutMs = getInt("client.connectTimeoutMs", null, 0, props);
 
         return new AppConfig(
-                batchSize, ioParallelism, ioFileBufferSize,
+                numServers, batchSize, ioParallelism, ioFileBufferSize,
                 duckDbWarmConnections, duckDbGroups, duckDbThreads,
                 duckDbHdfsExtension, duckDbAllowUnsignedExtensions,
                 duckDbHdfsDefaultNamenode, duckDbHdfsHaNamenodes,

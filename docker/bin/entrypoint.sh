@@ -95,7 +95,7 @@ flight_server_command() {
     net.surpin.data.arrowflight.server.HadoopArrowFlightServer \
     --data-dir "${FLIGHT_DATA_DIR:-/data/parquet}" \
     --port "${FLIGHT_PORT:-32010}" \
-    --hosts "${FLIGHT_HOSTS:-flight-server-1,flight-server-2,flight-server-3}" \
+    --hosts "${FLIGHT_HOSTS:-flight-server-1,flight-server-2,flight-server-3,flight-server-4,flight-server-5,flight-server-6,flight-server-7,flight-server-8,flight-server-9,flight-server-10}" \
     --localhost "${FLIGHT_LOCALHOST:-$(hostname -f)}" \
     --storage-host "${FLIGHT_LOCAL_STORAGE_HOST:-$(hostname -f)}" \
     --hazelcast-port "${HAZELCAST_PORT:-5701}" \

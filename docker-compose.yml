@@ -8,7 +8,7 @@ x-server-node-env: &server-node-env
   FLIGHT_DATA_DIR: "${HDFS_DATA_DIR:-hdfs://hdfs-namenode:8020/bench}"
   FLIGHT_LOCAL_DATA_DIR: "/staging"
   FLIGHT_PORT: "32010"
-  FLIGHT_HOSTS: "${FLIGHT_HOSTS:-flight-server-1,flight-server-2,flight-server-3}"
+  FLIGHT_HOSTS: "${FLIGHT_HOSTS:-flight-server-1,flight-server-2,flight-server-3,flight-server-4,flight-server-5,flight-server-6,flight-server-7,flight-server-8,flight-server-9,flight-server-10}"
   HAZELCAST_PORT: "5701"
   HDFS_NAMENODE_HOST: hdfs-namenode
   HDFS_NAMENODE_PORT: "8020"
@@ -136,6 +136,181 @@ services:
           - datanode-3
           - spark-worker-3
 
+  server-node-4:
+    <<: *server-node
+    hostname: server-node-4
+    environment:
+      <<: *server-node-env
+      HDFS_DATANODE_HOSTNAME: server-node-4
+      FLIGHT_LOCALHOST: flight-server-4
+      FLIGHT_LOCAL_STORAGE_HOST: server-node-4
+      SPARK_LOCAL_HOSTNAME: server-node-4
+      SPARK_WORKER_WEBUI_PORT: "8084"
+    volumes:
+      - server-node-4-staging:/staging:ro
+      - hdfs-datanode-4-data:/var/lib/hadoop-hdfs/data
+      - spark-warehouse:/spark-warehouse
+    ports:
+      - "32013:32010"
+      - "8084:8084"
+      - "9867:9864"
+    networks:
+      default:
+        aliases:
+          - flight-server-4
+          - datanode-4
+          - spark-worker-4
+
+  server-node-5:
+    <<: *server-node
+    hostname: server-node-5
+    environment:
+      <<: *server-node-env
+      HDFS_DATANODE_HOSTNAME: server-node-5
+      FLIGHT_LOCALHOST: flight-server-5
+      FLIGHT_LOCAL_STORAGE_HOST: server-node-5
+      SPARK_LOCAL_HOSTNAME: server-node-5
+      SPARK_WORKER_WEBUI_PORT: "8085"
+    volumes:
+      - server-node-5-staging:/staging:ro
+      - hdfs-datanode-5-data:/var/lib/hadoop-hdfs/data
+      - spark-warehouse:/spark-warehouse
+    ports:
+      - "32014:32010"
+      - "8085:8085"
+      - "9868:9864"
+    networks:
+      default:
+        aliases:
+          - flight-server-5
+          - datanode-5
+          - spark-worker-5
+
+  server-node-6:
+    <<: *server-node
+    hostname: server-node-6
+    environment:
+      <<: *server-node-env
+      HDFS_DATANODE_HOSTNAME: server-node-6
+      FLIGHT_LOCALHOST: flight-server-6
+      FLIGHT_LOCAL_STORAGE_HOST: server-node-6
+      SPARK_LOCAL_HOSTNAME: server-node-6
+      SPARK_WORKER_WEBUI_PORT: "8086"
+    volumes:
+      - server-node-6-staging:/staging:ro
+      - hdfs-datanode-6-data:/var/lib/hadoop-hdfs/data
+      - spark-warehouse:/spark-warehouse
+    ports:
+      - "32015:32010"
+      - "8086:8086"
+      - "9869:9864"
+    networks:
+      default:
+        aliases:
+          - flight-server-6
+          - datanode-6
+          - spark-worker-6
+
+  server-node-7:
+    <<: *server-node
+    hostname: server-node-7
+    environment:
+      <<: *server-node-env
+      HDFS_DATANODE_HOSTNAME: server-node-7
+      FLIGHT_LOCALHOST: flight-server-7
+      FLIGHT_LOCAL_STORAGE_HOST: server-node-7
+      SPARK_LOCAL_HOSTNAME: server-node-7
+      SPARK_WORKER_WEBUI_PORT: "8087"
+    volumes:
+      - server-node-7-staging:/staging:ro
+      - hdfs-datanode-7-data:/var/lib/hadoop-hdfs/data
+      - spark-warehouse:/spark-warehouse
+    ports:
+      - "32016:32010"
+      - "8087:8087"
+      - "9870:9864"
+    networks:
+      default:
+        aliases:
+          - flight-server-7
+          - datanode-7
+          - spark-worker-7
+
+  server-node-8:
+    <<: *server-node
+    hostname: server-node-8
+    environment:
+      <<: *server-node-env
+      HDFS_DATANODE_HOSTNAME: server-node-8
+      FLIGHT_LOCALHOST: flight-server-8
+      FLIGHT_LOCAL_STORAGE_HOST: server-node-8
+      SPARK_LOCAL_HOSTNAME: server-node-8
+      SPARK_WORKER_WEBUI_PORT: "8088"
+    volumes:
+      - server-node-8-staging:/staging:ro
+      - hdfs-datanode-8-data:/var/lib/hadoop-hdfs/data
+      - spark-warehouse:/spark-warehouse
+    ports:
+      - "32017:32010"
+      - "8088:8088"
+      - "9871:9864"
+    networks:
+      default:
+        aliases:
+          - flight-server-8
+          - datanode-8
+          - spark-worker-8
+
+  server-node-9:
+    <<: *server-node
+    hostname: server-node-9
+    environment:
+      <<: *server-node-env
+      HDFS_DATANODE_HOSTNAME: server-node-9
+      FLIGHT_LOCALHOST: flight-server-9
+      FLIGHT_LOCAL_STORAGE_HOST: server-node-9
+      SPARK_LOCAL_HOSTNAME: server-node-9
+      SPARK_WORKER_WEBUI_PORT: "8089"
+    volumes:
+      - server-node-9-staging:/staging:ro
+      - hdfs-datanode-9-data:/var/lib/hadoop-hdfs/data
+      - spark-warehouse:/spark-warehouse
+    ports:
+      - "32018:32010"
+      - "8089:8089"
+      - "9872:9864"
+    networks:
+      default:
+        aliases:
+          - flight-server-9
+          - datanode-9
+          - spark-worker-9
+
+  server-node-10:
+    <<: *server-node
+    hostname: server-node-10
+    environment:
+      <<: *server-node-env
+      HDFS_DATANODE_HOSTNAME: server-node-10
+      FLIGHT_LOCALHOST: flight-server-10
+      FLIGHT_LOCAL_STORAGE_HOST: server-node-10
+      SPARK_LOCAL_HOSTNAME: server-node-10
+      SPARK_WORKER_WEBUI_PORT: "80810"
+    volumes:
+      - server-node-10-staging:/staging:ro
+      - hdfs-datanode-10-data:/var/lib/hadoop-hdfs/data
+      - spark-warehouse:/spark-warehouse
+    ports:
+      - "32019:32010"
+      - "80810:80810"
+      - "9873:9864"
+    networks:
+      default:
+        aliases:
+          - flight-server-10
+          - datanode-10
+          - spark-worker-10
+
   spark-benchmark-publisher:
     <<: *arrowflight-image
     profiles: ["benchbase"]
@@ -171,9 +346,9 @@ services:
       BENCHMARK_SCALE_FACTOR: "${BENCHMARK_SCALE_FACTOR:-0.01}"
       BENCHMARK_QUERY_SET: "${BENCHMARK_QUERY_SET:-}"
       BENCHMARK_METADATA_OUT: "${BENCHMARK_METADATA_OUT:-}"
-      FLIGHT_HOSTS: "${FLIGHT_HOSTS:-flight-server-1,flight-server-2,flight-server-3}"
-      FLIGHT_SERVERS: "${FLIGHT_SERVERS:-flight-server-1:32010,flight-server-2:32010,flight-server-3:32010}"
-      FLIGHT_SERVER_DATA_DIRS: "${FLIGHT_SERVER_DATA_DIRS:-/server-data/server-node-1,/server-data/server-node-2,/server-data/server-node-3}"
+      FLIGHT_HOSTS: "${FLIGHT_HOSTS:-flight-server-1,flight-server-2,flight-server-3,flight-server-4,flight-server-5,flight-server-6,flight-server-7,flight-server-8,flight-server-9,flight-server-10}"
+      FLIGHT_SERVERS: "${FLIGHT_SERVERS:-flight-server-1:32010,flight-server-2:32010,flight-server-3:32010,flight-server-4:32010,flight-server-5:32010,flight-server-6:32010,flight-server-7:32010,flight-server-8:32010,flight-server-9:32010,flight-server-10:32010}"
+      FLIGHT_SERVER_DATA_DIRS: "${FLIGHT_SERVER_DATA_DIRS:-/server-data/server-node-1,/server-data/server-node-2,/server-data/server-node-3,/server-data/server-node-4,/server-data/server-node-5,/server-data/server-node-6,/server-data/server-node-7,/server-data/server-node-8,/server-data/server-node-9,/server-data/server-node-10}"
       HDFS_DATA_DIR: "${HDFS_DATA_DIR:-hdfs://hdfs-namenode:8020/bench}"
       HDFS_BLOCK_SIZE_BYTES: "${HDFS_BLOCK_SIZE_BYTES:-1073741824}"
     volumes:
@@ -227,7 +402,21 @@ volumes:
   hdfs-datanode-1-data:
   hdfs-datanode-2-data:
   hdfs-datanode-3-data:
+  hdfs-datanode-4-data:
+  hdfs-datanode-5-data:
+  hdfs-datanode-6-data:
+  hdfs-datanode-7-data:
+  hdfs-datanode-8-data:
+  hdfs-datanode-9-data:
+  hdfs-datanode-10-data:
   server-node-1-staging:
   server-node-2-staging:
   server-node-3-staging:
+  server-node-4-staging:
+  server-node-5-staging:
+  server-node-6-staging:
+  server-node-7-staging:
+  server-node-8-staging:
+  server-node-9-staging:
+  server-node-10-staging:
   spark-warehouse:
