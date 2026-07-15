@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AceroFileResolver.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Hadoop Arrow Flight SQL Server</a> &gt; <a href="index.source.html" class="el_package">net.surpin.data.arrowflight.server.services</a> &gt; <span class="el_source">AceroFileResolver.java</span></div><h1>AceroFileResolver.java</h1><pre class="source lang-java linenums">package net.surpin.data.arrowflight.server.services;
+
+import org.apache.hadoop.fs.FileStatus;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.BufferedOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import net.surpin.data.arrowflight.server.LogUtil;
+import net.surpin.data.arrowflight.server.metrics.MetricsService;
+
+/**
+ * Resolves Hadoop files to local URIs that Arrow Dataset JNI can open.
+ *
+ * &lt;p&gt;The Arrow Dataset native library distributed in arrow-dataset 18.0.0 is
+ * built without HDFS support. Benchmark nodes already have a byte-identical
+ * local staging copy of their HDFS shards, so that copy is preferred. If a
+ * shard is not available locally, it is downloaded through the Java Hadoop
+ * client into a versioned local cache.&lt;/p&gt;
+ */
+final class AceroFileResolver {
+
+<span class="fc" id="L35">    private static final Logger LOGGER = LoggerFactory.getLogger(AceroFileResolver.class);</span>
+    private static final String CACHE_DIRECTORY = &quot;arrowflight-acero-cache&quot;;
+
+    private final FileSystem fileSystem;
+    private final URI qualifiedDataRoot;
+    private final java.nio.file.Path localDataRoot;
+    private final java.nio.file.Path cacheRoot;
+    private final int bufferSize;
+<span class="fc" id="L43">    private final Map&lt;String, Object&gt; copyLocks = new ConcurrentHashMap&lt;&gt;();</span>
+
+    AceroFileResolver(FileSystem fileSystem, Path dataRoot, String localDataDir, int bufferSize) {
+<span class="nc" id="L46">        this(fileSystem, dataRoot, localDataDir, bufferSize,</span>
+<span class="nc" id="L47">                java.nio.file.Path.of(System.getProperty(&quot;java.io.tmpdir&quot;), CACHE_DIRECTORY));</span>
+<span class="nc" id="L48">    }</span>
+
+    AceroFileResolver(FileSystem fileSystem, Path dataRoot, String localDataDir, int bufferSize,
+<span class="fc" id="L51">            java.nio.file.Path cacheBase) {</span>
+<span class="fc" id="L52">        this.fileSystem = fileSystem;</span>
+<span class="fc" id="L53">        this.qualifiedDataRoot = fileSystem.makeQualified(dataRoot).toUri().normalize();</span>
+<span class="pc bpc" id="L54" title="1 of 4 branches missed.">        this.localDataRoot = localDataDir == null || localDataDir.isBlank()</span>
+<span class="fc" id="L55">                ? null : java.nio.file.Path.of(localDataDir).toAbsolutePath().normalize();</span>
+<span class="fc" id="L56">        String namespace = UUID.nameUUIDFromBytes(qualifiedDataRoot.toString()</span>
+<span class="fc" id="L57">                .getBytes(StandardCharsets.UTF_8)).toString();</span>
+<span class="fc" id="L58">        this.cacheRoot = cacheBase.toAbsolutePath().normalize().resolve(namespace);</span>
+<span class="fc" id="L59">        this.bufferSize = Math.max(8192, bufferSize);</span>
+<span class="fc" id="L60">    }</span>
+
+    /**
+     * Returns a local file URI for the supplied Hadoop file.
+     *
+     * @param status source file status
+     * @return local file URI accepted by Arrow Dataset JNI
+     * @throws IOException if the source cannot be mapped or copied
+     */
+    String resolve(FileStatus status) throws IOException {
+<span class="fc" id="L70">        long startNanos = System.nanoTime();</span>
+<span class="fc" id="L71">        String qid = LogUtil.qid();</span>
+<span class="fc" id="L72">        String relative = relativePath(status.getPath());</span>
+
+<span class="fc bfc" id="L74" title="All 2 branches covered.">        if (localDataRoot != null) {</span>
+<span class="fc" id="L75">            java.nio.file.Path local = safeResolve(localDataRoot, relative);</span>
+<span class="pc bpc" id="L76" title="1 of 2 branches missed.">            if (isExpectedFile(local, status.getLen())) {</span>
+<span class="fc" id="L77">                LOGGER.debug(&quot;qid={} node={} resolve=localMirror source={} localPath={} size={} elapsed={}&quot;,</span>
+<span class="fc" id="L78">                        qid, LogUtil.node(), status.getPath(), local,</span>
+<span class="fc" id="L79">                        status.getLen(), LogUtil.elapsedNanos(startNanos));</span>
+<span class="fc" id="L80">                return local.toUri().toString();</span>
+            }
+<span class="nc bnc" id="L82" title="All 2 branches missed.">            if (Files.exists(local)) {</span>
+<span class="nc" id="L83">                LOGGER.warn(&quot;qid={} node={} resolve=staleMirror source={} localPath={} expected={} found={}&quot;,</span>
+<span class="nc" id="L84">                        qid, LogUtil.node(), status.getPath(), local,</span>
+<span class="nc" id="L85">                        status.getLen(), Files.size(local));</span>
+            }
+        }
+
+<span class="fc" id="L89">        java.nio.file.Path versionRoot = cacheRoot.resolve(</span>
+<span class="fc" id="L90">                status.getModificationTime() + &quot;-&quot; + status.getLen());</span>
+<span class="fc" id="L91">        java.nio.file.Path cached = safeResolve(versionRoot, relative);</span>
+<span class="fc" id="L92">        Object lock = new Object();</span>
+<span class="fc" id="L93">        Object existing = copyLocks.putIfAbsent(cached.toString(), lock);</span>
+<span class="pc bpc" id="L94" title="1 of 2 branches missed.">        Object actual = existing != null ? existing : lock;</span>
+<span class="fc" id="L95">        synchronized (actual) {</span>
+<span class="pc bpc" id="L96" title="1 of 2 branches missed.">            if (!isExpectedFile(cached, status.getLen())) {</span>
+<span class="fc" id="L97">                copyToCache(status, cached);</span>
+            }
+<span class="fc" id="L99">        }</span>
+<span class="fc" id="L100">        copyLocks.remove(cached.toString(), lock);</span>
+<span class="fc" id="L101">        LOGGER.debug(&quot;qid={} node={} resolve=cached source={} cached={} size={} modTime={} elapsed={}&quot;,</span>
+<span class="fc" id="L102">                qid, LogUtil.node(), status.getPath(), cached,</span>
+<span class="fc" id="L103">                status.getLen(), status.getModificationTime(),</span>
+<span class="fc" id="L104">                LogUtil.elapsedNanos(startNanos));</span>
+<span class="fc" id="L105">        return cached.toUri().toString();</span>
+    }
+
+    private void copyToCache(FileStatus status, java.nio.file.Path destination)
+            throws IOException {
+<span class="fc" id="L110">        long startedNanos = System.nanoTime();</span>
+<span class="fc" id="L111">        long copiedLength = 0L;</span>
+<span class="fc" id="L112">        boolean successful = false;</span>
+<span class="fc" id="L113">        java.nio.file.Path destinationParent = destination.getParent();</span>
+<span class="pc bpc" id="L114" title="1 of 2 branches missed.">        if (destinationParent == null) {</span>
+<span class="nc" id="L115">            throw new IOException(&quot;Cache destination has no parent directory: &quot; + destination);</span>
+        }
+<span class="fc" id="L117">        Files.createDirectories(destinationParent);</span>
+<span class="fc" id="L118">        java.nio.file.Path temporary = Files.createTempFile(</span>
+                destinationParent, &quot;.arrowflight-&quot;, &quot;.part&quot;);
+<span class="fc" id="L120">        LOGGER.info(&quot;qid={} node={} resolve=materializing source={} destination={} size={}&quot;,</span>
+<span class="fc" id="L121">                LogUtil.qid(), LogUtil.node(), status.getPath(), destination, status.getLen());</span>
+        try {
+<span class="fc" id="L123">            try (InputStream input = fileSystem.open(status.getPath(), bufferSize);</span>
+<span class="fc" id="L124">                    OutputStream output = new BufferedOutputStream(</span>
+<span class="fc" id="L125">                            Files.newOutputStream(temporary), bufferSize)) {</span>
+<span class="fc" id="L126">                byte[] buffer = new byte[bufferSize];</span>
+                int read;
+<span class="fc bfc" id="L128" title="All 2 branches covered.">                while ((read = input.read(buffer)) &gt;= 0) {</span>
+<span class="pc bpc" id="L129" title="1 of 2 branches missed.">                    if (read &gt; 0) {</span>
+<span class="fc" id="L130">                        output.write(buffer, 0, read);</span>
+<span class="fc" id="L131">                        copiedLength += read;</span>
+                    }
+                }
+            }
+<span class="fc" id="L135">            copiedLength = Files.size(temporary);</span>
+<span class="pc bpc" id="L136" title="1 of 2 branches missed.">            if (copiedLength != status.getLen()) {</span>
+<span class="nc" id="L137">                throw new IOException(&quot;Incomplete Hadoop file copy for &quot; + status.getPath()</span>
+<span class="nc" id="L138">                        + &quot;: expected &quot; + status.getLen() + &quot; bytes, copied &quot; + copiedLength);</span>
+            }
+<span class="fc" id="L140">            moveIntoPlace(temporary, destination);</span>
+<span class="fc" id="L141">            successful = true;</span>
+        } finally {
+<span class="fc" id="L143">            Files.deleteIfExists(temporary);</span>
+<span class="fc" id="L144">            MetricsService.recordMaterialization(copiedLength,</span>
+<span class="fc" id="L145">                    System.nanoTime() - startedNanos, successful);</span>
+        }
+<span class="fc" id="L147">    }</span>
+
+    private static void moveIntoPlace(java.nio.file.Path source,
+            java.nio.file.Path destination) throws IOException {
+        try {
+<span class="fc" id="L152">            Files.move(source, destination, StandardCopyOption.ATOMIC_MOVE,</span>
+                    StandardCopyOption.REPLACE_EXISTING);
+<span class="nc" id="L154">        } catch (AtomicMoveNotSupportedException ignored) {</span>
+<span class="nc" id="L155">            Files.move(source, destination, StandardCopyOption.REPLACE_EXISTING);</span>
+<span class="fc" id="L156">        }</span>
+<span class="fc" id="L157">    }</span>
+
+    private String relativePath(Path source) throws IOException {
+<span class="fc" id="L160">        URI qualifiedSource = fileSystem.makeQualified(source).toUri().normalize();</span>
+<span class="pc bpc" id="L161" title="1 of 2 branches missed.">        if (!sameLocation(qualifiedDataRoot, qualifiedSource)) {</span>
+<span class="nc" id="L162">            throw new IOException(&quot;Hadoop file is outside configured data directory: &quot; + source);</span>
+        }
+
+<span class="fc" id="L165">        String rootPath = qualifiedDataRoot.getPath();</span>
+<span class="pc bpc" id="L166" title="1 of 2 branches missed.">        if (!rootPath.endsWith(&quot;/&quot;)) {</span>
+<span class="nc" id="L167">            rootPath += &quot;/&quot;;</span>
+        }
+<span class="fc" id="L169">        String sourcePath = qualifiedSource.getPath();</span>
+<span class="pc bpc" id="L170" title="2 of 4 branches missed.">        if (!sourcePath.startsWith(rootPath) || sourcePath.length() == rootPath.length()) {</span>
+<span class="nc" id="L171">            throw new IOException(&quot;Hadoop file is outside configured data directory: &quot; + source);</span>
+        }
+<span class="fc" id="L173">        return sourcePath.substring(rootPath.length());</span>
+    }
+
+    private static boolean sameLocation(URI root, URI source) {
+<span class="pc bpc" id="L177" title="1 of 2 branches missed.">        return java.util.Objects.equals(root.getScheme(), source.getScheme())</span>
+<span class="pc bpc" id="L178" title="1 of 2 branches missed.">                &amp;&amp; java.util.Objects.equals(root.getAuthority(), source.getAuthority());</span>
+    }
+
+    private static java.nio.file.Path safeResolve(java.nio.file.Path root, String relative)
+            throws IOException {
+<span class="fc" id="L183">        java.nio.file.Path resolved = root.resolve(relative).normalize();</span>
+<span class="pc bpc" id="L184" title="1 of 2 branches missed.">        if (!resolved.startsWith(root)) {</span>
+<span class="nc" id="L185">            throw new IOException(&quot;Unsafe relative Hadoop path: &quot; + relative);</span>
+        }
+<span class="fc" id="L187">        return resolved;</span>
+    }
+
+    private static boolean isExpectedFile(java.nio.file.Path file, long expectedLength)
+            throws IOException {
+<span class="pc bpc" id="L192" title="1 of 4 branches missed.">        return Files.isRegularFile(file) &amp;&amp; Files.size(file) == expectedLength;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>
