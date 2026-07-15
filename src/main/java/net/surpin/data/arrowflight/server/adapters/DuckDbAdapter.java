@@ -380,13 +380,17 @@ public final class DuckDbAdapter {
             }
             first = false;
             switch (expr.func) {
-                case COUNT_STAR -> sql.append("count(*) AS \"count(*)\"");
+                case COUNT_STAR -> sql.append("count(*)");
                 case COUNT -> sql.append("count(").append(aggregateInput(expr)).append(")");
                 case SUM -> sql.append("sum(").append(aggregateInput(expr)).append(")");
                 case MIN -> sql.append("min(").append(aggregateInput(expr)).append(")");
                 case MAX -> sql.append("max(").append(aggregateInput(expr)).append(")");
                 case COLUMN -> sql.append('"').append(expr.inputColumn).append('"');
                 default -> { }
+            }
+            if (expr.func != ParquetQueryParser.SelectExpr.AggFunc.COLUMN
+                    && expr.outputName != null && !expr.outputName.isBlank()) {
+                sql.append(" AS ").append(quoteIdentifier(expr.outputName));
             }
         }
 

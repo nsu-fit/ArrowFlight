@@ -20,9 +20,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * Debug test for Q1 query behavior through the Flight protocol (server side).
  *
  * <p>Starts an embedded Flight server with a tiny TPC-H lineitem Parquet file
- * and runs Q1 directly via Flight SQL. This shows what the server can do
- * natively (DuckDB handles AVG, complex expressions, decimal SUM) vs.
- * what the Spark FlightSource pushAggregation() actually pushes down.
+ * and runs Q1 partial aggregates directly via Flight SQL. This exercises
+ * the SUM and COUNT representation produced by Spark aggregation pushdown.
  *
  * <p>Usage:
  * <pre>
@@ -56,13 +55,12 @@ class FlightQ1DebugTest {
     }
 
     /**
-     * Full Q1 as written by TPC-H benchmark.
-     * Server receives it as-is via Flight SQL protocol.
-     * DuckDB can execute this fully (AVG, complex expressions, decimal SUM).
+     * Runs the partial aggregate representation of TPC-H Q1.
+     * Spark reconstructs AVG from the corresponding SUM and COUNT columns.
      */
     @Test
     @Order(1)
-    void fullQ1ViaDirectFlightSql() throws Exception {
+    void q1PartialAggregatesViaDirectFlightSql() throws Exception {
         String query = "SELECT\n"
                 + "  l_returnflag,\n"
                 + "  l_linestatus,\n"
@@ -70,17 +68,19 @@ class FlightQ1DebugTest {
                 + "  SUM(l_extendedprice) AS sum_base_price,\n"
                 + "  SUM(l_extendedprice * (1.0 - l_discount)) AS sum_disc_price,\n"
                 + "  SUM(l_extendedprice * (1.0 - l_discount) * (1.0 + l_tax)) AS sum_charge,\n"
-                + "  AVG(l_quantity) AS avg_qty,\n"
-                + "  AVG(l_extendedprice) AS avg_price,\n"
-                + "  AVG(l_discount) AS avg_disc,\n"
+                + "  SUM(l_quantity) AS avg_qty_sum,\n"
+                + "  COUNT(l_quantity) AS avg_qty_count,\n"
+                + "  SUM(l_extendedprice) AS avg_price_sum,\n"
+                + "  COUNT(l_extendedprice) AS avg_price_count,\n"
+                + "  SUM(l_discount) AS avg_disc_sum,\n"
+                + "  COUNT(l_discount) AS avg_disc_count,\n"
                 + "  COUNT(*) AS count_order\n"
                 + "FROM tpch.lineitem\n"
                 + "WHERE l_shipdate <= '1998-12-01'\n"
-                + "GROUP BY l_returnflag, l_linestatus\n"
-                + "ORDER BY l_returnflag, l_linestatus";
+                + "GROUP BY l_returnflag, l_linestatus";
 
         System.out.println("╔══════════════════════════════════════════════════╗");
-        System.out.println("║  TEST 1: Full Q1 via direct Flight SQL          ║");
+        System.out.println("║  TEST 1: Q1 partials via direct Flight SQL      ║");
         System.out.println("╚══════════════════════════════════════════════════╝");
         System.out.println("SQL:");
         System.out.println(query);
@@ -131,7 +131,7 @@ class FlightQ1DebugTest {
 
         // Print the actual aggregated values
         System.out.println();
-        printResults(info, "Q1 full results");
+        printResults(info, "Q1 partial aggregate results");
     }
 
     /**
@@ -156,8 +156,7 @@ class FlightQ1DebugTest {
                 + "  MAX(l_quantity) AS max_qty\n"
                 + "FROM tpch.lineitem\n"
                 + "WHERE l_shipdate <= '1998-12-01'\n"
-                + "GROUP BY l_returnflag, l_linestatus\n"
-                + "ORDER BY l_returnflag, l_linestatus";
+                + "GROUP BY l_returnflag, l_linestatus";
 
         System.out.println("╔══════════════════════════════════════════════════╗");
         System.out.println("║  TEST 2: Simplified Q1 (pushdown-eligible)      ║");

@@ -403,16 +403,20 @@ public class ParquetQueryParser {
             if (!(sfoa instanceof org.jooq.Field<?>)) {
                 continue;
             }
-            org.jooq.Field<?> f = (org.jooq.Field<?>) sfoa;
-            columns.add(f.getName());
-
-            String outputName = noQuoteCtx.renderInlined(f).trim();
+            org.jooq.Field<?> selected = (org.jooq.Field<?>) sfoa;
+            org.jooq.Field<?> f = selected;
+            String outputName = noQuoteCtx.renderInlined(selected).trim();
+            if (selected instanceof org.jooq.impl.QOM.FieldAlias<?> alias) {
+                f = alias.$field();
+                outputName = selected.getName();
+            }
+            columns.add(selected.getName());
 
             if (f instanceof org.jooq.impl.QOM.Count count) {
                 hasAgg = true;
                 org.jooq.Field<?> arg = count.$field();
                 if (arg == null || arg instanceof org.jooq.Param<?>) {
-                    exprs.add(new SelectExpr(SelectExpr.AggFunc.COUNT_STAR, null, "count(*)"));
+                    exprs.add(new SelectExpr(SelectExpr.AggFunc.COUNT_STAR, null, outputName));
                 } else {
                     exprs.add(aggregateExpression(SelectExpr.AggFunc.COUNT,
                             arg, outputName, noQuoteCtx, quotedCtx));
@@ -430,7 +434,8 @@ public class ParquetQueryParser {
                 exprs.add(aggregateExpression(SelectExpr.AggFunc.MAX,
                         max.$field(), outputName, noQuoteCtx, quotedCtx));
             } else {
-                exprs.add(new SelectExpr(SelectExpr.AggFunc.COLUMN, outputName, outputName));
+                String inputColumn = noQuoteCtx.renderInlined(f).trim();
+                exprs.add(new SelectExpr(SelectExpr.AggFunc.COLUMN, inputColumn, outputName));
             }
         }
 

@@ -281,6 +281,18 @@ class DuckDbAdapterTest {
     }
 
     @Test
+    void buildDuckSqlPreservesAggregateAliases() {
+        ParquetQueryParser pq = ParquetQueryParser.parse(
+                "SELECT region, sum(revenue) AS total, count(*) AS rows "
+                        + "FROM s.t GROUP BY region");
+
+        String sql = DuckDbAdapter.buildDuckSql(pq, "read_parquet('part.parquet')");
+
+        assertTrue(sql.contains("sum(\"revenue\") AS \"total\""), "Got: " + sql);
+        assertTrue(sql.contains("count(*) AS \"rows\""), "Got: " + sql);
+    }
+
+    @Test
     void decimalSumExpressionExecutesInDuckDb() throws Exception {
         ParquetQueryParser pq = ParquetQueryParser.parse(
                 "SELECT sum(cast(l_extendedprice * (1 - l_discount) "

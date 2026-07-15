@@ -212,6 +212,20 @@ class ParquetQueryParserAggregationTest {
     }
 
     @Test
+    void aliasedAggregatesRetainFunctionAndAlias() {
+        ParquetQueryParser p = ParquetQueryParser.parse(
+                "SELECT region, sum(revenue) AS total, count(*) AS rows "
+                        + "FROM s.t GROUP BY region");
+
+        assertEquals(ParquetQueryParser.SelectExpr.AggFunc.SUM, p.selectExprs.get(1).func);
+        assertEquals("revenue", p.selectExprs.get(1).inputColumn);
+        assertEquals("total", p.selectExprs.get(1).outputName);
+        assertEquals(ParquetQueryParser.SelectExpr.AggFunc.COUNT_STAR,
+                p.selectExprs.get(2).func);
+        assertEquals("rows", p.selectExprs.get(2).outputName);
+    }
+
+    @Test
     void minInputColumnIsExtracted() {
         ParquetQueryParser p = ParquetQueryParser.parse("SELECT min(price) FROM s.t");
         assertEquals("price", p.selectExprs.get(0).inputColumn);
