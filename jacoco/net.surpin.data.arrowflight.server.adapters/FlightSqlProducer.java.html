@@ -29,6 +29,7 @@ import java.util.List;
 import java.util.Map;
 
 import net.surpin.data.arrowflight.server.model.HandleState;
+import net.surpin.data.arrowflight.server.metrics.MetricsService;
 import net.surpin.data.arrowflight.server.services.ClusterService;
 import net.surpin.data.arrowflight.server.services.ExecutionService;
 import net.surpin.data.arrowflight.server.services.MetadataService;
@@ -42,7 +43,7 @@ import static java.util.UUID.randomUUID;
  */
 public final class FlightSqlProducer extends BasicFlightSqlProducer implements AutoCloseable {
 
-<span class="nc" id="L45">    private static final Logger LOGGER = LoggerFactory.getLogger(FlightSqlProducer.class);</span>
+<span class="nc" id="L46">    private static final Logger LOGGER = LoggerFactory.getLogger(FlightSqlProducer.class);</span>
 
     private final Location location;
     private final BufferAllocator allocator;
@@ -62,188 +63,190 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
      */
     public FlightSqlProducer(Location location, BufferAllocator allocator,
             MetadataService metadataService, QueryPlanner queryPlanner,
-<span class="nc" id="L65">            ExecutionService executionService, ClusterService clusterService) {</span>
-<span class="nc" id="L66">        this.location = location;</span>
-<span class="nc" id="L67">        this.allocator = allocator;</span>
-<span class="nc" id="L68">        this.metadataService = metadataService;</span>
-<span class="nc" id="L69">        this.queryPlanner = queryPlanner;</span>
-<span class="nc" id="L70">        this.executionService = executionService;</span>
-<span class="nc" id="L71">        this.clusterService = clusterService;</span>
+<span class="nc" id="L66">            ExecutionService executionService, ClusterService clusterService) {</span>
+<span class="nc" id="L67">        this.location = location;</span>
+<span class="nc" id="L68">        this.allocator = allocator;</span>
+<span class="nc" id="L69">        this.metadataService = metadataService;</span>
+<span class="nc" id="L70">        this.queryPlanner = queryPlanner;</span>
+<span class="nc" id="L71">        this.executionService = executionService;</span>
+<span class="nc" id="L72">        this.clusterService = clusterService;</span>
 
-<span class="nc" id="L73">        this.sqlInfoBuilder = new SqlInfoBuilder();</span>
-<span class="nc" id="L74">        sqlInfoBuilder</span>
-<span class="nc" id="L75">                .withFlightSqlServerName(&quot;Hadoop-Arrow-Parquet Source&quot;)</span>
-<span class="nc" id="L76">                .withFlightSqlServerVersion(&quot;0.0.1&quot;)</span>
-<span class="nc" id="L77">                .withFlightSqlServerArrowVersion(&quot;0.0.1&quot;)</span>
-<span class="nc" id="L78">                .withFlightSqlServerReadOnly(true)</span>
-<span class="nc" id="L79">                .withFlightSqlServerSql(true)</span>
-<span class="nc" id="L80">                .withFlightSqlServerSubstrait(false)</span>
-<span class="nc" id="L81">                .withFlightSqlServerTransaction(</span>
+<span class="nc" id="L74">        this.sqlInfoBuilder = new SqlInfoBuilder();</span>
+<span class="nc" id="L75">        sqlInfoBuilder</span>
+<span class="nc" id="L76">                .withFlightSqlServerName(&quot;Hadoop-Arrow-Parquet Source&quot;)</span>
+<span class="nc" id="L77">                .withFlightSqlServerVersion(&quot;0.0.1&quot;)</span>
+<span class="nc" id="L78">                .withFlightSqlServerArrowVersion(&quot;0.0.1&quot;)</span>
+<span class="nc" id="L79">                .withFlightSqlServerReadOnly(true)</span>
+<span class="nc" id="L80">                .withFlightSqlServerSql(true)</span>
+<span class="nc" id="L81">                .withFlightSqlServerSubstrait(false)</span>
+<span class="nc" id="L82">                .withFlightSqlServerTransaction(</span>
                         FlightSql.SqlSupportedTransaction.SQL_SUPPORTED_TRANSACTION_NONE)
-<span class="nc" id="L83">                .withSqlDdlCatalog(false)</span>
-<span class="nc" id="L84">                .withSqlDdlSchema(true)</span>
-<span class="nc" id="L85">                .withSqlDdlTable(true)</span>
-<span class="nc" id="L86">                .withSqlIdentifierCase(</span>
+<span class="nc" id="L84">                .withSqlDdlCatalog(false)</span>
+<span class="nc" id="L85">                .withSqlDdlSchema(true)</span>
+<span class="nc" id="L86">                .withSqlDdlTable(true)</span>
+<span class="nc" id="L87">                .withSqlIdentifierCase(</span>
                         FlightSql.SqlSupportedCaseSensitivity.SQL_CASE_SENSITIVITY_LOWERCASE)
-<span class="nc" id="L88">                .withSqlQuotedIdentifierCase(</span>
+<span class="nc" id="L89">                .withSqlQuotedIdentifierCase(</span>
                         FlightSql.SqlSupportedCaseSensitivity.SQL_CASE_SENSITIVITY_UNKNOWN)
-<span class="nc" id="L90">                .withSqlAllTablesAreSelectable(true)</span>
-<span class="nc" id="L91">                .withSqlNullOrdering(FlightSql.SqlNullOrdering.SQL_NULLS_SORTED_AT_END)</span>
-<span class="nc" id="L92">                .withSqlMaxColumnsInTable(1000);</span>
-<span class="nc" id="L93">    }</span>
+<span class="nc" id="L91">                .withSqlAllTablesAreSelectable(true)</span>
+<span class="nc" id="L92">                .withSqlNullOrdering(FlightSql.SqlNullOrdering.SQL_NULLS_SORTED_AT_END)</span>
+<span class="nc" id="L93">                .withSqlMaxColumnsInTable(1000);</span>
+<span class="nc" id="L94">    }</span>
 
     @Override
     public void getStreamStatement(FlightSql.TicketStatementQuery ticket,
             FlightProducer.CallContext context,
             FlightProducer.ServerStreamListener listener) {
-<span class="nc" id="L99">        final ByteString handle = ticket.getStatementHandle();</span>
-<span class="nc" id="L100">        String qid = qid(handle);</span>
-<span class="nc" id="L101">        HandleState state = clusterService.getHandle(handle.toStringUtf8());</span>
-<span class="nc bnc" id="L102" title="All 2 branches missed.">        if (state == null) {</span>
-<span class="nc" id="L103">            LOGGER.error(&quot;qid={} No HandleState found&quot;, qid);</span>
-<span class="nc" id="L104">            listener.error(new IllegalStateException(&quot;No HandleState found for qid=&quot; + qid));</span>
-<span class="nc" id="L105">            return;</span>
+<span class="nc" id="L100">        final ByteString handle = ticket.getStatementHandle();</span>
+<span class="nc" id="L101">        String qid = qid(handle);</span>
+<span class="nc" id="L102">        HandleState state = clusterService.getHandle(handle.toStringUtf8());</span>
+<span class="nc bnc" id="L103" title="All 2 branches missed.">        if (state == null) {</span>
+<span class="nc" id="L104">            LOGGER.error(&quot;qid={} No HandleState found&quot;, qid);</span>
+<span class="nc" id="L105">            listener.error(new IllegalStateException(&quot;No HandleState found for qid=&quot; + qid));</span>
+<span class="nc" id="L106">            return;</span>
         }
 
-<span class="nc" id="L108">        String query = state.query();</span>
-<span class="nc" id="L109">        String[] filePaths = state.filePaths();</span>
-<span class="nc bnc" id="L110" title="All 2 branches missed.">        if (filePaths == null) {</span>
-<span class="nc" id="L111">            LOGGER.error(&quot;qid={} No file paths in handle state&quot;, qid);</span>
-<span class="nc" id="L112">            listener.error(new IllegalStateException(&quot;No file paths for qid=&quot; + qid));</span>
-<span class="nc" id="L113">            return;</span>
+<span class="nc" id="L109">        String query = state.query();</span>
+<span class="nc" id="L110">        String[] filePaths = state.filePaths();</span>
+<span class="nc bnc" id="L111" title="All 2 branches missed.">        if (filePaths == null) {</span>
+<span class="nc" id="L112">            LOGGER.error(&quot;qid={} No file paths in handle state&quot;, qid);</span>
+<span class="nc" id="L113">            listener.error(new IllegalStateException(&quot;No file paths for qid=&quot; + qid));</span>
+<span class="nc" id="L114">            return;</span>
         }
 
-<span class="nc bnc" id="L116" title="All 2 branches missed.">        String serverUri = state.serverUri() != null ? state.serverUri() : &quot;local&quot;;</span>
-<span class="nc" id="L117">        long bytes = state.bytes();</span>
-<span class="nc" id="L118">        long started = System.currentTimeMillis();</span>
-<span class="nc" id="L119">        LogUtil.setQid(qid);</span>
-<span class="nc" id="L120">        long startNanos = System.nanoTime();</span>
+<span class="nc bnc" id="L117" title="All 2 branches missed.">        String serverUri = state.serverUri() != null ? state.serverUri() : &quot;local&quot;;</span>
+<span class="nc" id="L118">        long bytes = state.bytes();</span>
+<span class="nc" id="L119">        long started = System.currentTimeMillis();</span>
+<span class="nc" id="L120">        LogUtil.setQid(qid);</span>
+<span class="nc" id="L121">        LOGGER.info(&quot;qid={} node={} thread={} execution=start server={} files={} bytes={} endpoint={} query='{}'&quot;,</span>
+<span class="nc" id="L122">                qid, LogUtil.node(), Thread.currentThread().getName(),</span>
+<span class="nc" id="L123">                serverUri, filePaths.length, bytes, qid, query);</span>
 
-<span class="nc" id="L122">        LOGGER.info(&quot;qid={} node={} thread={} execution=start server={} files={} bytes={} endpoint={} query='{}'&quot;,</span>
-<span class="nc" id="L123">                qid, LogUtil.node(), Thread.currentThread().getName(),</span>
-<span class="nc" id="L124">                serverUri, filePaths.length, bytes, qid, query);</span>
-
-<span class="nc" id="L126">        MDC.put(&quot;qid&quot;, qid);</span>
+<span class="nc" id="L125">        MDC.put(&quot;qid&quot;, qid);</span>
+<span class="nc" id="L126">        MetricsService.QueryObservation observation =</span>
+<span class="nc" id="L127">                MetricsService.observeQuery(query, bytes);</span>
         try {
-<span class="nc" id="L128">            executionService.readParquet(allocator, query, filePaths, listener, true);</span>
-<span class="nc" id="L129">            listener.completed();</span>
-<span class="nc" id="L130">            long elapsed = System.currentTimeMillis() - started;</span>
-<span class="nc" id="L131">            LOGGER.info(&quot;qid={} node={} thread={} execution=completed server={} elapsedMs={} files={} result=completed query='{}'&quot;,</span>
-<span class="nc" id="L132">                    qid, LogUtil.node(), Thread.currentThread().getName(),</span>
-<span class="nc" id="L133">                    serverUri, elapsed, filePaths.length, query);</span>
-<span class="nc" id="L134">        } catch (Exception e) {</span>
-<span class="nc" id="L135">            long elapsed = System.currentTimeMillis() - started;</span>
-<span class="nc" id="L136">            String failure = failureDescription(e);</span>
-<span class="nc" id="L137">            LOGGER.error(&quot;qid={} node={} thread={} execution=failed server={} elapsedMs={} files={} result=failed error='{}'&quot;,</span>
-<span class="nc" id="L138">                    qid, LogUtil.node(), Thread.currentThread().getName(),</span>
-<span class="nc" id="L139">                    serverUri, elapsed, filePaths.length, failure, e);</span>
-<span class="nc" id="L140">            listener.error(CallStatus.INTERNAL</span>
-<span class="nc" id="L141">                    .withDescription(failure)</span>
-<span class="nc" id="L142">                    .withCause(e)</span>
-<span class="nc" id="L143">                    .toRuntimeException());</span>
+<span class="nc" id="L129">            executionService.readParquet(allocator, query, filePaths, listener, true);</span>
+<span class="nc" id="L130">            listener.completed();</span>
+<span class="nc" id="L131">            long elapsed = System.currentTimeMillis() - started;</span>
+<span class="nc" id="L132">            LOGGER.info(&quot;qid={} node={} thread={} execution=completed server={} elapsedMs={} files={} result=completed query='{}'&quot;,</span>
+<span class="nc" id="L133">                    qid, LogUtil.node(), Thread.currentThread().getName(),</span>
+<span class="nc" id="L134">                    serverUri, elapsed, filePaths.length, query);</span>
+<span class="nc" id="L135">        } catch (Exception e) {</span>
+<span class="nc" id="L136">            observation.markFailed();</span>
+<span class="nc" id="L137">            long elapsed = System.currentTimeMillis() - started;</span>
+<span class="nc" id="L138">            String failure = failureDescription(e);</span>
+<span class="nc" id="L139">            LOGGER.error(&quot;qid={} node={} thread={} execution=failed server={} elapsedMs={} files={} result=failed error='{}'&quot;,</span>
+<span class="nc" id="L140">                    qid, LogUtil.node(), Thread.currentThread().getName(),</span>
+<span class="nc" id="L141">                    serverUri, elapsed, filePaths.length, failure, e);</span>
+<span class="nc" id="L142">            listener.error(CallStatus.INTERNAL</span>
+<span class="nc" id="L143">                    .withDescription(failure)</span>
+<span class="nc" id="L144">                    .withCause(e)</span>
+<span class="nc" id="L145">                    .toRuntimeException());</span>
         } finally {
-<span class="nc" id="L145">            MDC.remove(&quot;qid&quot;);</span>
-<span class="nc" id="L146">            LogUtil.setQid(null);</span>
-<span class="nc bnc" id="L147" title="All 2 branches missed.">            if (state.serverUri() != null) {</span>
+<span class="nc" id="L147">            observation.close();</span>
+<span class="nc" id="L148">            MDC.remove(&quot;qid&quot;);</span>
+<span class="nc" id="L149">            LogUtil.setQid(null);</span>
+<span class="nc bnc" id="L150" title="All 2 branches missed.">            if (state.serverUri() != null) {</span>
                 // Spark may retry a failed task with the same Flight ticket. Keep the
                 // ticket readable until its TTL, but clear its accounted load once.
-<span class="nc" id="L150">                clusterService.storeHandle(handle.toStringUtf8(),</span>
-<span class="nc" id="L151">                        HandleState.forServerFiles(query, filePaths, state.serverUri(), 0L));</span>
-<span class="nc" id="L152">                clusterService.addLoad(state.serverUri(), -state.bytes());</span>
+<span class="nc" id="L153">                clusterService.storeHandle(handle.toStringUtf8(),</span>
+<span class="nc" id="L154">                        HandleState.forServerFiles(query, filePaths, state.serverUri(), 0L));</span>
+<span class="nc" id="L155">                clusterService.addLoad(state.serverUri(), -state.bytes());</span>
             }
         }
-<span class="nc" id="L155">    }</span>
+<span class="nc" id="L158">    }</span>
 
     private static String failureDescription(Throwable failure) {
-<span class="nc" id="L158">        Throwable root = failure;</span>
-<span class="nc bnc" id="L159" title="All 4 branches missed.">        while (root.getCause() != null &amp;&amp; root.getCause() != root) {</span>
-<span class="nc" id="L160">            root = root.getCause();</span>
+<span class="nc" id="L161">        Throwable root = failure;</span>
+<span class="nc bnc" id="L162" title="All 4 branches missed.">        while (root.getCause() != null &amp;&amp; root.getCause() != root) {</span>
+<span class="nc" id="L163">            root = root.getCause();</span>
         }
-<span class="nc" id="L162">        String message = root.getMessage();</span>
-<span class="nc" id="L163">        String description = &quot;Query execution failed: &quot; + root.getClass().getSimpleName();</span>
-<span class="nc bnc" id="L164" title="All 4 branches missed.">        if (message != null &amp;&amp; !message.isBlank()) {</span>
-<span class="nc" id="L165">            description += &quot;: &quot; + message;</span>
+<span class="nc" id="L165">        String message = root.getMessage();</span>
+<span class="nc" id="L166">        String description = &quot;Query execution failed: &quot; + root.getClass().getSimpleName();</span>
+<span class="nc bnc" id="L167" title="All 4 branches missed.">        if (message != null &amp;&amp; !message.isBlank()) {</span>
+<span class="nc" id="L168">            description += &quot;: &quot; + message;</span>
         }
-<span class="nc bnc" id="L167" title="All 2 branches missed.">        return description.length() &lt;= 1024 ? description : description.substring(0, 1024);</span>
+<span class="nc bnc" id="L170" title="All 2 branches missed.">        return description.length() &lt;= 1024 ? description : description.substring(0, 1024);</span>
     }
 
     @Override
     public FlightInfo getFlightInfoStatement(FlightSql.CommandStatementQuery command,
             FlightProducer.CallContext context, FlightDescriptor descriptor) {
-<span class="nc" id="L173">        ByteString handle = copyFrom(randomUUID().toString().getBytes(StandardCharsets.UTF_8));</span>
-<span class="nc" id="L174">        String query = command.getQuery();</span>
-<span class="nc" id="L175">        String qid = qid(handle);</span>
-<span class="nc" id="L176">        LOGGER.info(&quot;getFlightInfoStatement: qid={}, query='{}'&quot;, qid, query);</span>
+<span class="nc" id="L176">        ByteString handle = copyFrom(randomUUID().toString().getBytes(StandardCharsets.UTF_8));</span>
+<span class="nc" id="L177">        String query = command.getQuery();</span>
+<span class="nc" id="L178">        String qid = qid(handle);</span>
+<span class="nc" id="L179">        LOGGER.info(&quot;getFlightInfoStatement: qid={}, query='{}'&quot;, qid, query);</span>
 
         Schema arrowSchema;
         try {
-<span class="nc" id="L180">            arrowSchema = metadataService.getQuerySchema(query);</span>
-<span class="nc" id="L181">        } catch (Exception e) {</span>
-<span class="nc" id="L182">            LOGGER.error(&quot;Error getting Arrow schema for query: {}&quot;, query, e);</span>
-<span class="nc" id="L183">            throw CallStatus.INTERNAL</span>
-<span class="nc" id="L184">                    .withDescription(&quot;Error getting Arrow schema for query&quot;)</span>
-<span class="nc" id="L185">                    .withCause(e).toRuntimeException();</span>
-<span class="nc" id="L186">        }</span>
+<span class="nc" id="L183">            arrowSchema = metadataService.getQuerySchema(query);</span>
+<span class="nc" id="L184">        } catch (Exception e) {</span>
+<span class="nc" id="L185">            LOGGER.error(&quot;Error getting Arrow schema for query: {}&quot;, query, e);</span>
+<span class="nc" id="L186">            throw CallStatus.INTERNAL</span>
+<span class="nc" id="L187">                    .withDescription(&quot;Error getting Arrow schema for query&quot;)</span>
+<span class="nc" id="L188">                    .withCause(e).toRuntimeException();</span>
+<span class="nc" id="L189">        }</span>
 
-<span class="nc bnc" id="L188" title="All 2 branches missed.">        if (arrowSchema == null) {</span>
-<span class="nc" id="L189">            LOGGER.error(&quot;Arrow schema not found for query: {}&quot;, query);</span>
-<span class="nc" id="L190">            throw CallStatus.NOT_FOUND</span>
-<span class="nc" id="L191">                    .withDescription(&quot;Could not find Arrow schema for query&quot;)</span>
-<span class="nc" id="L192">                    .toRuntimeException();</span>
+<span class="nc bnc" id="L191" title="All 2 branches missed.">        if (arrowSchema == null) {</span>
+<span class="nc" id="L192">            LOGGER.error(&quot;Arrow schema not found for query: {}&quot;, query);</span>
+<span class="nc" id="L193">            throw CallStatus.NOT_FOUND</span>
+<span class="nc" id="L194">                    .withDescription(&quot;Could not find Arrow schema for query&quot;)</span>
+<span class="nc" id="L195">                    .toRuntimeException();</span>
         }
 
-<span class="nc" id="L195">        clusterService.storeHandle(handle.toStringUtf8(), HandleState.forQuery(query));</span>
+<span class="nc" id="L198">        clusterService.storeHandle(handle.toStringUtf8(), HandleState.forQuery(query));</span>
 
-<span class="nc" id="L197">        FlightSql.TicketStatementQuery ticket = FlightSql.TicketStatementQuery.newBuilder()</span>
-<span class="nc" id="L198">                .setStatementHandle(handle).build();</span>
-<span class="nc" id="L199">        return getFlightInfoForSchema(ticket, descriptor, arrowSchema);</span>
+<span class="nc" id="L200">        FlightSql.TicketStatementQuery ticket = FlightSql.TicketStatementQuery.newBuilder()</span>
+<span class="nc" id="L201">                .setStatementHandle(handle).build();</span>
+<span class="nc" id="L202">        return getFlightInfoForSchema(ticket, descriptor, arrowSchema);</span>
     }
 
     @Override
     public SchemaResult getSchemaStatement(FlightSql.CommandStatementQuery command,
             FlightProducer.CallContext context, FlightDescriptor descriptor) {
-<span class="nc" id="L205">        String query = command.getQuery();</span>
-<span class="nc" id="L206">        LOGGER.info(&quot;getSchemaStatement: {}&quot;, query);</span>
+<span class="nc" id="L208">        String query = command.getQuery();</span>
+<span class="nc" id="L209">        LOGGER.info(&quot;getSchemaStatement: {}&quot;, query);</span>
 
         Schema arrowSchema;
         try {
-<span class="nc" id="L210">            arrowSchema = metadataService.getQuerySchema(query);</span>
-<span class="nc" id="L211">        } catch (Exception e) {</span>
-<span class="nc" id="L212">            LOGGER.error(&quot;Error getting Arrow schema for query: {}&quot;, query, e);</span>
-<span class="nc" id="L213">            throw CallStatus.INTERNAL</span>
-<span class="nc" id="L214">                    .withDescription(&quot;Error getting Arrow schema for query&quot;)</span>
-<span class="nc" id="L215">                    .withCause(e).toRuntimeException();</span>
-<span class="nc" id="L216">        }</span>
+<span class="nc" id="L213">            arrowSchema = metadataService.getQuerySchema(query);</span>
+<span class="nc" id="L214">        } catch (Exception e) {</span>
+<span class="nc" id="L215">            LOGGER.error(&quot;Error getting Arrow schema for query: {}&quot;, query, e);</span>
+<span class="nc" id="L216">            throw CallStatus.INTERNAL</span>
+<span class="nc" id="L217">                    .withDescription(&quot;Error getting Arrow schema for query&quot;)</span>
+<span class="nc" id="L218">                    .withCause(e).toRuntimeException();</span>
+<span class="nc" id="L219">        }</span>
 
-<span class="nc bnc" id="L218" title="All 2 branches missed.">        if (arrowSchema == null) {</span>
-<span class="nc" id="L219">            throw CallStatus.NOT_FOUND</span>
-<span class="nc" id="L220">                    .withDescription(&quot;Could not find Arrow schema for query&quot;)</span>
-<span class="nc" id="L221">                    .toRuntimeException();</span>
+<span class="nc bnc" id="L221" title="All 2 branches missed.">        if (arrowSchema == null) {</span>
+<span class="nc" id="L222">            throw CallStatus.NOT_FOUND</span>
+<span class="nc" id="L223">                    .withDescription(&quot;Could not find Arrow schema for query&quot;)</span>
+<span class="nc" id="L224">                    .toRuntimeException();</span>
         }
 
-<span class="nc" id="L224">        return new SchemaResult(arrowSchema);</span>
+<span class="nc" id="L227">        return new SchemaResult(arrowSchema);</span>
     }
 
     @Override
     protected &lt;T extends Message&gt; List&lt;FlightEndpoint&gt; determineEndpoints(
             T request, FlightDescriptor descriptor, Schema schema) {
         try {
-<span class="nc bnc" id="L231" title="All 2 branches missed.">            if (request instanceof FlightSql.TicketStatementQuery ticketQuery) {</span>
-<span class="nc" id="L232">                final ByteString handle = ticketQuery.getStatementHandle();</span>
-<span class="nc" id="L233">                HandleState state = clusterService.getHandle(handle.toStringUtf8());</span>
-<span class="nc bnc" id="L234" title="All 2 branches missed.">                if (state == null) {</span>
-<span class="nc" id="L235">                    throw CallStatus.NOT_FOUND</span>
-<span class="nc" id="L236">                            .withDescription(&quot;No handle state found&quot;)</span>
-<span class="nc" id="L237">                            .toRuntimeException();</span>
+<span class="nc bnc" id="L234" title="All 2 branches missed.">            if (request instanceof FlightSql.TicketStatementQuery ticketQuery) {</span>
+<span class="nc" id="L235">                final ByteString handle = ticketQuery.getStatementHandle();</span>
+<span class="nc" id="L236">                HandleState state = clusterService.getHandle(handle.toStringUtf8());</span>
+<span class="nc bnc" id="L237" title="All 2 branches missed.">                if (state == null) {</span>
+<span class="nc" id="L238">                    throw CallStatus.NOT_FOUND</span>
+<span class="nc" id="L239">                            .withDescription(&quot;No handle state found&quot;)</span>
+<span class="nc" id="L240">                            .toRuntimeException();</span>
                 }
-<span class="nc" id="L239">                String query = state.query();</span>
-<span class="nc" id="L240">                return queryPlanner.determineEndpoints(query);</span>
+<span class="nc" id="L242">                String query = state.query();</span>
+<span class="nc" id="L243">                return queryPlanner.determineEndpoints(query);</span>
             } else {
-<span class="nc" id="L242">                Ticket ticket = new Ticket(Any.pack(request).toByteArray());</span>
-<span class="nc" id="L243">                return List.of(new FlightEndpoint(ticket, location));</span>
+<span class="nc" id="L245">                Ticket ticket = new Ticket(Any.pack(request).toByteArray());</span>
+<span class="nc" id="L246">                return List.of(new FlightEndpoint(ticket, location));</span>
             }
-<span class="nc" id="L245">        } catch (IOException e) {</span>
-<span class="nc" id="L246">            throw new RuntimeException(e);</span>
+<span class="nc" id="L248">        } catch (IOException e) {</span>
+<span class="nc" id="L249">            throw new RuntimeException(e);</span>
         }
     }
 
@@ -252,7 +255,7 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
     @Override
     public FlightInfo getFlightInfoSqlInfo(FlightSql.CommandGetSqlInfo request,
             FlightProducer.CallContext context, FlightDescriptor descriptor) {
-<span class="nc" id="L255">        return getFlightInfoForSchema(request, descriptor,</span>
+<span class="nc" id="L258">        return getFlightInfoForSchema(request, descriptor,</span>
                 org.apache.arrow.flight.sql.FlightSqlProducer.Schemas.GET_SQL_INFO_SCHEMA);
     }
 
@@ -260,30 +263,30 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
     public void getStreamSqlInfo(FlightSql.CommandGetSqlInfo command,
             FlightProducer.CallContext context,
             FlightProducer.ServerStreamListener listener) {
-<span class="nc" id="L263">        this.sqlInfoBuilder.send(command.getInfoList(), listener);</span>
-<span class="nc" id="L264">    }</span>
+<span class="nc" id="L266">        this.sqlInfoBuilder.send(command.getInfoList(), listener);</span>
+<span class="nc" id="L267">    }</span>
 
     @Override
     public FlightInfo getFlightInfoCatalogs(FlightSql.CommandGetCatalogs request,
             FlightProducer.CallContext context, FlightDescriptor descriptor) {
-<span class="nc" id="L269">        return getFlightInfoForSchema(request, descriptor,</span>
+<span class="nc" id="L272">        return getFlightInfoForSchema(request, descriptor,</span>
                 org.apache.arrow.flight.sql.FlightSqlProducer.Schemas.GET_CATALOGS_SCHEMA);
     }
 
     @Override
     public void getStreamCatalogs(FlightProducer.CallContext context,
             FlightProducer.ServerStreamListener listener) {
-<span class="nc" id="L276">        try (VectorSchemaRoot root = metadataService.getCatalogsRoot(allocator)) {</span>
-<span class="nc" id="L277">            listener.start(root);</span>
-<span class="nc" id="L278">            listener.putNext();</span>
-<span class="nc" id="L279">            listener.completed();</span>
+<span class="nc" id="L279">        try (VectorSchemaRoot root = metadataService.getCatalogsRoot(allocator)) {</span>
+<span class="nc" id="L280">            listener.start(root);</span>
+<span class="nc" id="L281">            listener.putNext();</span>
+<span class="nc" id="L282">            listener.completed();</span>
         }
-<span class="nc" id="L281">    }</span>
+<span class="nc" id="L284">    }</span>
 
     @Override
     public FlightInfo getFlightInfoSchemas(FlightSql.CommandGetDbSchemas request,
             FlightProducer.CallContext context, FlightDescriptor descriptor) {
-<span class="nc" id="L286">        return getFlightInfoForSchema(request, descriptor,</span>
+<span class="nc" id="L289">        return getFlightInfoForSchema(request, descriptor,</span>
                 org.apache.arrow.flight.sql.FlightSqlProducer.Schemas.GET_SCHEMAS_SCHEMA);
     }
 
@@ -291,128 +294,128 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
     public void getStreamSchemas(FlightSql.CommandGetDbSchemas command,
             FlightProducer.CallContext context,
             FlightProducer.ServerStreamListener listener) {
-<span class="nc bnc" id="L294" title="All 2 branches missed.">        final String catalog = command.hasCatalog() ? command.getCatalog() : null;</span>
-<span class="nc bnc" id="L295" title="All 2 branches missed.">        final String schemaFilterPattern = command.hasDbSchemaFilterPattern()</span>
-<span class="nc" id="L296">                ? command.getDbSchemaFilterPattern() : null;</span>
-<span class="nc" id="L297">        boolean errored = false;</span>
+<span class="nc bnc" id="L297" title="All 2 branches missed.">        final String catalog = command.hasCatalog() ? command.getCatalog() : null;</span>
+<span class="nc bnc" id="L298" title="All 2 branches missed.">        final String schemaFilterPattern = command.hasDbSchemaFilterPattern()</span>
+<span class="nc" id="L299">                ? command.getDbSchemaFilterPattern() : null;</span>
+<span class="nc" id="L300">        boolean errored = false;</span>
 
         try {
-<span class="nc" id="L300">            Map&lt;String, org.apache.hadoop.fs.Path&gt; schemas =</span>
-<span class="nc" id="L301">                    metadataService.getSchemas(schemaFilterPattern);</span>
-<span class="nc" id="L302">            try (VectorSchemaRoot root = metadataService.getSchemasRoot(</span>
-<span class="nc" id="L303">                    schemas.keySet(), allocator)) {</span>
-<span class="nc" id="L304">                listener.start(root);</span>
-<span class="nc" id="L305">                listener.putNext();</span>
+<span class="nc" id="L303">            Map&lt;String, org.apache.hadoop.fs.Path&gt; schemas =</span>
+<span class="nc" id="L304">                    metadataService.getSchemas(schemaFilterPattern);</span>
+<span class="nc" id="L305">            try (VectorSchemaRoot root = metadataService.getSchemasRoot(</span>
+<span class="nc" id="L306">                    schemas.keySet(), allocator)) {</span>
+<span class="nc" id="L307">                listener.start(root);</span>
+<span class="nc" id="L308">                listener.putNext();</span>
             }
-<span class="nc" id="L307">        } catch (IOException e) {</span>
-<span class="nc" id="L308">            LOGGER.error(&quot;Failed to getStreamSchemas&quot;, e);</span>
-<span class="nc" id="L309">            listener.error(e);</span>
-<span class="nc" id="L310">            errored = true;</span>
+<span class="nc" id="L310">        } catch (IOException e) {</span>
+<span class="nc" id="L311">            LOGGER.error(&quot;Failed to getStreamSchemas&quot;, e);</span>
+<span class="nc" id="L312">            listener.error(e);</span>
+<span class="nc" id="L313">            errored = true;</span>
         } finally {
-<span class="nc bnc" id="L312" title="All 2 branches missed.">            if (!errored) {</span>
-<span class="nc" id="L313">                listener.completed();</span>
+<span class="nc bnc" id="L315" title="All 2 branches missed.">            if (!errored) {</span>
+<span class="nc" id="L316">                listener.completed();</span>
             }
         }
-<span class="nc" id="L316">    }</span>
+<span class="nc" id="L319">    }</span>
 
     @Override
     public FlightInfo getFlightInfoTableTypes(FlightSql.CommandGetTableTypes request,
             FlightProducer.CallContext context, FlightDescriptor descriptor) {
-<span class="nc" id="L321">        return getFlightInfoForSchema(request, descriptor,</span>
+<span class="nc" id="L324">        return getFlightInfoForSchema(request, descriptor,</span>
                 org.apache.arrow.flight.sql.FlightSqlProducer.Schemas.GET_TABLE_TYPES_SCHEMA);
     }
 
     @Override
     public void getStreamTableTypes(FlightProducer.CallContext context,
             FlightProducer.ServerStreamListener listener) {
-<span class="nc" id="L328">        try (VectorSchemaRoot root = metadataService.getTableTypesRoot(allocator)) {</span>
-<span class="nc" id="L329">            listener.start(root);</span>
-<span class="nc" id="L330">            listener.putNext();</span>
-<span class="nc" id="L331">            listener.completed();</span>
+<span class="nc" id="L331">        try (VectorSchemaRoot root = metadataService.getTableTypesRoot(allocator)) {</span>
+<span class="nc" id="L332">            listener.start(root);</span>
+<span class="nc" id="L333">            listener.putNext();</span>
+<span class="nc" id="L334">            listener.completed();</span>
         }
-<span class="nc" id="L333">    }</span>
+<span class="nc" id="L336">    }</span>
 
     @Override
     public FlightInfo getFlightInfoTables(FlightSql.CommandGetTables request,
             FlightProducer.CallContext context, FlightDescriptor descriptor) {
-<span class="nc" id="L338">        Schema schemaToUse = org.apache.arrow.flight.sql.FlightSqlProducer.Schemas.GET_TABLES_SCHEMA;</span>
-<span class="nc bnc" id="L339" title="All 2 branches missed.">        if (!request.getIncludeSchema()) {</span>
-<span class="nc" id="L340">            schemaToUse = org.apache.arrow.flight.sql.FlightSqlProducer.Schemas.GET_TABLES_SCHEMA_NO_SCHEMA;</span>
+<span class="nc" id="L341">        Schema schemaToUse = org.apache.arrow.flight.sql.FlightSqlProducer.Schemas.GET_TABLES_SCHEMA;</span>
+<span class="nc bnc" id="L342" title="All 2 branches missed.">        if (!request.getIncludeSchema()) {</span>
+<span class="nc" id="L343">            schemaToUse = org.apache.arrow.flight.sql.FlightSqlProducer.Schemas.GET_TABLES_SCHEMA_NO_SCHEMA;</span>
         }
-<span class="nc" id="L342">        return getFlightInfoForSchema(request, descriptor, schemaToUse);</span>
+<span class="nc" id="L345">        return getFlightInfoForSchema(request, descriptor, schemaToUse);</span>
     }
 
     @Override
     public void getStreamTables(FlightSql.CommandGetTables command,
             FlightProducer.CallContext context,
             FlightProducer.ServerStreamListener listener) {
-<span class="nc bnc" id="L349" title="All 2 branches missed.">        final String catalog = command.hasCatalog() ? command.getCatalog() : null;</span>
-<span class="nc bnc" id="L350" title="All 2 branches missed.">        final String schemaFilterPattern = command.hasDbSchemaFilterPattern()</span>
-<span class="nc" id="L351">                ? command.getDbSchemaFilterPattern() : null;</span>
-<span class="nc bnc" id="L352" title="All 2 branches missed.">        final String tableFilterPattern = command.hasTableNameFilterPattern()</span>
-<span class="nc" id="L353">                ? command.getTableNameFilterPattern() : null;</span>
+<span class="nc bnc" id="L352" title="All 2 branches missed.">        final String catalog = command.hasCatalog() ? command.getCatalog() : null;</span>
+<span class="nc bnc" id="L353" title="All 2 branches missed.">        final String schemaFilterPattern = command.hasDbSchemaFilterPattern()</span>
+<span class="nc" id="L354">                ? command.getDbSchemaFilterPattern() : null;</span>
+<span class="nc bnc" id="L355" title="All 2 branches missed.">        final String tableFilterPattern = command.hasTableNameFilterPattern()</span>
+<span class="nc" id="L356">                ? command.getTableNameFilterPattern() : null;</span>
 
-<span class="nc bnc" id="L355" title="All 2 branches missed.">        if (catalog != null</span>
-<span class="nc bnc" id="L356" title="All 2 branches missed.">                &amp;&amp; !MetadataService.CATALOG_NAME.equalsIgnoreCase(catalog)) {</span>
-<span class="nc" id="L357">            LOGGER.info(&quot;Catalog doesn't exist in getStreamTables: {}&quot;, catalog);</span>
-<span class="nc" id="L358">            throw CallStatus.NOT_FOUND</span>
-<span class="nc" id="L359">                    .withDescription(&quot;Could not getStreamTables for catalog: &quot; + catalog)</span>
-<span class="nc" id="L360">                    .toRuntimeException();</span>
+<span class="nc bnc" id="L358" title="All 2 branches missed.">        if (catalog != null</span>
+<span class="nc bnc" id="L359" title="All 2 branches missed.">                &amp;&amp; !MetadataService.CATALOG_NAME.equalsIgnoreCase(catalog)) {</span>
+<span class="nc" id="L360">            LOGGER.info(&quot;Catalog doesn't exist in getStreamTables: {}&quot;, catalog);</span>
+<span class="nc" id="L361">            throw CallStatus.NOT_FOUND</span>
+<span class="nc" id="L362">                    .withDescription(&quot;Could not getStreamTables for catalog: &quot; + catalog)</span>
+<span class="nc" id="L363">                    .toRuntimeException();</span>
         }
 
-<span class="nc" id="L363">        final ProtocolStringList tableTypesList = command.getTableTypesList();</span>
-<span class="nc bnc" id="L364" title="All 2 branches missed.">        if (!tableTypesList.isEmpty()</span>
-<span class="nc bnc" id="L365" title="All 2 branches missed.">                &amp;&amp; !tableTypesList.stream().allMatch(</span>
+<span class="nc" id="L366">        final ProtocolStringList tableTypesList = command.getTableTypesList();</span>
+<span class="nc bnc" id="L367" title="All 2 branches missed.">        if (!tableTypesList.isEmpty()</span>
+<span class="nc bnc" id="L368" title="All 2 branches missed.">                &amp;&amp; !tableTypesList.stream().allMatch(</span>
                         MetadataService.TABLE_TYPE::equalsIgnoreCase)) {
-<span class="nc" id="L367">            LOGGER.info(&quot;Table type not found in getStreamTables: {}&quot;, tableTypesList);</span>
-<span class="nc" id="L368">            throw CallStatus.NOT_FOUND</span>
-<span class="nc" id="L369">                    .withDescription(&quot;Table type not found in getStreamTables&quot;)</span>
-<span class="nc" id="L370">                    .toRuntimeException();</span>
+<span class="nc" id="L370">            LOGGER.info(&quot;Table type not found in getStreamTables: {}&quot;, tableTypesList);</span>
+<span class="nc" id="L371">            throw CallStatus.NOT_FOUND</span>
+<span class="nc" id="L372">                    .withDescription(&quot;Table type not found in getStreamTables&quot;)</span>
+<span class="nc" id="L373">                    .toRuntimeException();</span>
         }
 
-<span class="nc" id="L373">        Map&lt;String, Map&lt;String, Schema&gt;&gt; tables = new java.util.LinkedHashMap&lt;&gt;();</span>
+<span class="nc" id="L376">        Map&lt;String, Map&lt;String, Schema&gt;&gt; tables = new java.util.LinkedHashMap&lt;&gt;();</span>
         try {
             for (Map.Entry&lt;String, org.apache.hadoop.fs.Path&gt; schemaEntry :
-<span class="nc bnc" id="L376" title="All 2 branches missed.">                    metadataService.getSchemas(schemaFilterPattern).entrySet()) {</span>
-<span class="nc" id="L377">                Map&lt;String, Schema&gt; tablesForSchema = new java.util.LinkedHashMap&lt;&gt;();</span>
-<span class="nc" id="L378">                tables.put(schemaEntry.getKey(), tablesForSchema);</span>
+<span class="nc bnc" id="L379" title="All 2 branches missed.">                    metadataService.getSchemas(schemaFilterPattern).entrySet()) {</span>
+<span class="nc" id="L380">                Map&lt;String, Schema&gt; tablesForSchema = new java.util.LinkedHashMap&lt;&gt;();</span>
+<span class="nc" id="L381">                tables.put(schemaEntry.getKey(), tablesForSchema);</span>
                 for (Map.Entry&lt;String, org.apache.hadoop.fs.Path&gt; tableEntry :
-<span class="nc bnc" id="L380" title="All 2 branches missed.">                        metadataService.getTables(schemaEntry.getKey(), tableFilterPattern)</span>
-<span class="nc" id="L381">                                .entrySet()) {</span>
-<span class="nc bnc" id="L382" title="All 2 branches missed.">                    Schema schema = command.getIncludeSchema()</span>
-<span class="nc" id="L383">                            ? metadataService.getTableSchema(</span>
-<span class="nc" id="L384">                                    schemaEntry.getKey(), tableEntry.getKey(), null)</span>
-<span class="nc" id="L385">                            : null;</span>
-<span class="nc" id="L386">                    tablesForSchema.put(tableEntry.getKey(), schema);</span>
-<span class="nc" id="L387">                }</span>
-<span class="nc" id="L388">            }</span>
-<span class="nc" id="L389">        } catch (IOException e) {</span>
-<span class="nc" id="L390">            LOGGER.error(&quot;Failed to getStreamTables&quot;, e);</span>
-<span class="nc" id="L391">            listener.error(e);</span>
-<span class="nc" id="L392">            return;</span>
-<span class="nc" id="L393">        }</span>
+<span class="nc bnc" id="L383" title="All 2 branches missed.">                        metadataService.getTables(schemaEntry.getKey(), tableFilterPattern)</span>
+<span class="nc" id="L384">                                .entrySet()) {</span>
+<span class="nc bnc" id="L385" title="All 2 branches missed.">                    Schema schema = command.getIncludeSchema()</span>
+<span class="nc" id="L386">                            ? metadataService.getTableSchema(</span>
+<span class="nc" id="L387">                                    schemaEntry.getKey(), tableEntry.getKey(), null)</span>
+<span class="nc" id="L388">                            : null;</span>
+<span class="nc" id="L389">                    tablesForSchema.put(tableEntry.getKey(), schema);</span>
+<span class="nc" id="L390">                }</span>
+<span class="nc" id="L391">            }</span>
+<span class="nc" id="L392">        } catch (IOException e) {</span>
+<span class="nc" id="L393">            LOGGER.error(&quot;Failed to getStreamTables&quot;, e);</span>
+<span class="nc" id="L394">            listener.error(e);</span>
+<span class="nc" id="L395">            return;</span>
+<span class="nc" id="L396">        }</span>
 
-<span class="nc" id="L395">        boolean errored = false;</span>
-<span class="nc" id="L396">        try (VectorSchemaRoot root = metadataService.getTablesRoot(</span>
-<span class="nc" id="L397">                tables, allocator, command.getIncludeSchema(),</span>
+<span class="nc" id="L398">        boolean errored = false;</span>
+<span class="nc" id="L399">        try (VectorSchemaRoot root = metadataService.getTablesRoot(</span>
+<span class="nc" id="L400">                tables, allocator, command.getIncludeSchema(),</span>
                 schemaFilterPattern, tableFilterPattern)) {
-<span class="nc" id="L399">            listener.start(root);</span>
-<span class="nc" id="L400">            listener.putNext();</span>
-<span class="nc" id="L401">        } catch (Exception e) {</span>
-<span class="nc" id="L402">            LOGGER.error(&quot;Failed to getStreamTables&quot;, e);</span>
-<span class="nc" id="L403">            listener.error(e);</span>
-<span class="nc" id="L404">            errored = true;</span>
+<span class="nc" id="L402">            listener.start(root);</span>
+<span class="nc" id="L403">            listener.putNext();</span>
+<span class="nc" id="L404">        } catch (Exception e) {</span>
+<span class="nc" id="L405">            LOGGER.error(&quot;Failed to getStreamTables&quot;, e);</span>
+<span class="nc" id="L406">            listener.error(e);</span>
+<span class="nc" id="L407">            errored = true;</span>
         } finally {
-<span class="nc bnc" id="L406" title="All 2 branches missed.">            if (!errored) {</span>
-<span class="nc" id="L407">                listener.completed();</span>
+<span class="nc bnc" id="L409" title="All 2 branches missed.">            if (!errored) {</span>
+<span class="nc" id="L410">                listener.completed();</span>
             }
         }
-<span class="nc" id="L410">    }</span>
+<span class="nc" id="L413">    }</span>
 
     @Override
     public FlightInfo getFlightInfoTypeInfo(FlightSql.CommandGetXdbcTypeInfo request,
             FlightProducer.CallContext context, FlightDescriptor descriptor) {
-<span class="nc" id="L415">        return getFlightInfoForSchema(request, descriptor,</span>
+<span class="nc" id="L418">        return getFlightInfoForSchema(request, descriptor,</span>
                 org.apache.arrow.flight.sql.FlightSqlProducer.Schemas.GET_TYPE_INFO_SCHEMA);
     }
 
@@ -420,24 +423,24 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
     public void getStreamTypeInfo(FlightSql.CommandGetXdbcTypeInfo request,
             FlightProducer.CallContext context,
             FlightProducer.ServerStreamListener listener) {
-<span class="nc" id="L423">        try (VectorSchemaRoot root = metadataService.getTypeInfoRoot(request, allocator)) {</span>
-<span class="nc" id="L424">            listener.start(root);</span>
-<span class="nc" id="L425">            listener.putNext();</span>
-<span class="nc" id="L426">            listener.completed();</span>
+<span class="nc" id="L426">        try (VectorSchemaRoot root = metadataService.getTypeInfoRoot(request, allocator)) {</span>
+<span class="nc" id="L427">            listener.start(root);</span>
+<span class="nc" id="L428">            listener.putNext();</span>
+<span class="nc" id="L429">            listener.completed();</span>
         }
-<span class="nc" id="L428">    }</span>
+<span class="nc" id="L431">    }</span>
 
     @Override
     public void close() throws Exception {
-<span class="nc" id="L432">    }</span>
+<span class="nc" id="L435">    }</span>
 
     /**
      * @param handle ticket handle as ByteString
      * @return truncated 8-character query identifier
      */
     private static String qid(ByteString handle) {
-<span class="nc" id="L439">        String raw = handle.toStringUtf8();</span>
-<span class="nc bnc" id="L440" title="All 2 branches missed.">        return raw.length() &gt;= 8 ? raw.substring(0, 8) : raw;</span>
+<span class="nc" id="L442">        String raw = handle.toStringUtf8();</span>
+<span class="nc bnc" id="L443" title="All 2 branches missed.">        return raw.length() &gt;= 8 ? raw.substring(0, 8) : raw;</span>
     }
 
     /**
@@ -448,8 +451,8 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
      */
     private &lt;T extends Message&gt; FlightInfo getFlightInfoForSchema(
             T request, FlightDescriptor descriptor, Schema schema) {
-<span class="nc" id="L451">        final List&lt;FlightEndpoint&gt; endpoints = determineEndpoints(request, descriptor, schema);</span>
-<span class="nc" id="L452">        return new FlightInfo(schema, descriptor, endpoints, -1, -1);</span>
+<span class="nc" id="L454">        final List&lt;FlightEndpoint&gt; endpoints = determineEndpoints(request, descriptor, schema);</span>
+<span class="nc" id="L455">        return new FlightInfo(schema, descriptor, endpoints, -1, -1);</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>
