@@ -24,7 +24,17 @@ class FlightScanBuilderTest {
                 new StructField("name", DataTypes.StringType, true, Metadata.empty()),
                 new StructField("score", DataTypes.FloatType, true, Metadata.empty()),
                 new StructField("amount", DataTypes.DoubleType, true, Metadata.empty()),
-                new StructField("active", DataTypes.BooleanType, true, Metadata.empty())
+                new StructField("active", DataTypes.BooleanType, true, Metadata.empty()),
+                new StructField("l_quantity", DataTypes.createDecimalType(15, 2),
+                        true, Metadata.empty()),
+                new StructField("l_extendedprice", DataTypes.createDecimalType(15, 2),
+                        true, Metadata.empty()),
+                new StructField("l_discount", DataTypes.createDecimalType(15, 2),
+                        true, Metadata.empty()),
+                new StructField("l_tax", DataTypes.createDecimalType(15, 2),
+                        true, Metadata.empty()),
+                new StructField("l_returnflag", DataTypes.StringType, true, Metadata.empty()),
+                new StructField("l_linestatus", DataTypes.StringType, true, Metadata.empty())
         });
         t.setSparkSchema(schema);
         return t;
@@ -268,6 +278,72 @@ class FlightScanBuilderTest {
     }
 
     @Test
+    void pushAggregationSumDecimalAccepted() {
+        Table t = tableWithSchema();
+        FlightScanBuilder builder = new FlightScanBuilder(config(), t, noPartitioning());
+
+        org.apache.spark.sql.connector.expressions.aggregate.Aggregation agg =
+                new org.apache.spark.sql.connector.expressions.aggregate.Aggregation(
+                        new org.apache.spark.sql.connector.expressions.aggregate.AggregateFunc[]{
+                                new org.apache.spark.sql.connector.expressions.aggregate.Sum(
+                                        reference("l_quantity"), false)
+                        },
+                        new org.apache.spark.sql.connector.expressions.Expression[0]);
+
+        assertTrue(builder.pushAggregation(agg));
+    }
+
+    @Test
+    void pushAggregationTpchQ1DecimalExpressionsAccepted() {
+        Table t = tableWithSchema();
+        FlightScanBuilder builder = new FlightScanBuilder(config(), t, noPartitioning());
+        org.apache.spark.sql.connector.expressions.Expression one =
+                new org.apache.spark.sql.connector.expressions.Cast(
+                        new org.apache.spark.sql.connector.expressions.LiteralValue<>(
+                                1, DataTypes.IntegerType),
+                        DataTypes.createDecimalType(1, 0));
+        org.apache.spark.sql.connector.expressions.Expression discountFactor =
+                new org.apache.spark.sql.connector.expressions.GeneralScalarExpression(
+                        "-", new org.apache.spark.sql.connector.expressions.Expression[]{
+                                one, reference("l_discount")
+                        });
+        org.apache.spark.sql.connector.expressions.Expression discountedPrice =
+                new org.apache.spark.sql.connector.expressions.GeneralScalarExpression(
+                        "*", new org.apache.spark.sql.connector.expressions.Expression[]{
+                                reference("l_extendedprice"), discountFactor
+                        });
+        org.apache.spark.sql.connector.expressions.Expression taxFactor =
+                new org.apache.spark.sql.connector.expressions.GeneralScalarExpression(
+                        "+", new org.apache.spark.sql.connector.expressions.Expression[]{
+                                one, reference("l_tax")
+                        });
+        org.apache.spark.sql.connector.expressions.Expression charge =
+                new org.apache.spark.sql.connector.expressions.GeneralScalarExpression(
+                        "*", new org.apache.spark.sql.connector.expressions.Expression[]{
+                                discountedPrice, taxFactor
+                        });
+
+        org.apache.spark.sql.connector.expressions.aggregate.Aggregation agg =
+                new org.apache.spark.sql.connector.expressions.aggregate.Aggregation(
+                        new org.apache.spark.sql.connector.expressions.aggregate.AggregateFunc[]{
+                                new org.apache.spark.sql.connector.expressions.aggregate.Sum(
+                                        reference("l_quantity"), false),
+                                new org.apache.spark.sql.connector.expressions.aggregate.Sum(
+                                        reference("l_extendedprice"), false),
+                                new org.apache.spark.sql.connector.expressions.aggregate.Sum(
+                                        discountedPrice, false),
+                                new org.apache.spark.sql.connector.expressions.aggregate.Sum(
+                                        charge, false),
+                                new org.apache.spark.sql.connector.expressions.aggregate.CountStar()
+                        },
+                        new org.apache.spark.sql.connector.expressions.Expression[]{
+                                reference("l_returnflag"), reference("l_linestatus")
+                        });
+
+        assertTrue(builder.pushAggregation(agg));
+    }
+
+    @Test
     void pushAggregationSumIntegerRejected() {
         Table t = tableWithSchema();
         FlightScanBuilder builder = new FlightScanBuilder(config(), t, noPartitioning());
@@ -344,5 +420,26 @@ class FlightScanBuilderTest {
                         new org.apache.spark.sql.connector.expressions.Expression[0]);
         assertFalse(builder.pushAggregation(agg),
                 "Unknown aggregate function must be rejected");
+    }
+
+    /**
+     * Creates a connector named reference for aggregation tests.
+     *
+     * @param column column name
+     * @return named reference
+     */
+    private static org.apache.spark.sql.connector.expressions.NamedReference reference(
+            String column) {
+        return new org.apache.spark.sql.connector.expressions.NamedReference() {
+            @Override
+            public String[] fieldNames() {
+                return new String[]{column};
+            }
+
+            @Override
+            public String describe() {
+                return column;
+            }
+        };
     }
 }

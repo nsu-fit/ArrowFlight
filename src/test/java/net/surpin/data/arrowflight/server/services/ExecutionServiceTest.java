@@ -4,6 +4,7 @@ import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.RootAllocator;
 import org.apache.arrow.vector.BigIntVector;
 import org.apache.arrow.vector.BitVector;
+import org.apache.arrow.vector.DecimalVector;
 import org.apache.arrow.vector.Float4Vector;
 import org.apache.arrow.vector.Float8Vector;
 import org.apache.arrow.vector.IntVector;
@@ -16,6 +17,7 @@ import org.apache.hadoop.fs.Path;
 import org.junit.jupiter.api.Test;
 
 import java.net.URI;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
@@ -102,6 +104,15 @@ class ExecutionServiceTest {
     @Test
     void addDoublesBothNull() {
         assertEquals(0.0, ExecutionService.addDoubles(null, null));
+    }
+
+    @Test
+    void addNumbersPreservesDecimalPrecision() {
+        BigDecimal first = new BigDecimal("12345678901234567890.12");
+        BigDecimal second = new BigDecimal("0.34");
+
+        assertEquals(new BigDecimal("12345678901234567890.46"),
+                ExecutionService.addNumbers(first, second));
     }
 
     // ── partitionIntoGroups ─────────────────────────────────────────────────
@@ -330,6 +341,17 @@ class ExecutionServiceTest {
             v.allocateNew(1);
             ExecutionService.setVectorValue(v, 0, 2.5f);
             assertEquals(2.5f, v.get(0), 0.0001);
+        }
+    }
+
+    @Test
+    void setVectorValueDecimal() {
+        try (BufferAllocator alloc = new RootAllocator();
+             DecimalVector v = new DecimalVector("x", alloc, 38, 4)) {
+            v.allocateNew(1);
+            BigDecimal value = new BigDecimal("12345678901234567890.1234");
+            ExecutionService.setVectorValue(v, 0, value);
+            assertEquals(value, v.getObject(0));
         }
     }
 

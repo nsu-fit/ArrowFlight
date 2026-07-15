@@ -39,6 +39,9 @@ public class ParquetQueryParser {
 
         public final AggFunc func;
         public final String inputColumn;
+        public final String inputExpression;
+        public final List<String> inputColumns;
+        public final Integer decimalScale;
         public final String outputName;
 
         /**
@@ -47,8 +50,28 @@ public class ParquetQueryParser {
          * @param outputName rendered column alias
          */
         SelectExpr(AggFunc func, String inputColumn, String outputName) {
+            this(func, inputColumn, inputColumn,
+                    inputColumn == null ? Collections.emptyList() : List.of(inputColumn),
+                    null, outputName);
+        }
+
+        /**
+         * Creates a parsed select expression with its executable SQL and physical inputs.
+         *
+         * @param func aggregation function type
+         * @param inputColumn unquoted input text used by simple-column paths
+         * @param inputExpression quoted SQL expression used by DuckDB
+         * @param inputColumns physical columns referenced by the expression
+         * @param decimalScale decimal input scale, or null for non-decimal inputs
+         * @param outputName rendered column alias
+         */
+        SelectExpr(AggFunc func, String inputColumn, String inputExpression,
+                List<String> inputColumns, Integer decimalScale, String outputName) {
             this.func = func;
             this.inputColumn = inputColumn;
+            this.inputExpression = inputExpression;
+            this.inputColumns = List.copyOf(inputColumns);
+            this.decimalScale = decimalScale;
             this.outputName = outputName;
         }
     }
@@ -373,6 +396,8 @@ public class ParquetQueryParser {
         List<String> columns = new ArrayList<>();
         List<SelectExpr> exprs = new ArrayList<>();
         boolean hasAgg = !gbCols.isEmpty();
+        DSLContext quotedCtx = DSL.using(SQLDialect.DEFAULT,
+                new Settings().withRenderQuotedNames(RenderQuotedNames.ALWAYS));
 
         for (SelectFieldOrAsterisk sfoa : select.$select()) {
             if (!(sfoa instanceof org.jooq.Field<?>)) {
@@ -389,32 +414,69 @@ public class ParquetQueryParser {
                 if (arg == null || arg instanceof org.jooq.Param<?>) {
                     exprs.add(new SelectExpr(SelectExpr.AggFunc.COUNT_STAR, null, "count(*)"));
                 } else {
-                    String col = noQuoteCtx.renderInlined(arg).trim();
-                    exprs.add(new SelectExpr(SelectExpr.AggFunc.COUNT, col, outputName));
+                    exprs.add(aggregateExpression(SelectExpr.AggFunc.COUNT,
+                            arg, outputName, noQuoteCtx, quotedCtx));
                 }
             } else if (f instanceof org.jooq.impl.QOM.Sum sum) {
                 hasAgg = true;
-                String col = noQuoteCtx.renderInlined(sum.$field()).trim();
-                exprs.add(new SelectExpr(SelectExpr.AggFunc.SUM, col, outputName));
+                exprs.add(aggregateExpression(SelectExpr.AggFunc.SUM,
+                        sum.$field(), outputName, noQuoteCtx, quotedCtx));
             } else if (f instanceof org.jooq.impl.QOM.Min<?> min) {
                 hasAgg = true;
-                String col = noQuoteCtx.renderInlined(min.$field()).trim();
-                exprs.add(new SelectExpr(SelectExpr.AggFunc.MIN, col, outputName));
+                exprs.add(aggregateExpression(SelectExpr.AggFunc.MIN,
+                        min.$field(), outputName, noQuoteCtx, quotedCtx));
             } else if (f instanceof org.jooq.impl.QOM.Max<?> max) {
                 hasAgg = true;
-                String col = noQuoteCtx.renderInlined(max.$field()).trim();
-                exprs.add(new SelectExpr(SelectExpr.AggFunc.MAX, col, outputName));
+                exprs.add(aggregateExpression(SelectExpr.AggFunc.MAX,
+                        max.$field(), outputName, noQuoteCtx, quotedCtx));
             } else {
                 exprs.add(new SelectExpr(SelectExpr.AggFunc.COLUMN, outputName, outputName));
             }
         }
 
         Condition where = select.$where();
-        DSLContext quotedCtx = DSL.using(SQLDialect.DEFAULT,
-                new Settings().withRenderQuotedNames(RenderQuotedNames.ALWAYS));
         String filter = quotedCtx.renderInlined(where);
 
         return new ParquetQueryParser(schema, table, columns, filter, hasAgg, gbCols, exprs);
+    }
+
+    /**
+     * Creates an aggregate expression while retaining safe SQL and referenced columns.
+     *
+     * @param func aggregate function
+     * @param input aggregate input field
+     * @param outputName aggregate output name
+     * @param noQuoteCtx renderer for compatibility names
+     * @param quotedCtx renderer for executable DuckDB SQL
+     * @return parsed aggregate expression
+     */
+    private static SelectExpr aggregateExpression(SelectExpr.AggFunc func,
+            org.jooq.Field<?> input, String outputName,
+            DSLContext noQuoteCtx, DSLContext quotedCtx) {
+        String inputColumn = noQuoteCtx.renderInlined(input).trim();
+        String inputExpression = quotedCtx.renderInlined(input).trim();
+        Integer decimalScale = func == SelectExpr.AggFunc.SUM
+                && input.getDataType().isDecimal() ? input.getDataType().scale() : null;
+        return new SelectExpr(func, inputColumn, inputExpression,
+                referencedColumns(inputExpression), decimalScale, outputName);
+    }
+
+    /**
+     * Extracts quoted physical column references from a rendered expression.
+     *
+     * @param expression quoted SQL expression
+     * @return referenced column names in encounter order
+     */
+    private static List<String> referencedColumns(String expression) {
+        List<String> result = new ArrayList<>();
+        Matcher matcher = Pattern.compile("\"([^\"]+)\"").matcher(expression);
+        while (matcher.find()) {
+            String column = matcher.group(1).replace("\"\"", "\"");
+            if (!result.contains(column)) {
+                result.add(column);
+            }
+        }
+        return result;
     }
 
     // ── JOIN helper methods ───────────────────────────────────────────────

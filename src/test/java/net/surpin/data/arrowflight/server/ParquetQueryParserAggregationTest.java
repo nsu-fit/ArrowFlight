@@ -49,6 +49,20 @@ class ParquetQueryParserAggregationTest {
     }
 
     @Test
+    void decimalSumExpressionRetainsSqlColumnsAndScale() {
+        ParquetQueryParser p = ParquetQueryParser.parse(
+                "SELECT sum(cast(l_extendedprice * (1 - l_discount) "
+                        + "as decimal(32,4))) FROM tpch.lineitem");
+
+        ParquetQueryParser.SelectExpr e = p.selectExprs.get(0);
+        assertEquals(ParquetQueryParser.SelectExpr.AggFunc.SUM, e.func);
+        assertEquals(List.of("l_extendedprice", "l_discount"), e.inputColumns);
+        assertEquals(4, e.decimalScale);
+        assertTrue(e.inputExpression.contains("\"l_extendedprice\""));
+        assertTrue(e.inputExpression.contains("\"l_discount\""));
+    }
+
+    @Test
     void minProducesMinExpr() {
         ParquetQueryParser p = ParquetQueryParser.parse("SELECT min(id) FROM s.t");
         assertTrue(p.hasAggregation);

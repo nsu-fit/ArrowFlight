@@ -7,6 +7,9 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
+import java.sql.Statement;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -262,6 +265,41 @@ class DuckDbAdapterTest {
         assertTrue(sql.contains("sum(\"amount\")"), "Got: " + sql);
         assertTrue(sql.contains("min(\"id\")"), "Got: " + sql);
         assertTrue(sql.contains("max(\"id\")"), "Got: " + sql);
+    }
+
+    @Test
+    void buildDuckSqlDoesNotQuoteDecimalSumAsOneIdentifier() {
+        ParquetQueryParser pq = ParquetQueryParser.parse(
+                "SELECT sum(cast(l_extendedprice * (1 - l_discount) "
+                        + "as decimal(32,4))) FROM tpch.lineitem");
+        String sql = DuckDbAdapter.buildDuckSql(pq, "t0");
+
+        assertTrue(sql.contains("sum(cast("), "Got: " + sql);
+        assertTrue(sql.contains("\"l_extendedprice\""), "Got: " + sql);
+        assertTrue(sql.contains("\"l_discount\""), "Got: " + sql);
+        assertFalse(sql.contains("sum(\"cast("), "Got: " + sql);
+    }
+
+    @Test
+    void decimalSumExpressionExecutesInDuckDb() throws Exception {
+        ParquetQueryParser pq = ParquetQueryParser.parse(
+                "SELECT sum(cast(l_extendedprice * (1 - l_discount) "
+                        + "as decimal(32,4))) FROM tpch.lineitem");
+        String sql = DuckDbAdapter.buildDuckSql(pq, "q1_input");
+
+        try (Connection connection = DriverManager.getConnection("jdbc:duckdb:");
+             Statement statement = connection.createStatement()) {
+            statement.execute("CREATE TABLE q1_input (l_extendedprice DECIMAL(15,2), "
+                    + "l_discount DECIMAL(15,2))");
+            statement.execute("INSERT INTO q1_input VALUES (100.00, 0.10)");
+            try (ResultSet result = statement.executeQuery(sql)) {
+                assertTrue(result.next());
+                assertEquals(0, new java.math.BigDecimal("90.0000")
+                        .compareTo(result.getBigDecimal(1)));
+                assertEquals(38, result.getMetaData().getPrecision(1));
+                assertEquals(4, result.getMetaData().getScale(1));
+            }
+        }
     }
 
     @Test

@@ -268,6 +268,24 @@ class MetadataUtilsTest {
     }
 
     @Test
+    void buildAggregationSchemaPreservesDecimalSumScale() throws Exception {
+        Schema tableSchema = new Schema(List.of(
+                new Field("l_extendedprice", FieldType.nullable(
+                        new ArrowType.Decimal(15, 2, 128)), null),
+                new Field("l_discount", FieldType.nullable(
+                        new ArrowType.Decimal(15, 2, 128)), null)));
+
+        MetadataService svc = createMetadataService(tableSchema);
+        ParquetQueryParser pq = ParquetQueryParser.parse(
+                "SELECT sum(cast(l_extendedprice * (1 - l_discount) "
+                        + "as decimal(32,4))) FROM tpch.lineitem");
+        Schema aggSchema = svc.buildAggregationSchema(pq);
+
+        assertEquals(new ArrowType.Decimal(38, 4, 128),
+                aggSchema.getFields().get(0).getType());
+    }
+
+    @Test
     void buildAggregationSchemaGroupsByColumn() throws Exception {
         Schema tableSchema = new Schema(List.of(
                 new Field("region", FieldType.nullable(new ArrowType.Utf8()), null),

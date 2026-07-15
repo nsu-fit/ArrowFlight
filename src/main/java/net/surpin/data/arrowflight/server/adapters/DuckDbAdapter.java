@@ -381,10 +381,10 @@ public final class DuckDbAdapter {
             first = false;
             switch (expr.func) {
                 case COUNT_STAR -> sql.append("count(*) AS \"count(*)\"");
-                case COUNT -> sql.append("count(\"").append(expr.inputColumn).append("\")");
-                case SUM -> sql.append("sum(\"").append(expr.inputColumn).append("\")");
-                case MIN -> sql.append("min(\"").append(expr.inputColumn).append("\")");
-                case MAX -> sql.append("max(\"").append(expr.inputColumn).append("\")");
+                case COUNT -> sql.append("count(").append(aggregateInput(expr)).append(")");
+                case SUM -> sql.append("sum(").append(aggregateInput(expr)).append(")");
+                case MIN -> sql.append("min(").append(aggregateInput(expr)).append(")");
+                case MAX -> sql.append("max(").append(aggregateInput(expr)).append(")");
                 case COLUMN -> sql.append('"').append(expr.inputColumn).append('"');
                 default -> { }
             }
@@ -488,16 +488,27 @@ public final class DuckDbAdapter {
     public static void appendSelectExpr(StringBuilder sql, ParquetQueryParser.SelectExpr expr) {
         switch (expr.func) {
             case COUNT_STAR -> sql.append("count(*)");
-            case COUNT -> sql.append("count(").append(quoteIdentifier(expr.inputColumn)).append(")");
-            case SUM -> sql.append("sum(").append(quoteIdentifier(expr.inputColumn)).append(")");
-            case MIN -> sql.append("min(").append(quoteIdentifier(expr.inputColumn)).append(")");
-            case MAX -> sql.append("max(").append(quoteIdentifier(expr.inputColumn)).append(")");
+            case COUNT -> sql.append("count(").append(aggregateInput(expr)).append(")");
+            case SUM -> sql.append("sum(").append(aggregateInput(expr)).append(")");
+            case MIN -> sql.append("min(").append(aggregateInput(expr)).append(")");
+            case MAX -> sql.append("max(").append(aggregateInput(expr)).append(")");
             case COLUMN -> sql.append(quoteIdentifier(expr.inputColumn));
             default -> { }
         }
         if (expr.outputName != null && !expr.outputName.isBlank()) {
             sql.append(" AS ").append(quoteIdentifier(expr.outputName));
         }
+    }
+
+    /**
+     * Returns parser-validated aggregate input SQL with a simple-column fallback.
+     *
+     * @param expr parsed aggregate expression
+     * @return executable aggregate input SQL
+     */
+    private static String aggregateInput(ParquetQueryParser.SelectExpr expr) {
+        return expr.inputExpression != null
+                ? expr.inputExpression : quoteIdentifier(expr.inputColumn);
     }
 
     /**

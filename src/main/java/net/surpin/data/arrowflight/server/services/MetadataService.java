@@ -413,10 +413,14 @@ public final class MetadataService {
                 case COUNT_STAR, COUNT ->
                     resultFields.add(new Field(expr.outputName,
                             FieldType.nullable(new ArrowType.Int(64, true)), null));
-                case SUM ->
+                case SUM -> {
+                    ArrowType sumType = expr.decimalScale == null
+                            ? new ArrowType.FloatingPoint(
+                                    org.apache.arrow.vector.types.FloatingPointPrecision.DOUBLE)
+                            : new ArrowType.Decimal(38, expr.decimalScale, 128);
                     resultFields.add(new Field(expr.outputName,
-                            FieldType.nullable(new ArrowType.FloatingPoint(
-                                    org.apache.arrow.vector.types.FloatingPointPrecision.DOUBLE)), null));
+                            FieldType.nullable(sumType), null));
+                }
                 case MIN, MAX -> {
                     Field src = resolveColumn(colFieldMap, expr.inputColumn);
                     resultFields.add(new Field(expr.outputName,

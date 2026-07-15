@@ -4,6 +4,7 @@ import org.apache.arrow.flight.FlightProducer;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.vector.BigIntVector;
 import org.apache.arrow.vector.BitVector;
+import org.apache.arrow.vector.DecimalVector;
 import org.apache.arrow.vector.FixedWidthVector;
 import org.apache.arrow.vector.Float4Vector;
 import org.apache.arrow.vector.Float8Vector;
@@ -43,6 +44,8 @@ import net.surpin.data.arrowflight.server.adapters.ParquetAdapter;
 import net.surpin.data.arrowflight.server.services.ParquetQueryParser;
 import net.surpin.data.arrowflight.server.model.AppConfig;
 import net.surpin.data.arrowflight.server.LogUtil;
+
+import java.math.BigDecimal;
 
 /**
  * Orchestrates query execution across DuckDB and Acero engines.
@@ -624,10 +627,7 @@ public final class ExecutionService {
     static java.util.Set<String> projectedColumns(ParquetQueryParser pq) {
         java.util.Set<String> scanCols = new java.util.LinkedHashSet<>(pq.groupByColumnNames);
         for (ParquetQueryParser.SelectExpr e : pq.selectExprs) {
-            if (e.func != ParquetQueryParser.SelectExpr.AggFunc.COUNT_STAR
-                    && e.inputColumn != null) {
-                scanCols.add(e.inputColumn);
-            }
+            scanCols.addAll(e.inputColumns);
         }
         if (pq.filter != null && !pq.filter.isBlank()) {
             java.util.regex.Matcher m =
@@ -738,8 +738,8 @@ public final class ExecutionService {
         List<ParquetQueryParser.SelectExpr> exprs = pq.selectExprs;
 
         if (numGbCols == 0) {
-                    Long[] longAccum = new Long[exprs.size()];
-            Double[] dblAccum = new Double[exprs.size()];
+            Long[] longAccum = new Long[exprs.size()];
+            Object[] sumAccum = new Object[exprs.size()];
             Object[] objAccum = new Object[exprs.size()];
             for (int i = 0; i < exprs.size(); i++) {
                 longAccum[i] = 0L;
@@ -757,7 +757,8 @@ public final class ExecutionService {
                     if (!vec.isNull(0)) {
                         switch (expr.func) {
                             case COUNT_STAR, COUNT -> longAccum[col] = (Long) addLongs(longAccum[col], toLong(vec, 0));
-                            case SUM -> dblAccum[col] = (Double) addDoubles(dblAccum[col], toDouble(vec, 0));
+                            case SUM -> sumAccum[col] = addNumbers(
+                                    sumAccum[col], vec.getObject(0));
                             case MIN -> objAccum[col] = objAccum[col] == null
                                     ? vec.getObject(0) : minOf(objAccum[col], vec.getObject(0));
                             case MAX -> objAccum[col] = objAccum[col] == null
@@ -793,8 +794,8 @@ public final class ExecutionService {
                             }
                         }
                         case SUM -> {
-                            if (dblAccum[col] != null) {
-                                ((Float8Vector) v).setSafe(0, dblAccum[col]);
+                            if (sumAccum[col] != null) {
+                                setVectorValue(v, 0, sumAccum[col]);
                             }
                         }
                         case MIN, MAX -> setVectorValue(v, 0, objAccum[col]);
@@ -850,7 +851,7 @@ public final class ExecutionService {
                         Object val = vec.getObject(r);
                         switch (expr.func) {
                             case COUNT_STAR, COUNT -> accum[ai] = addLongs(accum[ai], val);
-                            case SUM -> accum[ai] = addDoubles(accum[ai], val);
+                            case SUM -> accum[ai] = addNumbers(accum[ai], val);
                             case MIN -> accum[ai] = accum[ai] == null ? val : minOf(accum[ai], val);
                             case MAX -> accum[ai] = accum[ai] == null ? val : maxOf(accum[ai], val);
                             default -> { }
@@ -965,7 +966,7 @@ public final class ExecutionService {
             int pos = numGbCols + aggIdx++;
             switch (expr.func) {
                 case COUNT_STAR, COUNT -> into[pos] = addLongs(into[pos], from[pos]);
-                case SUM -> into[pos] = addDoubles(into[pos], from[pos]);
+                case SUM -> into[pos] = addNumbers(into[pos], from[pos]);
                 case MIN -> into[pos] = minOf(into[pos], from[pos]);
                 case MAX -> into[pos] = maxOf(into[pos], from[pos]);
                 default -> { }
@@ -1084,6 +1085,43 @@ public final class ExecutionService {
     }
 
     /**
+     * Adds numeric aggregate values while preserving decimal precision.
+     *
+     * @param a first accumulator
+     * @param b second accumulator
+     * @return decimal sum when either value is decimal, otherwise a double sum
+     */
+    static Object addNumbers(Object a, Object b) {
+        if (a == null) {
+            return b == null ? 0.0 : b;
+        }
+        if (b == null) {
+            return a;
+        }
+        if (a instanceof BigDecimal || b instanceof BigDecimal) {
+            return toBigDecimal(a).add(toBigDecimal(b));
+        }
+        return addDoubles(a, b);
+    }
+
+    /**
+     * Converts a numeric aggregate value to BigDecimal without losing integral precision.
+     *
+     * @param value numeric value
+     * @return decimal representation
+     */
+    private static BigDecimal toBigDecimal(Object value) {
+        if (value instanceof BigDecimal decimal) {
+            return decimal;
+        }
+        if (value instanceof Byte || value instanceof Short
+                || value instanceof Integer || value instanceof Long) {
+            return BigDecimal.valueOf(((Number) value).longValue());
+        }
+        return BigDecimal.valueOf(((Number) value).doubleValue());
+    }
+
+    /**
      * Sets a value in a FieldVector at the given index, handling all supported types.
      *
      * @param vec   field vector
@@ -1104,6 +1142,8 @@ public final class ExecutionService {
             ((SmallIntVector) vec).setSafe(index, ((Number) value).shortValue());
         } else if (vec instanceof TinyIntVector) {
             ((TinyIntVector) vec).setSafe(index, ((Number) value).byteValue());
+        } else if (vec instanceof DecimalVector) {
+            ((DecimalVector) vec).setSafe(index, toBigDecimal(value));
         } else if (vec instanceof Float8Vector) {
             ((Float8Vector) vec).setSafe(index, ((Number) value).doubleValue());
         } else if (vec instanceof Float4Vector) {
