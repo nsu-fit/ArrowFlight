@@ -355,6 +355,13 @@ services:
       - server-node-1-staging:/server-data/server-node-1
       - server-node-2-staging:/server-data/server-node-2
       - server-node-3-staging:/server-data/server-node-3
+      - server-node-4-staging:/server-data/server-node-4
+      - server-node-5-staging:/server-data/server-node-5
+      - server-node-6-staging:/server-data/server-node-6
+      - server-node-7-staging:/server-data/server-node-7
+      - server-node-8-staging:/server-data/server-node-8
+      - server-node-9-staging:/server-data/server-node-9
+      - server-node-10-staging:/server-data/server-node-10
       - ./benchmarks/benchbase-spark/results:/benchbase/results
     restart: "no"
 
