@@ -1,9 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>SparkArrowClientBenchmark.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Hadoop Arrow Flight SQL Server</a> &gt; <a href="index.source.html" class="el_package">net.surpin.data.arrowflight.debug</a> &gt; <span class="el_source">SparkArrowClientBenchmark.java</span></div><h1>SparkArrowClientBenchmark.java</h1><pre class="source lang-java linenums">package net.surpin.data.arrowflight.debug;
 
-import net.surpin.data.arrowflight.server.adapters.AceroAdapter;
 import net.surpin.data.arrowflight.server.adapters.ConfigAdapter;
 import net.surpin.data.arrowflight.server.adapters.DuckDbAdapter;
-import net.surpin.data.arrowflight.server.adapters.FilterConverter;
 import net.surpin.data.arrowflight.server.adapters.FlightSqlProducer;
 import net.surpin.data.arrowflight.server.adapters.HazelcastAdapter;
 import net.surpin.data.arrowflight.server.adapters.ParquetAdapter;
@@ -11,7 +9,6 @@ import net.surpin.data.arrowflight.server.model.AppConfig;
 import net.surpin.data.arrowflight.server.services.ClusterService;
 import net.surpin.data.arrowflight.server.services.ExecutionService;
 import net.surpin.data.arrowflight.server.services.MetadataService;
-import net.surpin.data.arrowflight.server.services.ParquetQueryParser;
 import net.surpin.data.arrowflight.server.services.QueryPlanner;
 import org.apache.arrow.flight.*;
 import org.apache.arrow.flight.sql.FlightSqlClient;
@@ -36,7 +33,6 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.ServerSocket;
 import java.net.URI;
-import java.nio.ByteBuffer;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -46,7 +42,6 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.Executors;
-import java.util.function.Function;
 
 import static org.apache.arrow.memory.DefaultAllocationManagerOption.ALLOCATION_MANAGER_TYPE_PROPERTY_NAME;
 
@@ -62,7 +57,7 @@ import static org.apache.arrow.memory.DefaultAllocationManagerOption.ALLOCATION_
  *
  * &lt;p&gt;Tuning: {@code --rows N} overrides the default row count (default 20 000 000).
  */
-<span class="nc" id="L65">public class SparkArrowClientBenchmark {</span>
+<span class="nc" id="L60">public class SparkArrowClientBenchmark {</span>
 
     private static final String SCHEMA = &quot;perf_schema&quot;;
     private static final String TABLE  = &quot;perf_table&quot;;
@@ -75,23 +70,23 @@ import static org.apache.arrow.memory.DefaultAllocationManagerOption.ALLOCATION_
      * @throws Exception on failure
      */
     public static void main(String[] args) throws Exception {
-<span class="nc" id="L78">        System.setProperty(ALLOCATION_MANAGER_TYPE_PROPERTY_NAME,</span>
-<span class="nc" id="L79">                DefaultAllocationManagerOption.AllocationManagerType.Netty.name());</span>
+<span class="nc" id="L73">        System.setProperty(ALLOCATION_MANAGER_TYPE_PROPERTY_NAME,</span>
+<span class="nc" id="L74">                DefaultAllocationManagerOption.AllocationManagerType.Netty.name());</span>
 
-<span class="nc bnc" id="L81" title="All 2 branches missed.">        if (flag(args, &quot;--server-only&quot;)) {</span>
-<span class="nc" id="L82">            runServerOnly(arg(args, &quot;--datadir&quot;, &quot;/tmp/arrow-perf&quot;),</span>
-<span class="nc" id="L83">                    Integer.parseInt(arg(args, &quot;--port&quot;, &quot;32010&quot;)));</span>
-<span class="nc" id="L84">            return;</span>
+<span class="nc bnc" id="L76" title="All 2 branches missed.">        if (flag(args, &quot;--server-only&quot;)) {</span>
+<span class="nc" id="L77">            runServerOnly(arg(args, &quot;--datadir&quot;, &quot;/tmp/arrow-perf&quot;),</span>
+<span class="nc" id="L78">                    Integer.parseInt(arg(args, &quot;--port&quot;, &quot;32010&quot;)));</span>
+<span class="nc" id="L79">            return;</span>
         }
 
-<span class="nc bnc" id="L87" title="All 4 branches missed.">        boolean localMode = flag(args, &quot;--local&quot;) || !has(args, &quot;--server&quot;);</span>
-<span class="nc bnc" id="L88" title="All 2 branches missed.">        if (localMode) {</span>
-<span class="nc" id="L89">            int rows = Integer.parseInt(arg(args, &quot;--rows&quot;, &quot;20000000&quot;));</span>
-<span class="nc" id="L90">            runLocalBenchmark(rows);</span>
-<span class="nc" id="L91">        } else {</span>
-<span class="nc" id="L92">            runClusterBenchmark(args);</span>
+<span class="nc bnc" id="L82" title="All 4 branches missed.">        boolean localMode = flag(args, &quot;--local&quot;) || !has(args, &quot;--server&quot;);</span>
+<span class="nc bnc" id="L83" title="All 2 branches missed.">        if (localMode) {</span>
+<span class="nc" id="L84">            int rows = Integer.parseInt(arg(args, &quot;--rows&quot;, &quot;20000000&quot;));</span>
+<span class="nc" id="L85">            runLocalBenchmark(rows);</span>
+<span class="nc" id="L86">        } else {</span>
+<span class="nc" id="L87">            runClusterBenchmark(args);</span>
         }
-<span class="nc" id="L94">    }</span>
+<span class="nc" id="L89">    }</span>
 
     // ── local benchmark ───────────────────────────────────────────────────────
 
@@ -101,34 +96,34 @@ import static org.apache.arrow.memory.DefaultAllocationManagerOption.ALLOCATION_
      * @throws Exception on failure
      */
     private static void runLocalBenchmark(int numRows) throws Exception {
-<span class="nc" id="L104">        Path dataDir = Files.createTempDirectory(&quot;arrow-perf-&quot;);</span>
-<span class="nc" id="L105">        Process serverProc = null;</span>
+<span class="nc" id="L99">        Path dataDir = Files.createTempDirectory(&quot;arrow-perf-&quot;);</span>
+<span class="nc" id="L100">        Process serverProc = null;</span>
         try {
             // 1. Generate data (client JVM — its own SparkSession)
-<span class="nc" id="L108">            System.out.printf(&quot;%nGenerating %,d rows → %s%n&quot;, numRows, dataDir);</span>
-<span class="nc" id="L109">            SparkSession spark = SparkSession.builder()</span>
-<span class="nc" id="L110">                    .appName(&quot;ArrowFlightPerfTest&quot;)</span>
-<span class="nc" id="L111">                    .master(&quot;local[*]&quot;)</span>
-<span class="nc" id="L112">                    .config(&quot;spark.driver.bindAddress&quot;, &quot;127.0.0.1&quot;)</span>
-<span class="nc" id="L113">                    .config(&quot;spark.sql.shuffle.partitions&quot;, &quot;8&quot;)</span>
-<span class="nc" id="L114">                    .getOrCreate();</span>
+<span class="nc" id="L103">            System.out.printf(&quot;%nGenerating %,d rows → %s%n&quot;, numRows, dataDir);</span>
+<span class="nc" id="L104">            SparkSession spark = SparkSession.builder()</span>
+<span class="nc" id="L105">                    .appName(&quot;ArrowFlightPerfTest&quot;)</span>
+<span class="nc" id="L106">                    .master(&quot;local[*]&quot;)</span>
+<span class="nc" id="L107">                    .config(&quot;spark.driver.bindAddress&quot;, &quot;127.0.0.1&quot;)</span>
+<span class="nc" id="L108">                    .config(&quot;spark.sql.shuffle.partitions&quot;, &quot;8&quot;)</span>
+<span class="nc" id="L109">                    .getOrCreate();</span>
 
-<span class="nc" id="L116">            generateData(spark, numRows, dataDir);</span>
-<span class="nc" id="L117">            printDataSize(dataDir);</span>
+<span class="nc" id="L111">            generateData(spark, numRows, dataDir);</span>
+<span class="nc" id="L112">            printDataSize(dataDir);</span>
 
             // 2. Register Parquet view for the Spark direct-comparison queries
-<span class="nc" id="L120">            spark.read()</span>
-<span class="nc" id="L121">                    .parquet(dataDir.resolve(SCHEMA + &quot;/&quot; + TABLE).toString())</span>
-<span class="nc" id="L122">                    .createOrReplaceTempView(&quot;perf_parquet&quot;);</span>
+<span class="nc" id="L115">            spark.read()</span>
+<span class="nc" id="L116">                    .parquet(dataDir.resolve(SCHEMA + &quot;/&quot; + TABLE).toString())</span>
+<span class="nc" id="L117">                    .createOrReplaceTempView(&quot;perf_parquet&quot;);</span>
 
             // 3. Start the Flight server in a SEPARATE JVM so it has its own heap
             //    and SparkSession — no GC / memory contention with data generation.
-<span class="nc" id="L126">            int port = freePort();</span>
-<span class="nc" id="L127">            String jarPath = SparkArrowClientBenchmark.class.getProtectionDomain()</span>
-<span class="nc" id="L128">                    .getCodeSource().getLocation().toURI().getPath();</span>
-<span class="nc" id="L129">            String javaExe = ProcessHandle.current().info().command().orElse(&quot;java&quot;);</span>
+<span class="nc" id="L121">            int port = freePort();</span>
+<span class="nc" id="L122">            String jarPath = SparkArrowClientBenchmark.class.getProtectionDomain()</span>
+<span class="nc" id="L123">                    .getCodeSource().getLocation().toURI().getPath();</span>
+<span class="nc" id="L124">            String javaExe = ProcessHandle.current().info().command().orElse(&quot;java&quot;);</span>
 
-<span class="nc" id="L131">            List&lt;String&gt; cmd = new ArrayList&lt;&gt;(List.of(</span>
+<span class="nc" id="L126">            List&lt;String&gt; cmd = new ArrayList&lt;&gt;(List.of(</span>
                     javaExe, &quot;-Xmx4g&quot;,
                     &quot;--add-opens=java.base/java.lang=ALL-UNNAMED&quot;,
                     &quot;--add-opens=java.base/java.lang.invoke=ALL-UNNAMED&quot;,
@@ -146,58 +141,58 @@ import static org.apache.arrow.memory.DefaultAllocationManagerOption.ALLOCATION_
                     &quot;-cp&quot;, jarPath,
                     &quot;net.surpin.data.arrowflight.debug.SparkArrowClientBenchmark&quot;,
                     &quot;--server-only&quot;,
-<span class="nc" id="L149">                    &quot;--datadir&quot;, dataDir.toAbsolutePath().toString(),</span>
-<span class="nc" id="L150">                    &quot;--port&quot;, String.valueOf(port)</span>
+<span class="nc" id="L144">                    &quot;--datadir&quot;, dataDir.toAbsolutePath().toString(),</span>
+<span class="nc" id="L145">                    &quot;--port&quot;, String.valueOf(port)</span>
             ));
 
-<span class="nc" id="L153">            System.out.printf(&quot;Starting server JVM on port %d...%n&quot;, port);</span>
-<span class="nc" id="L154">            serverProc = new ProcessBuilder(cmd)</span>
-<span class="nc" id="L155">                    .redirectError(ProcessBuilder.Redirect.INHERIT)</span>
-<span class="nc" id="L156">                    .start();</span>
+<span class="nc" id="L148">            System.out.printf(&quot;Starting server JVM on port %d...%n&quot;, port);</span>
+<span class="nc" id="L149">            serverProc = new ProcessBuilder(cmd)</span>
+<span class="nc" id="L150">                    .redirectError(ProcessBuilder.Redirect.INHERIT)</span>
+<span class="nc" id="L151">                    .start();</span>
 
             // The server prints &quot;READY port=N&quot; on stdout when it is accepting connections.
-<span class="nc" id="L159">            try (BufferedReader br = new BufferedReader(</span>
-<span class="nc" id="L160">                    new InputStreamReader(serverProc.getInputStream(), java.nio.charset.StandardCharsets.UTF_8))) {</span>
+<span class="nc" id="L154">            try (BufferedReader br = new BufferedReader(</span>
+<span class="nc" id="L155">                    new InputStreamReader(serverProc.getInputStream(), java.nio.charset.StandardCharsets.UTF_8))) {</span>
                 String line;
-<span class="nc bnc" id="L162" title="All 2 branches missed.">                while ((line = br.readLine()) != null) {</span>
-<span class="nc" id="L163">                    System.out.println(&quot;[server] &quot; + line);</span>
-<span class="nc bnc" id="L164" title="All 2 branches missed.">                    if (line.startsWith(&quot;READY&quot;)) {</span>
-<span class="nc" id="L165">                        break;</span>
+<span class="nc bnc" id="L157" title="All 2 branches missed.">                while ((line = br.readLine()) != null) {</span>
+<span class="nc" id="L158">                    System.out.println(&quot;[server] &quot; + line);</span>
+<span class="nc bnc" id="L159" title="All 2 branches missed.">                    if (line.startsWith(&quot;READY&quot;)) {</span>
+<span class="nc" id="L160">                        break;</span>
                     }
                 }
             }
-<span class="nc bnc" id="L169" title="All 2 branches missed.">            if (!serverProc.isAlive()) {</span>
-<span class="nc" id="L170">                throw new IllegalStateException(</span>
-<span class="nc" id="L171">                        &quot;Server process died before ready (exit=&quot; + serverProc.exitValue() + &quot;)&quot;);</span>
+<span class="nc bnc" id="L164" title="All 2 branches missed.">            if (!serverProc.isAlive()) {</span>
+<span class="nc" id="L165">                throw new IllegalStateException(</span>
+<span class="nc" id="L166">                        &quot;Server process died before ready (exit=&quot; + serverProc.exitValue() + &quot;)&quot;);</span>
             }
 
             // 4. Connect Arrow Flight client
-<span class="nc" id="L175">            Location loc = Location.forGrpcInsecure(&quot;localhost&quot;, port);</span>
-<span class="nc" id="L176">            BufferAllocator allocator = new RootAllocator(Long.MAX_VALUE);</span>
-<span class="nc" id="L177">            FlightClient      client    = FlightClient.builder(allocator, loc).build();</span>
-<span class="nc" id="L178">            FlightSqlClient   sqlClient = new FlightSqlClient(client);</span>
+<span class="nc" id="L170">            Location loc = Location.forGrpcInsecure(&quot;localhost&quot;, port);</span>
+<span class="nc" id="L171">            BufferAllocator allocator = new RootAllocator(Long.MAX_VALUE);</span>
+<span class="nc" id="L172">            FlightClient      client    = FlightClient.builder(allocator, loc).build();</span>
+<span class="nc" id="L173">            FlightSqlClient   sqlClient = new FlightSqlClient(client);</span>
 
             try {
                 // 5. ClickHouse glob covering all parquet files for this table
-<span class="nc" id="L182">                String chGlob = &quot;file('&quot; + dataDir.resolve(SCHEMA + &quot;/&quot; + TABLE) + &quot;/*.parquet', Parquet)&quot;;</span>
+<span class="nc" id="L177">                String chGlob = &quot;file('&quot; + dataDir.resolve(SCHEMA + &quot;/&quot; + TABLE) + &quot;/*.parquet', Parquet)&quot;;</span>
 
                 // 6. Warmup (JIT + page cache)
-<span class="nc" id="L185">                System.out.println(&quot;\nWarming up Arrow Flight...&quot;);</span>
-<span class="nc" id="L186">                runArrow(sqlClient, client, &quot;SELECT count(*) FROM &quot; + SCHEMA + &quot;.&quot; + TABLE);</span>
-<span class="nc" id="L187">                System.out.println(&quot;Warming up ClickHouse local...&quot;);</span>
-<span class="nc" id="L188">                timeClickHouseDirect(&quot;SELECT count() FROM &quot; + chGlob);</span>
-<span class="nc" id="L189">                System.out.println(&quot;Warming up Spark...&quot;);</span>
-<span class="nc" id="L190">                spark.sql(&quot;SELECT count(*) FROM perf_parquet&quot;).collectAsList();</span>
+<span class="nc" id="L180">                System.out.println(&quot;\nWarming up Arrow Flight...&quot;);</span>
+<span class="nc" id="L181">                runArrow(sqlClient, client, &quot;SELECT count(*) FROM &quot; + SCHEMA + &quot;.&quot; + TABLE);</span>
+<span class="nc" id="L182">                System.out.println(&quot;Warming up ClickHouse local...&quot;);</span>
+<span class="nc" id="L183">                timeClickHouseDirect(&quot;SELECT count() FROM &quot; + chGlob);</span>
+<span class="nc" id="L184">                System.out.println(&quot;Warming up Spark...&quot;);</span>
+<span class="nc" id="L185">                spark.sql(&quot;SELECT count(*) FROM perf_parquet&quot;).collectAsList();</span>
 
                 // 7. Benchmarks
-<span class="nc" id="L193">                System.out.println(&quot;\n╔═══════════════════════════════════════════════════════════════╗&quot;);</span>
-<span class="nc" id="L194">                System.out.println( &quot;║                    PERFORMANCE RESULTS                        ║&quot;);</span>
-<span class="nc" id="L195">                System.out.println( &quot;╚═══════════════════════════════════════════════════════════════╝&quot;);</span>
+<span class="nc" id="L188">                System.out.println(&quot;\n╔═══════════════════════════════════════════════════════════════╗&quot;);</span>
+<span class="nc" id="L189">                System.out.println( &quot;║                    PERFORMANCE RESULTS                        ║&quot;);</span>
+<span class="nc" id="L190">                System.out.println( &quot;╚═══════════════════════════════════════════════════════════════╝&quot;);</span>
 
                 // arrowSql may be null for queries the Flight server doesn't support (e.g. JOIN)
-<span class="nc" id="L198">                record BenchQuery(String label, String arrowSql, String chSql, String sparkSql) {}</span>
-<span class="nc" id="L199">                String chGlob2 = chGlob; // alias for JOIN queries referencing the same table twice</span>
-<span class="nc" id="L200">                List&lt;BenchQuery&gt; benchmarks = List.of(</span>
+<span class="nc" id="L193">                record BenchQuery(String label, String arrowSql, String chSql, String sparkSql) {}</span>
+<span class="nc" id="L194">                String chGlob2 = chGlob; // alias for JOIN queries referencing the same table twice</span>
+<span class="nc" id="L195">                List&lt;BenchQuery&gt; benchmarks = List.of(</span>
                         new BenchQuery(
                                 &quot;count(*)&quot;,
                                 &quot;SELECT count(*) FROM &quot; + SCHEMA + &quot;.&quot; + TABLE,
@@ -232,44 +227,44 @@ import static org.apache.arrow.memory.DefaultAllocationManagerOption.ALLOCATION_
                                         + &quot; ON t1.id = t2.tinyint_col&quot;)
                 );
 
-<span class="nc" id="L235">                List&lt;Row&gt; results = new ArrayList&lt;&gt;();</span>
-<span class="nc bnc" id="L236" title="All 2 branches missed.">                for (BenchQuery bq : benchmarks) {</span>
-<span class="nc" id="L237">                    System.out.println(&quot;\n▶ &quot; + bq.label());</span>
-<span class="nc bnc" id="L238" title="All 2 branches missed.">                    long arrowMs = bq.arrowSql() != null</span>
-<span class="nc" id="L239">                            ? timeArrow(sqlClient, client, bq.arrowSql()) : -1;</span>
-<span class="nc" id="L240">                    long chMs    = timeClickHouseDirect(bq.chSql());</span>
-<span class="nc" id="L241">                    long sparkMs = timeSpark(spark, bq.sparkSql());</span>
-<span class="nc bnc" id="L242" title="All 2 branches missed.">                    String arrowStr  = arrowMs &gt;= 0 ? formatDuration(arrowMs) : &quot;N/A&quot;;</span>
-<span class="nc bnc" id="L243" title="All 2 branches missed.">                    String chVsSpark = chMs &gt; 0</span>
-<span class="nc" id="L244">                            ? String.format(&quot;%.2f×&quot;, (double) sparkMs / chMs) : &quot;—&quot;;</span>
-<span class="nc" id="L245">                    results.add(RowFactory.create(bq.label(),</span>
-<span class="nc" id="L246">                            arrowStr, formatDuration(chMs),</span>
-<span class="nc" id="L247">                            formatDuration(sparkMs), chVsSpark));</span>
-<span class="nc" id="L248">                }</span>
+<span class="nc" id="L230">                List&lt;Row&gt; results = new ArrayList&lt;&gt;();</span>
+<span class="nc bnc" id="L231" title="All 2 branches missed.">                for (BenchQuery bq : benchmarks) {</span>
+<span class="nc" id="L232">                    System.out.println(&quot;\n▶ &quot; + bq.label());</span>
+<span class="nc bnc" id="L233" title="All 2 branches missed.">                    long arrowMs = bq.arrowSql() != null</span>
+<span class="nc" id="L234">                            ? timeArrow(sqlClient, client, bq.arrowSql()) : -1;</span>
+<span class="nc" id="L235">                    long chMs    = timeClickHouseDirect(bq.chSql());</span>
+<span class="nc" id="L236">                    long sparkMs = timeSpark(spark, bq.sparkSql());</span>
+<span class="nc bnc" id="L237" title="All 2 branches missed.">                    String arrowStr  = arrowMs &gt;= 0 ? formatDuration(arrowMs) : &quot;N/A&quot;;</span>
+<span class="nc bnc" id="L238" title="All 2 branches missed.">                    String chVsSpark = chMs &gt; 0</span>
+<span class="nc" id="L239">                            ? String.format(&quot;%.2f×&quot;, (double) sparkMs / chMs) : &quot;—&quot;;</span>
+<span class="nc" id="L240">                    results.add(RowFactory.create(bq.label(),</span>
+<span class="nc" id="L241">                            arrowStr, formatDuration(chMs),</span>
+<span class="nc" id="L242">                            formatDuration(sparkMs), chVsSpark));</span>
+<span class="nc" id="L243">                }</span>
 
                 // 8. Summary table
-<span class="nc" id="L251">                System.out.println();</span>
-<span class="nc" id="L252">                spark.createDataFrame(results, new StructType(new StructField[]{</span>
-<span class="nc" id="L253">                        new StructField(&quot;query&quot;,            DataTypes.StringType, false, Metadata.empty()),</span>
-<span class="nc" id="L254">                        new StructField(&quot;arrow_flight&quot;,     DataTypes.StringType, false, Metadata.empty()),</span>
-<span class="nc" id="L255">                        new StructField(&quot;clickhouse_local&quot;, DataTypes.StringType, false, Metadata.empty()),</span>
-<span class="nc" id="L256">                        new StructField(&quot;spark_parquet&quot;,    DataTypes.StringType, false, Metadata.empty()),</span>
-<span class="nc" id="L257">                        new StructField(&quot;ch_vs_spark&quot;,      DataTypes.StringType, false, Metadata.empty()),</span>
-<span class="nc" id="L258">                })).show(20, false);</span>
+<span class="nc" id="L246">                System.out.println();</span>
+<span class="nc" id="L247">                spark.createDataFrame(results, new StructType(new StructField[]{</span>
+<span class="nc" id="L248">                        new StructField(&quot;query&quot;,            DataTypes.StringType, false, Metadata.empty()),</span>
+<span class="nc" id="L249">                        new StructField(&quot;arrow_flight&quot;,     DataTypes.StringType, false, Metadata.empty()),</span>
+<span class="nc" id="L250">                        new StructField(&quot;clickhouse_local&quot;, DataTypes.StringType, false, Metadata.empty()),</span>
+<span class="nc" id="L251">                        new StructField(&quot;spark_parquet&quot;,    DataTypes.StringType, false, Metadata.empty()),</span>
+<span class="nc" id="L252">                        new StructField(&quot;ch_vs_spark&quot;,      DataTypes.StringType, false, Metadata.empty()),</span>
+<span class="nc" id="L253">                })).show(20, false);</span>
 
             } finally {
-<span class="nc" id="L261">                sqlClient.close();</span>
-<span class="nc" id="L262">                client.close();</span>
-<span class="nc" id="L263">                allocator.close();</span>
-<span class="nc" id="L264">                spark.stop();</span>
+<span class="nc" id="L256">                sqlClient.close();</span>
+<span class="nc" id="L257">                client.close();</span>
+<span class="nc" id="L258">                allocator.close();</span>
+<span class="nc" id="L259">                spark.stop();</span>
             }
         } finally {
-<span class="nc bnc" id="L267" title="All 2 branches missed.">            if (serverProc != null) {</span>
-<span class="nc" id="L268">                serverProc.destroyForcibly();</span>
+<span class="nc bnc" id="L262" title="All 2 branches missed.">            if (serverProc != null) {</span>
+<span class="nc" id="L263">                serverProc.destroyForcibly();</span>
             }
-<span class="nc" id="L270">            deleteTree(dataDir);</span>
+<span class="nc" id="L265">            deleteTree(dataDir);</span>
         }
-<span class="nc" id="L272">    }</span>
+<span class="nc" id="L267">    }</span>
 
     // ── server-only mode (used as subprocess by runLocalBenchmark) ────────────
 
@@ -280,62 +275,35 @@ import static org.apache.arrow.memory.DefaultAllocationManagerOption.ALLOCATION_
      * @throws Exception on failure
      */
     private static void runServerOnly(String dataDir, int port) throws Exception {
-<span class="nc" id="L283">        LocalFileSystem fs = newLocalFs();</span>
-<span class="nc" id="L284">        BufferAllocator allocator = new RootAllocator(Long.MAX_VALUE);</span>
-<span class="nc" id="L285">        Location loc = Location.forGrpcInsecure(&quot;localhost&quot;, port);</span>
+<span class="nc" id="L278">        LocalFileSystem fs = newLocalFs();</span>
+<span class="nc" id="L279">        BufferAllocator allocator = new RootAllocator(Long.MAX_VALUE);</span>
+<span class="nc" id="L280">        Location loc = Location.forGrpcInsecure(&quot;localhost&quot;, port);</span>
 
-<span class="nc" id="L287">        System.setProperty(&quot;dataDir&quot;, dataDir);</span>
-<span class="nc" id="L288">        System.setProperty(&quot;hazelcastPort&quot;, String.valueOf(port + 1));</span>
-<span class="nc" id="L289">        AppConfig appConfig = ConfigAdapter.getConfig();</span>
+<span class="nc" id="L282">        System.setProperty(&quot;dataDir&quot;, dataDir);</span>
+<span class="nc" id="L283">        System.setProperty(&quot;hazelcastPort&quot;, String.valueOf(port + 1));</span>
+<span class="nc" id="L284">        AppConfig appConfig = ConfigAdapter.getConfig();</span>
 
-<span class="nc" id="L291">        ParquetAdapter parquetAdapter = new ParquetAdapter(appConfig, fs);</span>
-<span class="nc" id="L292">        HazelcastAdapter hazelcastAdapter = new HazelcastAdapter(appConfig);</span>
-<span class="nc" id="L293">        DuckDbAdapter duckDbAdapter = new DuckDbAdapter(appConfig, Executors.newCachedThreadPool());</span>
-<span class="nc" id="L294">        AceroAdapter aceroAdapter = new AceroAdapter(appConfig);</span>
-<span class="nc" id="L295">        MetadataService metadataService = new MetadataService(parquetAdapter);</span>
-<span class="nc" id="L296">        ClusterService clusterService = new ClusterService(hazelcastAdapter, appConfig,</span>
-<span class="nc" id="L297">                loc.getUri().toString());</span>
-<span class="nc" id="L298">        QueryPlanner queryPlanner = new QueryPlanner(parquetAdapter, clusterService);</span>
+<span class="nc" id="L286">        ParquetAdapter parquetAdapter = new ParquetAdapter(appConfig, fs);</span>
+<span class="nc" id="L287">        HazelcastAdapter hazelcastAdapter = new HazelcastAdapter(appConfig);</span>
+<span class="nc" id="L288">        DuckDbAdapter duckDbAdapter = new DuckDbAdapter(appConfig, Executors.newCachedThreadPool());</span>
+<span class="nc" id="L289">        MetadataService metadataService = new MetadataService(parquetAdapter);</span>
+<span class="nc" id="L290">        ClusterService clusterService = new ClusterService(hazelcastAdapter, appConfig,</span>
+<span class="nc" id="L291">                loc.getUri().toString());</span>
+<span class="nc" id="L292">        QueryPlanner queryPlanner = new QueryPlanner(parquetAdapter, clusterService);</span>
 
-<span class="nc" id="L300">        Function&lt;ParquetQueryParser, byte[]&gt; filterBuilder = (parsedQuery) -&gt; {</span>
-<span class="nc bnc" id="L301" title="All 4 branches missed.">            if (parsedQuery.filter == null || parsedQuery.filter.isEmpty()</span>
-<span class="nc bnc" id="L302" title="All 4 branches missed.">                    || parsedQuery.filter.equals(&quot;true&quot;) || parsedQuery.filter.equals(&quot;1 = 1&quot;)) {</span>
-<span class="nc" id="L303">                return null;</span>
-            }
-            try {
-<span class="nc" id="L306">                java.util.Map&lt;String, java.util.Map&lt;String, String&gt;&gt; ddlCache =</span>
-<span class="nc" id="L307">                        parquetAdapter.tableDdlCache();</span>
-<span class="nc" id="L308">                String ddl = ddlCache.getOrDefault(parsedQuery.schema,</span>
-<span class="nc" id="L309">                        java.util.Collections.emptyMap()).get(parsedQuery.table);</span>
-<span class="nc bnc" id="L310" title="All 2 branches missed.">                if (ddl == null) {</span>
-<span class="nc" id="L311">                    return null;</span>
-                }
-<span class="nc" id="L313">                String cleanDdl = ddl.replace(parsedQuery.schema + &quot;.&quot;, &quot;&quot;);</span>
-<span class="nc" id="L314">                ByteBuffer buf = FilterConverter.toByteBuffer(</span>
-                        parsedQuery.filter,
-<span class="nc" id="L316">                        java.util.Collections.singletonList(cleanDdl));</span>
-<span class="nc" id="L317">                byte[] bytes = new byte[buf.remaining()];</span>
-<span class="nc" id="L318">                buf.get(bytes);</span>
-<span class="nc" id="L319">                return bytes;</span>
-<span class="nc" id="L320">            } catch (Exception e) {</span>
-<span class="nc" id="L321">                return null;</span>
-            }
-        };
-
-<span class="nc" id="L325">        ExecutionService executionService = new ExecutionService(parquetAdapter, duckDbAdapter,</span>
-                aceroAdapter, metadataService, appConfig,
-<span class="nc" id="L327">                Executors.newCachedThreadPool(), filterBuilder);</span>
-<span class="nc" id="L328">        FlightSqlProducer flightSqlProducer = new FlightSqlProducer(loc, allocator,</span>
+<span class="nc" id="L294">        ExecutionService executionService = new ExecutionService(parquetAdapter, duckDbAdapter,</span>
+<span class="nc" id="L295">                metadataService, appConfig, Executors.newCachedThreadPool());</span>
+<span class="nc" id="L296">        FlightSqlProducer flightSqlProducer = new FlightSqlProducer(loc, allocator,</span>
                 metadataService, queryPlanner, executionService, clusterService);
 
-<span class="nc" id="L331">        FlightServer server = FlightServer.builder(allocator, loc, flightSqlProducer).build();</span>
-<span class="nc" id="L332">        server.start();</span>
-<span class="nc" id="L333">        System.out.printf(&quot;READY port=%d%n&quot;, port);</span>
-<span class="nc" id="L334">        System.out.flush();</span>
-<span class="nc" id="L335">        server.awaitTermination();</span>
-<span class="nc" id="L336">        hazelcastAdapter.close();</span>
-<span class="nc" id="L337">        allocator.close();</span>
-<span class="nc" id="L338">    }</span>
+<span class="nc" id="L299">        FlightServer server = FlightServer.builder(allocator, loc, flightSqlProducer).build();</span>
+<span class="nc" id="L300">        server.start();</span>
+<span class="nc" id="L301">        System.out.printf(&quot;READY port=%d%n&quot;, port);</span>
+<span class="nc" id="L302">        System.out.flush();</span>
+<span class="nc" id="L303">        server.awaitTermination();</span>
+<span class="nc" id="L304">        hazelcastAdapter.close();</span>
+<span class="nc" id="L305">        allocator.close();</span>
+<span class="nc" id="L306">    }</span>
 
     // ── cluster benchmark (original behaviour) ────────────────────────────────
 
@@ -344,31 +312,31 @@ import static org.apache.arrow.memory.DefaultAllocationManagerOption.ALLOCATION_
      * @param args CLI arguments containing --server and --port
      */
     private static void runClusterBenchmark(String[] args) {
-<span class="nc" id="L347">        String server = arg(args, &quot;--server&quot;, &quot;127.0.0.1&quot;);</span>
-<span class="nc" id="L348">        int    port   = Integer.parseInt(arg(args, &quot;--port&quot;, &quot;32010&quot;));</span>
+<span class="nc" id="L315">        String server = arg(args, &quot;--server&quot;, &quot;127.0.0.1&quot;);</span>
+<span class="nc" id="L316">        int    port   = Integer.parseInt(arg(args, &quot;--port&quot;, &quot;32010&quot;));</span>
 
-<span class="nc" id="L350">        SparkSession spark = SparkSession.builder()</span>
-<span class="nc" id="L351">                .appName(&quot;ArrowFlight Client&quot;)</span>
-<span class="nc" id="L352">                .master(&quot;local[*]&quot;)</span>
-<span class="nc" id="L353">                .config(&quot;spark.sql.analyzer.failAmbiguousSelfJoin&quot;, &quot;false&quot;)</span>
-<span class="nc" id="L354">                .getOrCreate();</span>
+<span class="nc" id="L318">        SparkSession spark = SparkSession.builder()</span>
+<span class="nc" id="L319">                .appName(&quot;ArrowFlight Client&quot;)</span>
+<span class="nc" id="L320">                .master(&quot;local[*]&quot;)</span>
+<span class="nc" id="L321">                .config(&quot;spark.sql.analyzer.failAmbiguousSelfJoin&quot;, &quot;false&quot;)</span>
+<span class="nc" id="L322">                .getOrCreate();</span>
 
 //        Dataset&lt;Row&gt; parquetDF = spark.read()
 //                .parquet(&quot;hdfs:///data/vsurpin/test_db/test_schema/test_1tb_table&quot;);
 //        parquetDF.createOrReplaceTempView(&quot;parquet_table&quot;);
 
-<span class="nc" id="L360">        Dataset&lt;Row&gt; flightDF = spark.read()</span>
-<span class="nc" id="L361">                .format(&quot;flight&quot;)</span>
-<span class="nc" id="L362">                .option(&quot;host&quot;, server)</span>
-<span class="nc" id="L363">                .option(&quot;port&quot;, port)</span>
-<span class="nc" id="L364">                .option(&quot;user&quot;, &quot;user&quot;)</span>
-<span class="nc" id="L365">                .option(&quot;password&quot;, &quot;password&quot;)</span>
-<span class="nc" id="L366">                .option(&quot;tls.enabled&quot;, false)</span>
-<span class="nc" id="L367">                .option(&quot;table&quot;, &quot;test_schema.test_1tb_table&quot;)</span>
-<span class="nc" id="L368">                .load();</span>
-<span class="nc" id="L369">        flightDF.createOrReplaceTempView(&quot;flight_table&quot;);</span>
+<span class="nc" id="L328">        Dataset&lt;Row&gt; flightDF = spark.read()</span>
+<span class="nc" id="L329">                .format(&quot;flight&quot;)</span>
+<span class="nc" id="L330">                .option(&quot;host&quot;, server)</span>
+<span class="nc" id="L331">                .option(&quot;port&quot;, port)</span>
+<span class="nc" id="L332">                .option(&quot;user&quot;, &quot;user&quot;)</span>
+<span class="nc" id="L333">                .option(&quot;password&quot;, &quot;password&quot;)</span>
+<span class="nc" id="L334">                .option(&quot;tls.enabled&quot;, false)</span>
+<span class="nc" id="L335">                .option(&quot;table&quot;, &quot;test_schema.test_1tb_table&quot;)</span>
+<span class="nc" id="L336">                .load();</span>
+<span class="nc" id="L337">        flightDF.createOrReplaceTempView(&quot;flight_table&quot;);</span>
 
-<span class="nc" id="L371">        spark.sql(&quot;select count(*) from flight_table t1, flight_table t2 where t1.id = t2.tinyint_col&quot;).show();</span>
+<span class="nc" id="L339">        spark.sql(&quot;select count(*) from flight_table t1, flight_table t2 where t1.id = t2.tinyint_col&quot;).show();</span>
 //
 //        List&lt;Row&gt; results = new ArrayList&lt;&gt;();
 //        results.add(RowFactory.create(&quot;select * where id=0&quot;,
@@ -386,7 +354,7 @@ import static org.apache.arrow.memory.DefaultAllocationManagerOption.ALLOCATION_
 //                new StructField(&quot;flightDuration&quot;, DataTypes.StringType, true, Metadata.empty()),
 //                new StructField(&quot;parquetDuration&quot;,DataTypes.StringType, true, Metadata.empty()),
 //        })).show(false);
-<span class="nc" id="L389">    }</span>
+<span class="nc" id="L357">    }</span>
 
     // ── data generation ───────────────────────────────────────────────────────
 
@@ -397,26 +365,26 @@ import static org.apache.arrow.memory.DefaultAllocationManagerOption.ALLOCATION_
      * @param dataDir output directory
      */
     private static void generateData(SparkSession spark, int numRows, Path dataDir) {
-<span class="nc" id="L400">        Path tableDir = dataDir.resolve(SCHEMA + &quot;/&quot; + TABLE);</span>
-<span class="nc" id="L401">        spark.range(0, numRows, 1, 8)</span>
-<span class="nc" id="L402">                .select(</span>
-<span class="nc" id="L403">                        functions.col(&quot;id&quot;).cast(&quot;integer&quot;).alias(&quot;id&quot;),</span>
-<span class="nc" id="L404">                        functions.col(&quot;id&quot;).mod(2).equalTo(0).alias(&quot;bool_col&quot;),</span>
-<span class="nc" id="L405">                        functions.col(&quot;id&quot;).mod(10).cast(&quot;tinyint&quot;).alias(&quot;tinyint_col&quot;),</span>
-<span class="nc" id="L406">                        functions.col(&quot;id&quot;).mod(100).cast(&quot;smallint&quot;).alias(&quot;smallint_col&quot;),</span>
-<span class="nc" id="L407">                        functions.col(&quot;id&quot;).mod(10000).cast(&quot;integer&quot;).alias(&quot;int_col&quot;),</span>
-<span class="nc" id="L408">                        functions.col(&quot;id&quot;).multiply(7L).cast(&quot;bigint&quot;).alias(&quot;bigint_col&quot;),</span>
-<span class="nc" id="L409">                        functions.rand(42).cast(&quot;float&quot;).alias(&quot;float_col&quot;),</span>
-<span class="nc" id="L410">                        functions.rand(43).cast(&quot;double&quot;).alias(&quot;double_col&quot;),</span>
-<span class="nc" id="L411">                        functions.concat(</span>
-<span class="nc" id="L412">                                functions.lit(&quot;str_&quot;),</span>
-<span class="nc" id="L413">                                functions.lpad(functions.col(&quot;id&quot;).cast(&quot;string&quot;), 8, &quot;0&quot;)</span>
-<span class="nc" id="L414">                        ).alias(&quot;string_col&quot;)</span>
+<span class="nc" id="L368">        Path tableDir = dataDir.resolve(SCHEMA + &quot;/&quot; + TABLE);</span>
+<span class="nc" id="L369">        spark.range(0, numRows, 1, 8)</span>
+<span class="nc" id="L370">                .select(</span>
+<span class="nc" id="L371">                        functions.col(&quot;id&quot;).cast(&quot;integer&quot;).alias(&quot;id&quot;),</span>
+<span class="nc" id="L372">                        functions.col(&quot;id&quot;).mod(2).equalTo(0).alias(&quot;bool_col&quot;),</span>
+<span class="nc" id="L373">                        functions.col(&quot;id&quot;).mod(10).cast(&quot;tinyint&quot;).alias(&quot;tinyint_col&quot;),</span>
+<span class="nc" id="L374">                        functions.col(&quot;id&quot;).mod(100).cast(&quot;smallint&quot;).alias(&quot;smallint_col&quot;),</span>
+<span class="nc" id="L375">                        functions.col(&quot;id&quot;).mod(10000).cast(&quot;integer&quot;).alias(&quot;int_col&quot;),</span>
+<span class="nc" id="L376">                        functions.col(&quot;id&quot;).multiply(7L).cast(&quot;bigint&quot;).alias(&quot;bigint_col&quot;),</span>
+<span class="nc" id="L377">                        functions.rand(42).cast(&quot;float&quot;).alias(&quot;float_col&quot;),</span>
+<span class="nc" id="L378">                        functions.rand(43).cast(&quot;double&quot;).alias(&quot;double_col&quot;),</span>
+<span class="nc" id="L379">                        functions.concat(</span>
+<span class="nc" id="L380">                                functions.lit(&quot;str_&quot;),</span>
+<span class="nc" id="L381">                                functions.lpad(functions.col(&quot;id&quot;).cast(&quot;string&quot;), 8, &quot;0&quot;)</span>
+<span class="nc" id="L382">                        ).alias(&quot;string_col&quot;)</span>
                 )
-<span class="nc" id="L416">                .write()</span>
-<span class="nc" id="L417">                .mode(&quot;overwrite&quot;)</span>
-<span class="nc" id="L418">                .parquet(tableDir.toAbsolutePath().toString());</span>
-<span class="nc" id="L419">    }</span>
+<span class="nc" id="L384">                .write()</span>
+<span class="nc" id="L385">                .mode(&quot;overwrite&quot;)</span>
+<span class="nc" id="L386">                .parquet(tableDir.toAbsolutePath().toString());</span>
+<span class="nc" id="L387">    }</span>
 
     /**
      * Prints total disk size of generated data.
@@ -424,16 +392,16 @@ import static org.apache.arrow.memory.DefaultAllocationManagerOption.ALLOCATION_
      * @throws IOException on filesystem error
      */
     private static void printDataSize(Path dataDir) throws IOException {
-<span class="nc" id="L427">        long[] size = {0};</span>
-<span class="nc" id="L428">        Files.walkFileTree(dataDir, new SimpleFileVisitor&lt;&gt;() {</span>
+<span class="nc" id="L395">        long[] size = {0};</span>
+<span class="nc" id="L396">        Files.walkFileTree(dataDir, new SimpleFileVisitor&lt;&gt;() {</span>
             @Override
             public FileVisitResult visitFile(Path f, BasicFileAttributes a) {
-<span class="nc" id="L431">                size[0] += a.size();</span>
-<span class="nc" id="L432">                return FileVisitResult.CONTINUE;</span>
+<span class="nc" id="L399">                size[0] += a.size();</span>
+<span class="nc" id="L400">                return FileVisitResult.CONTINUE;</span>
             }
         });
-<span class="nc" id="L435">        System.out.printf(&quot;Data size on disk: %.1f MB%n&quot;, size[0] / 1_048_576.0);</span>
-<span class="nc" id="L436">    }</span>
+<span class="nc" id="L403">        System.out.printf(&quot;Data size on disk: %.1f MB%n&quot;, size[0] / 1_048_576.0);</span>
+<span class="nc" id="L404">    }</span>
 
     // ── timing helpers ────────────────────────────────────────────────────────
 
@@ -446,11 +414,11 @@ import static org.apache.arrow.memory.DefaultAllocationManagerOption.ALLOCATION_
      * @throws Exception on failure
      */
     private static long timeArrow(FlightSqlClient sql, FlightClient client, String query) throws Exception {
-<span class="nc" id="L449">        long start = System.nanoTime();</span>
-<span class="nc" id="L450">        long resultRows = runArrow(sql, client, query);</span>
-<span class="nc" id="L451">        long ms = (System.nanoTime() - start) / 1_000_000;</span>
-<span class="nc" id="L452">        System.out.printf(&quot;  Arrow Flight  : %s  (%,d result rows)%n&quot;, formatDuration(ms), resultRows);</span>
-<span class="nc" id="L453">        return ms;</span>
+<span class="nc" id="L417">        long start = System.nanoTime();</span>
+<span class="nc" id="L418">        long resultRows = runArrow(sql, client, query);</span>
+<span class="nc" id="L419">        long ms = (System.nanoTime() - start) / 1_000_000;</span>
+<span class="nc" id="L420">        System.out.printf(&quot;  Arrow Flight  : %s  (%,d result rows)%n&quot;, formatDuration(ms), resultRows);</span>
+<span class="nc" id="L421">        return ms;</span>
     }
 
     /**
@@ -460,23 +428,23 @@ import static org.apache.arrow.memory.DefaultAllocationManagerOption.ALLOCATION_
      * @throws Exception on failure
      */
     private static long timeClickHouseDirect(String sql) throws Exception {
-<span class="nc" id="L463">        long start = System.nanoTime();</span>
-<span class="nc" id="L464">        Process proc = new ProcessBuilder(&quot;clickhouse&quot;, &quot;local&quot;,</span>
+<span class="nc" id="L431">        long start = System.nanoTime();</span>
+<span class="nc" id="L432">        Process proc = new ProcessBuilder(&quot;clickhouse&quot;, &quot;local&quot;,</span>
                 &quot;--query&quot;, sql, &quot;--format&quot;, &quot;TabSeparated&quot;)
-<span class="nc" id="L466">                .redirectError(ProcessBuilder.Redirect.DISCARD)</span>
-<span class="nc" id="L467">                .start();</span>
-<span class="nc" id="L468">        long resultRows = 0;</span>
-<span class="nc" id="L469">        try (BufferedReader br = new BufferedReader(</span>
-<span class="nc" id="L470">                new InputStreamReader(proc.getInputStream(), java.nio.charset.StandardCharsets.UTF_8))) {</span>
+<span class="nc" id="L434">                .redirectError(ProcessBuilder.Redirect.DISCARD)</span>
+<span class="nc" id="L435">                .start();</span>
+<span class="nc" id="L436">        long resultRows = 0;</span>
+<span class="nc" id="L437">        try (BufferedReader br = new BufferedReader(</span>
+<span class="nc" id="L438">                new InputStreamReader(proc.getInputStream(), java.nio.charset.StandardCharsets.UTF_8))) {</span>
             String line;
-<span class="nc bnc" id="L472" title="All 2 branches missed.">            while ((line = br.readLine()) != null) {</span>
-<span class="nc" id="L473">                resultRows++;</span>
+<span class="nc bnc" id="L440" title="All 2 branches missed.">            while ((line = br.readLine()) != null) {</span>
+<span class="nc" id="L441">                resultRows++;</span>
             }
         }
-<span class="nc" id="L476">        proc.waitFor();</span>
-<span class="nc" id="L477">        long ms = (System.nanoTime() - start) / 1_000_000;</span>
-<span class="nc" id="L478">        System.out.printf(&quot;  ClickHouse Local: %s  (%,d result rows)%n&quot;, formatDuration(ms), resultRows);</span>
-<span class="nc" id="L479">        return ms;</span>
+<span class="nc" id="L444">        proc.waitFor();</span>
+<span class="nc" id="L445">        long ms = (System.nanoTime() - start) / 1_000_000;</span>
+<span class="nc" id="L446">        System.out.printf(&quot;  ClickHouse Local: %s  (%,d result rows)%n&quot;, formatDuration(ms), resultRows);</span>
+<span class="nc" id="L447">        return ms;</span>
     }
 
     /**
@@ -486,26 +454,26 @@ import static org.apache.arrow.memory.DefaultAllocationManagerOption.ALLOCATION_
      * @return elapsed time in milliseconds
      */
     private static long timeSpark(SparkSession spark, String query) {
-<span class="nc" id="L489">        long start = System.nanoTime();</span>
-<span class="nc" id="L490">        List&lt;Row&gt; rows = spark.sql(query).collectAsList();</span>
-<span class="nc" id="L491">        long ms = (System.nanoTime() - start) / 1_000_000;</span>
-<span class="nc" id="L492">        System.out.printf(&quot;  Spark Parquet : %s  (%,d result rows)%n&quot;, formatDuration(ms), rows.size());</span>
-<span class="nc" id="L493">        return ms;</span>
+<span class="nc" id="L457">        long start = System.nanoTime();</span>
+<span class="nc" id="L458">        List&lt;Row&gt; rows = spark.sql(query).collectAsList();</span>
+<span class="nc" id="L459">        long ms = (System.nanoTime() - start) / 1_000_000;</span>
+<span class="nc" id="L460">        System.out.printf(&quot;  Spark Parquet : %s  (%,d result rows)%n&quot;, formatDuration(ms), rows.size());</span>
+<span class="nc" id="L461">        return ms;</span>
     }
 
     /** Executes query via FlightSqlClient, consumes all result batches, returns number of result rows. */
     private static long runArrow(FlightSqlClient sql, FlightClient client, String query) throws Exception {
-<span class="nc" id="L498">        FlightInfo info = sql.execute(query);</span>
-<span class="nc" id="L499">        long resultRows = 0;</span>
-<span class="nc bnc" id="L500" title="All 2 branches missed.">        for (FlightEndpoint ep : info.getEndpoints()) {</span>
-<span class="nc" id="L501">            try (FlightStream stream = client.getStream(ep.getTicket())) {</span>
-<span class="nc bnc" id="L502" title="All 2 branches missed.">                while (stream.next()) {</span>
-<span class="nc" id="L503">                    VectorSchemaRoot root = stream.getRoot();</span>
-<span class="nc" id="L504">                    resultRows += root.getRowCount();</span>
-<span class="nc" id="L505">                }</span>
+<span class="nc" id="L466">        FlightInfo info = sql.execute(query);</span>
+<span class="nc" id="L467">        long resultRows = 0;</span>
+<span class="nc bnc" id="L468" title="All 2 branches missed.">        for (FlightEndpoint ep : info.getEndpoints()) {</span>
+<span class="nc" id="L469">            try (FlightStream stream = client.getStream(ep.getTicket())) {</span>
+<span class="nc bnc" id="L470" title="All 2 branches missed.">                while (stream.next()) {</span>
+<span class="nc" id="L471">                    VectorSchemaRoot root = stream.getRoot();</span>
+<span class="nc" id="L472">                    resultRows += root.getRowCount();</span>
+<span class="nc" id="L473">                }</span>
             }
-<span class="nc" id="L507">        }</span>
-<span class="nc" id="L508">        return resultRows;</span>
+<span class="nc" id="L475">        }</span>
+<span class="nc" id="L476">        return resultRows;</span>
     }
 
     // ── original cluster-mode helper ──────────────────────────────────────────
@@ -516,9 +484,9 @@ import static org.apache.arrow.memory.DefaultAllocationManagerOption.ALLOCATION_
      * @return formatted duration string
      */
     private static String timeOf(Runnable task) {
-<span class="nc" id="L519">        long start = System.nanoTime();</span>
-<span class="nc" id="L520">        task.run();</span>
-<span class="nc" id="L521">        return formatDuration((System.nanoTime() - start) / 1_000_000);</span>
+<span class="nc" id="L487">        long start = System.nanoTime();</span>
+<span class="nc" id="L488">        task.run();</span>
+<span class="nc" id="L489">        return formatDuration((System.nanoTime() - start) / 1_000_000);</span>
     }
 
     // ── formatting / infra ────────────────────────────────────────────────────
@@ -529,15 +497,15 @@ import static org.apache.arrow.memory.DefaultAllocationManagerOption.ALLOCATION_
      * @return formatted string (ms, s, or m s)
      */
     private static String formatDuration(long ms) {
-<span class="nc bnc" id="L532" title="All 2 branches missed.">        if (ms &lt; 1_000) {</span>
-<span class="nc" id="L533">            return ms + &quot; ms&quot;;</span>
+<span class="nc bnc" id="L500" title="All 2 branches missed.">        if (ms &lt; 1_000) {</span>
+<span class="nc" id="L501">            return ms + &quot; ms&quot;;</span>
         }
-<span class="nc bnc" id="L535" title="All 2 branches missed.">        if (ms &lt; 60_000) {</span>
-<span class="nc" id="L536">            return String.format(&quot;%.2f s&quot;, ms / 1_000.0);</span>
+<span class="nc bnc" id="L503" title="All 2 branches missed.">        if (ms &lt; 60_000) {</span>
+<span class="nc" id="L504">            return String.format(&quot;%.2f s&quot;, ms / 1_000.0);</span>
         }
-<span class="nc" id="L538">        long min = ms / 60_000;</span>
-<span class="nc" id="L539">        double sec = (ms % 60_000) / 1_000.0;</span>
-<span class="nc" id="L540">        return String.format(&quot;%d m %.2f s&quot;, min, sec);</span>
+<span class="nc" id="L506">        long min = ms / 60_000;</span>
+<span class="nc" id="L507">        double sec = (ms % 60_000) / 1_000.0;</span>
+<span class="nc" id="L508">        return String.format(&quot;%d m %.2f s&quot;, min, sec);</span>
     }
 
     /**
@@ -546,9 +514,9 @@ import static org.apache.arrow.memory.DefaultAllocationManagerOption.ALLOCATION_
      * @throws IOException on failure
      */
     private static LocalFileSystem newLocalFs() throws IOException {
-<span class="nc" id="L549">        LocalFileSystem fs = new LocalFileSystem();</span>
-<span class="nc" id="L550">        fs.initialize(URI.create(&quot;file:///&quot;), new Configuration());</span>
-<span class="nc" id="L551">        return fs;</span>
+<span class="nc" id="L517">        LocalFileSystem fs = new LocalFileSystem();</span>
+<span class="nc" id="L518">        fs.initialize(URI.create(&quot;file:///&quot;), new Configuration());</span>
+<span class="nc" id="L519">        return fs;</span>
     }
 
     /**
@@ -557,8 +525,8 @@ import static org.apache.arrow.memory.DefaultAllocationManagerOption.ALLOCATION_
      * @throws IOException on socket error
      */
     private static int freePort() throws IOException {
-<span class="nc" id="L560">        try (ServerSocket s = new ServerSocket(0)) {</span>
-<span class="nc" id="L561">            return s.getLocalPort();</span>
+<span class="nc" id="L528">        try (ServerSocket s = new ServerSocket(0)) {</span>
+<span class="nc" id="L529">            return s.getLocalPort();</span>
         }
     }
 
@@ -568,18 +536,18 @@ import static org.apache.arrow.memory.DefaultAllocationManagerOption.ALLOCATION_
      * @throws IOException on filesystem error
      */
     private static void deleteTree(Path dir) throws IOException {
-<span class="nc bnc" id="L571" title="All 2 branches missed.">        if (!Files.exists(dir)) {</span>
-<span class="nc" id="L572">            return;</span>
+<span class="nc bnc" id="L539" title="All 2 branches missed.">        if (!Files.exists(dir)) {</span>
+<span class="nc" id="L540">            return;</span>
         }
-<span class="nc" id="L574">        Files.walk(dir)</span>
-<span class="nc" id="L575">                .sorted(Comparator.reverseOrder())</span>
-<span class="nc" id="L576">                .forEach(p -&gt; {</span>
+<span class="nc" id="L542">        Files.walk(dir)</span>
+<span class="nc" id="L543">                .sorted(Comparator.reverseOrder())</span>
+<span class="nc" id="L544">                .forEach(p -&gt; {</span>
                     try {
-<span class="nc" id="L578">                        Files.delete(p);</span>
-<span class="nc" id="L579">                    } catch (IOException ignored) {</span>
-<span class="nc" id="L580">                    }</span>
-<span class="nc" id="L581">                });</span>
-<span class="nc" id="L582">    }</span>
+<span class="nc" id="L546">                        Files.delete(p);</span>
+<span class="nc" id="L547">                    } catch (IOException ignored) {</span>
+<span class="nc" id="L548">                    }</span>
+<span class="nc" id="L549">                });</span>
+<span class="nc" id="L550">    }</span>
 
     /**
      * Gets the value of a named CLI argument.
@@ -589,12 +557,12 @@ import static org.apache.arrow.memory.DefaultAllocationManagerOption.ALLOCATION_
      * @return argument value or default
      */
     private static String arg(String[] args, String key, String def) {
-<span class="nc bnc" id="L592" title="All 2 branches missed.">        for (int i = 0; i &lt; args.length - 1; i++) {</span>
-<span class="nc bnc" id="L593" title="All 2 branches missed.">            if (args[i].equals(key)) {</span>
-<span class="nc" id="L594">                return args[i + 1];</span>
+<span class="nc bnc" id="L560" title="All 2 branches missed.">        for (int i = 0; i &lt; args.length - 1; i++) {</span>
+<span class="nc bnc" id="L561" title="All 2 branches missed.">            if (args[i].equals(key)) {</span>
+<span class="nc" id="L562">                return args[i + 1];</span>
             }
         }
-<span class="nc" id="L597">        return def;</span>
+<span class="nc" id="L565">        return def;</span>
     }
 
     /**
@@ -604,12 +572,12 @@ import static org.apache.arrow.memory.DefaultAllocationManagerOption.ALLOCATION_
      * @return true if flag is present
      */
     private static boolean flag(String[] args, String key) {
-<span class="nc bnc" id="L607" title="All 2 branches missed.">        for (String a : args) {</span>
-<span class="nc bnc" id="L608" title="All 2 branches missed.">            if (a.equals(key)) {</span>
-<span class="nc" id="L609">                return true;</span>
+<span class="nc bnc" id="L575" title="All 2 branches missed.">        for (String a : args) {</span>
+<span class="nc bnc" id="L576" title="All 2 branches missed.">            if (a.equals(key)) {</span>
+<span class="nc" id="L577">                return true;</span>
             }
         }
-<span class="nc" id="L612">        return false;</span>
+<span class="nc" id="L580">        return false;</span>
     }
 
     /**
@@ -619,12 +587,12 @@ import static org.apache.arrow.memory.DefaultAllocationManagerOption.ALLOCATION_
      * @return true if key is found
      */
     private static boolean has(String[] args, String key) {
-<span class="nc bnc" id="L622" title="All 2 branches missed.">        for (String a : args) {</span>
-<span class="nc bnc" id="L623" title="All 2 branches missed.">            if (a.equals(key)) {</span>
-<span class="nc" id="L624">                return true;</span>
+<span class="nc bnc" id="L590" title="All 2 branches missed.">        for (String a : args) {</span>
+<span class="nc bnc" id="L591" title="All 2 branches missed.">            if (a.equals(key)) {</span>
+<span class="nc" id="L592">                return true;</span>
             }
         }
-<span class="nc" id="L627">        return false;</span>
+<span class="nc" id="L595">        return false;</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>
