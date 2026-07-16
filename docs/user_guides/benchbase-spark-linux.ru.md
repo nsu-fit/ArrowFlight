@@ -78,7 +78,7 @@ BENCHBASE_RATE=unlimited        # лимит requests/sec
 BENCHBASE_QUERY_TIMEOUT_SECONDS=120   # timeout BenchBase query через JDBC
 BENCHBASE_CAPTURE_TIMEOUT_SECONDS=120 # timeout повторного query для HTML-проверки
 BENCHBASE_UPDATE_PAGES=false    # не обновлять локальную pages/
-BENCHMARK_OBSERVABILITY=true    # автоматически запустить Grafana/Prometheus
+BENCHMARK_OBSERVABILITY=true    # переопределить metricsEnabled для Grafana/Prometheus
 HDFS_BLOCK_SIZE_BYTES=1073741824 # shard обязан помещаться в один HDFS block
 ```
 
@@ -117,8 +117,9 @@ BENCHBASE_UPDATE_PAGES=false \
 
 ## Grafana и Prometheus
 
-Benchmark script по умолчанию сам запускает observability stack. Его можно
-отключить через `BENCHMARK_OBSERVABILITY=false`. Ручной запуск:
+Benchmark script запускает observability stack, когда `metricsEnabled=true` в
+`arrowflight.properties`. Значение можно переопределить через
+`BENCHMARK_OBSERVABILITY=false`. Ручной запуск:
 
 ```bash
 docker compose --profile observability up -d \

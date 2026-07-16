@@ -85,6 +85,8 @@ public class HadoopArrowFlightServer {
         int hazelcastPort = Integer.parseInt(
                 getArgValue(args, "--hazelcast-port", String.valueOf(config.hazelcastPort())));
         int metricsPort = Integer.parseInt(getArgValue(args, "--metrics-port", "9404"));
+        boolean metricsEnabled = Boolean.parseBoolean(getArgValue(args, "--metrics-enabled",
+                String.valueOf(config.metricsEnabled())));
 
         // Generate default host list from numServers if --hosts not explicitly set
         String hostsRaw = getArgValue(args, "--hosts", null);
@@ -133,11 +135,14 @@ public class HadoopArrowFlightServer {
                     .build();
             server.start();
 
-            metricsService = new MetricsService(metricsPort);
-            metricsService.start();
-
             LOGGER.info("Server Arrow Flight SQL started on {}", location);
-            LOGGER.info("Prometheus metrics started on 0.0.0.0:{}", metricsPort);
+            if (metricsEnabled) {
+                metricsService = new MetricsService(metricsPort);
+                metricsService.start();
+                LOGGER.info("Prometheus metrics started on 0.0.0.0:{}", metricsPort);
+            } else {
+                LOGGER.info("Prometheus metrics are disabled");
+            }
 
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                 LOGGER.info("Shutting down server...");

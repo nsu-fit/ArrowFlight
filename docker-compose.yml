@@ -9,6 +9,9 @@ x-server-node-env: &server-node-env
   FLIGHT_LOCAL_DATA_DIR: "/staging"
   FLIGHT_PORT: "32010"
   FLIGHT_METRICS_PORT: "9404"
+  FLIGHT_METRICS_ENABLED: "${BENCHMARK_OBSERVABILITY:-}"
+  DUCKDB_HDFS_EXTENSION: /opt/duckdb-hdfs/hadoopfs.duckdb_extension
+  DUCKDB_ALLOW_UNSIGNED_EXTENSIONS: "true"
   FLIGHT_HOSTS: "${FLIGHT_HOSTS:-flight-server-1,flight-server-2,flight-server-3,flight-server-4,flight-server-5,flight-server-6,flight-server-7,flight-server-8,flight-server-9,flight-server-10}"
   HAZELCAST_PORT: "5701"
   HDFS_NAMENODE_HOST: hdfs-namenode
@@ -397,7 +400,7 @@ services:
     profiles: ["benchbase"]
     environment:
       BENCHBASE_PROFILE: postgres
-      BENCHBASE_QUERY_TIMEOUT_SECONDS: "${BENCHBASE_QUERY_TIMEOUT_SECONDS:-120}"
+      BENCHBASE_QUERY_TIMEOUT_SECONDS: "${BENCHBASE_QUERY_TIMEOUT_SECONDS:-600}"
     depends_on:
       spark-thrift-server:
         condition: service_healthy

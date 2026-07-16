@@ -34,10 +34,10 @@ class ConfigAdapterTest {
         AppConfig cfg = ConfigAdapter.getConfig();
 
         assertEquals(4, cfg.numServers());
-        assertEquals(4096, cfg.batchSize());
+        assertEquals(65536, cfg.batchSize());
         assertEquals(131072, cfg.ioFileBufferSize());
         assertTrue(cfg.ioParallelism() >= 1 && cfg.ioParallelism() <= 64);
-        assertEquals(2, cfg.duckDbThreads());
+        assertEquals(8, cfg.duckDbThreads());
         assertEquals("/data/parquet", cfg.dataDir());
         assertNull(cfg.localDataDir());
         assertEquals(32010, cfg.port());
@@ -47,6 +47,7 @@ class ConfigAdapterTest {
         assertEquals(1000, cfg.clientRetryBackoffMs());
         assertEquals(0, cfg.clientConnectTimeoutMs());
         assertFalse(cfg.duckDbAllowUnsignedExtensions());
+        assertTrue(cfg.metricsEnabled());
         assertEquals(Integer.MAX_VALUE, cfg.grpcMaxInboundMessageSize());
         assertEquals(300000, cfg.flightListenerReadyTimeoutMillis());
     }
@@ -61,7 +62,7 @@ class ConfigAdapterTest {
 
     @Test
     void getConfigNumServersDefaults() {
-        // No explicit property set, should default to 4 from arrowflight.properties
+        // No explicit property set, should use arrowflight.properties.
         AppConfig cfg = ConfigAdapter.getConfig();
         assertEquals(4, cfg.numServers());
     }
@@ -76,7 +77,7 @@ class ConfigAdapterTest {
 
     @Test
     void getConfigSysPropTakesPrecedenceOverPropsFile() {
-        // arrowflight.properties has batchSize=4096.
+        // The system property must override arrowflight.properties.
         // System property must override it.
         setProp("batchSize", "100");
 
@@ -106,6 +107,19 @@ class ConfigAdapterTest {
 
         AppConfig cfg = ConfigAdapter.getConfig();
         assertEquals(4, cfg.duckDbThreads());
+    }
+
+    /** Verifies DuckDB HDFS extension settings map from system properties. */
+    @Test
+    void getConfigDuckDbHdfsExtension() {
+        setProp("arrowflight.duckdb.hdfs.extension", "/opt/duckdb-hdfs/hadoopfs.duckdb_extension");
+        setProp("arrowflight.duckdb.allowUnsignedExtensions", "true");
+
+        AppConfig cfg = ConfigAdapter.getConfig();
+
+        assertEquals("/opt/duckdb-hdfs/hadoopfs.duckdb_extension",
+                cfg.duckDbHdfsExtension());
+        assertTrue(cfg.duckDbAllowUnsignedExtensions());
     }
 
     @Test
@@ -174,6 +188,15 @@ class ConfigAdapterTest {
 
         AppConfig cfg = ConfigAdapter.getConfig();
         assertEquals(1048576, cfg.grpcMaxInboundMessageSize());
+    }
+
+    /** Verifies benchmark metrics can be disabled with a system property. */
+    @Test
+    void getConfigMetricsDisabled() {
+        setProp("metricsEnabled", "false");
+
+        AppConfig cfg = ConfigAdapter.getConfig();
+        assertFalse(cfg.metricsEnabled());
     }
 
     @Test

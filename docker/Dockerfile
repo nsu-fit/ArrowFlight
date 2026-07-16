@@ -16,10 +16,15 @@ ARG SPARK_VERSION=3.5.1
 ARG SPARK_PACKAGE=spark-${SPARK_VERSION}-bin-hadoop3
 ARG HADOOP_VERSION=3.3.6
 ARG HADOOP_PACKAGE=hadoop-${HADOOP_VERSION}
+ARG DUCKDB_HDFS_VERSION=1.4.1
+ARG DUCKDB_HDFS_SHA256=22c9b9ce9e5345a51206b025f5e0ec8b63b501b81cee57a12ecb39dc1c26a7b1
 
 ENV APP_HOME=/opt/arrowflight
 ENV APP_JAR=/opt/arrowflight/hadoop-arrow-flight-1.0-SNAPSHOT.jar
 ENV SPARK_HOME=/opt/spark
+ENV DUCKDB_HDFS_HOME=/opt/duckdb-hdfs
+ENV DUCKDB_HDFS_EXTENSION=/opt/duckdb-hdfs/hadoopfs.duckdb_extension
+ENV DUCKDB_ALLOW_UNSIGNED_EXTENSIONS=true
 ENV PATH=/opt/spark/bin:/opt/spark/sbin:${PATH}
 
 RUN apt-get update \
@@ -70,6 +75,19 @@ RUN set -eux; \
         tar -xzf /tmp/hadoop.tgz -C /opt; \
         rm -f /tmp/hadoop.tgz; \
         ln -s "/opt/${HADOOP_PACKAGE}" "${HADOOP_HOME}"
+
+RUN set -eux; \
+        curl -fL --retry 5 --retry-all-errors --retry-delay 10 --connect-timeout 30 \
+          -o /tmp/duckdb-hdfs.tgz \
+          "https://github.com/vincent-chang/duckdb-hdfs/releases/download/v${DUCKDB_HDFS_VERSION}/duckdb-hdfs.v${DUCKDB_HDFS_VERSION}.linux_amd64.tgz"; \
+        echo "${DUCKDB_HDFS_SHA256}  /tmp/duckdb-hdfs.tgz" | sha256sum -c -; \
+        tar -xzf /tmp/duckdb-hdfs.tgz -C /opt; \
+        rm -f /tmp/duckdb-hdfs.tgz; \
+        LD_LIBRARY_PATH="${DUCKDB_HDFS_HOME}" \
+          "${DUCKDB_HDFS_HOME}/duckdb" -unsigned -c \
+          "LOAD '${DUCKDB_HDFS_EXTENSION}';"
+
+ENV LD_LIBRARY_PATH=/opt/duckdb-hdfs:/opt/hadoop/lib/native:/opt/java/openjdk/lib/server
 
 WORKDIR ${APP_HOME}
 COPY --from=build /src/target/hadoop-arrow-flight-1.0-SNAPSHOT.jar ${APP_JAR}

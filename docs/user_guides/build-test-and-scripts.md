@@ -126,7 +126,7 @@ src/main/resources/arrowflight.properties
 
 Key parameters:
 
-- `batchSize` - shared Arrow batch size for Acero and DuckDB export.
+- `batchSize` - DuckDB Arrow export and maximum Flight batch size.
 - `ioParallelism` - explicit worker thread count. If empty, the value is calculated.
 - `ioParallelismMinThreads` - lower bound for the thread pool.
 - `ioParallelismMaxCores` - max CPU cores used in the calculation; `0` means no limit.
@@ -169,6 +169,8 @@ export DUCKDB_HDFS_EXTENSION=/path/to/hadoopfs.duckdb_extension
 export DUCKDB_ALLOW_UNSIGNED_EXTENSIONS=true
 export HDFS_DEFAULT_NAMENODE=hdfs://namenode:8020
 ```
+
+The project Docker image downloads the matching `duckdb-hdfs` release, verifies its SHA-256 checksum, and exposes the extension through these environment variables automatically.
 
 ## run.sh
 

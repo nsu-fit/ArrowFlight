@@ -23,8 +23,8 @@ BENCHBASE_TERMINALS="${BENCHBASE_TERMINALS:-}"
 BENCHBASE_RATE="${BENCHBASE_RATE:-unlimited}"
 BENCHBASE_DB_SCHEMA="${BENCHBASE_DB_SCHEMA:-}"
 BENCHBASE_UPDATE_PAGES="${BENCHBASE_UPDATE_PAGES:-true}"
-BENCHBASE_CAPTURE_TIMEOUT_SECONDS="${BENCHBASE_CAPTURE_TIMEOUT_SECONDS:-${BENCHBASE_QUERY_TIMEOUT_SECONDS:-120}}"
-BENCHMARK_OBSERVABILITY="${BENCHMARK_OBSERVABILITY:-true}"
+BENCHBASE_CAPTURE_TIMEOUT_SECONDS="${BENCHBASE_CAPTURE_TIMEOUT_SECONDS:-${BENCHBASE_QUERY_TIMEOUT_SECONDS:-600}}"
+BENCHMARK_OBSERVABILITY="${BENCHMARK_OBSERVABILITY:-}"
 PYTHON_CMD=()
 
 usage() {
@@ -127,9 +127,24 @@ read_cluster_nodes() {
   echo "${nodes}"
 }
 
+read_metrics_enabled() {
+  local props="${REPO_ROOT}/src/main/resources/arrowflight.properties"
+  local enabled
+  enabled="$(awk -F= '/^[[:space:]]*metricsEnabled[[:space:]]*=/ {gsub(/[[:space:]]/, "", $2); print tolower($2); exit}' "${props}")"
+  enabled="${enabled:-true}"
+
+  if [[ "${enabled}" != "true" && "${enabled}" != "false" ]]; then
+    echo "Bad metricsEnabled=${enabled}. Supported: true or false." >&2
+    exit 2
+  fi
+
+  echo "${enabled}"
+}
+
 configure_cluster() {
   local nodes
   nodes="$(read_cluster_nodes)"
+  BENCHMARK_OBSERVABILITY="${BENCHMARK_OBSERVABILITY:-$(read_metrics_enabled)}"
 
   local hosts=()
   local servers=()
@@ -144,6 +159,7 @@ configure_cluster() {
   done
 
   export FLIGHT_HOSTS
+  export BENCHMARK_OBSERVABILITY
   export FLIGHT_SERVERS
   export FLIGHT_SERVER_DATA_DIRS
   export FLIGHT_SOURCE_HOST="flight-server-1"
