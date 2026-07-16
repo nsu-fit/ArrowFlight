@@ -80,7 +80,7 @@ public class Field implements Serializable {
      * @return - fields from the schema
      */
     public static Field[] from(Schema schema) {
-<span class="nc" id="L83">        return schema.getFields().stream().map(f -&gt; new Field(f.getName(), FieldType.fromArrow(f.getType(), f.getChildren()))).toArray(Field[]::new);</span>
+<span class="fc" id="L83">        return schema.getFields().stream().map(f -&gt; new Field(f.getName(), FieldType.fromArrow(f.getType(), f.getChildren()))).toArray(Field[]::new);</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

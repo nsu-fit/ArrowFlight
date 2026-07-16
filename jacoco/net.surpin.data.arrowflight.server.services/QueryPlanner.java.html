@@ -73,7 +73,7 @@ public final class QueryPlanner {
      */
     public List&lt;FlightEndpoint&gt; determineEndpoints(String query)
             throws IOException {
-<span class="nc" id="L76">        ParquetQueryParser parsed = ParquetQueryParser.parse(query);</span>
+<span class="fc" id="L76">        ParquetQueryParser parsed = ParquetQueryParser.parse(query);</span>
 <span class="nc" id="L77">        Set&lt;String&gt; allServerUris = validatedServerUris();</span>
 <span class="nc" id="L78">        Map&lt;String, Long&gt; serverLoad = validatedServerLoad(allServerUris);</span>
 <span class="nc" id="L79">        Map&lt;String, FileAssignment&gt; pathLocations = validatedPathLocations(parsed, allServerUris);</span>
@@ -85,19 +85,19 @@ public final class QueryPlanner {
     }
 
     private Set&lt;String&gt; validatedServerUris() throws IOException {
-<span class="nc" id="L88">        Map&lt;String, Long&gt; registry = clusterService.allServerLoads();</span>
-<span class="nc bnc" id="L89" title="All 2 branches missed.">        if (registry.isEmpty()) {</span>
-<span class="nc" id="L90">            throw new IOException(&quot;Flight server registry is empty&quot;);</span>
+<span class="fc" id="L88">        Map&lt;String, Long&gt; registry = clusterService.allServerLoads();</span>
+<span class="fc bfc" id="L89" title="All 2 branches covered.">        if (registry.isEmpty()) {</span>
+<span class="fc" id="L90">            throw new IOException(&quot;Flight server registry is empty&quot;);</span>
         }
-<span class="nc" id="L92">        Set&lt;String&gt; uris = new LinkedHashSet&lt;&gt;(clusterService.filterLiveServers(registry.keySet()));</span>
-<span class="nc bnc" id="L93" title="All 2 branches missed.">        if (uris.isEmpty()) {</span>
-<span class="nc" id="L94">            throw new IOException(&quot;No live Flight servers are registered&quot;);</span>
+<span class="fc" id="L92">        Set&lt;String&gt; uris = new LinkedHashSet&lt;&gt;(clusterService.filterLiveServers(registry.keySet()));</span>
+<span class="fc bfc" id="L93" title="All 2 branches covered.">        if (uris.isEmpty()) {</span>
+<span class="fc" id="L94">            throw new IOException(&quot;No live Flight servers are registered&quot;);</span>
         }
-<span class="nc" id="L96">        Set&lt;String&gt; missing = uris.stream()</span>
-<span class="nc bnc" id="L97" title="All 2 branches missed.">                .filter(uri -&gt; !clusterService.hasFileInventory(uri))</span>
-<span class="nc" id="L98">                .collect(Collectors.toCollection(LinkedHashSet::new));</span>
-<span class="nc bnc" id="L99" title="All 2 branches missed.">        if (!missing.isEmpty()) {</span>
-<span class="nc" id="L100">            throw new IOException(&quot;Flight nodes have not published file inventories: &quot; + missing);</span>
+<span class="fc" id="L96">        Set&lt;String&gt; missing = uris.stream()</span>
+<span class="pc bpc" id="L97" title="1 of 2 branches missed.">                .filter(uri -&gt; !clusterService.hasFileInventory(uri))</span>
+<span class="fc" id="L98">                .collect(Collectors.toCollection(LinkedHashSet::new));</span>
+<span class="pc bpc" id="L99" title="1 of 2 branches missed.">        if (!missing.isEmpty()) {</span>
+<span class="fc" id="L100">            throw new IOException(&quot;Flight nodes have not published file inventories: &quot; + missing);</span>
         }
 <span class="nc" id="L102">        return uris;</span>
     }
@@ -173,9 +173,9 @@ public final class QueryPlanner {
 <span class="fc" id="L173">        Map&lt;String, FileAssignment&gt; result = new LinkedHashMap&lt;&gt;();</span>
 <span class="fc bfc" id="L174" title="All 2 branches covered.">        for (Map.Entry&lt;String, FileAssignment&gt; file : inventory.entrySet()) {</span>
             boolean matches;
-<span class="pc bpc" id="L176" title="1 of 2 branches missed.">            if (query.isJoin) {</span>
-<span class="nc" id="L177">                matches = query.joinTables.stream().anyMatch(table -&gt;</span>
-<span class="nc" id="L178">                        belongsToTable(file.getKey(), table.schema(), table.table()));</span>
+<span class="fc bfc" id="L176" title="All 2 branches covered.">            if (query.isJoin) {</span>
+<span class="fc" id="L177">                matches = query.joinTables.stream().anyMatch(table -&gt;</span>
+<span class="fc" id="L178">                        belongsToTable(file.getKey(), table.schema(), table.table()));</span>
             } else {
 <span class="fc" id="L180">                matches = belongsToTable(file.getKey(), query.schema, query.table);</span>
             }

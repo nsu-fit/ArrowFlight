@@ -40,52 +40,52 @@ public final class HazelcastAdapter implements AutoCloseable {
      * @param appConfig server configuration
      * @param hosts cluster seed hosts
      */
-<span class="nc" id="L43">    public HazelcastAdapter(AppConfig appConfig, String... hosts) {</span>
-<span class="nc" id="L44">        Config config = new Config();</span>
-<span class="nc" id="L45">        NetworkConfig network = config.getNetworkConfig();</span>
-<span class="nc" id="L46">        network.setPort(appConfig.hazelcastPort());</span>
-<span class="nc" id="L47">        network.setPortAutoIncrement(false);</span>
-<span class="nc" id="L48">        JoinConfig join = network.getJoin();</span>
-<span class="nc" id="L49">        join.getMulticastConfig().setEnabled(false);</span>
-<span class="nc" id="L50">        TcpIpConfig tcpIpConfig = join.getTcpIpConfig();</span>
-<span class="nc bnc" id="L51" title="All 2 branches missed.">        for (String host : hosts) {</span>
+<span class="fc" id="L43">    public HazelcastAdapter(AppConfig appConfig, String... hosts) {</span>
+<span class="fc" id="L44">        Config config = new Config();</span>
+<span class="fc" id="L45">        NetworkConfig network = config.getNetworkConfig();</span>
+<span class="fc" id="L46">        network.setPort(appConfig.hazelcastPort());</span>
+<span class="fc" id="L47">        network.setPortAutoIncrement(false);</span>
+<span class="fc" id="L48">        JoinConfig join = network.getJoin();</span>
+<span class="fc" id="L49">        join.getMulticastConfig().setEnabled(false);</span>
+<span class="fc" id="L50">        TcpIpConfig tcpIpConfig = join.getTcpIpConfig();</span>
+<span class="pc bpc" id="L51" title="1 of 2 branches missed.">        for (String host : hosts) {</span>
 <span class="nc" id="L52">            tcpIpConfig.addMember(host);</span>
         }
-<span class="nc" id="L54">        tcpIpConfig.setEnabled(true);</span>
+<span class="fc" id="L54">        tcpIpConfig.setEnabled(true);</span>
 
-<span class="nc" id="L56">        this.instance = Hazelcast.newHazelcastInstance(config);</span>
-<span class="nc" id="L57">        this.serverRegistry = instance.getMap(SERVER_REGISTRY_MAP);</span>
-<span class="nc" id="L58">        this.statementCache = instance.getMap(STATEMENT_CACHE_MAP);</span>
-<span class="nc" id="L59">        this.serverHeartbeats = instance.getMap(SERVER_HEARTBEAT_MAP);</span>
-<span class="nc" id="L60">        this.serverFiles = instance.getMap(SERVER_FILES_MAP);</span>
-<span class="nc" id="L61">    }</span>
+<span class="fc" id="L56">        this.instance = Hazelcast.newHazelcastInstance(config);</span>
+<span class="fc" id="L57">        this.serverRegistry = instance.getMap(SERVER_REGISTRY_MAP);</span>
+<span class="fc" id="L58">        this.statementCache = instance.getMap(STATEMENT_CACHE_MAP);</span>
+<span class="fc" id="L59">        this.serverHeartbeats = instance.getMap(SERVER_HEARTBEAT_MAP);</span>
+<span class="fc" id="L60">        this.serverFiles = instance.getMap(SERVER_FILES_MAP);</span>
+<span class="fc" id="L61">    }</span>
 
     /**
      * Returns the distributed server registry (URI → load).
      */
     public IMap&lt;String, Long&gt; serverRegistry() {
-<span class="nc" id="L67">        return serverRegistry;</span>
+<span class="fc" id="L67">        return serverRegistry;</span>
     }
 
     /**
      * Returns the distributed statement cache (handle → state).
      */
     public IMap&lt;String, Serializable&gt; statementCache() {
-<span class="nc" id="L74">        return statementCache;</span>
+<span class="fc" id="L74">        return statementCache;</span>
     }
 
     /**
      * Returns the distributed heartbeat map (URI → timestamp).
      */
     public IMap&lt;String, Long&gt; serverHeartbeats() {
-<span class="nc" id="L81">        return serverHeartbeats;</span>
+<span class="fc" id="L81">        return serverHeartbeats;</span>
     }
 
     /**
      * Returns the distributed local-file inventory (server URI → relative path/size).
      */
     public IMap&lt;String, Map&lt;String, Long&gt;&gt; serverFiles() {
-<span class="nc" id="L88">        return serverFiles;</span>
+<span class="fc" id="L88">        return serverFiles;</span>
     }
 
     /**
@@ -103,13 +103,13 @@ public final class HazelcastAdapter implements AutoCloseable {
      * @return Hazelcast instance
      */
     public HazelcastInstance instance() {
-<span class="nc" id="L106">        return instance;</span>
+<span class="fc" id="L106">        return instance;</span>
     }
 
     @Override
     public void close() {
-<span class="nc" id="L111">        instance.shutdown();</span>
-<span class="nc" id="L112">        LOGGER.info(&quot;Hazelcast instance shut down&quot;);</span>
-<span class="nc" id="L113">    }</span>
+<span class="fc" id="L111">        instance.shutdown();</span>
+<span class="fc" id="L112">        LOGGER.info(&quot;Hazelcast instance shut down&quot;);</span>
+<span class="fc" id="L113">    }</span>
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

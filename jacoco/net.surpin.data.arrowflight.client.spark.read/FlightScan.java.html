@@ -14,7 +14,7 @@ import java.io.Serializable;
  * Describes the data-structure of FlightScan
  */
 public class FlightScan implements Scan, Serializable {
-<span class="nc" id="L17">    private static final Logger LOGGER = LoggerFactory.getLogger(FlightScan.class);</span>
+<span class="fc" id="L17">    private static final Logger LOGGER = LoggerFactory.getLogger(FlightScan.class);</span>
 
     private final Configuration configuration;
     private final Table table;
@@ -24,12 +24,12 @@ public class FlightScan implements Scan, Serializable {
      * @param configuration - the configuration of remote flight service
      * @param table - the table object
      */
-<span class="nc" id="L27">    public FlightScan(Configuration configuration, Table table) {</span>
-<span class="nc" id="L28">        LOGGER.info(&quot;{}()&quot;, this.getClass().getName());</span>
+<span class="fc" id="L27">    public FlightScan(Configuration configuration, Table table) {</span>
+<span class="fc" id="L28">        LOGGER.info(&quot;{}()&quot;, this.getClass().getName());</span>
 
-<span class="nc" id="L30">        this.configuration = configuration;</span>
-<span class="nc" id="L31">        this.table = table;</span>
-<span class="nc" id="L32">    }</span>
+<span class="fc" id="L30">        this.configuration = configuration;</span>
+<span class="fc" id="L31">        this.table = table;</span>
+<span class="fc" id="L32">    }</span>
 
     /**
      * Get the schema of the scan
@@ -37,7 +37,7 @@ public class FlightScan implements Scan, Serializable {
      */
     @Override
     public StructType readSchema() {
-<span class="nc" id="L40">        return this.table.getSparkSchema();</span>
+<span class="fc" id="L40">        return this.table.getSparkSchema();</span>
     }
 
     /**
@@ -46,7 +46,7 @@ public class FlightScan implements Scan, Serializable {
      */
     @Override
     public String description() {
-<span class="nc" id="L49">        return this.table.getQueryStatement();</span>
+<span class="fc" id="L49">        return this.table.getQueryStatement();</span>
     }
 
     /**
@@ -55,8 +55,8 @@ public class FlightScan implements Scan, Serializable {
      */
     @Override
     public Batch toBatch() {
-<span class="nc" id="L58">        LOGGER.info(&quot;{}.toBatch()&quot;, this.getClass().getName());</span>
-<span class="nc" id="L59">        return new FlightBatch(this.configuration, this.table);</span>
+<span class="fc" id="L58">        LOGGER.info(&quot;{}.toBatch()&quot;, this.getClass().getName());</span>
+<span class="fc" id="L59">        return new FlightBatch(this.configuration, this.table);</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

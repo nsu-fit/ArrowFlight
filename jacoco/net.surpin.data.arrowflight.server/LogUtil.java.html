@@ -74,10 +74,10 @@ public final class LogUtil {
 <span class="pc bpc" id="L74" title="1 of 2 branches missed.">        if (nanos &lt; 1_000_000) {</span>
 <span class="nc" id="L75">            return String.format(&quot;%.1fµs&quot;, nanos / 1000.0);</span>
         }
-<span class="pc bpc" id="L77" title="1 of 2 branches missed.">        if (nanos &lt; 1_000_000_000) {</span>
+<span class="fc bfc" id="L77" title="All 2 branches covered.">        if (nanos &lt; 1_000_000_000) {</span>
 <span class="fc" id="L78">            return String.format(&quot;%.2fms&quot;, nanos / 1_000_000.0);</span>
         }
-<span class="nc" id="L80">        return String.format(&quot;%.3fs&quot;, nanos / 1_000_000_000.0);</span>
+<span class="fc" id="L80">        return String.format(&quot;%.3fs&quot;, nanos / 1_000_000_000.0);</span>
     }
 
     /**
