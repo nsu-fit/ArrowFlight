@@ -89,26 +89,7 @@ public final class ExecutionService {
     public void readParquet(BufferAllocator allocator, String query, String[] fileUris,
             FlightProducer.ServerStreamListener listener, boolean startListener) throws Exception {
         ParquetQueryParser parsedQuery = ParquetQueryParser.parse(query);
-        int numFiles = fileUris != null ? fileUris.length : 0;
         boolean hasFilter = parsedQuery.filter != null && !parsedQuery.filter.isBlank();
-        boolean hasGroupBy = !parsedQuery.groupByColumnNames.isEmpty();
-        boolean hasAggregation = parsedQuery.hasAggregation;
-        String path;
-        if (parsedQuery.isJoin) {
-            path = "join";
-        } else if (hasAggregation && hasGroupBy) {
-            path = "aggregation+groupby";
-        } else if (hasAggregation) {
-            path = "aggregation";
-        } else if (hasFilter) {
-            path = "filtered-scan";
-        } else {
-            path = "full-scan";
-        }
-        LOGGER.info("qid={} node={} execution=plan path={} projection={} filter={} groupBy={} files={} isJoin={} query='{}'",
-                LogUtil.qid(), LogUtil.node(), path,
-                parsedQuery.columns.isEmpty() ? "*" : String.join(",", parsedQuery.columns),
-                hasFilter, hasGroupBy, numFiles, parsedQuery.isJoin, query);
 
         if (parsedQuery.isJoin) {
             executeJoin(allocator, parsedQuery, fileUris, listener, startListener);
@@ -493,82 +474,79 @@ public final class ExecutionService {
      */
     private VectorSchemaRoot mergeVsrPartials(BufferAllocator allocator,
             ParquetQueryParser pq, List<VectorSchemaRoot> partials) {
-        int numGbCols = pq.groupByColumnNames.size();
+        if (pq.groupByColumnNames.isEmpty()) {
+            return mergeWithoutGroupBy(allocator, pq, partials);
+        }
+        return mergeWithGroupBy(allocator, pq, partials);
+    }
+
+    private VectorSchemaRoot mergeWithoutGroupBy(BufferAllocator allocator,
+            ParquetQueryParser pq, List<VectorSchemaRoot> partials) {
         List<ParquetQueryParser.SelectExpr> exprs = pq.selectExprs;
+        Long[] longAccum = new Long[exprs.size()];
+        Object[] sumAccum = new Object[exprs.size()];
+        Object[] objAccum = new Object[exprs.size()];
+        for (int i = 0; i < exprs.size(); i++) {
+            longAccum[i] = 0L;
+        }
+        boolean any = false;
 
-        if (numGbCols == 0) {
-            Long[] longAccum = new Long[exprs.size()];
-            Object[] sumAccum = new Object[exprs.size()];
-            Object[] objAccum = new Object[exprs.size()];
-            for (int i = 0; i < exprs.size(); i++) {
-                longAccum[i] = 0L;
+        for (VectorSchemaRoot partial : partials) {
+            if (partial.getRowCount() == 0) {
+                continue;
             }
-            boolean any = false;
-
-            for (VectorSchemaRoot partial : partials) {
-                if (partial.getRowCount() == 0) {
-                    continue;
-                }
-                any = true;
-                int col = 0;
-                for (ParquetQueryParser.SelectExpr expr : exprs) {
-                    FieldVector vec = partial.getVector(col);
-                    if (!vec.isNull(0)) {
-                        switch (expr.func) {
-                            case COUNT_STAR, COUNT -> longAccum[col] = (Long) addLongs(longAccum[col], toLong(vec, 0));
-                            case SUM -> sumAccum[col] = addNumbers(
-                                    sumAccum[col], vec.getObject(0));
-                            case MIN -> objAccum[col] = objAccum[col] == null
-                                    ? vec.getObject(0) : minOf(objAccum[col], vec.getObject(0));
-                            case MAX -> objAccum[col] = objAccum[col] == null
-                                    ? vec.getObject(0) : maxOf(objAccum[col], vec.getObject(0));
-                            default -> { }
-                        }
-                    }
-                    col++;
-                }
-            }
-
-            Schema outSchema = pq.selectExprs.isEmpty()
-                    ? metadataService.getQuerySchema(buildSelectExprQuery(pq))
-                    : metadataService.buildAggregationSchema(pq);
-            List<FieldVector> outVecs = new ArrayList<>();
-            for (Field f : outSchema.getFields()) {
-                FieldVector v = f.createVector(allocator);
-                if (v instanceof FixedWidthVector fv) {
-                    fv.allocateNew(1);
-                } else if (v instanceof VariableWidthVector vv) {
-                    vv.allocateNew(32);
-                }
-                outVecs.add(v);
-            }
-            if (any) {
-                int col = 0;
-                for (ParquetQueryParser.SelectExpr expr : exprs) {
-                    FieldVector v = outVecs.get(col);
+            any = true;
+            int col = 0;
+            for (ParquetQueryParser.SelectExpr expr : exprs) {
+                FieldVector vec = partial.getVector(col);
+                if (!vec.isNull(0)) {
                     switch (expr.func) {
-                        case COUNT_STAR, COUNT -> {
-                            if (longAccum[col] != null) {
-                                ((BigIntVector) v).setSafe(0, longAccum[col]);
-                            }
-                        }
-                        case SUM -> {
-                            if (sumAccum[col] != null) {
-                                setVectorValue(v, 0, sumAccum[col]);
-                            }
-                        }
-                        case MIN, MAX -> setVectorValue(v, 0, objAccum[col]);
+                        case COUNT_STAR, COUNT -> longAccum[col] = (Long) addLongs(longAccum[col], toLong(vec, 0));
+                        case SUM -> sumAccum[col] = addNumbers(
+                                sumAccum[col], vec.getObject(0));
+                        case MIN -> objAccum[col] = objAccum[col] == null
+                                ? vec.getObject(0) : minOf(objAccum[col], vec.getObject(0));
+                        case MAX -> objAccum[col] = objAccum[col] == null
+                                ? vec.getObject(0) : maxOf(objAccum[col], vec.getObject(0));
                         default -> { }
                     }
-                    col++;
                 }
+                col++;
             }
-            VectorSchemaRoot r = new VectorSchemaRoot(outSchema.getFields(), outVecs);
-            r.setRowCount(any ? 1 : 0);
-            return r;
         }
 
-        // GROUP BY path
+        Schema outSchema = aggregationSchema(pq);
+        List<FieldVector> outVecs = createOutputVectors(allocator, outSchema, 1);
+        if (any) {
+            int col = 0;
+            for (ParquetQueryParser.SelectExpr expr : exprs) {
+                FieldVector v = outVecs.get(col);
+                switch (expr.func) {
+                    case COUNT_STAR, COUNT -> {
+                        if (longAccum[col] != null) {
+                            ((BigIntVector) v).setSafe(0, longAccum[col]);
+                        }
+                    }
+                    case SUM -> {
+                        if (sumAccum[col] != null) {
+                            setVectorValue(v, 0, sumAccum[col]);
+                        }
+                    }
+                    case MIN, MAX -> setVectorValue(v, 0, objAccum[col]);
+                    default -> { }
+                }
+                col++;
+            }
+        }
+        VectorSchemaRoot r = new VectorSchemaRoot(outSchema.getFields(), outVecs);
+        r.setRowCount(any ? 1 : 0);
+        return r;
+    }
+
+    private VectorSchemaRoot mergeWithGroupBy(BufferAllocator allocator,
+            ParquetQueryParser pq, List<VectorSchemaRoot> partials) {
+        List<ParquetQueryParser.SelectExpr> exprs = pq.selectExprs;
+        int numGbCols = pq.groupByColumnNames.size();
         int numAggExprs = (int) exprs.stream()
                 .filter(e -> e.func != ParquetQueryParser.SelectExpr.AggFunc.COLUMN).count();
         Map<List<Object>, Object[]> byKey = new LinkedHashMap<>();
@@ -577,10 +555,10 @@ public final class ExecutionService {
             Schema partialSchema = partial.getSchema();
             List<Field> partialFields = partialSchema.getFields();
 
-            // Build name→index map for defensive column lookup
             Map<String, Integer> colIndexByName = new LinkedHashMap<>();
             for (int i = 0; i < partialFields.size(); i++) {
-                colIndexByName.put(partialFields.get(i).getName().toLowerCase(java.util.Locale.ROOT), i);
+                colIndexByName.put(partialFields.get(i).getName()
+                        .toLowerCase(java.util.Locale.ROOT), i);
             }
 
             int rowCount = partial.getRowCount();
@@ -601,7 +579,8 @@ public final class ExecutionService {
                     String expectedName = expr.outputName != null ? expr.outputName
                             : expr.inputColumn;
                     Integer namedIdx = expectedName != null
-                            ? colIndexByName.get(expectedName.toLowerCase(java.util.Locale.ROOT))
+                            ? colIndexByName.get(expectedName
+                                    .toLowerCase(java.util.Locale.ROOT))
                             : null;
                     FieldVector vec = namedIdx != null
                             ? partial.getVector(namedIdx)
@@ -621,20 +600,9 @@ public final class ExecutionService {
             }
         }
 
-        Schema outSchema = pq.selectExprs.isEmpty()
-                ? metadataService.getQuerySchema(buildSelectExprQuery(pq))
-                : metadataService.buildAggregationSchema(pq);
+        Schema outSchema = aggregationSchema(pq);
         int totalRows = byKey.size();
-        List<FieldVector> outVecs = new ArrayList<>();
-        for (Field f : outSchema.getFields()) {
-            FieldVector v = f.createVector(allocator);
-            if (v instanceof FixedWidthVector fv) {
-                fv.allocateNew(totalRows);
-            } else if (v instanceof VariableWidthVector vv) {
-                vv.allocateNew(totalRows * 16);
-            }
-            outVecs.add(v);
-        }
+        List<FieldVector> outVecs = createOutputVectors(allocator, outSchema, totalRows);
         int row = 0;
         for (Map.Entry<List<Object>, Object[]> entry : byKey.entrySet()) {
             List<Object> key = entry.getKey();
@@ -658,6 +626,28 @@ public final class ExecutionService {
         VectorSchemaRoot result = new VectorSchemaRoot(outSchema.getFields(), outVecs);
         result.setRowCount(totalRows);
         return result;
+    }
+
+    private Schema aggregationSchema(ParquetQueryParser pq) {
+        if (pq.selectExprs.isEmpty()) {
+            return metadataService.getQuerySchema(buildSelectExprQuery(pq));
+        }
+        return metadataService.buildAggregationSchema(pq);
+    }
+
+    private static List<FieldVector> createOutputVectors(BufferAllocator allocator,
+            Schema outSchema, int totalRows) {
+        List<FieldVector> outVecs = new ArrayList<>();
+        for (Field f : outSchema.getFields()) {
+            FieldVector v = f.createVector(allocator);
+            if (v instanceof FixedWidthVector fv) {
+                fv.allocateNew(Math.max(totalRows, 1));
+            } else if (v instanceof VariableWidthVector vv) {
+                vv.allocateNew(Math.max(totalRows, 1) * 16);
+            }
+            outVecs.add(v);
+        }
+        return outVecs;
     }
 
     /**

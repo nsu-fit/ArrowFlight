@@ -100,9 +100,8 @@ class ClusterServiceTest {
 
     @Test
     void allServerLoadsReturnsRegistryContents() {
-        when(serverRegistry.keySet()).thenReturn(Set.of("s1", "s2"));
-        when(serverRegistry.getAll(Set.of("s1", "s2")))
-                .thenReturn(Map.of("s1", 100L, "s2", 200L));
+        when(serverRegistry.entrySet())
+                .thenReturn(Set.of(Map.entry("s1", 100L), Map.entry("s2", 200L)));
 
         ClusterService cs = createService("s1");
         Map<String, Long> loads = cs.allServerLoads();
@@ -157,10 +156,9 @@ class ClusterServiceTest {
 
     @Test
     void fileLocationsMergesMultipleServers() {
-        when(serverFiles.keySet()).thenReturn(Set.of("s1", "s2"));
-        when(serverFiles.getAll(Set.of("s1", "s2"))).thenReturn(Map.of(
-                "s1", Map.of("f1.parquet", 100L),
-                "s2", Map.of("f1.parquet", 100L, "f2.parquet", 200L)));
+        when(serverFiles.entrySet()).thenReturn(Set.of(
+                Map.entry("s1", Map.of("f1.parquet", 100L)),
+                Map.entry("s2", Map.of("f1.parquet", 100L, "f2.parquet", 200L))));
 
         ClusterService cs = createService("s1");
         Map<String, FileAssignment> result = cs.fileLocations();
@@ -174,10 +172,9 @@ class ClusterServiceTest {
 
     @Test
     void fileLocationsConflictingSizesThrows() {
-        when(serverFiles.keySet()).thenReturn(Set.of("s1", "s2"));
-        when(serverFiles.getAll(Set.of("s1", "s2"))).thenReturn(Map.of(
-                "s1", Map.of("f1.parquet", 100L),
-                "s2", Map.of("f1.parquet", 200L)));
+        when(serverFiles.entrySet()).thenReturn(Set.of(
+                Map.entry("s1", Map.of("f1.parquet", 100L)),
+                Map.entry("s2", Map.of("f1.parquet", 200L))));
 
         ClusterService cs = createService("s1");
         assertThrows(IllegalStateException.class, cs::fileLocations);
@@ -186,8 +183,7 @@ class ClusterServiceTest {
 
     @Test
     void fileLocationsEmptyInventory() {
-        when(serverFiles.keySet()).thenReturn(Set.of());
-        when(serverFiles.getAll(Set.of())).thenReturn(Map.of());
+        when(serverFiles.entrySet()).thenReturn(Set.of());
 
         ClusterService cs = createService("s1");
         Map<String, FileAssignment> result = cs.fileLocations();

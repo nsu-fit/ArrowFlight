@@ -71,6 +71,7 @@ WRAPPER_LAUNCHER=org.apache.maven.wrapper.MavenWrapperMain
 exec "$javaExecutable" \
   $DEFAULT_JVM_OPTS \
   $JAVA_OPTS \
+  -Dmaven.multiModuleProjectDirectory="$MAVEN_PROJECTBASEDIR" \
   -classpath "$APP_HOME/.mvn/wrapper/maven-wrapper.jar" \
   $WRAPPER_LAUNCHER \
   "$@"
