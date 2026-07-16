@@ -19,6 +19,7 @@ import org.duckdb.DuckDBConnection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -220,10 +221,29 @@ public final class AceroAdapter {
     public RegisteredArrowStreams exportToDuckDb(BufferAllocator allocator, List<String> fileUris,
             byte[] filterBytes, Optional<String[]> cols, DuckDBConnection duckConn)
             throws Exception {
+        return exportToDuckDb("", allocator, fileUris, filterBytes, cols, duckConn);
+    }
+
+    /**
+     * Scans a group of Parquet files with Acero and exports each as Arrow C streams.
+     * Returns registered Arrow streams that must stay open while DuckDB consumes them.
+     *
+     * @param prefix      unique prefix for stream aliases (prevents collision across calls)
+     * @param allocator   Arrow buffer allocator
+     * @param fileUris    Parquet file URIs
+     * @param filterBytes optional Substrait filter bytes
+     * @param cols        optional column projection
+     * @param duckConn    DuckDB connection for stream registration
+     * @return registered streams and their aliases
+     * @throws Exception on scan or registration failure
+     */
+    public RegisteredArrowStreams exportToDuckDb(String prefix, BufferAllocator allocator,
+            List<String> fileUris, byte[] filterBytes, Optional<String[]> cols,
+            DuckDBConnection duckConn) throws Exception {
         long startNanos = System.nanoTime();
         String qid = LogUtil.qid();
-        LOGGER.debug("qid={} node={} acero=exportToDuckDb start files={}",
-                qid, LogUtil.node(), fileUris.size());
+        LOGGER.debug("qid={} node={} acero=exportToDuckDb start prefix={} files={}",
+                qid, LogUtil.node(), prefix, fileUris.size());
 
         int n = fileUris.size();
         List<FileSystemDatasetFactory> factories = new ArrayList<>(n);
@@ -260,12 +280,12 @@ public final class AceroAdapter {
                 // The exporter takes ownership of the reader, including on export failure.
                 unexportedReaders.remove(reader);
                 Data.exportArrayStream(allocator, reader, cStream);
-                String alias = "t" + i;
+                String alias = prefix.isEmpty() ? "t" + i : prefix + "_t" + i;
                 duckConn.registerArrowStream(alias, cStream);
                 aliases.add(alias);
             }
-            LOGGER.debug("qid={} node={} acero=exportToDuckDb completed files={} aliases={} elapsed={}",
-                    qid, LogUtil.node(), fileUris.size(), aliases,
+            LOGGER.debug("qid={} node={} acero=exportToDuckDb completed prefix={} files={} aliases={} elapsed={}",
+                    qid, LogUtil.node(), prefix, fileUris.size(), aliases,
                     LogUtil.elapsedNanos(startNanos));
             success = true;
             return registered;
@@ -375,7 +395,7 @@ public final class AceroAdapter {
      * @throws IOException on read failure
      */
     public static VectorSchemaRoot concatBatches(BufferAllocator allocator, ArrowReader reader)
-            throws java.io.IOException {
+            throws IOException {
         VectorSchemaRoot src = reader.getVectorSchemaRoot();
         int numCols = src.getSchema().getFields().size();
         List<FieldVector> outVecs = new ArrayList<>(numCols);

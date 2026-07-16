@@ -61,7 +61,6 @@ public final class ExecutionService {
     private final MetadataService metadataService;
     private final ExecutorService ioPool;
     private final AppConfig appConfig;
-    private final AceroFileResolver aceroFileResolver;
     private final Function<ParquetQueryParser, byte[]> filterBuilder;
 
     /**
@@ -85,9 +84,6 @@ public final class ExecutionService {
         this.metadataService = metadataService;
         this.appConfig = appConfig;
         this.ioPool = ioPool;
-        this.aceroFileResolver = new AceroFileResolver(
-                parquetAdapter.fileSystem(), new Path(parquetAdapter.dataDirectory()),
-                appConfig.localDataDir(), appConfig.ioFileBufferSize());
         this.filterBuilder = filterBuilder;
     }
 
@@ -322,6 +318,7 @@ public final class ExecutionService {
 
         Connection conn = duckDbAdapter.connection();
         List<String> registeredAliases = new ArrayList<>();
+        List<AceroAdapter.RegisteredArrowStreams> aceroStreams = new ArrayList<>();
         try {
             Map<String, List<String>> tableFiles = new LinkedHashMap<>();
             for (ParquetQueryParser.JoinTable jt : pq.joinTables) {
@@ -335,17 +332,33 @@ public final class ExecutionService {
                 });
             }
 
+            boolean hdfs = isHdfsData();
+            DuckDBConnection duckConn = hdfs ? conn.unwrap(DuckDBConnection.class) : null;
+
             for (ParquetQueryParser.JoinTable jt : pq.joinTables) {
                 String key = (jt.schema() != null ? jt.schema() + "." : "") + jt.table();
-                List<String> duckDbPaths = tableFiles.get(key);
-                if (duckDbPaths.isEmpty()) {
+                List<String> filePaths = tableFiles.get(key);
+                if (filePaths.isEmpty()) {
                     throw new IOException("No Parquet files found for table: " + key);
                 }
-                try (Statement stmt = conn.createStatement()) {
-                    stmt.execute("CREATE OR REPLACE TEMP VIEW "
-                            + DuckDbAdapter.quoteIdentifier(jt.alias())
-                            + " AS SELECT * FROM "
-                            + DuckDbAdapter.readParquetFromClause(duckDbPaths));
+
+                if (hdfs) {
+                    AceroAdapter.RegisteredArrowStreams streams = aceroAdapter.exportToDuckDb(
+                            jt.alias(), allocator, filePaths, null, Optional.empty(), duckConn);
+                    aceroStreams.add(streams);
+                    String subQuery = arrowStreamsFromClause(streams.aliases().size());
+                    try (Statement stmt = conn.createStatement()) {
+                        stmt.execute("CREATE OR REPLACE TEMP VIEW "
+                                + DuckDbAdapter.quoteIdentifier(jt.alias())
+                                + " AS SELECT * FROM " + subQuery);
+                    }
+                } else {
+                    try (Statement stmt = conn.createStatement()) {
+                        stmt.execute("CREATE OR REPLACE TEMP VIEW "
+                                + DuckDbAdapter.quoteIdentifier(jt.alias())
+                                + " AS SELECT * FROM "
+                                + DuckDbAdapter.readParquetFromClause(filePaths));
+                    }
                 }
                 registeredAliases.add(jt.alias());
             }
@@ -360,6 +373,9 @@ public final class ExecutionService {
                     } catch (Exception ignored) {
                     }
                 }
+            }
+            for (AceroAdapter.RegisteredArrowStreams s : aceroStreams) {
+                try { s.close(); } catch (Exception ignored) { }
             }
         }
     }
@@ -479,8 +495,6 @@ public final class ExecutionService {
 
     /**
      * Resolves relative file URIs for the native execution engines.
-     * HDFS files are exposed as local URIs because the packaged Arrow Dataset
-     * JNI library has no native HDFS support.
      *
      * @param fileUris relative file paths
      * @return resolved URIs
@@ -497,9 +511,6 @@ public final class ExecutionService {
     }
 
     private String resolveEngineUri(org.apache.hadoop.fs.FileStatus status) throws IOException {
-        if (isHdfsData()) {
-            return aceroFileResolver.resolve(status);
-        }
         return status.getPath().toUri().toString();
     }
 
@@ -544,9 +555,7 @@ public final class ExecutionService {
         while (it.hasNext()) {
             org.apache.hadoop.fs.LocatedFileStatus f = it.next();
             if (f.isFile() && f.getPath().getName().endsWith(".parquet")) {
-                uris.add(isHdfsData()
-                        ? ducksDbPaths(List.of(aceroFileResolver.resolve(f))).get(0)
-                        : plainDuckDbPath(f.getPath()));
+                uris.add(f.getPath().toUri().toString());
             }
         }
         return uris;
