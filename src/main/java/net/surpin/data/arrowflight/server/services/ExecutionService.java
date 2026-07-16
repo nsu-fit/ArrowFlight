@@ -291,7 +291,7 @@ public final class ExecutionService {
         }
 
         if (isHdfsData()) {
-            parallelAggregate(allocator, pq, fileUris, listener, startListener);
+            parallelAggregate(allocator, pq, resolvedUris, listener, startListener);
             return;
         }
 
@@ -387,16 +387,14 @@ public final class ExecutionService {
      *
      * @param allocator     Arrow buffer allocator
      * @param pq            parsed query
-     * @param fileUris      relative file paths
+     * @param parquetUris   resolved file URIs
      * @param listener      Flight stream listener
      * @param startListener whether to call listener.start()
      * @throws Exception on execution failure
      */
     public void parallelAggregate(BufferAllocator allocator, ParquetQueryParser pq,
-            String[] fileUris, FlightProducer.ServerStreamListener listener,
+            List<String> parquetUris, FlightProducer.ServerStreamListener listener,
             boolean startListener) throws Exception {
-
-        List<String> parquetUris = resolveUris(fileUris);
         boolean hasFilter = pq.filter != null && !pq.filter.isBlank();
 
         boolean isCountStarOnly = pq.groupByColumnNames.isEmpty()
@@ -498,20 +496,15 @@ public final class ExecutionService {
      *
      * @param fileUris relative file paths
      * @return resolved URIs
-     * @throws IOException on HDFS read failure
      */
-    private List<String> resolveUris(String[] fileUris) throws IOException {
+    private List<String> resolveUris(String[] fileUris) {
         List<String> uris = new ArrayList<>(fileUris.length);
+        Path dataDir = new Path(parquetAdapter.dataDirectory());
         for (String rel : fileUris) {
-            org.apache.hadoop.fs.FileStatus status = parquetAdapter.fileSystem()
-                    .getFileStatus(new Path(parquetAdapter.dataDirectory(), rel));
-            uris.add(resolveEngineUri(status));
+            uris.add(parquetAdapter.fileSystem().makeQualified(
+                    new Path(dataDir, rel)).toUri().toString());
         }
         return uris;
-    }
-
-    private String resolveEngineUri(org.apache.hadoop.fs.FileStatus status) throws IOException {
-        return status.getPath().toUri().toString();
     }
 
     /**
