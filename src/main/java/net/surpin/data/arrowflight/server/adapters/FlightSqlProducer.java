@@ -157,6 +157,17 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
         }
     }
 
+    private static boolean isFileNotFound(Throwable e) {
+        Throwable cause = e;
+        while (cause != null) {
+            if (cause instanceof java.io.FileNotFoundException) {
+                return true;
+            }
+            cause = cause.getCause();
+        }
+        return false;
+    }
+
     private static String failureDescription(Throwable failure) {
         Throwable root = failure;
         while (root.getCause() != null && root.getCause() != root) {
@@ -183,6 +194,11 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
             arrowSchema = metadataService.getQuerySchema(query);
         } catch (Exception e) {
             LOGGER.error("Error getting Arrow schema for query: {}", query, e);
+            if (isFileNotFound(e)) {
+                throw CallStatus.NOT_FOUND
+                        .withDescription("Could not find Arrow schema for query")
+                        .withCause(e).toRuntimeException();
+            }
             throw CallStatus.INTERNAL
                     .withDescription("Error getting Arrow schema for query")
                     .withCause(e).toRuntimeException();

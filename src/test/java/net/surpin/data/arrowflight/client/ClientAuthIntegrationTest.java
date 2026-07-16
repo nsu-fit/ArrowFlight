@@ -73,4 +73,16 @@ class ClientAuthIntegrationTest {
         long rows = client.execute("SELECT count(*) FROM test_schema.test_table");
         assertTrue(rows > 0);
     }
+
+    @Test
+    void queryNonExistentTableReturnsError() {
+        Configuration config = new Configuration(host, port, "test-user", null, "test-token-non-existent-table");
+
+        Client client = assertDoesNotThrow(() -> Client.getOrCreate(config));
+
+        RuntimeException e = assertThrows(RuntimeException.class,
+                () -> client.getQueryEndpoints("SELECT * FROM test_schema.nonexistent_xyz"));
+        assertTrue(e.getMessage().contains("Could not find"),
+                "Non-existent table must return not-found, got: " + e.getMessage());
+    }
 }

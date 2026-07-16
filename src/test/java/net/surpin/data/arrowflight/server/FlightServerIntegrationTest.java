@@ -110,6 +110,22 @@ class FlightServerIntegrationTest {
         assertEquals(2, info.getSchema().getFields().size());
     }
 
+    @Test
+    @Order(9)
+    void executeWithNonexistentTableThrows() {
+        RuntimeException e = assertThrows(RuntimeException.class, () ->
+                helper.sqlClient().execute("SELECT * FROM test_schema.nonexistent"));
+        assertTrue(e.getMessage().contains("Could not find"),
+                "Must return not-found error, got: " + e.getMessage());
+    }
+
+    @Test
+    @Order(10)
+    void getTablesWithInvalidFilterReturnsEmpty() throws Exception {
+        FlightInfo info = helper.sqlClient().getTables(null, null, "zzz_nonexistent_table_xyz", null, false);
+        assertNotNull(info);
+    }
+
     private int countRows(FlightInfo info) throws Exception {
         int total = 0;
         for (FlightEndpoint endpoint : info.getEndpoints()) {

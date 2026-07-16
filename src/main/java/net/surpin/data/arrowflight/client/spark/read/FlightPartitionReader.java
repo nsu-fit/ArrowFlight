@@ -99,6 +99,24 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
                 NODE, inputPartition, inputPartition.getClass().getSimpleName());
     }
 
+    FlightPartitionReader(FlightStream stream, VectorSchemaRoot root, Schema flightInfoSchema) {
+        this.configuration = null;
+        this.inputPartition = null;
+        this.client = null;
+        this.stream = stream;
+        this.root = root;
+        this.rowIdx = -1;
+        this.batchRowCount = root.getRowCount();
+        this.sparkFields = Field.from(flightInfoSchema);
+        this.fields = this.sparkFields;
+    }
+
+    FlightPartitionReader(Client client, Configuration configuration, InputPartition inputPartition) {
+        this.client = client;
+        this.configuration = configuration;
+        this.inputPartition = inputPartition;
+    }
+
     @Override
     public boolean next() throws IOException {
         LOGGER.debug("node={} spark=readerNext", NODE);
