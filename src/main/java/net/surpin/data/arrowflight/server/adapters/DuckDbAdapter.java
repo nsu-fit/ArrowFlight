@@ -1,6 +1,7 @@
 package net.surpin.data.arrowflight.server.adapters;
 
 import org.apache.arrow.memory.BufferAllocator;
+import org.apache.arrow.vector.ValueVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.arrow.vector.ipc.ArrowReader;
 import org.apache.parquet.hadoop.ParquetFileReader;
@@ -89,6 +90,8 @@ public final class DuckDbAdapter implements AutoCloseable {
             String hdfsExtension = appConfig.duckDbHdfsExtension();
             if (hdfsExtension != null) {
                 s.execute("LOAD " + sqlStringLiteral(hdfsExtension));
+                LOGGER.info("node={} duckdb=hdfsExtensionLoaded path={}",
+                        LogUtil.node(), hdfsExtension);
                 setOptionIfPresent(s, "hdfs_default_namenode",
                         appConfig.duckDbHdfsDefaultNamenode());
                 setOptionIfPresent(s, "hdfs_ha_namenodes",
@@ -190,52 +193,98 @@ public final class DuckDbAdapter implements AutoCloseable {
         LOGGER.info("qid={} node={} thread={} duckdb=start batchSize={} sql='{}'",
                 qid, LogUtil.node(), Thread.currentThread().getName(), batchSize, duckSql);
         Connection conn = threadConn.get();
-        long ttfB = -1;
+        long firstBatchNanos = -1;
         try (Statement stmt = conn.createStatement();
                 org.duckdb.DuckDBResultSet drs = (org.duckdb.DuckDBResultSet) stmt.executeQuery(duckSql);
-                ArrowReader reader = (ArrowReader) drs.arrowExportStream(allocator, batchSize)) {
-            VectorSchemaRoot root = reader.getVectorSchemaRoot();
+                ArrowReader reader = (ArrowReader) drs.arrowExportStream(allocator, batchSize);
+                VectorSchemaRoot flightRoot = VectorSchemaRoot.create(
+                        reader.getVectorSchemaRoot().getSchema(), allocator)) {
+            VectorSchemaRoot duckRoot = reader.getVectorSchemaRoot();
 
             if (startListener) {
-                listener.start(root);
+                listener.start(flightRoot);
             }
-            ttfB = System.nanoTime();
 
             int batchesSent = 0;
             long rowsSent = 0;
             long backpressureNanos = 0;
             boolean cancelled = false;
             while (!cancelled && reader.loadNextBatch()) {
-                if (root.getRowCount() == 0) {
-                    root.clear();
+                if (firstBatchNanos < 0) {
+                    firstBatchNanos = System.nanoTime() - startNanos;
+                }
+                int duckRows = duckRoot.getRowCount();
+                if (duckRows == 0) {
+                    duckRoot.clear();
                     continue;
                 }
-                long bpStart = System.nanoTime();
-                if (!awaitListenerReady(
-                        listener, appConfig.flightListenerReadyTimeoutMillis())) {
+                for (int offset = 0; offset < duckRows; offset += batchSize) {
+                    int rowCount = Math.min(batchSize, duckRows - offset);
+                    copyRows(duckRoot, flightRoot, offset, rowCount);
+                    long bpStart = System.nanoTime();
+                    if (!awaitListenerReady(
+                            listener, appConfig.flightListenerReadyTimeoutMillis())) {
+                        backpressureNanos += System.nanoTime() - bpStart;
+                        cancelled = true;
+                        flightRoot.clear();
+                        break;
+                    }
                     backpressureNanos += System.nanoTime() - bpStart;
-                    cancelled = true;
-                    root.clear();
-                    break;
+                    listener.putNext();
+                    batchesSent++;
+                    rowsSent += rowCount;
+                    if (batchesSent % 10 == 0) {
+                        LOGGER.debug("qid={} node={} duckdb=progress batches={} rows={} elapsed={} throughput={}rows/s",
+                                qid, LogUtil.node(), batchesSent, rowsSent,
+                                LogUtil.elapsedNanos(startNanos),
+                                rowsSent * 1_000_000_000L
+                                        / Math.max(1, System.nanoTime() - startNanos));
+                    }
+                    flightRoot.clear();
                 }
-                backpressureNanos += System.nanoTime() - bpStart;
-                listener.putNext();
-                batchesSent++;
-                rowsSent += root.getRowCount();
-                if (batchesSent % 10 == 0) {
-                    LOGGER.debug("qid={} node={} duckdb=progress batches={} rows={} elapsed={} throughput={}rows/s",
-                            qid, LogUtil.node(), batchesSent, rowsSent,
-                            LogUtil.elapsedNanos(startNanos),
-                            rowsSent * 1_000_000_000L / Math.max(1, System.nanoTime() - startNanos));
-                }
-                root.clear();
+                duckRoot.clear();
             }
             LOGGER.info("qid={} node={} duckdb=completed batches={} rows={} ttfB={} backpressureMs={} elapsed={} cancelled={}",
                     qid, LogUtil.node(), batchesSent, rowsSent,
-                    ttfB > 0 ? LogUtil.elapsedNanos(ttfB) : "N/A",
+                    firstBatchNanos >= 0 ? formatDuration(firstBatchNanos) : "N/A",
                     backpressureNanos / 1_000_000,
                     LogUtil.elapsedNanos(startNanos), cancelled);
         }
+    }
+
+    /**
+     * Copies a row range into an independent Flight-owned Arrow root.
+     *
+     * @param sourceRoot  DuckDB-owned source root
+     * @param targetRoot  Flight-owned target root
+     * @param sourceOffset first source row
+     * @param rowCount    number of rows to copy
+     */
+    static void copyRows(VectorSchemaRoot sourceRoot, VectorSchemaRoot targetRoot,
+            int sourceOffset, int rowCount) {
+        targetRoot.clear();
+        for (int column = 0; column < sourceRoot.getFieldVectors().size(); column++) {
+            ValueVector sourceVector = sourceRoot.getVector(column);
+            ValueVector targetVector = targetRoot.getVector(column);
+            for (int row = 0; row < rowCount; row++) {
+                targetVector.copyFromSafe(sourceOffset + row, row, sourceVector);
+            }
+            targetVector.setValueCount(rowCount);
+        }
+        targetRoot.setRowCount(rowCount);
+    }
+
+    /**
+     * Formats an elapsed nanosecond duration for structured logging.
+     *
+     * @param nanos elapsed nanoseconds
+     * @return human-readable duration
+     */
+    private static String formatDuration(long nanos) {
+        if (nanos < 1_000_000L) {
+            return nanos / 1_000L + "us";
+        }
+        return nanos / 1_000_000L + "ms";
     }
 
     /**

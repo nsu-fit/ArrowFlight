@@ -91,15 +91,14 @@ Actual query execution starts at this point.
 
 ## Query Engine Selection
 
-The project uses three execution paths for Parquet reads. The route is selected in `ExecutionService.readParquet` after `ParquetQueryParser` has extracted projection, filter, aggregation, and group-by information.
+The project uses two execution paths for Parquet reads. The route is selected in `ExecutionService.readParquet` after `ParquetQueryParser` has extracted projection, filter, aggregation, and group-by information.
 
 Routing rules:
 
 1. Metadata-only aggregates use Java and Parquet footers.
-2. Full scans and projection-only scans use Arrow Dataset / Acero.
-3. Filtered scans, general aggregations, and joins use DuckDB.
+2. Full scans, projections, filtered scans, general aggregations, and joins use DuckDB.
 
-This follows ADR 0001: Acero is kept for the query shapes where it is fastest, DuckDB is used when SQL execution or predicate pushdown is needed, and Java handles the cases that can be answered without reading data pages.
+Java handles results that can be answered without reading data pages. Every remaining query uses one DuckDB execution path, including `hdfs://` reads through the HDFS extension.
 
 ## Java Footer Path
 
@@ -114,29 +113,13 @@ Supported fast-path expressions are:
 
 For `COUNT(*)`, Java sums row counts from Parquet row-group metadata. For `COUNT(col)`, Java subtracts null counts from row counts. For `MIN` and `MAX`, Java merges per-row-group statistics.
 
-This path does not read column data pages and does not start Acero or DuckDB for the query. If required statistics are missing or incomplete, execution falls back to DuckDB.
-
-## Acero Path
-
-Full scans and projection-only scans are executed by Arrow Dataset / Acero.
-
-Examples:
-
-- `SELECT * FROM schema.table`
-- `SELECT col1, col2 FROM schema.table`
-
-The method resolves assigned relative file paths into absolute URIs and creates one Arrow Dataset scanner for the files assigned to the current ticket. Projection passes the required column list to the scanner. If no projection is specified, all columns are scanned.
-
-Reading is performed by Arrow Dataset / Acero. It opens Parquet files, reads the required columns, and returns Arrow batches.
-
-The Java code does not manually convert Parquet values into Arrow vectors. This conversion happens inside Arrow Dataset / Acero. On the Java side, the result is exposed as `ArrowReader` and `VectorSchemaRoot`.
-
-Each loaded batch is sent to the client through the Flight listener. Before reading and sending, the server checks backpressure so it does not buffer unnecessary data when the client is not ready for the next batch.
+This path does not read column data pages and does not start DuckDB for the query. If required statistics are missing or incomplete, execution falls back to DuckDB.
 
 ## DuckDB Path
 
-DuckDB is used for query shapes that need SQL execution beyond a simple scan:
+DuckDB is used for every query that cannot be answered from Parquet footers:
 
+- full scans and projections
 - filtered scans (`WHERE ...`)
 - filtered projections
 - `GROUP BY`
@@ -146,9 +129,9 @@ DuckDB is used for query shapes that need SQL execution beyond a simple scan:
 
 For single-table queries, `ExecutionService` builds SQL over DuckDB's `read_parquet([...])` table function. For joins, it creates temporary DuckDB views for each table alias, each view backed by `read_parquet([...])`, and then executes the rewritten join SQL against those views.
 
-DuckDB returns results through `DuckDBResultSet.arrowExportStream`. The server copies rows from DuckDB's Arrow stream into Flight batches and sends them to the client.
+DuckDB returns results through `DuckDBResultSet.arrowExportStream`. The server copies rows into a separate Flight-owned root before `putNext()`, so reuse of DuckDB's buffers cannot corrupt an in-flight batch.
 
-When DuckDB reads local files, no extension is required. When DuckDB receives HDFS paths, it must load the DuckDB HDFS extension configured through `arrowflight.properties`, system properties, or environment variables.
+When DuckDB reads local files, no extension is required. For HDFS, `ExecutionService` preserves the qualified `hdfs://authority/path` URI and DuckDB opens it through the configured HDFS extension. The Docker image installs and verifies `duckdb-hdfs` automatically.
 
 Relevant settings include:
 
@@ -163,7 +146,7 @@ Relevant settings include:
 
 The default runtime configuration lives in `src/main/resources/arrowflight.properties`.
 
-The most important shared value is `batchSize`. It controls both Acero scan batch size and DuckDB Arrow export batch size, so changing it affects the size of batches sent through Flight.
+The most important streaming value is `batchSize`. It controls DuckDB Arrow export and the maximum Flight batch size.
 
 I/O parallelism is also configurable. If `ioParallelism` is set, that exact thread count is used. Otherwise the value is derived from available CPU cores:
 

@@ -3,6 +3,10 @@ package net.surpin.data.arrowflight.server.adapters;
 import net.surpin.data.arrowflight.server.model.AppConfig;
 import net.surpin.data.arrowflight.server.services.ParquetQueryParser;
 import org.apache.arrow.flight.FlightProducer;
+import org.apache.arrow.memory.RootAllocator;
+import org.apache.arrow.vector.IntVector;
+import org.apache.arrow.vector.VarCharVector;
+import org.apache.arrow.vector.VectorSchemaRoot;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -32,6 +36,37 @@ import static org.mockito.Mockito.when;
 /** Tests DuckDB SQL helpers, connection setup, and Flight backpressure handling. */
 @Tag("unit")
 class DuckDbAdapterTest {
+
+    /** Verifies Flight batches own their buffers after DuckDB reuses its root. */
+    @Test
+    void copyRowsCreatesIndependentBatch() {
+        try (RootAllocator allocator = new RootAllocator();
+                IntVector sourceId = new IntVector("id", allocator);
+                VarCharVector sourceName = new VarCharVector("name", allocator);
+                VectorSchemaRoot source = VectorSchemaRoot.of(sourceId, sourceName);
+                VectorSchemaRoot target = VectorSchemaRoot.create(source.getSchema(), allocator)) {
+            sourceId.allocateNew(3);
+            sourceName.allocateNew();
+            sourceId.setSafe(0, 10);
+            sourceId.setSafe(1, 20);
+            sourceId.setSafe(2, 30);
+            sourceName.setSafe(0, "zero".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            sourceName.setSafe(1, "one".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            sourceName.setSafe(2, "two".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            sourceId.setValueCount(3);
+            sourceName.setValueCount(3);
+            source.setRowCount(3);
+
+            DuckDbAdapter.copyRows(source, target, 1, 2);
+            source.clear();
+
+            assertEquals(2, target.getRowCount());
+            assertEquals(20, ((IntVector) target.getVector("id")).get(0));
+            assertEquals(30, ((IntVector) target.getVector("id")).get(1));
+            assertEquals("one", target.getVector("name").getObject(0).toString());
+            assertEquals("two", target.getVector("name").getObject(1).toString());
+        }
+    }
 
     @Test
     void sqlStringLiteralNormal() {
@@ -211,6 +246,41 @@ class DuckDbAdapterTest {
         } finally {
             ioPool.shutdownNow();
         }
+    }
+
+    /** Verifies DuckDB results are copied and streamed through the Flight root. */
+    @Test
+    void streamSqlCopiesDuckDbRowsToFlight() throws Exception {
+        ExecutorService ioPool = Executors.newSingleThreadExecutor();
+        AppConfig config = new AppConfig(
+                3, 2, 1, 131072, 1, 1, 1,
+                null, false, null, null,
+                null, null, false, 1048576, 60000L, null, null,
+                32010, 5701, 60, 3, 1000, 30000);
+        FlightProducer.ServerStreamListener listener =
+                mock(FlightProducer.ServerStreamListener.class);
+        AtomicReference<VectorSchemaRoot> flightRoot = new AtomicReference<>();
+        AtomicInteger rows = new AtomicInteger();
+        doAnswer(invocation -> {
+            flightRoot.set(invocation.getArgument(0));
+            return null;
+        }).when(listener).start(any(VectorSchemaRoot.class));
+        when(listener.isReady()).thenReturn(true);
+        doAnswer(invocation -> {
+            rows.addAndGet(flightRoot.get().getRowCount());
+            return null;
+        }).when(listener).putNext();
+
+        try (RootAllocator allocator = new RootAllocator();
+                DuckDbAdapter adapter = new DuckDbAdapter(config, ioPool)) {
+            adapter.streamSql(allocator,
+                    "SELECT range AS id FROM range(0, 5)", listener, true);
+        } finally {
+            ioPool.shutdownNow();
+        }
+
+        assertEquals(5, rows.get());
+        verify(listener).start(any(VectorSchemaRoot.class));
     }
 
     // ── buildDuckSql / buildDuckSqlWithFilter ─────────────────────────────

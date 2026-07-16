@@ -33,11 +33,11 @@ class ConfigAdapterTest {
     void getConfigDefaults() {
         AppConfig cfg = ConfigAdapter.getConfig();
 
-        assertEquals(3, cfg.numServers());
-        assertEquals(4096, cfg.batchSize());
+        assertEquals(4, cfg.numServers());
+        assertEquals(65536, cfg.batchSize());
         assertEquals(131072, cfg.ioFileBufferSize());
         assertTrue(cfg.ioParallelism() >= 1 && cfg.ioParallelism() <= 64);
-        assertEquals(2, cfg.duckDbThreads());
+        assertEquals(8, cfg.duckDbThreads());
         assertEquals("/data/parquet", cfg.dataDir());
         assertNull(cfg.localDataDir());
         assertEquals(32010, cfg.port());
@@ -62,9 +62,9 @@ class ConfigAdapterTest {
 
     @Test
     void getConfigNumServersDefaults() {
-        // No explicit property set, should default to 3 from arrowflight.properties
+        // No explicit property set, should use arrowflight.properties.
         AppConfig cfg = ConfigAdapter.getConfig();
-        assertEquals(3, cfg.numServers());
+        assertEquals(4, cfg.numServers());
     }
 
     @Test
@@ -77,7 +77,7 @@ class ConfigAdapterTest {
 
     @Test
     void getConfigSysPropTakesPrecedenceOverPropsFile() {
-        // arrowflight.properties has batchSize=4096.
+        // The system property must override arrowflight.properties.
         // System property must override it.
         setProp("batchSize", "100");
 
@@ -107,6 +107,19 @@ class ConfigAdapterTest {
 
         AppConfig cfg = ConfigAdapter.getConfig();
         assertEquals(4, cfg.duckDbThreads());
+    }
+
+    /** Verifies DuckDB HDFS extension settings map from system properties. */
+    @Test
+    void getConfigDuckDbHdfsExtension() {
+        setProp("arrowflight.duckdb.hdfs.extension", "/opt/duckdb-hdfs/hadoopfs.duckdb_extension");
+        setProp("arrowflight.duckdb.allowUnsignedExtensions", "true");
+
+        AppConfig cfg = ConfigAdapter.getConfig();
+
+        assertEquals("/opt/duckdb-hdfs/hadoopfs.duckdb_extension",
+                cfg.duckDbHdfsExtension());
+        assertTrue(cfg.duckDbAllowUnsignedExtensions());
     }
 
     @Test

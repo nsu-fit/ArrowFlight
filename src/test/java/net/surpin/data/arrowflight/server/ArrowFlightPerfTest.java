@@ -1,15 +1,7 @@
 package net.surpin.data.arrowflight.server;
 
 import net.surpin.data.arrowflight.server.adapters.ConfigAdapter;
-import net.surpin.data.arrowflight.server.adapters.FilterConverter;
-import net.surpin.data.arrowflight.server.adapters.ParquetAdapter;
 import net.surpin.data.arrowflight.server.model.AppConfig;
-import org.apache.arrow.dataset.file.FileFormat;
-import org.apache.arrow.dataset.file.FileSystemDatasetFactory;
-import org.apache.arrow.dataset.jni.NativeMemoryPool;
-import org.apache.arrow.dataset.scanner.ScanOptions;
-import org.apache.arrow.dataset.scanner.Scanner;
-import org.apache.arrow.dataset.source.Dataset;
 import org.apache.arrow.flight.*;
 import org.apache.arrow.flight.sql.FlightSqlClient;
 import org.apache.arrow.memory.BufferAllocator;
@@ -112,7 +104,6 @@ class ArrowFlightPerfTest {
             // ── scenarios ─────────────────────────────────────────────────
             String flightTable = schema + "." + table;
             int batchSize = appConfig.batchSize();
-            ParquetAdapter adapter = helper.parquetAdapter;
             BufferAllocator allocator = helper.allocator;
 
             List<Scenario> scenarios = List.of(
@@ -122,7 +113,7 @@ class ArrowFlightPerfTest {
                             "SELECT * FROM " + flightTable)),
                 new Scenario("Filtered (tinyint_col = 0)",
                     () -> localScanWithFilter(allocator, parquetUris,
-                            "\"tinyint_col\" = 0", adapter, schema, table, batchSize),
+                            "\"tinyint_col\" = 0", batchSize),
                     () -> flightCount(sqlClient, helper.flightClient(),
                             "SELECT * FROM " + flightTable + " WHERE tinyint_col = 0")),
                 new Scenario("Column projection (3 cols)",
@@ -132,12 +123,12 @@ class ArrowFlightPerfTest {
                             "SELECT id, bool_col, double_col FROM " + flightTable)),
                 new Scenario("Filter + projection",
                     () -> localScanWithFilter(allocator, parquetUris,
-                            "\"int_col\" < 5", adapter, schema, table, batchSize),
+                            "\"int_col\" < 5", batchSize),
                     () -> flightCount(sqlClient, helper.flightClient(),
                             "SELECT * FROM " + flightTable + " WHERE int_col < 5")),
                 new Scenario("Multi-predicate AND",
                     () -> localScanWithFilter(allocator, parquetUris,
-                            "\"id\" > 100 and \"id\" < 900", adapter, schema, table, batchSize),
+                            "\"id\" > 100 and \"id\" < 900", batchSize),
                     () -> flightCount(sqlClient, helper.flightClient(),
                             "SELECT * FROM " + flightTable + " WHERE id > 100 AND id < 900"))
             );
@@ -229,33 +220,32 @@ class ArrowFlightPerfTest {
 
     static long localScan(BufferAllocator allocator, String[] uris,
                           String[] columns, int batchSize) throws Exception {
-        ScanOptions.Builder opts = new ScanOptions.Builder(batchSize)
-                .columns(columns == null ? Optional.empty() : Optional.of(columns));
-        return countWithDataset(allocator, uris, opts.build());
+        String projection = columns == null
+                ? "*"
+                : Arrays.stream(columns)
+                        .map(column -> "\"" + column.replace("\"", "\"\"") + "\"")
+                        .collect(java.util.stream.Collectors.joining(", "));
+        return countWithDuckDb(allocator, uris, projection, null, batchSize);
     }
 
     static long localScanWithFilter(BufferAllocator allocator, String[] uris,
-                                    String filterExpr, ParquetAdapter adapter,
-                                    String schema, String table, int batchSize) throws Exception {
-        String ddl = adapter.arrowSchemaToDDL(schema, table, adapter.getTableSchema(schema, table))
-                .replace(schema + ".", "");
-        java.nio.ByteBuffer filter = FilterConverter.toByteBuffer(
-                filterExpr, Collections.singletonList(ddl));
-        ScanOptions opts = new ScanOptions.Builder(batchSize)
-                .columns(Optional.empty())
-                .substraitFilter(filter)
-                .build();
-        return countWithDataset(allocator, uris, opts);
+                                    String filterExpr, int batchSize) throws Exception {
+        return countWithDuckDb(allocator, uris, "*", filterExpr, batchSize);
     }
 
-    private static long countWithDataset(BufferAllocator allocator,
-                                         String[] uris, ScanOptions opts) throws Exception {
+    private static long countWithDuckDb(BufferAllocator allocator, String[] uris,
+            String projection, String filter, int batchSize) throws Exception {
+        String files = Arrays.stream(uris)
+                .map(uri -> "'" + uri.replace("'", "''") + "'")
+                .collect(java.util.stream.Collectors.joining(", "));
+        String sql = "SELECT " + projection + " FROM read_parquet([" + files + "])"
+                + (filter == null ? "" : " WHERE " + filter);
         long count = 0;
-        try (FileSystemDatasetFactory factory = new FileSystemDatasetFactory(
-                allocator, NativeMemoryPool.getDefault(), FileFormat.PARQUET, uris);
-             Dataset dataset = factory.finish();
-             Scanner scanner = dataset.newScan(opts);
-             ArrowReader reader = scanner.scanBatches()) {
+        try (Connection connection = DriverManager.getConnection("jdbc:duckdb:");
+                Statement statement = connection.createStatement();
+                org.duckdb.DuckDBResultSet result =
+                        (org.duckdb.DuckDBResultSet) statement.executeQuery(sql);
+                ArrowReader reader = (ArrowReader) result.arrowExportStream(allocator, batchSize)) {
             while (reader.loadNextBatch()) {
                 count += reader.getVectorSchemaRoot().getRowCount();
             }

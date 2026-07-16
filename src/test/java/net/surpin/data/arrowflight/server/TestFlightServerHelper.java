@@ -1,9 +1,7 @@
 package net.surpin.data.arrowflight.server;
 
-import net.surpin.data.arrowflight.server.adapters.AceroAdapter;
 import net.surpin.data.arrowflight.server.adapters.ConfigAdapter;
 import net.surpin.data.arrowflight.server.adapters.DuckDbAdapter;
-import net.surpin.data.arrowflight.server.adapters.FilterConverter;
 import net.surpin.data.arrowflight.server.adapters.FlightSqlProducer;
 import net.surpin.data.arrowflight.server.adapters.HazelcastAdapter;
 import net.surpin.data.arrowflight.server.adapters.ParquetAdapter;
@@ -11,7 +9,6 @@ import net.surpin.data.arrowflight.server.model.AppConfig;
 import net.surpin.data.arrowflight.server.services.ClusterService;
 import net.surpin.data.arrowflight.server.services.ExecutionService;
 import net.surpin.data.arrowflight.server.services.MetadataService;
-import net.surpin.data.arrowflight.server.services.ParquetQueryParser;
 import net.surpin.data.arrowflight.server.services.QueryPlanner;
 import org.apache.arrow.flight.FlightClient;
 import org.apache.arrow.flight.FlightServer;
@@ -25,11 +22,9 @@ import org.apache.hadoop.fs.LocalFileSystem;
 
 import java.net.ServerSocket;
 import java.net.URI;
-import java.nio.ByteBuffer;
 import java.nio.file.Paths;
 import java.util.List;
 import java.util.concurrent.Executors;
-import java.util.function.Function;
 
 import static org.apache.arrow.memory.DefaultAllocationManagerOption.ALLOCATION_MANAGER_TYPE_PROPERTY_NAME;
 
@@ -39,7 +34,6 @@ public class TestFlightServerHelper implements AutoCloseable {
     public final HazelcastAdapter hazelcastAdapter;
     public final ParquetAdapter parquetAdapter;
     public final DuckDbAdapter duckDbAdapter;
-    public final AceroAdapter aceroAdapter;
     public final MetadataService metadataService;
     public final ClusterService clusterService;
     public final QueryPlanner queryPlanner;
@@ -79,7 +73,6 @@ public class TestFlightServerHelper implements AutoCloseable {
         // Adapters
         parquetAdapter = new ParquetAdapter(appConfig, localFs);
         duckDbAdapter = new DuckDbAdapter(appConfig, Executors.newCachedThreadPool());
-        aceroAdapter = new AceroAdapter(appConfig);
 
         // Services
         metadataService = new MetadataService(parquetAdapter);
@@ -93,34 +86,8 @@ public class TestFlightServerHelper implements AutoCloseable {
                 location.getUri().toString());
         queryPlanner = new QueryPlanner(parquetAdapter, clusterService);
 
-        Function<ParquetQueryParser, byte[]> filterBuilder = (parsedQuery) -> {
-            if (parsedQuery.filter == null || parsedQuery.filter.isEmpty()
-                    || parsedQuery.filter.equals("true") || parsedQuery.filter.equals("1 = 1")) {
-                return null;
-            }
-            try {
-                java.util.Map<String, java.util.Map<String, String>> ddlCache =
-                        parquetAdapter.tableDdlCache();
-                String ddl = ddlCache.getOrDefault(parsedQuery.schema,
-                        java.util.Collections.emptyMap()).get(parsedQuery.table);
-                if (ddl == null) {
-                    return null;
-                }
-                String cleanDdl = ddl.replace(parsedQuery.schema + ".", "");
-                ByteBuffer buf = FilterConverter.toByteBuffer(
-                        parsedQuery.filter,
-                        java.util.Collections.singletonList(cleanDdl));
-                byte[] bytes = new byte[buf.remaining()];
-                buf.get(bytes);
-                return bytes;
-            } catch (Exception e) {
-                return null;
-            }
-        };
-
         executionService = new ExecutionService(parquetAdapter, duckDbAdapter,
-                aceroAdapter, metadataService, appConfig,
-                Executors.newCachedThreadPool(), filterBuilder);
+                metadataService, appConfig, Executors.newCachedThreadPool());
 
         flightSqlProducer = new FlightSqlProducer(location, allocator,
                 metadataService, queryPlanner, executionService, clusterService);

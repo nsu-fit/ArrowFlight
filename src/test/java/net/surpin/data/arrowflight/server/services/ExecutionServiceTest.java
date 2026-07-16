@@ -2,6 +2,7 @@ package net.surpin.data.arrowflight.server.services;
 
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.RootAllocator;
+import org.apache.arrow.flight.FlightProducer;
 import org.apache.arrow.vector.BigIntVector;
 import org.apache.arrow.vector.BitVector;
 import org.apache.arrow.vector.DecimalVector;
@@ -14,16 +15,60 @@ import org.apache.arrow.vector.VarCharVector;
 import org.apache.arrow.vector.types.pojo.ArrowType;
 import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.FileStatus;
+import org.apache.hadoop.fs.FileSystem;
 import org.junit.jupiter.api.Test;
 
 import java.net.URI;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+
+import net.surpin.data.arrowflight.server.adapters.DuckDbAdapter;
+import net.surpin.data.arrowflight.server.adapters.ParquetAdapter;
+import net.surpin.data.arrowflight.server.model.AppConfig;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class ExecutionServiceTest {
+
+    /** Verifies HDFS scans are sent directly to DuckDB with a qualified URI. */
+    @Test
+    void readParquetRoutesQualifiedHdfsUriToDuckDb() throws Exception {
+        ParquetAdapter parquetAdapter = mock(ParquetAdapter.class);
+        DuckDbAdapter duckDbAdapter = mock(DuckDbAdapter.class);
+        MetadataService metadataService = mock(MetadataService.class);
+        AppConfig appConfig = mock(AppConfig.class);
+        ExecutorService ioPool = mock(ExecutorService.class);
+        FileSystem fileSystem = mock(FileSystem.class);
+        FileStatus status = mock(FileStatus.class);
+        Path qualified = new Path(
+                "hdfs://namenode:8020/bench/tpch/lineitem/part-0.parquet");
+        when(parquetAdapter.dataDirectory())
+                .thenReturn("hdfs://namenode:8020/bench");
+        when(parquetAdapter.fileSystem()).thenReturn(fileSystem);
+        when(fileSystem.getFileStatus(any(Path.class))).thenReturn(status);
+        when(status.getPath()).thenReturn(qualified);
+        FlightProducer.ServerStreamListener listener =
+                mock(FlightProducer.ServerStreamListener.class);
+
+        ExecutionService service = new ExecutionService(parquetAdapter, duckDbAdapter,
+                metadataService, appConfig, ioPool);
+        try (RootAllocator allocator = new RootAllocator()) {
+            service.readParquet(allocator, "SELECT * FROM tpch.lineitem",
+                    new String[]{"tpch/lineitem/part-0.parquet"}, listener, true);
+
+            verify(duckDbAdapter).streamSql(eq(allocator), eq(
+                    "SELECT * FROM read_parquet(['hdfs://namenode:8020/bench/tpch/"
+                            + "lineitem/part-0.parquet'])"), eq(listener), eq(true));
+        }
+    }
 
     // ── minOf / maxOf ───────────────────────────────────────────────────────
 
@@ -206,6 +251,16 @@ class ExecutionServiceTest {
         String result = ExecutionService.plainDuckDbPath(
                 new Path(URI.create("file:/data/file.parquet")));
         assertEquals("/data/file.parquet", result);
+    }
+
+    /** Verifies HDFS authority and path are preserved for the extension. */
+    @Test
+    void toDuckDbPathsPreservesQualifiedHdfsUri() {
+        List<String> result = ExecutionService.toDuckDbPaths(List.of(
+                new Path("hdfs://namenode:8020/bench/tpch/lineitem/part-0.parquet")));
+
+        assertEquals(List.of(
+                "hdfs://namenode:8020/bench/tpch/lineitem/part-0.parquet"), result);
     }
 
     // ── toLong ────────────────────────────────────────────────────────────
