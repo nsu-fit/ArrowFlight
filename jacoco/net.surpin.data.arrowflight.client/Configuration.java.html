@@ -114,7 +114,7 @@ public final class Configuration implements Serializable {
      * @return - the host name
      */
     public String getFlightHost() {
-<span class="nc" id="L117">        return this.fsHost;</span>
+<span class="fc" id="L117">        return this.fsHost;</span>
     }
 
     /**
@@ -122,7 +122,7 @@ public final class Configuration implements Serializable {
      * @return - the port number
      */
     public int getFlightPort() {
-<span class="nc" id="L125">        return this.fsPort;</span>
+<span class="fc" id="L125">        return this.fsPort;</span>
     }
 
     /**
@@ -146,7 +146,7 @@ public final class Configuration implements Serializable {
      * @return - true if the remtoe flight service supports secure connections
      */
     public Boolean getTlsEnabled() {
-<span class="nc" id="L149">        return this.tlsEnabled;</span>
+<span class="fc" id="L149">        return this.tlsEnabled;</span>
     }
 
     /**
@@ -170,7 +170,7 @@ public final class Configuration implements Serializable {
      * @return - the user account
      */
     public String getUser() {
-<span class="nc" id="L173">        return this.user;</span>
+<span class="fc" id="L173">        return this.user;</span>
     }
 
     /**
@@ -178,14 +178,14 @@ public final class Configuration implements Serializable {
      * @return - the password of the user account
      */
     public String getPassword() {
-<span class="nc" id="L181">        return this.password;</span>
+<span class="fc" id="L181">        return this.password;</span>
     }
     /**
      * Get the access-token of the user account
      * @return - the access-token of the user account
      */
     public String getBearerToken() {
-<span class="nc" id="L188">        return this.bearerToken;</span>
+<span class="fc" id="L188">        return this.bearerToken;</span>
     }
 
     /**
@@ -274,7 +274,7 @@ public final class Configuration implements Serializable {
      * @return - Default schema path to the dataset that the user wants to query.
      */
     public String getDefaultSchema() {
-<span class="nc" id="L277">        return defaultSchema;</span>
+<span class="fc" id="L277">        return defaultSchema;</span>
     }
 
     /**
@@ -290,7 +290,7 @@ public final class Configuration implements Serializable {
      * @return - Tag name associated with all queries executed within a Flight session. Used only during authentication.
      */
     public String getRoutingTag() {
-<span class="nc" id="L293">        return this.routingTag;</span>
+<span class="fc" id="L293">        return this.routingTag;</span>
     }
 
     /**
@@ -306,7 +306,7 @@ public final class Configuration implements Serializable {
      * @return - Name of the workload management queue. Used only during authentication.
      */
     public String getRoutingQueue() {
-<span class="nc" id="L309">        return this.routingQueue;</span>
+<span class="fc" id="L309">        return this.routingQueue;</span>
     }
 
     /**
@@ -321,7 +321,7 @@ public final class Configuration implements Serializable {
      * Get the Arrow memory allocation limit in bytes (0 = default 2GB).
      */
     public long getAllocationLimit() {
-<span class="nc" id="L324">        return this.allocationLimit;</span>
+<span class="fc" id="L324">        return this.allocationLimit;</span>
     }
 
     /**
@@ -336,7 +336,7 @@ public final class Configuration implements Serializable {
      * @return max retries
      */
     public int getMaxRetries() {
-<span class="nc" id="L339">        return this.maxRetries;</span>
+<span class="fc" id="L339">        return this.maxRetries;</span>
     }
 
     /**
@@ -344,15 +344,15 @@ public final class Configuration implements Serializable {
      * @param maxRetries max retries
      */
     public void setMaxRetries(int maxRetries) {
-<span class="nc" id="L347">        this.maxRetries = maxRetries;</span>
-<span class="nc" id="L348">    }</span>
+<span class="fc" id="L347">        this.maxRetries = maxRetries;</span>
+<span class="fc" id="L348">    }</span>
 
     /**
      * Gets the retry backoff interval in milliseconds.
      * @return backoff in ms
      */
     public long getRetryBackoffMs() {
-<span class="nc" id="L355">        return this.retryBackoffMs;</span>
+<span class="fc" id="L355">        return this.retryBackoffMs;</span>
     }
 
     /**
@@ -360,8 +360,8 @@ public final class Configuration implements Serializable {
      * @param retryBackoffMs backoff in ms
      */
     public void setRetryBackoffMs(long retryBackoffMs) {
-<span class="nc" id="L363">        this.retryBackoffMs = retryBackoffMs;</span>
-<span class="nc" id="L364">    }</span>
+<span class="fc" id="L363">        this.retryBackoffMs = retryBackoffMs;</span>
+<span class="fc" id="L364">    }</span>
 
     /**
      * Gets the connection timeout in milliseconds.

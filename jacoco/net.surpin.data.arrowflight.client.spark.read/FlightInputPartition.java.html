@@ -27,16 +27,16 @@ public class FlightInputPartition implements InputPartition, Serializable {
          * @param ep - the end-point of the partition
          */
         public FlightEndpointInputPartition(Schema schema, Endpoint ep) {
-<span class="nc" id="L30">            super(schema);</span>
-<span class="nc" id="L31">            this.ep = ep;</span>
-<span class="nc" id="L32">        }</span>
+<span class="fc" id="L30">            super(schema);</span>
+<span class="fc" id="L31">            this.ep = ep;</span>
+<span class="fc" id="L32">        }</span>
 
         /**
          * Get the end-point of the input-partition
          * @return - the end-point of the input partition
          */
         public Endpoint getEndpoint() {
-<span class="nc" id="L39">            return this.ep;</span>
+<span class="fc" id="L39">            return this.ep;</span>
         }
     }
 
@@ -61,7 +61,7 @@ public class FlightInputPartition implements InputPartition, Serializable {
          * @return - the query of the input-partition
          */
         public String getQuery() {
-<span class="nc" id="L64">            return this.query;</span>
+<span class="fc" id="L64">            return this.query;</span>
         }
     }
 
