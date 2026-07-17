@@ -23,7 +23,7 @@ BENCHBASE_TERMINALS="${BENCHBASE_TERMINALS:-}"
 BENCHBASE_RATE="${BENCHBASE_RATE:-unlimited}"
 BENCHBASE_DB_SCHEMA="${BENCHBASE_DB_SCHEMA:-}"
 BENCHBASE_UPDATE_PAGES="${BENCHBASE_UPDATE_PAGES:-true}"
-BENCHBASE_CAPTURE_TIMEOUT_SECONDS="${BENCHBASE_CAPTURE_TIMEOUT_SECONDS:-${BENCHBASE_QUERY_TIMEOUT_SECONDS:-120}}"
+BENCHBASE_CAPTURE_TIMEOUT_SECONDS="${BENCHBASE_CAPTURE_TIMEOUT_SECONDS:-${BENCHBASE_QUERY_TIMEOUT_SECONDS:-0}}"
 BENCHMARK_OBSERVABILITY="${BENCHMARK_OBSERVABILITY:-true}"
 PYTHON_CMD=()
 
@@ -537,8 +537,8 @@ capture_query_results() {
     return
   fi
 
-  if [[ ! "${BENCHBASE_CAPTURE_TIMEOUT_SECONDS}" =~ ^[1-9][0-9]*$ ]]; then
-    echo "BENCHBASE_CAPTURE_TIMEOUT_SECONDS must be a positive integer: ${BENCHBASE_CAPTURE_TIMEOUT_SECONDS}" >&2
+  if [[ ! "${BENCHBASE_CAPTURE_TIMEOUT_SECONDS}" =~ ^[0-9]+$ ]]; then
+    echo "BENCHBASE_CAPTURE_TIMEOUT_SECONDS must be a non-negative integer: ${BENCHBASE_CAPTURE_TIMEOUT_SECONDS}" >&2
     return 2
   fi
 
@@ -548,16 +548,22 @@ capture_query_results() {
     --queries "${QUERY_SET}" >/dev/null
 
   local db_schema="${BENCHBASE_DB_SCHEMA:-${BENCHMARK}}"
-  local sql_file name sql_in_container out_in_container out_local capture_status
+  local sql_file name sql_in_container out_in_container out_local capture_status timeout_prefix
   shopt -s nullglob
   for sql_file in "${RESULTS_DIR}"/query-q*.sql; do
     name="$(basename "${sql_file}")"
     sql_in_container="${RESULTS_IN_CONTAINER}/${name}"
     out_in_container="${RESULTS_IN_CONTAINER}/${name%.sql}.actual.csv"
     out_local="${RESULTS_DIR}/${name%.sql}.actual.csv"
-    echo "[BenchBase] Capturing ${name} in schema ${db_schema}; timeout=${BENCHBASE_CAPTURE_TIMEOUT_SECONDS}s"
+    timeout_prefix=""
+    if (( BENCHBASE_CAPTURE_TIMEOUT_SECONDS > 0 )); then
+      timeout_prefix="timeout --foreground --signal=TERM --kill-after=10s '${BENCHBASE_CAPTURE_TIMEOUT_SECONDS}s' "
+      echo "[BenchBase] Capturing ${name} in schema ${db_schema}; timeout=${BENCHBASE_CAPTURE_TIMEOUT_SECONDS}s"
+    else
+      echo "[BenchBase] Capturing ${name} in schema ${db_schema}; timeout=disabled"
+    fi
     if compose --profile benchbase exec -T spark-thrift-server bash -lc \
-      "timeout --foreground --signal=TERM --kill-after=10s '${BENCHBASE_CAPTURE_TIMEOUT_SECONDS}s' /opt/spark/bin/beeline --silent=true --showHeader=true --outputformat=csv2 -u 'jdbc:hive2://127.0.0.1:10000/${db_schema}' -n benchbase -f '${sql_in_container}' > '${out_in_container}'"; then
+      "${timeout_prefix}/opt/spark/bin/beeline --silent=true --showHeader=true --outputformat=csv2 -u 'jdbc:hive2://127.0.0.1:10000/${db_schema}' -n benchbase -f '${sql_in_container}' > '${out_in_container}'"; then
       echo "[BenchBase] Captured ${name} in schema ${db_schema}"
     else
       capture_status="$?"

@@ -34,9 +34,9 @@ class ConfigAdapterTest {
         AppConfig cfg = ConfigAdapter.getConfig();
 
         assertEquals(4, cfg.numServers());
-        assertEquals(4096, cfg.batchSize());
-        assertEquals(131072, cfg.ioFileBufferSize());
-        assertTrue(cfg.ioParallelism() >= 1 && cfg.ioParallelism() <= 64);
+        assertEquals(65536, cfg.batchSize());
+        assertEquals(1048576, cfg.ioFileBufferSize());
+        assertEquals(32, cfg.ioParallelism());
         assertEquals(2, cfg.duckDbThreads());
         assertEquals("/data/parquet", cfg.dataDir());
         assertNull(cfg.localDataDir());
@@ -76,7 +76,7 @@ class ConfigAdapterTest {
 
     @Test
     void getConfigSysPropTakesPrecedenceOverPropsFile() {
-        // arrowflight.properties has batchSize=4096.
+        // arrowflight.properties has batchSize=65536.
         // System property must override it.
         setProp("batchSize", "100");
 

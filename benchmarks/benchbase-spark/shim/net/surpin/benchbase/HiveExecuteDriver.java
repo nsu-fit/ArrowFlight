@@ -160,7 +160,7 @@ public final class HiveExecuteDriver implements Driver {
     private static int queryTimeoutSeconds() {
         String configured = System.getenv("BENCHBASE_QUERY_TIMEOUT_SECONDS");
         if (configured == null || configured.trim().isEmpty()) {
-            return 120;
+            return 0;
         }
         try {
             int timeout = Integer.parseInt(configured.trim());
