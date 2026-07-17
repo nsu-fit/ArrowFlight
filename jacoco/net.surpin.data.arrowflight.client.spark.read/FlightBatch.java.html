@@ -15,7 +15,7 @@ import java.util.Arrays;
  * Describes a flight-batch
  */
 public class FlightBatch implements Batch, Serializable {
-<span class="fc" id="L18">    private static final Logger LOGGER = LoggerFactory.getLogger(Batch.class);</span>
+<span class="nc" id="L18">    private static final Logger LOGGER = LoggerFactory.getLogger(Batch.class);</span>
     private final Configuration configuration;
     private final Table table;
 
@@ -24,11 +24,11 @@ public class FlightBatch implements Batch, Serializable {
      * @param configuration - the configuration of remote flight service
      * @param table - the table object
      */
-<span class="fc" id="L27">    public FlightBatch(Configuration configuration, Table table) {</span>
-<span class="fc" id="L28">        LOGGER.info(&quot;{}()&quot;, this.getClass().getName());</span>
-<span class="fc" id="L29">        this.configuration = configuration;</span>
-<span class="fc" id="L30">        this.table = table;</span>
-<span class="fc" id="L31">    }</span>
+<span class="nc" id="L27">    public FlightBatch(Configuration configuration, Table table) {</span>
+<span class="nc" id="L28">        LOGGER.info(&quot;{}()&quot;, this.getClass().getName());</span>
+<span class="nc" id="L29">        this.configuration = configuration;</span>
+<span class="nc" id="L30">        this.table = table;</span>
+<span class="nc" id="L31">    }</span>
 
     /**
      * Plan the input-partitions

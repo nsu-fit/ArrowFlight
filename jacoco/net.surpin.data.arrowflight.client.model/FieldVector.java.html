@@ -17,17 +17,17 @@ public class FieldVector implements Serializable {
      * @param type - the data type of the field
      * @param values - the objects in the vector
      */
-<span class="fc" id="L20">    public FieldVector(String name, FieldType type, Object[] values) {</span>
-<span class="fc" id="L21">        this.field = new Field(name, type);</span>
-<span class="fc" id="L22">        this.values = values;</span>
-<span class="fc" id="L23">    }</span>
+<span class="nc" id="L20">    public FieldVector(String name, FieldType type, Object[] values) {</span>
+<span class="nc" id="L21">        this.field = new Field(name, type);</span>
+<span class="nc" id="L22">        this.values = values;</span>
+<span class="nc" id="L23">    }</span>
 
     /**
      * Get the field
      * @return - the field for this vector
      */
     public Field getField() {
-<span class="fc" id="L30">        return this.field;</span>
+<span class="nc" id="L30">        return this.field;</span>
     }
 
     /**
@@ -35,7 +35,7 @@ public class FieldVector implements Serializable {
      * @return - data in the vector
      */
     public Object[] getValues() {
-<span class="fc" id="L38">        return this.values;</span>
+<span class="nc" id="L38">        return this.values;</span>
     }
 
     /**
