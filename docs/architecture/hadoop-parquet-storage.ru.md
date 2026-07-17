@@ -76,7 +76,7 @@ Projection означает выбор только нужных колонок.
 
 ## Распределение файлов между Flight-нодами
 
-Распределение выполняется в `FlightSqlProducer.determineEndpoints`.
+Распределение начинается в `FlightSqlProducer.determineEndpoints`, который делегирует `QueryPlanner.determineEndpoints`.
 
 Для каждого Parquet-файла сервер выбирает Flight-ноду, которая будет его читать.
 

@@ -50,7 +50,7 @@ import static java.util.Collections.singletonList;
 
 /**
  * Handles schema/table discovery and builds Flight SQL metadata responses.
- * Wraps ParquetAdapter schema methods and MetadataUtils vector building.
+ * Wraps ParquetAdapter schema methods and Arrow vector building.
  */
 public final class MetadataService {
 

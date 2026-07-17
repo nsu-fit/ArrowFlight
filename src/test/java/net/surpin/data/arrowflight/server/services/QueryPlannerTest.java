@@ -233,6 +233,36 @@ class QueryPlannerTest {
         verify(clusterService).storeHandle(anyString(), any());
     }
 
+    @Test
+    void determineEndpoints_throwsWhenRegistryEmpty() throws Exception {
+        when(clusterService.allServerLoads()).thenReturn(Map.of());
+
+        QueryPlanner planner = new QueryPlanner(parquetAdapter, clusterService);
+        assertThrows(Exception.class, () ->
+                planner.determineEndpoints("SELECT * FROM s.t"));
+    }
+
+    @Test
+    void determineEndpoints_throwsWhenNoLiveServers() throws Exception {
+        when(clusterService.allServerLoads()).thenReturn(Map.of("s1", 0L));
+        when(clusterService.filterLiveServers(anySet())).thenReturn(Set.of());
+
+        QueryPlanner planner = new QueryPlanner(parquetAdapter, clusterService);
+        assertThrows(Exception.class, () ->
+                planner.determineEndpoints("SELECT * FROM s.t"));
+    }
+
+    @Test
+    void determineEndpoints_throwsWhenNoInventories() throws Exception {
+        when(clusterService.allServerLoads()).thenReturn(Map.of("s1", 0L));
+        when(clusterService.filterLiveServers(anySet())).thenReturn(Set.of("s1"));
+        when(clusterService.hasFileInventory("s1")).thenReturn(false);
+
+        QueryPlanner planner = new QueryPlanner(parquetAdapter, clusterService);
+        assertThrows(Exception.class, () ->
+                planner.determineEndpoints("SELECT * FROM s.t"));
+    }
+
     // ── Reflection helpers ─────────────────────────────────────────────────
 
     @SuppressWarnings("unchecked")
@@ -258,5 +288,44 @@ class QueryPlannerTest {
                 Map.class, String.class, String.class, String.class);
         m.setAccessible(true);
         return (boolean) m.invoke(null, files, server, schema, table);
+    }
+
+    @Test
+    void filterForQuery_matchesBySchemaTable() throws Exception {
+        Map<String, FileAssignment> inventory = new LinkedHashMap<>();
+        inventory.put("s/t/f1.parquet", new FileAssignment(100L, Set.of("H1")));
+        inventory.put("other/f.parquet", new FileAssignment(200L, Set.of("H1")));
+
+        Map<String, FileAssignment> result = invokeFilterForQuery(inventory, false, "s", "t");
+        assertEquals(1, result.size());
+        assertTrue(result.containsKey("s/t/f1.parquet"));
+    }
+
+    @Test
+    void filterForJoin_matchesMultipleTables() throws Exception {
+        Map<String, FileAssignment> inventory = new LinkedHashMap<>();
+        inventory.put("s/a/f.parquet", new FileAssignment(100L, Set.of("H1")));
+        inventory.put("s/b/f.parquet", new FileAssignment(200L, Set.of("H1")));
+
+        Map<String, FileAssignment> result = invokeFilterForQuery(inventory, true, "s", null);
+        assertEquals(2, result.size());
+    }
+
+    private static Map<String, FileAssignment> invokeFilterForQuery(
+            Map<String, FileAssignment> inventory, boolean isJoin,
+            String schema, String table) throws Exception {
+        Method m = QueryPlanner.class.getDeclaredMethod("filterForQuery",
+                Map.class, ParquetQueryParser.class);
+        m.setAccessible(true);
+        ParquetQueryParser pq;
+        if (isJoin) {
+            pq = ParquetQueryParser.parse(
+                    "SELECT * FROM " + schema + ".a JOIN " + schema + ".b ON a.id = b.id");
+        } else {
+            pq = ParquetQueryParser.parse("SELECT * FROM " + schema + "." + table);
+        }
+        @SuppressWarnings("unchecked")
+        Map<String, FileAssignment> r = (Map<String, FileAssignment>) m.invoke(null, inventory, pq);
+        return r;
     }
 }

@@ -89,6 +89,10 @@ flight_server_command() {
     read -r -a extra_java_opts <<< "${JAVA_OPTS}"
     java_opts+=("${extra_java_opts[@]}")
   fi
+  local metrics_args=()
+  if [[ -n "${FLIGHT_METRICS_ENABLED:-}" ]]; then
+    metrics_args=(--metrics-enabled "${FLIGHT_METRICS_ENABLED}")
+  fi
 
   local command=(java "${java_opts[@]}" \
     -cp "${runtime_classpath}" \
@@ -100,6 +104,7 @@ flight_server_command() {
     --storage-host "${FLIGHT_LOCAL_STORAGE_HOST:-$(hostname -f)}" \
     --hazelcast-port "${HAZELCAST_PORT:-5701}" \
     --metrics-port "${FLIGHT_METRICS_PORT:-9404}" \
+    "${metrics_args[@]}" \
     "$@")
   if [[ "${FLIGHT_SERVER_EXEC:-false}" == "true" ]]; then
     exec "${command[@]}"

@@ -1,10 +1,11 @@
 # Hadoop Arrow Flight SQL Server
 
 [![CI](https://github.com/nsu-fit/ArrowFlight/actions/workflows/ci.yml/badge.svg)](https://github.com/nsu-fit/ArrowFlight/actions/workflows/ci.yml)
-[![Coveralls](https://coveralls.io/repos/github/nsu-fit/ArrowFlight/badge.svg)](https://coveralls.io/github/nsu-fit/ArrowFlight)
+[![Coveralls](https://coveralls.io/repos/github/nsu-fit/ArrowFlight/badge.svg?branch=main)](https://coveralls.io/github/nsu-fit/ArrowFlight?branch=main)
 [![Jacoco Report](https://nsu-fit.github.io/ArrowFlight/jacoco/jacoco.svg)](https://nsu-fit.github.io/ArrowFlight/jacoco/)
 [![Benchmark Pages](https://github.com/nsu-fit/ArrowFlight/actions/workflows/benchmark-pages.yml/badge.svg)](https://github.com/nsu-fit/ArrowFlight/actions/workflows/benchmark-pages.yml)
 [![Benchmark Dashboard](https://img.shields.io/badge/Benchmarks-GitHub_Pages-blue)](https://nsu-fit.github.io/ArrowFlight/)
+[![SonarCloud Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=nsu-fit_ArrowFlight&metric=alert_status)](https://sonarcloud.io/project/overview?id=nsu-fit_ArrowFlight)
 
 High-performance **Arrow Flight SQL** server for analytical queries on Parquet data. Built for teams running SQL over large Parquet datasets in distributed environments (HDFS, S3, local FS).
 
@@ -152,7 +153,7 @@ Supports exponential backoff retry, connection pooling, TLS, BasicAuth and Beare
 3. Returns `FlightInfo` with endpoints (each containing a `Ticket` and node address).
 4. **Client** calls `DoGet` for each endpoint (passing the Ticket).
 5. On each node, **Flight Adapter** restores the query and file list from the Ticket, initiating a two-phase file acquisition via Hazelcast locks.
-6. **Parquet Adapter** executes via Acero or DuckDB (with fast-path if applicable) and streams results as `VectorSchemaRoot`.
+6. **Execution Service** executes via DuckDB (with footer fast paths when applicable) and streams results as `VectorSchemaRoot`.
 7. **Client** receives and processes data.
 
 ---
@@ -183,7 +184,7 @@ Key properties (see `AppConfig.java` / `ConfigAdapter.java` for the full list):
 | Area | Key Properties |
 | :--- | :--- |
 | DuckDB | `batchSize`, `duckDbThreads`, `duckDbGroups`, `duckDbWarmConnections` |
-| DuckDB HDFS | `duckDbHdfsExtension`, `duckDbHdfsDefaultNamenode`, `duckDbHdfsHaNamenodes` |
+| DuckDB HDFS | `duckDbHdfsExtension`, `duckDbAllowUnsignedExtensions`, `duckDbHdfsDefaultNamenode` |
 | I/O | `ioParallelism`, `ioParallelismMinThreads`, `ioFileBufferSize` |
 | gRPC | `grpcMaxInboundMessageSize`, `flightListenerReadyTimeoutMs` |
 | Client | `client.maxRetries`, `client.retryBackoffMs`, `client.connectTimeoutMs` |
@@ -196,7 +197,7 @@ Key properties (see `AppConfig.java` / `ConfigAdapter.java` for the full list):
 | Feature | Status |
 | :--- | :--- |
 | `SELECT` with projection | Supported |
-| `WHERE` filtering (server-side via Substrait C++) | Supported |
+| `WHERE` filtering (server-side via DuckDB) | Supported |
 | `COUNT`, `SUM`, `MIN`, `MAX` | Supported |
 | `COUNT(DISTINCT col)` | Supported |
 | `GROUP BY` | Supported (requires client-side merge) |
@@ -231,9 +232,8 @@ Key properties (see `AppConfig.java` / `ConfigAdapter.java` for the full list):
 | **jOOQ** | SQL parsing |
 | **Hazelcast** | Distributed cache, node registry, coordination |
 | **Hadoop FileSystem** | HDFS / S3 / local FS access |
-| **Acero (Arrow Dataset)** | C++ Parquet scanning, filtering, projection |
-| **DuckDB** | Aggregation and server-side join execution |
-| **Substrait / Isthmus** | SQL filter to Acero plan conversion |
+| **DuckDB** | Parquet scanning, filtering, aggregation, and server-side joins |
+| **duckdb-hdfs** | Native `hdfs://` file-system support for DuckDB |
 
 ---
 
@@ -241,7 +241,7 @@ Key properties (see `AppConfig.java` / `ConfigAdapter.java` for the full list):
 
 | Document | Description |
 | :--- | :--- |
-| **[Architecture — Query Execution](docs/architecture/sql-query-execution-flow.md)** | Full query lifecycle: parsing, endpoint routing, two-phase execution, DuckDB/Acero dispatch |
+| **[Architecture — Query Execution](docs/architecture/sql-query-execution-flow.md)** | Full query lifecycle: parsing, endpoint routing, footer fast paths, and DuckDB execution |
 | **[Architecture — Parquet Storage](docs/architecture/hadoop-parquet-storage.md)** | Storage model, Hadoop FS abstraction, block locality, file discovery |
 | **[ADR](docs/adr/)** | Architecture Decision Records (query engine selection, file distribution scheduler) |
 | **[User Guide — Build & Test](docs/user_guides/build-test-and-scripts.md)** | Build profiles, unit/integration/perf test commands, `run.sh` usage, DuckDB HDFS extension setup |

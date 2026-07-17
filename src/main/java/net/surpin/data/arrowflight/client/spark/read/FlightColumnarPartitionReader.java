@@ -35,6 +35,11 @@ public final class FlightColumnarPartitionReader implements PartitionReader<Colu
         this.streamReader = new FlightPartitionReader(configuration, partition);
     }
 
+    FlightColumnarPartitionReader(FlightPartitionReader streamReader, Schema expectedSchema) {
+        this.streamReader = streamReader;
+        this.expectedSchema = expectedSchema;
+    }
+
     @Override
     public boolean next() throws IOException {
         this.current = null;

@@ -1,4 +1,4 @@
-# ADR 0003: Dependency Injection with Dagger
+# ADR 0004: Dependency Injection with Dagger
 
 Status: Accepted
 Date: 2026-07-13

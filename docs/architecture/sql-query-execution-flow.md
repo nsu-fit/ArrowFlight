@@ -8,6 +8,8 @@ This document describes how an SQL query flows through the Arrow Flight server: 
 
 `FlightSqlProducer` implements the Flight SQL layer. It receives queries, creates `FlightInfo`, builds `Ticket` objects, creates endpoints, and restores query state during `DoGet`.
 
+`QueryPlanner` handles file distribution across nodes: it receives parsed queries and file inventories, runs `pickServer` for locality-aware assignment, and builds per-node endpoints.
+
 `ExecutionService`, `MetadataService`, and `ParquetAdapter` handle Parquet-related work. `ParquetAdapter` owns file discovery and locality detection. `MetadataService` handles schema construction and Java footer fast paths. `ExecutionService` orchestrates Arrow Dataset / Acero scans and DuckDB execution.
 
 `ParquetQueryParser` parses SQL and extracts schema, table, selected columns, filters, aggregations, and group by columns.
@@ -59,13 +61,13 @@ This schema is returned to the client as part of `FlightInfo`.
 
 ## File Distribution
 
-File distribution is performed in `FlightSqlProducer.determineEndpoints`.
+File distribution starts in `FlightSqlProducer.determineEndpoints`, which delegates to `QueryPlanner.determineEndpoints`.
 
 First, the server reads the SQL query from `statementCache`. Then `ParquetAdapter.locationsForQuery` determines which Parquet files belong to the query table and which Hadoop hosts store their blocks.
 
 Next, the server retrieves all registered Flight servers from `serverRegistry`. Each Flight node registers itself in `serverRegistry` during startup.
 
-For each file, the server calls `pickServer`. This method chooses the Flight server that will read the file.
+For each file, the server calls `QueryPlanner.pickServer`. This method chooses the Flight server that will read the file.
 
 If a Flight server runs on a host that stores the file blocks, that node is preferred. If no useful locality is available, the file is assigned using round-robin distribution across all Flight servers.
 
@@ -146,9 +148,9 @@ DuckDB is used for query shapes that need SQL execution beyond a simple scan:
 
 For single-table queries, `ExecutionService` builds SQL over DuckDB's `read_parquet([...])` table function. For joins, it creates temporary DuckDB views for each table alias, each view backed by `read_parquet([...])`, and then executes the rewritten join SQL against those views.
 
-DuckDB returns results through `DuckDBResultSet.arrowExportStream`. The server copies rows from DuckDB's Arrow stream into Flight batches and sends them to the client.
+DuckDB returns results through `DuckDBResultSet.arrowExportStream`. The server copies rows into a separate Flight-owned root before `putNext()`, so reuse of DuckDB's buffers cannot corrupt an in-flight batch.
 
-When DuckDB reads local files, no extension is required. When DuckDB receives HDFS paths, it must load the DuckDB HDFS extension configured through `arrowflight.properties`, system properties, or environment variables.
+When DuckDB reads local files, no extension is required. For HDFS, `ExecutionService` preserves the qualified `hdfs://authority/path` URI and DuckDB opens it through the configured HDFS extension. The Docker image installs and verifies `duckdb-hdfs` automatically.
 
 Relevant settings include:
 

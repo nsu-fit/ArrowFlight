@@ -6,7 +6,9 @@
 
 `HadoopArrowFlightServer` запускает сервер и настраивает Hadoop FileSystem, Hazelcast и Arrow Flight.
 
-`FlightSqlProducer` реализует слой Flight SQL. Он принимает запросы, строит `FlightInfo`, создает `Ticket`, распределяет файлы по Flight-нодам и восстанавливает состояние запроса во время `DoGet`.
+`FlightSqlProducer` реализует слой Flight SQL. Он принимает запросы, строит `FlightInfo`, создает `Ticket` и восстанавливает состояние запроса во время `DoGet`.
+
+`QueryPlanner` отвечает за распределение файлов по нодам: получает распарсенный запрос и инвентарь файлов, запускает `pickServer` для locality-чувствительного назначения и строит per-node endpoints.
 
 `ExecutionService`, `MetadataService` и `ParquetAdapter` отвечают за Parquet-часть. `ParquetAdapter` занимается поиском файлов и локальностью блоков. `MetadataService` строит схему результата и реализует Java fast path по footer metadata. `ExecutionService` координирует сканирование через Arrow Dataset / Acero и выполнение SQL через DuckDB.
 
@@ -54,11 +56,11 @@ Ticket не содержит сами файлы и не является пол
 
 ## Распределение файлов
 
-Распределение выполняется в `FlightSqlProducer.determineEndpoints`.
+Распределение начинается в `FlightSqlProducer.determineEndpoints`, который делегирует `QueryPlanner.determineEndpoints`.
 
 Сервер получает SQL из `statementCache`, затем `ParquetAdapter.locationsForQuery` определяет Parquet-файлы таблицы и Hadoop hosts, на которых лежат блоки этих файлов.
 
-Дальше сервер читает список зарегистрированных Flight-нод из `serverRegistry`. Для каждого файла вызывается `pickServer`, который выбирает ноду для чтения.
+Дальше сервер читает список зарегистрированных Flight-нод из `serverRegistry`. Для каждого файла вызывается `QueryPlanner.pickServer`, который выбирает ноду для чтения.
 
 Если Flight-нода находится на host, где есть блоки файла, такая нода предпочитается. Среди подходящих нод выбирается нода с меньшей накопленной нагрузкой по размеру назначенных файлов.
 
@@ -127,9 +129,9 @@ DuckDB используется для запросов, где нужен SQL e
 
 Для join-запросов `ExecutionService` создает временные DuckDB views для alias-ов таблиц. Каждая view читает свои файлы через `read_parquet([...])`. После этого выполняется переписанный join SQL.
 
-DuckDB возвращает результат через `DuckDBResultSet.arrowExportStream`. Сервер копирует строки из DuckDB Arrow stream в Flight batches и отправляет клиенту.
+DuckDB возвращает результат через `DuckDBResultSet.arrowExportStream`. Сервер копирует строки в отдельный Flight-owned root перед `putNext()`, чтобы переиспользование DuckDB буферов не могло повредить отправляемый batch.
 
-Для локальных файлов DuckDB extension не нужен. Для HDFS URI DuckDB должен загрузить HDFS extension.
+Для локальных файлов DuckDB extension не нужен. Для HDFS `ExecutionService` сохраняет квалифицированный URI `hdfs://authority/path` и DuckDB открывает его через настроенный HDFS extension. Docker-образ устанавливает и проверяет `duckdb-hdfs` автоматически.
 
 Настройки HDFS extension:
 
@@ -152,11 +154,7 @@ DuckDB возвращает результат через `DuckDBResultSet.arrow
 
 Если `ioParallelism` задан явно, используется он. `ioParallelismMaxCores=0` означает "не ограничивать число ядер".
 
-Пример override через JVM system property:
-
-```bash
-mvn test -Darrowflight.io.parallelism=64
-```
+JVM system properties, такие как `-Darrowflight.io.parallelism=64`, могут переопределять файл конфигурации.
 
 ## Отправка результата клиенту
 

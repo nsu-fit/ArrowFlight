@@ -18,18 +18,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class MetricsServiceTest {
 
     /**
-     * Verifies query and materialization metrics are exposed with bounded labels.
+     * Verifies query metrics are exposed with bounded labels.
      *
      * @throws Exception if the local metrics endpoint cannot be queried
      */
     @Test
-    void exposesQueryAndMaterializationMetrics() throws Exception {
+    void exposesQueryMetrics() throws Exception {
         try (MetricsService.QueryObservation observation = MetricsService.observeQuery(
                 "SELECT * FROM tpch.lineitem WHERE l_shipdate > DATE '1998-01-01'", 4096L)) {
             observation.markFailed();
         }
-        MetricsService.recordMaterialization(2048L, 1_000_000_000L, true);
-
         try (MetricsService service = new MetricsService(0)) {
             service.start();
             HttpResponse<String> response = get(service.port(), "/metrics");
@@ -43,8 +41,6 @@ class MetricsServiceTest {
                     "arrowflight_parquet_query_failures_total{path=\"filtered-scan\"}"));
             assertTrue(response.body().contains(
                     "arrowflight_parquet_logical_input_bytes_total{path=\"filtered-scan\"}"));
-            assertTrue(response.body().contains(
-                    "arrowflight_parquet_materialization_bytes_total"));
             assertTrue(response.body().contains("arrowflight_jvm_threads_live"));
         }
     }

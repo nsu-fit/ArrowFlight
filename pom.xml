@@ -32,6 +32,11 @@
         <hazelcast.version>5.6.0</hazelcast.version>
         <substrait.version>0.91.0</substrait.version>
         <checkstyle.failOnViolation>true</checkstyle.failOnViolation>
+        <!-- SonarCloud -->
+        <sonar.projectKey>nsu-fit_ArrowFlight</sonar.projectKey>
+        <sonar.organization>nsu-fit</sonar.organization>
+        <sonar.host.url>https://sonarcloud.io</sonar.host.url>
+        <sonar.coverage.jacoco.xmlReportPaths>target/site/jacoco/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
     </properties>
 
     <dependencies>
@@ -97,6 +102,7 @@
             <version>${arrow.version}</version>
         </dependency>
 
+        <!-- Required by DuckDB JDBC arrowExportStream. -->
         <dependency>
             <groupId>org.apache.arrow</groupId>
             <artifactId>arrow-c-data</artifactId>
@@ -119,6 +125,12 @@
             <groupId>io.substrait</groupId>
             <artifactId>isthmus</artifactId>
             <version>${substrait.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>jakarta.xml.bind</groupId>
+            <artifactId>jakarta.xml.bind-api</artifactId>
+            <version>4.0.2</version>
         </dependency>
 
         <dependency>
@@ -297,6 +309,11 @@
                         </goals>
                     </execution>
                 </executions>
+                <configuration>
+                    <excludes>
+                        <exclude>**/debug/**</exclude>
+                    </excludes>
+                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

@@ -76,9 +76,9 @@ The current regular aggregation fallback is DuckDB. Acero is not used for groupe
 
 ## File Distribution Across Flight Nodes
 
-File distribution is performed in `FlightSqlProducer.determineEndpoints`. For each Parquet file, the server chooses the Flight server that will read it.
+File distribution starts in `FlightSqlProducer.determineEndpoints`, which delegates to `QueryPlanner.determineEndpoints`. For each Parquet file, the server chooses the Flight server that will read it.
 
-Server selection is handled by `pickServer`.
+Server selection is handled by `QueryPlanner.pickServer`.
 
 Selection logic:
 
