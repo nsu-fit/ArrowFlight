@@ -155,6 +155,7 @@ def write_metadata(
     hdfs_root,
     hdfs_block_size,
     reference_queries,
+    shard_count,
 ):
     if not output:
         return
@@ -179,7 +180,7 @@ def write_metadata(
         "flight_source_host": os.environ.get("FLIGHT_SOURCE_HOST", "flight-server-1"),
         "flight_source_port": os.environ.get("FLIGHT_SOURCE_PORT", "32010"),
         "direct_parquet_dir": hdfs_root,
-        "direct_parquet_partitions": len(flight_roots),
+        "direct_parquet_partitions": shard_count,
         "direct_generated": True,
         "flight_data": [
             {
@@ -244,17 +245,20 @@ def export_table_shard(connection, table, target, shard_count, shard):
         raise RuntimeError(f"DuckDB did not create Parquet shard {target}")
 
 
-def export_table_to_flight_roots(connection, table, schema, flight_roots, flight_hosts):
-    shard_count = len(flight_hosts)
+def export_table_to_flight_roots(connection, table, schema, flight_roots, flight_hosts, shard_count):
+    num_servers = len(flight_roots)
     for flight_root in flight_roots:
         clean_dir(flight_root / schema / table)
 
-    for shard, (host, flight_root) in enumerate(zip(flight_hosts, flight_roots)):
+    for shard in range(shard_count):
+        server_idx = shard % num_servers
+        host = flight_hosts[server_idx]
+        flight_root = flight_roots[server_idx]
         table_dir = flight_root / schema / table
         target = table_dir / f"part-{host}-{shard:05d}.parquet"
         export_table_shard(connection, table, target, shard_count, shard)
 
-    print(f"Generated {schema}.{table} across {len(flight_hosts)} node-local Flight root(s)")
+    print(f"Generated {schema}.{table} as {shard_count} shard(s) across {num_servers} Flight root(s)")
 
 
 def main():
@@ -280,6 +284,9 @@ def main():
         ).split(",")
         if item.strip()
     ]
+    shard_count = int(
+        os.environ.get("DIRECT_PARQUET_PARTITIONS", str(len(flight_hosts)))
+    )
 
     if dataset not in {"tpch", "tpcds"}:
         raise RuntimeError("BENCHMARK_DATASET must be tpch or tpcds")
@@ -293,6 +300,8 @@ def main():
             "for every FLIGHT_HOSTS entry"
         )
 
+    if shard_count < 1:
+        raise RuntimeError("DIRECT_PARQUET_PARTITIONS must be at least 1")
     for root in server_roots:
         clean_dir(root / schema)
     if hdfs_block_size < 1048576:
@@ -307,7 +316,7 @@ def main():
         connection.execute(f"CALL dsdgen(sf={scale_factor})")
 
     for table in table_names(connection, dataset):
-        export_table_to_flight_roots(connection, table, schema, server_roots, flight_hosts)
+        export_table_to_flight_roots(connection, table, schema, server_roots, flight_hosts, shard_count)
 
     oversized = [
         file
@@ -337,6 +346,7 @@ def main():
         hdfs_root,
         hdfs_block_size,
         reference_queries,
+        shard_count,
     )
 
     connection.close()
