@@ -73,18 +73,30 @@ public final class QueryPlanner {
      */
     public List<FlightEndpoint> determineEndpoints(String query)
             throws IOException {
+        long t = LogUtil.mark();
         ParquetQueryParser parsed = ParquetQueryParser.parse(query);
+        long tSv = LogUtil.mark();
         Set<String> allServerUris = validatedServerUris();
+        LogUtil.logTiming(tSv, "planning.validateServers", "servers=" + allServerUris.size());
+        long tLoad = LogUtil.mark();
         Map<String, Long> serverLoad = validatedServerLoad(allServerUris);
+        LogUtil.logTiming(tLoad, "planning.serverLoads", "servers=" + serverLoad.size());
+        long tPaths = LogUtil.mark();
         Map<String, FileAssignment> pathLocations = validatedPathLocations(parsed, allServerUris);
+        LogUtil.logTiming(tPaths, "planning.fileLocations", "files=" + pathLocations.size());
 
+        List<FlightEndpoint> endpoints;
         if (parsed.isJoin) {
-            return joinEndpoints(query, pathLocations, allServerUris);
+            endpoints = joinEndpoints(query, pathLocations, allServerUris);
+        } else {
+            endpoints = distributeEndpoints(query, pathLocations, serverLoad);
         }
-        return distributeEndpoints(query, pathLocations, serverLoad);
+        LogUtil.logTiming(t, "planning.determineEndpoints", "endpoints=" + endpoints.size() + " files=" + pathLocations.size());
+        return endpoints;
     }
 
     private Set<String> validatedServerUris() throws IOException {
+        long t = LogUtil.mark();
         Map<String, Long> registry = clusterService.allServerLoads();
         if (registry.isEmpty()) {
             throw new IOException("Flight server registry is empty");
@@ -99,6 +111,7 @@ public final class QueryPlanner {
         if (!missing.isEmpty()) {
             throw new IOException("Flight nodes have not published file inventories: " + missing);
         }
+        LogUtil.logTiming(t, "planning.validateServers", "live=" + uris.size() + " total=" + registry.size());
         return uris;
     }
 
@@ -237,8 +250,7 @@ public final class QueryPlanner {
      */
     public FlightEndpoint createEndpoint(String serverUri, List<String> filePaths,
             String query, long bytes) {
-        LOGGER.debug("qid={} node={} planning=createEndpoint server={} files={} bytes={} query='{}'",
-                LogUtil.qid(), LogUtil.node(), serverUri, filePaths.size(), bytes, query);
+        long t = LogUtil.mark();
         URI parsedUri = URI.create(serverUri);
         // Preserve the registered URI (including grpc+tls). Reconstructing every
         // location as insecure both loses transport information and can cause the
@@ -253,6 +265,7 @@ public final class QueryPlanner {
                 FlightSql.TicketStatementQuery.newBuilder()
                         .setStatementHandle(serverHandle).build())
                 .toByteArray());
+        LogUtil.logTiming(t, "planning.createEndpoint", "server=" + serverUri + " files=" + filePaths.size() + " bytes=" + bytes);
         return new FlightEndpoint(serverTicket, serverLoc);
     }
 

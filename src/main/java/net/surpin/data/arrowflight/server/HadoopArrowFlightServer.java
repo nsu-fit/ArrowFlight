@@ -196,7 +196,7 @@ public class HadoopArrowFlightServer {
      */
     private void waitForCluster(String[] hosts, int timeoutSec) {
         HazelcastInstance hazelcast = component.clusterService().getHazelcastInstance();
-        long started = System.nanoTime();
+        long t = LogUtil.mark();
         ReentrantLock membershipLock = new ReentrantLock();
         Condition membershipChanged = membershipLock.newCondition();
 
@@ -222,7 +222,7 @@ public class HadoopArrowFlightServer {
                     membershipLock, membershipChanged, hosts.length,
                     TimeUnit.SECONDS.toMillis(timeoutSec));
             if (!joined) {
-                long elapsed = TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - started);
+                long elapsed = TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - t);
                 int connected = hazelcast.getCluster().getMembers().size();
                 String msg = String.format(
                         "Cluster join timeout after %ds: only %d of %d nodes connected. "
@@ -238,7 +238,8 @@ public class HadoopArrowFlightServer {
             hazelcast.getCluster().removeMembershipListener(listenerId);
         }
 
-        long totalSec = TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - started);
+        LogUtil.logTiming(t, "cluster.waitForMembers", "expected=" + hosts.length);
+        long totalSec = TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - t);
         LOGGER.info("All {} nodes connected in {}s. Initializing...", hosts.length, totalSec);
     }
 

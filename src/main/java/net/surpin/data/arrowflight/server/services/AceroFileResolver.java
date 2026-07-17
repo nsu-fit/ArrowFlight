@@ -67,16 +67,14 @@ final class AceroFileResolver {
      * @throws IOException if the source cannot be mapped or copied
      */
     String resolve(FileStatus status) throws IOException {
-        long startNanos = System.nanoTime();
+        long t = LogUtil.mark();
         String qid = LogUtil.qid();
         String relative = relativePath(status.getPath());
 
         if (localDataRoot != null) {
             java.nio.file.Path local = safeResolve(localDataRoot, relative);
             if (isExpectedFile(local, status.getLen())) {
-                LOGGER.debug("qid={} node={} resolve=localMirror source={} localPath={} size={} elapsed={}",
-                        qid, LogUtil.node(), status.getPath(), local,
-                        status.getLen(), LogUtil.elapsedNanos(startNanos));
+                LogUtil.logTiming(t, "resolve.localMirror", "source=" + status.getPath().getName() + " size=" + status.getLen());
                 return local.toUri().toString();
             }
             if (Files.exists(local)) {
@@ -92,22 +90,24 @@ final class AceroFileResolver {
         Object lock = new Object();
         Object existing = copyLocks.putIfAbsent(cached.toString(), lock);
         Object actual = existing != null ? existing : lock;
+        boolean waited = existing != null;
         synchronized (actual) {
             if (!isExpectedFile(cached, status.getLen())) {
                 copyToCache(status, cached);
             }
         }
         copyLocks.remove(cached.toString(), lock);
-        LOGGER.debug("qid={} node={} resolve=cached source={} cached={} size={} modTime={} elapsed={}",
-                qid, LogUtil.node(), status.getPath(), cached,
-                status.getLen(), status.getModificationTime(),
-                LogUtil.elapsedNanos(startNanos));
+        String extra = "source=" + status.getPath().getName() + " size=" + status.getLen();
+        if (waited) {
+            extra += " syncWait=true";
+        }
+        LogUtil.logTiming(t, "resolve.hadoopFile", extra);
         return cached.toUri().toString();
     }
 
     private void copyToCache(FileStatus status, java.nio.file.Path destination)
             throws IOException {
-        long startedNanos = System.nanoTime();
+        long t = LogUtil.mark();
         long copiedLength = 0L;
         boolean successful = false;
         java.nio.file.Path destinationParent = destination.getParent();
@@ -142,8 +142,9 @@ final class AceroFileResolver {
         } finally {
             Files.deleteIfExists(temporary);
             MetricsService.recordMaterialization(copiedLength,
-                    System.nanoTime() - startedNanos, successful);
+                    System.nanoTime() - t, successful);
         }
+        LogUtil.logTiming(t, "resolve.copyToCache", "source=" + status.getPath().getName() + " size=" + status.getLen() + " copied=" + copiedLength);
     }
 
     private static void moveIntoPlace(java.nio.file.Path source,
