@@ -58,9 +58,12 @@ public final class DuckDbAdapter implements AutoCloseable {
         this.batchSize = appConfig.batchSize();
         this.duckDbGroups = appConfig.duckDbGroups();
 
+        String jdbcUrl = appConfig.duckDbAllowUnsignedExtensions()
+                ? "jdbc:duckdb:?allow_unsigned_extensions=true"
+                : "jdbc:duckdb:";
         this.threadConn = ThreadLocal.withInitial(() -> {
             try {
-                Connection conn = DriverManager.getConnection("jdbc:duckdb:");
+                Connection conn = DriverManager.getConnection(jdbcUrl);
                 configureConnection(conn);
                 allConnections.add(conn);
                 return conn;
@@ -83,9 +86,6 @@ public final class DuckDbAdapter implements AutoCloseable {
                 setArrayOptionIfPresent(s, "allowed_paths", dataDir);
             } else {
                 s.execute("SET allowed_paths = ARRAY[]");
-            }
-            if (appConfig.duckDbAllowUnsignedExtensions()) {
-                s.execute("SET allow_unsigned_extensions = true");
             }
             String hdfsExtension = appConfig.duckDbHdfsExtension();
             if (hdfsExtension != null) {

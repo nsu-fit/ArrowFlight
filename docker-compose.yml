@@ -3,6 +3,7 @@ x-arrowflight-image: &arrowflight-image
   build:
     context: .
     dockerfile: docker/Dockerfile
+    target: app
 
 x-server-node-env: &server-node-env
   FLIGHT_DATA_DIR: "${HDFS_DATA_DIR:-hdfs://hdfs-namenode:8020/bench}"
