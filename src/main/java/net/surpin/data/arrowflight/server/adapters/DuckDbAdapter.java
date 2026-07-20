@@ -21,6 +21,7 @@ import java.sql.Statement;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -58,12 +59,14 @@ public final class DuckDbAdapter implements AutoCloseable {
         this.batchSize = appConfig.batchSize();
         this.duckDbGroups = appConfig.duckDbGroups();
 
-        String jdbcUrl = appConfig.duckDbAllowUnsignedExtensions()
-                ? "jdbc:duckdb:?allow_unsigned_extensions=true"
-                : "jdbc:duckdb:";
+        String jdbcUrl = "jdbc:duckdb:";
+        Properties connProps = new Properties();
+        if (appConfig.duckDbAllowUnsignedExtensions()) {
+            connProps.setProperty("allow_unsigned_extensions", "true");
+        }
         this.threadConn = ThreadLocal.withInitial(() -> {
             try {
-                Connection conn = DriverManager.getConnection(jdbcUrl);
+                Connection conn = DriverManager.getConnection(jdbcUrl, connProps);
                 configureConnection(conn);
                 allConnections.add(conn);
                 return conn;
