@@ -83,7 +83,7 @@ public final class AceroAdapter {
             FlightProducer.ServerStreamListener listener, boolean startListener) throws Exception {
         List<String> selectedColumns = parsedQuery.columns;
         String qid = LogUtil.qid();
-        long startNanos = System.nanoTime();
+        long t = LogUtil.mark();
         int numFiles = parquetUris.size();
 
         LOGGER.info("qid={} node={} acero=start files={} columns={} hasFilter={} query='{}'",
@@ -111,9 +111,14 @@ public final class AceroAdapter {
             long rowsSent = 0;
             long backpressureNanos = 0;
             boolean cancelled = false;
+            boolean firstBatch = true;
             while (true) {
                 if (!reader.loadNextBatch()) {
                     break;
+                }
+                if (firstBatch) {
+                    firstBatch = false;
+                    LogUtil.logTiming(t, "acero.firstBatch", "files=" + numFiles);
                 }
                 int rowCount = vsr.getRowCount();
                 if (rowCount == 0) {
@@ -137,15 +142,16 @@ public final class AceroAdapter {
                 if (batchesSent % 10 == 0) {
                     LOGGER.debug("qid={} node={} acero=progress batches={} rows={} elapsed={} throughput={}rows/s",
                             qid, LogUtil.node(), batchesSent, rowsSent,
-                            LogUtil.elapsedNanos(startNanos),
-                            rowsSent * 1_000_000_000L / Math.max(1, System.nanoTime() - startNanos));
+                            LogUtil.elapsedNanos(t),
+                            rowsSent * 1_000_000_000L / Math.max(1, System.nanoTime() - t));
                 }
                 vsr.clear();
             }
+            LogUtil.logTiming(t, "acero.scanBatches", "files=" + numFiles + " batches=" + batchesSent + " rows=" + rowsSent + " backpressureMs=" + backpressureNanos / 1_000_000);
             LOGGER.info("qid={} node={} acero=completed files={} batches={} rows={} backpressureMs={} elapsed={} cancelled={}",
                     qid, LogUtil.node(), numFiles, batchesSent, rowsSent,
                     backpressureNanos / 1_000_000,
-                    LogUtil.elapsedNanos(startNanos), cancelled);
+                    LogUtil.elapsedNanos(t), cancelled);
         }
     }
 
@@ -175,7 +181,7 @@ public final class AceroAdapter {
     public List<Object[]> aggregateFile(BufferAllocator allocator, String fileUri,
             byte[] filterBytes, Optional<String[]> cols,
             int numCountStarCols) throws Exception {
-        long startNanos = System.nanoTime();
+        long t = LogUtil.mark();
         String qid = LogUtil.qid();
         LOGGER.debug("qid={} node={} acero=aggregateFile start file={} hasFilter={}",
                 qid, LogUtil.node(), fileUri, filterBytes != null);
@@ -197,8 +203,7 @@ public final class AceroAdapter {
                     count += reader.getVectorSchemaRoot().getRowCount();
                 }
             }
-            LOGGER.debug("qid={} node={} acero=aggregateFile completed file={} count={} elapsed={}",
-                    qid, LogUtil.node(), fileUri, count, LogUtil.elapsedNanos(startNanos));
+            LogUtil.logTiming(t, "acero.aggregateFile", "file=" + fileUri + " count=" + count);
             Object[] row = new Object[numCountStarCols];
             java.util.Arrays.fill(row, count);
             return Collections.singletonList(row);
@@ -220,7 +225,7 @@ public final class AceroAdapter {
     public RegisteredArrowStreams exportToDuckDb(BufferAllocator allocator, List<String> fileUris,
             byte[] filterBytes, Optional<String[]> cols, DuckDBConnection duckConn)
             throws Exception {
-        long startNanos = System.nanoTime();
+        long t = LogUtil.mark();
         String qid = LogUtil.qid();
         LOGGER.debug("qid={} node={} acero=exportToDuckDb start files={}",
                 qid, LogUtil.node(), fileUris.size());
@@ -264,9 +269,7 @@ public final class AceroAdapter {
                 duckConn.registerArrowStream(alias, cStream);
                 aliases.add(alias);
             }
-            LOGGER.debug("qid={} node={} acero=exportToDuckDb completed files={} aliases={} elapsed={}",
-                    qid, LogUtil.node(), fileUris.size(), aliases,
-                    LogUtil.elapsedNanos(startNanos));
+            LogUtil.logTiming(t, "acero.exportToDuckDb", "files=" + fileUris.size() + " aliases=" + aliases);
             success = true;
             return registered;
         } finally {

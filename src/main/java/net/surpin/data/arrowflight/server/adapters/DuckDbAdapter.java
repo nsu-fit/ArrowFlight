@@ -21,6 +21,7 @@ import java.sql.Statement;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -58,13 +59,14 @@ public final class DuckDbAdapter implements AutoCloseable {
         this.batchSize = appConfig.batchSize();
         this.duckDbGroups = appConfig.duckDbGroups();
 
+        String jdbcUrl = "jdbc:duckdb:";
+        Properties connProps = new Properties();
+        if (appConfig.duckDbAllowUnsignedExtensions()) {
+            connProps.setProperty("allow_unsigned_extensions", "true");
+        }
         this.threadConn = ThreadLocal.withInitial(() -> {
             try {
-                String jdbcUrl = "jdbc:duckdb:";
-                if (appConfig.duckDbAllowUnsignedExtensions()) {
-                    jdbcUrl += "?allow_unsigned_extensions=true";
-                }
-                Connection conn = DriverManager.getConnection(jdbcUrl);
+                Connection conn = DriverManager.getConnection(jdbcUrl, connProps);
                 configureConnection(conn);
                 allConnections.add(conn);
                 return conn;
@@ -190,11 +192,12 @@ public final class DuckDbAdapter implements AutoCloseable {
             org.apache.arrow.flight.FlightProducer.ServerStreamListener listener,
             boolean startListener) throws Exception {
         String qid = LogUtil.qid();
-        long startNanos = System.nanoTime();
+        long t = LogUtil.mark();
         LOGGER.info("qid={} node={} thread={} duckdb=start batchSize={} sql='{}'",
                 qid, LogUtil.node(), Thread.currentThread().getName(), batchSize, duckSql);
         Connection conn = threadConn.get();
         long firstBatchNanos = -1;
+        long backpressureNanos = 0;
         try (Statement stmt = conn.createStatement();
                 org.duckdb.DuckDBResultSet drs = (org.duckdb.DuckDBResultSet) stmt.executeQuery(duckSql);
                 ArrowReader reader = (ArrowReader) drs.arrowExportStream(allocator, batchSize);
@@ -208,11 +211,11 @@ public final class DuckDbAdapter implements AutoCloseable {
 
             int batchesSent = 0;
             long rowsSent = 0;
-            long backpressureNanos = 0;
             boolean cancelled = false;
             while (!cancelled && reader.loadNextBatch()) {
                 if (firstBatchNanos < 0) {
-                    firstBatchNanos = System.nanoTime() - startNanos;
+                    firstBatchNanos = System.nanoTime() - t;
+                    LogUtil.logTiming(t, "duckdb.firstBatch", "sql='" + duckSql.substring(0, Math.min(100, duckSql.length())) + "'");
                 }
                 int duckRows = duckRoot.getRowCount();
                 if (duckRows == 0) {
@@ -237,19 +240,20 @@ public final class DuckDbAdapter implements AutoCloseable {
                     if (batchesSent % 10 == 0) {
                         LOGGER.debug("qid={} node={} duckdb=progress batches={} rows={} elapsed={} throughput={}rows/s",
                                 qid, LogUtil.node(), batchesSent, rowsSent,
-                                LogUtil.elapsedNanos(startNanos),
+                                LogUtil.elapsedNanos(t),
                                 rowsSent * 1_000_000_000L
-                                        / Math.max(1, System.nanoTime() - startNanos));
+                                        / Math.max(1, System.nanoTime() - t));
                     }
                     flightRoot.clear();
                 }
                 duckRoot.clear();
             }
+            LogUtil.logTiming(t, "duckdb.streamSql", "batches=" + batchesSent + " rows=" + rowsSent + " backpressureMs=" + backpressureNanos / 1_000_000);
             LOGGER.info("qid={} node={} duckdb=completed batches={} rows={} ttfB={} backpressureMs={} elapsed={} cancelled={}",
                     qid, LogUtil.node(), batchesSent, rowsSent,
                     firstBatchNanos >= 0 ? formatDuration(firstBatchNanos) : "N/A",
                     backpressureNanos / 1_000_000,
-                    LogUtil.elapsedNanos(startNanos), cancelled);
+                    LogUtil.elapsedNanos(t), cancelled);
         }
     }
 
@@ -298,6 +302,7 @@ public final class DuckDbAdapter implements AutoCloseable {
      */
     public static long footerRowCount(org.apache.hadoop.fs.FileSystem fileSystem,
             org.apache.hadoop.fs.Path full) throws IOException {
+        long t = LogUtil.mark();
         final long fileLen = fileSystem.getFileStatus(full).getLen();
         try (ParquetFileReader pfr = ParquetFileReader.open(new InputFile() {
             @Override
@@ -314,6 +319,7 @@ public final class DuckDbAdapter implements AutoCloseable {
             for (BlockMetaData b : pfr.getFooter().getBlocks()) {
                 count += b.getRowCount();
             }
+            LogUtil.logTiming(t, "duckdb.footerRowCount", "file=" + full.getName() + " count=" + count);
             return count;
         }
     }
@@ -329,6 +335,7 @@ public final class DuckDbAdapter implements AutoCloseable {
      */
     public static Optional<Object[]> footerStats(org.apache.hadoop.fs.FileSystem fileSystem,
             org.apache.hadoop.fs.Path full, ParquetQueryParser pq) throws IOException {
+        long t = LogUtil.mark();
         final long fileLen = fileSystem.getFileStatus(full).getLen();
         try (ParquetFileReader pfr = ParquetFileReader.open(new InputFile() {
             @Override
@@ -386,6 +393,7 @@ public final class DuckDbAdapter implements AutoCloseable {
                     result[i] = totalRows;
                 }
             }
+            LogUtil.logTiming(t, "duckdb.footerStats", "file=" + full.getName());
             return Optional.of(result);
         }
     }
@@ -614,6 +622,7 @@ public final class DuckDbAdapter implements AutoCloseable {
         long deadlineNanos = System.nanoTime()
                 + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
         long waitStart = System.nanoTime();
+        long t = LogUtil.mark();
         while (!listener.isCancelled() && !listener.isReady()) {
             long remainingNanos = deadlineNanos - System.nanoTime();
             if (remainingNanos <= 0
@@ -621,11 +630,15 @@ public final class DuckDbAdapter implements AutoCloseable {
                 LOGGER.warn("qid={} node={} backpressure=timeout timeoutMs={} waited={}",
                         LogUtil.qid(), LogUtil.node(), timeoutMillis,
                         LogUtil.elapsedNanos(waitStart));
+                LogUtil.logTiming(t, "duckdb.awaitListenerReadyTimeout", "timeoutMs=" + timeoutMillis);
                 return false;
             }
         }
         long totalWaitNanos = System.nanoTime() - waitStart;
         boolean ready = !listener.isCancelled() && listener.isReady();
+        if (ready && totalWaitNanos > 10_000) {
+            LogUtil.logTiming(t, "duckdb.awaitListenerReady", "waitMs=" + totalWaitNanos / 1_000_000);
+        }
         if (totalWaitNanos > 100_000_000) { // >100ms
             LOGGER.debug("qid={} node={} backpressure=waited waitMs={} ready={} cancelled={}",
                     LogUtil.qid(), LogUtil.node(), totalWaitNanos / 1_000_000,

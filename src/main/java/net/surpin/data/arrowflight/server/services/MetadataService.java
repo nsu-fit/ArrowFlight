@@ -24,6 +24,8 @@ import org.apache.arrow.vector.util.Text;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import net.surpin.data.arrowflight.server.LogUtil;
+
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -112,13 +114,18 @@ public final class MetadataService {
      * @return Arrow schema
      */
     public Schema getQuerySchema(String query) {
+        long t = LogUtil.mark();
         ParquetQueryParser pq = ParquetQueryParser.parse(query);
+        Schema schema;
         if (pq.isJoin) {
-            return buildJoinSchema(pq);
+            schema = buildJoinSchema(pq);
+        } else {
+            schema = pq.hasAggregation
+                    ? buildAggregationSchema(pq)
+                    : parquetAdapter.getTableSchema(pq.schema, pq.table, pq.columns);
         }
-        return pq.hasAggregation
-                ? buildAggregationSchema(pq)
-                : parquetAdapter.getTableSchema(pq.schema, pq.table, pq.columns);
+        LogUtil.logTiming(t, "schema.getQuerySchema", "join=" + pq.isJoin + " agg=" + pq.hasAggregation);
+        return schema;
     }
 
     /**
@@ -349,6 +356,7 @@ public final class MetadataService {
      * @return Arrow schema
      */
     private Schema buildJoinSchema(ParquetQueryParser pq) {
+        long t = LogUtil.mark();
         Map<String, Schema> aliasSchemas = new LinkedHashMap<>();
         for (ParquetQueryParser.JoinTable jt : pq.joinTables) {
             aliasSchemas.put(jt.alias(), parquetAdapter.getTableSchema(jt.schema(), jt.table()));
@@ -387,6 +395,7 @@ public final class MetadataService {
                         FieldType.nullable(new ArrowType.Utf8()), null));
             }
         }
+        LogUtil.logTiming(t, "schema.buildJoin", "tables=" + pq.joinTables.size());
         return new org.apache.arrow.vector.types.pojo.Schema(resultFields);
     }
 
@@ -397,6 +406,7 @@ public final class MetadataService {
      * @return Arrow schema
      */
     public Schema buildAggregationSchema(ParquetQueryParser pq) {
+        long t = LogUtil.mark();
         org.apache.arrow.vector.types.pojo.Schema tableSchema =
                 parquetAdapter.getTableSchema(pq.schema, pq.table);
         Map<String, Field> colFieldMap = tableSchema.getFields().stream()
@@ -429,6 +439,7 @@ public final class MetadataService {
                 default -> { }
             }
         }
+        LogUtil.logTiming(t, "schema.buildAgg", "exprs=" + pq.selectExprs.size());
         return new org.apache.arrow.vector.types.pojo.Schema(resultFields);
     }
 
