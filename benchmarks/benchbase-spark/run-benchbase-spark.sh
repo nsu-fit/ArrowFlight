@@ -743,6 +743,19 @@ if [[ "${BENCHMARK}" != "tpch" && "${BENCHMARK}" != "tpcds" ]]; then
   exit 2
 fi
 
+# Auto-select BenchBase image for TPC-DS unless explicitly overridden.
+if [[ "${BENCHMARK}" == "tpcds" && -z "${BENCHBASE_IMAGE:-}" ]]; then
+  BENCHBASE_IMAGE="benchbase-tpcds:latest"
+fi
+export BENCHBASE_IMAGE
+
+if [[ "${BENCHMARK}" == "tpcds" ]] && ! docker image inspect "${BENCHBASE_IMAGE}" >/dev/null 2>&1; then
+  echo "ERROR: TPC-DS BenchBase image '${BENCHBASE_IMAGE}' not found." >&2
+  echo "Build it with:" >&2
+  echo "  bash benchmarks/benchbase-spark/tpcds/build.sh" >&2
+  exit 2
+fi
+
 if [[ "${MODE}" == "smoke" && "${BENCHMARK}" == "tpch" && -z "${QUERY_SET}" ]]; then
   QUERY_SET="q6"
 fi
