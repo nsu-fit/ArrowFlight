@@ -17,6 +17,35 @@ TPCH_TABLES = [
     "lineitem",
 ]
 
+TPCDS_TABLES = [
+    "call_center",
+    "catalog_page",
+    "catalog_returns",
+    "catalog_sales",
+    "customer",
+    "customer_address",
+    "customer_demographics",
+    "date_dim",
+    "household_demographics",
+    "income_band",
+    "inventory",
+    "item",
+    "promotion",
+    "reason",
+    "ship_mode",
+    "store",
+    "store_returns",
+    "store_sales",
+    "time_dim",
+    "warehouse",
+    "web_page",
+    "web_returns",
+    "web_sales",
+    "web_site",
+]
+
+MAX_QUERY_ID = {"tpch": 22, "tpcds": 99}
+
 
 def quote_identifier(value):
     return '"' + value.replace('"', '""') + '"'
@@ -36,7 +65,7 @@ def enabled(value):
     return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
-def parse_query_ids(value):
+def parse_query_ids(value, max_id=22):
     if not value:
         return []
 
@@ -47,7 +76,7 @@ def parse_query_ids(value):
         token = token[1:] if token.startswith("q") else token
         if token.isdigit():
             query_id = int(token)
-            if 1 <= query_id <= 22 and query_id not in query_ids:
+            if 1 <= query_id <= max_id and query_id not in query_ids:
                 query_ids.append(query_id)
     return query_ids
 
@@ -145,6 +174,35 @@ def tpch_reference_queries(connection, query_ids):
     return references
 
 
+def tpcds_reference_queries(connection, query_ids):
+    if not query_ids:
+        return []
+
+    queries = {
+        int(row[0]): row[1]
+        for row in connection.execute("FROM tpcds_queries()").fetchall()
+    }
+    references = []
+    for query_id in query_ids:
+        cursor = connection.execute(f"PRAGMA tpcds({query_id})")
+        columns = [column[0] for column in cursor.description]
+        rows = [
+            {columns[index]: json_safe(value) for index, value in enumerate(row)}
+            for row in cursor.fetchall()
+        ]
+        references.append(
+            {
+                "query_id": query_id,
+                "name": f"Q{query_id}",
+                "sql": queries.get(query_id, ""),
+                "columns": columns,
+                "expected_rows": rows,
+                "expected_row_count": len(rows),
+            }
+        )
+    return references
+
+
 def write_metadata(
     output,
     dataset,
@@ -218,6 +276,8 @@ def load_extension(connection, name):
 def table_names(connection, dataset):
     if dataset == "tpch":
         return TPCH_TABLES
+    if dataset == "tpcds":
+        return TPCDS_TABLES
     rows = connection.execute("SHOW TABLES").fetchall()
     return sorted(row[0] for row in rows)
 
@@ -263,7 +323,7 @@ def main():
     scale_factor = float(os.environ.get("BENCHMARK_SCALE_FACTOR", "0.01"))
     hdfs_root = os.environ.get("HDFS_DATA_DIR", "hdfs://hdfs-namenode:8020/bench")
     hdfs_block_size = int(os.environ.get("HDFS_BLOCK_SIZE_BYTES", "1073741824"))
-    query_ids = parse_query_ids(os.environ.get("BENCHMARK_QUERY_SET", ""))
+    query_ids = parse_query_ids(os.environ.get("BENCHMARK_QUERY_SET", ""), MAX_QUERY_ID.get(dataset, 22))
     metadata_out = os.environ.get("BENCHMARK_METADATA_OUT", "")
     server_roots = [
         Path(item)
@@ -326,6 +386,8 @@ def main():
     reference_queries = []
     if dataset == "tpch":
         reference_queries = tpch_reference_queries(connection, query_ids)
+    elif dataset == "tpcds":
+        reference_queries = tpcds_reference_queries(connection, query_ids)
 
     write_metadata(
         metadata_out,

@@ -9,7 +9,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Write SQL files for benchmark reference queries.")
     parser.add_argument("--metadata", type=Path, required=True)
     parser.add_argument("--results", type=Path, required=True)
-    parser.add_argument("--queries", default="", help="Comma-separated TPC-H queries, for example q1,q6,q14")
+    parser.add_argument("--queries", default="", help="Comma-separated queries, for example q1,q6,q14")
     return parser.parse_args()
 
 

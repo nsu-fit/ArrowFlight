@@ -54,7 +54,9 @@ Modes:
   logs     follow compose logs
 
 Queries:
-  TPC-H only: q6, q1,q6,q14, 1,6,14
+  q6, q1,q6,q14, 1,6,14
+  TPC-H: q1-q22
+  TPC-DS: q1-q99
 EOF
 }
 
@@ -239,17 +241,55 @@ tpch_query_weights() {
   join_by_comma "${weights[@]}"
 }
 
+tpcds_query_weights() {
+  local normalized="${QUERY_SET,,}"
+  normalized="${normalized// /}"
+
+  local weights=()
+  local selected=()
+  for _ in $(seq 1 99); do
+    weights+=(0)
+  done
+
+  IFS=',' read -ra tokens <<< "${normalized}"
+  for token in "${tokens[@]}"; do
+    token="${token#q}"
+    if [[ -z "${token}" || ! "${token}" =~ ^[0-9]+$ ]]; then
+      echo "Bad TPC-DS query selector: ${QUERY_SET}" >&2
+      exit 2
+    fi
+
+    local query_id=$((10#${token}))
+    if (( query_id < 1 || query_id > 99 )); then
+      echo "TPC-DS query must be between q1 and q99: q${query_id}" >&2
+      exit 2
+    fi
+
+    selected+=("${query_id}")
+  done
+
+  local count="${#selected[@]}"
+  local base=$((100 / count))
+  local rest=$((100 - base * count))
+  local index=0
+  for query_id in "${selected[@]}"; do
+    local value="${base}"
+    if (( index < rest )); then
+      value=$((value + 1))
+    fi
+    weights[$((query_id - 1))]="${value}"
+    index=$((index + 1))
+  done
+
+  join_by_comma "${weights[@]}"
+}
+
 prepare_execute_config() {
   EXEC_CONFIG_IN_CONTAINER="/benchbase/config/custom/${BENCHMARK}.xml"
   local db_schema="${BENCHBASE_DB_SCHEMA:-${BENCHMARK}}"
 
   if [[ -z "${QUERY_SET}" && -z "${BENCHBASE_TIME_SECONDS}" && -z "${BENCHBASE_TERMINALS}" && "${db_schema}" == "${BENCHMARK}" && "${BENCHMARK_SCALE_FACTOR}" == "0.01" ]]; then
     return
-  fi
-
-  if [[ -n "${QUERY_SET}" && "${BENCHMARK}" != "tpch" ]]; then
-    echo "Query subset is supported only for TPC-H." >&2
-    exit 2
   fi
 
   local base_config="${CONFIG_DIR}/${BENCHMARK}.xml"
@@ -266,7 +306,11 @@ prepare_execute_config() {
 
   if [[ -n "${QUERY_SET}" ]]; then
     local weights
-    weights="$(tpch_query_weights)"
+    if [[ "${BENCHMARK}" == "tpcds" ]]; then
+      weights="$(tpcds_query_weights)"
+    else
+      weights="$(tpch_query_weights)"
+    fi
     sed -i "s#<weights>.*</weights>#      <weights>${weights}</weights>#" "${GENERATED_CONFIG_LOCAL}"
   fi
 
@@ -486,7 +530,7 @@ benchbase_progress() {
 }
 
 prune_inactive_query_csv() {
-  if [[ "${BENCHMARK}" != "tpch" || -z "${QUERY_SET}" ]]; then
+  if [[ -z "${QUERY_SET}" ]]; then
     return
   fi
 
@@ -703,12 +747,16 @@ if [[ "${MODE}" == "smoke" && "${BENCHMARK}" == "tpch" && -z "${QUERY_SET}" ]]; 
   QUERY_SET="q6"
 fi
 
+if [[ "${MODE}" == "smoke" && "${BENCHMARK}" == "tpcds" && -z "${QUERY_SET}" ]]; then
+  QUERY_SET="q4"
+fi
+
 if [[ "${MODE}" == "graph" || "${MODE}" == "compare" ]]; then
-  if [[ "${BENCHMARK}" != "tpch" ]]; then
-    echo "${MODE} mode is currently supported only for TPC-H." >&2
-    exit 2
+  if [[ "${BENCHMARK}" == "tpch" ]]; then
+    QUERY_SET="${QUERY_SET:-q6}"
+  elif [[ "${BENCHMARK}" == "tpcds" ]]; then
+    QUERY_SET="${QUERY_SET:-q4}"
   fi
-  QUERY_SET="${QUERY_SET:-q6}"
   BENCHBASE_TIME_SECONDS="${BENCHBASE_TIME_SECONDS:-60}"
   BENCHBASE_TERMINALS="${BENCHBASE_TERMINALS:-1}"
 fi
