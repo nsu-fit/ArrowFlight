@@ -1,2 +1,0 @@
-Transaction Type Index,Transaction Name,Start Time (microseconds),Latency (microseconds),Worker Id (start number),Phase Id (index in config file)
-10,Q10,1784557326.210068,28735163,0,1
