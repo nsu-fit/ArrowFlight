@@ -232,6 +232,7 @@ public final class HiveExecuteDriver implements Driver {
                     "(?i)concat\\(\\s*(\\?|'-?\\d+')\\s*,\\s*'\\s*(year|month|day|hour|minute|second)s?\\s*'\\s*\\)\\s*::\\s*interval",
                     "INTERVAL $1 $2");
             result = result.replaceAll("(?i)interval\\s+'([^']+)'\\s+(year|month|day|hour|minute|second)s?", "INTERVAL '$1' $2");
+            result = result.replaceAll("(?i)\\bcreate\\s+view\\b", "CREATE TEMPORARY VIEW");
             return result;
         }
     }
