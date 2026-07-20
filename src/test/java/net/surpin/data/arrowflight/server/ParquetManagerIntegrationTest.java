@@ -2,14 +2,11 @@ package net.surpin.data.arrowflight.server;
 
 import net.surpin.data.arrowflight.server.adapters.ConfigAdapter;
 import net.surpin.data.arrowflight.server.adapters.DuckDbAdapter;
-import net.surpin.data.arrowflight.server.adapters.FilterConverter;
 import net.surpin.data.arrowflight.server.adapters.ParquetAdapter;
 import net.surpin.data.arrowflight.server.model.AppConfig;
 import net.surpin.data.arrowflight.server.model.FileAssignment;
 import net.surpin.data.arrowflight.server.services.ExecutionService;
 import net.surpin.data.arrowflight.server.services.MetadataService;
-import net.surpin.data.arrowflight.server.services.ParquetQueryParser;
-import net.surpin.data.arrowflight.server.adapters.AceroAdapter;
 import org.apache.arrow.flight.FlightProducer;
 import org.apache.arrow.memory.ArrowBuf;
 import org.apache.arrow.memory.BufferAllocator;
@@ -24,12 +21,10 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
-import java.nio.ByteBuffer;
 import java.nio.file.Paths;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executors;
-import java.util.function.Function;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -59,36 +54,10 @@ class ParquetManagerIntegrationTest {
         metadataService = new MetadataService(parquetAdapter);
         DuckDbAdapter duckDbAdapter = new DuckDbAdapter(appConfig,
                 Executors.newCachedThreadPool());
-        AceroAdapter aceroAdapter = new AceroAdapter(appConfig);
-
-        Function<ParquetQueryParser, byte[]> filterBuilder = (parsedQuery) -> {
-            if (parsedQuery.filter == null || parsedQuery.filter.isEmpty()
-                    || parsedQuery.filter.equals("true") || parsedQuery.filter.equals("1 = 1")) {
-                return null;
-            }
-            try {
-                java.util.Map<String, java.util.Map<String, String>> ddlCache =
-                        parquetAdapter.tableDdlCache();
-                String ddl = ddlCache.getOrDefault(parsedQuery.schema,
-                        java.util.Collections.emptyMap()).get(parsedQuery.table);
-                if (ddl == null) {
-                    return null;
-                }
-                String cleanDdl = ddl.replace(parsedQuery.schema + ".", "");
-                ByteBuffer buf = FilterConverter.toByteBuffer(
-                        parsedQuery.filter,
-                        java.util.Collections.singletonList(cleanDdl));
-                byte[] bytes = new byte[buf.remaining()];
-                buf.get(bytes);
-                return bytes;
-            } catch (Exception e) {
-                return null;
-            }
-        };
 
         executionService = new ExecutionService(parquetAdapter, duckDbAdapter,
-                aceroAdapter, metadataService, appConfig,
-                Executors.newCachedThreadPool(), filterBuilder);
+                metadataService, appConfig,
+                Executors.newCachedThreadPool());
     }
 
     @Test
@@ -174,37 +143,6 @@ class ParquetManagerIntegrationTest {
         executionService.readParquet(allocator,
                 "SELECT * FROM test_schema.test_table", null, listener, true);
         assertTrue(listener.totalRows > 0);
-    }
-
-    @Test
-    void filterBuilderReturnsSubstraitBytesAfterDdlCacheWarmUp() {
-        parquetAdapter.initCatalogReader();
-
-        var pq = ParquetQueryParser.parse(
-                "SELECT * FROM test_schema.test_table WHERE \"tinyint_col\" = 0");
-        Function<ParquetQueryParser, byte[]> fb = pq2 -> {
-            java.util.Map<String, Map<String, String>> ddlCache =
-                    parquetAdapter.tableDdlCache();
-            String ddl = ddlCache.getOrDefault(pq2.schema,
-                    java.util.Collections.emptyMap()).get(pq2.table);
-            if (ddl == null) return null;
-            String cleanDdl = ddl.replace(pq2.schema + ".", "");
-            try {
-                ByteBuffer buf = FilterConverter.toByteBuffer(
-                        pq2.filter, java.util.Collections.singletonList(cleanDdl));
-                byte[] bytes = new byte[buf.remaining()];
-                buf.get(bytes);
-                return bytes;
-            } catch (Exception e) {
-                return null;
-            }
-        };
-
-        byte[] filterBytes = fb.apply(pq);
-        assertNotNull(filterBytes,
-                "Substrait filter bytes must be non-null when DDL cache is warm");
-        assertTrue(filterBytes.length > 0,
-                "Substrait filter bytes must not be empty");
     }
 
     @Test

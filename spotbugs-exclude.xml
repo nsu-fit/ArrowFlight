@@ -23,15 +23,6 @@
     </Match>
 
     <!--
-      DLS_DEAD_LOCAL_STORE: rexBuilder in FilterConverter is captured by an inner
-      anonymous class — SpotBugs does not track cross-anonymous-class variable capture.
-    -->
-    <Match>
-        <Bug pattern="DLS_DEAD_LOCAL_STORE"/>
-        <Class name="~net\.surpin\.data\.arrowflight\.server\.adapters\.FilterConverter.*"/>
-    </Match>
-
-    <!--
       RCN_REDUNDANT_NULLCHECK_OF_NONNULL_VALUE: null guards on schema-query results
       are intentional — getQuerySchema may return null.
     -->
@@ -68,15 +59,13 @@
         - We're already in a finally / on-error path.
         - An exception from close() would mask the primary failure.
         - Close failures on read-only resources are harmless.
-      Affects AceroAdapter (Arrow resource close), ExecutionService (DROP VIEW cleanup),
-      FilterConverter (warm-up), and SparkArrowClientBenchmark (temp file cleanup).
+      Affects ExecutionService (DROP VIEW cleanup) and
+      SparkArrowClientBenchmark (temp file cleanup).
     -->
     <Match>
         <Bug pattern="DE_MIGHT_IGNORE"/>
         <Or>
-            <Class name="net.surpin.data.arrowflight.server.adapters.AceroAdapter"/>
             <Class name="net.surpin.data.arrowflight.server.services.ExecutionService"/>
-            <Class name="net.surpin.data.arrowflight.server.adapters.FilterConverter"/>
             <Class name="net.surpin.data.arrowflight.debug.SparkArrowClientBenchmark"/>
         </Or>
     </Match>

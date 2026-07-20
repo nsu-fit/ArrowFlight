@@ -15,12 +15,10 @@ import org.apache.arrow.vector.VarCharVector;
 import org.apache.arrow.vector.VariableWidthVector;
 import org.apache.arrow.vector.FieldVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
-import org.apache.arrow.vector.ipc.ArrowReader;
 import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.arrow.vector.types.pojo.Schema;
 import org.apache.arrow.vector.util.Text;
 import org.apache.hadoop.fs.Path;
-import org.duckdb.DuckDBConnection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -31,14 +29,12 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.Optional;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
-import java.util.function.Function;
 
-import net.surpin.data.arrowflight.server.adapters.AceroAdapter;
 import net.surpin.data.arrowflight.server.adapters.DuckDbAdapter;
 import net.surpin.data.arrowflight.server.adapters.ParquetAdapter;
 import net.surpin.data.arrowflight.server.services.ParquetQueryParser;
@@ -48,8 +44,7 @@ import net.surpin.data.arrowflight.server.LogUtil;
 import java.math.BigDecimal;
 
 /**
- * Orchestrates query execution across DuckDB and Acero engines.
- * Routes queries to the optimal execution path based on query structure.
+ * Orchestrates query execution through DuckDB.
  */
 public final class ExecutionService {
 
@@ -57,43 +52,31 @@ public final class ExecutionService {
 
     private final ParquetAdapter parquetAdapter;
     private final DuckDbAdapter duckDbAdapter;
-    private final AceroAdapter aceroAdapter;
     private final MetadataService metadataService;
     private final ExecutorService ioPool;
     private final AppConfig appConfig;
-    private final AceroFileResolver aceroFileResolver;
-    private final Function<ParquetQueryParser, byte[]> filterBuilder;
 
     /**
      * Creates ExecutionService.
      *
      * @param parquetAdapter  Parquet metadata adapter
      * @param duckDbAdapter   DuckDB adapter
-     * @param aceroAdapter    Acero adapter
      * @param metadataService schema/metadata service
      * @param appConfig       server configuration
      * @param ioPool          shared I/O thread pool
-     * @param filterBuilder   converts parsed query to Substrait filter bytes, may return null
      */
     public ExecutionService(ParquetAdapter parquetAdapter, DuckDbAdapter duckDbAdapter,
-            AceroAdapter aceroAdapter, MetadataService metadataService,
-            AppConfig appConfig, ExecutorService ioPool,
-            Function<ParquetQueryParser, byte[]> filterBuilder) {
+            MetadataService metadataService,
+            AppConfig appConfig, ExecutorService ioPool) {
         this.parquetAdapter = parquetAdapter;
         this.duckDbAdapter = duckDbAdapter;
-        this.aceroAdapter = aceroAdapter;
         this.metadataService = metadataService;
         this.appConfig = appConfig;
         this.ioPool = ioPool;
-        this.aceroFileResolver = new AceroFileResolver(
-                parquetAdapter.fileSystem(), new Path(parquetAdapter.dataDirectory()),
-                appConfig.localDataDir(), appConfig.ioFileBufferSize());
-        this.filterBuilder = filterBuilder;
     }
 
     /**
      * Reads specific Parquet files and sends Arrow batches through the listener.
-     * Dispatches to JOIN, aggregation, or direct scan path based on query structure.
      *
      * @param allocator      Arrow buffer allocator
      * @param query          SQL query
@@ -127,77 +110,20 @@ public final class ExecutionService {
                 LogUtil.qid(), LogUtil.node(), resolvedUris.size(), resolvedUris);
 
         if (parsedQuery.hasAggregation) {
-            LOGGER.info("qid={} node={} execution=engine engine=aggregation hasGroupBy={} isHdfs={} files={}",
+            LOGGER.info("qid={} node={} execution=engine engine=DuckDB(aggregation) hasGroupBy={} files={}",
                     LogUtil.qid(), LogUtil.node(), !parsedQuery.groupByColumnNames.isEmpty(),
-                    isHdfsData(), parquetFiles.size());
+                    parquetFiles.size());
             executeAggregation(allocator, parsedQuery, parquetFiles, resolvedUris,
                     fileUris, listener, startListener);
             return;
         }
 
-        if (parsedQuery.filter != null && !parsedQuery.filter.isBlank()) {
-            byte[] filterBytes = filterBuilder.apply(parsedQuery);
-            if (isHdfsData() && filterBytes != null) {
-                LOGGER.info("qid={} node={} execution=engine engine=Acero+SubstraitFilter files={}",
-                        LogUtil.qid(), LogUtil.node(), resolvedUris.size());
-                aceroAdapter.scanBatches(allocator, query, parsedQuery,
-                        resolvedUris, filterBytes, listener, startListener);
-                return;
-            }
-            if (isHdfsData()) {
-                LOGGER.info("qid={} node={} execution=engine engine=Acero+DuckDB(hdfs-filter) files={}",
-                        LogUtil.qid(), LogUtil.node(), resolvedUris.size());
-                streamHdfsFilterViaArrow(allocator, parsedQuery, resolvedUris,
-                        listener, startListener);
-                return;
-            }
-            LOGGER.info("qid={} node={} execution=engine engine=DuckDB files={}",
-                    LogUtil.qid(), LogUtil.node(), resolvedUris.size());
-            String duckSql = DuckDbAdapter.buildSelectSql(parsedQuery,
-                    DuckDbAdapter.readParquetFromClause(ducksDbPaths(resolvedUris)));
-            duckDbAdapter.streamSql(allocator, duckSql, listener, startListener);
-            return;
-        }
-
-        LOGGER.info("qid={} node={} execution=engine engine=Acero(full-scan) files={}",
-                LogUtil.qid(), LogUtil.node(), resolvedUris.size());
-        aceroAdapter.scanBatches(allocator, query, parsedQuery,
-                resolvedUris, listener, startListener);
+        String duckSql = DuckDbAdapter.buildSelectSql(parsedQuery,
+                DuckDbAdapter.readParquetFromClause(ducksDbPaths(resolvedUris)));
+        duckDbAdapter.streamSql(allocator, duckSql, listener, startListener);
     }
 
-    private boolean isHdfsData() {
-        return "hdfs".equalsIgnoreCase(parquetAdapter.fileSystem().getUri().getScheme());
-    }
 
-    private void streamHdfsFilterViaArrow(BufferAllocator allocator, ParquetQueryParser pq,
-            List<String> resolvedUris, FlightProducer.ServerStreamListener listener,
-            boolean startListener) throws Exception {
-        try (BufferAllocator child = allocator.newChildAllocator(
-                "hdfs-filter", 0, Long.MAX_VALUE)) {
-            Connection conn = duckDbAdapter.connection();
-            DuckDBConnection duckConn = conn.unwrap(DuckDBConnection.class);
-            try (AceroAdapter.RegisteredArrowStreams streams = aceroAdapter.exportToDuckDb(
-                    child, resolvedUris, null, buildProjection(pq), duckConn)) {
-                String duckSql = DuckDbAdapter.buildSelectSql(
-                        pq, arrowStreamsFromClause(streams.aliases().size()));
-                duckDbAdapter.streamSql(allocator, duckSql, listener, startListener);
-            }
-        }
-    }
-
-    private static String arrowStreamsFromClause(int count) {
-        if (count == 1) {
-            return "\"t0\"";
-        }
-        StringBuilder result = new StringBuilder("(");
-        for (int i = 0; i < count; i++) {
-            if (i > 0) {
-                result.append(" UNION ALL ");
-            }
-            result.append("SELECT * FROM \"t").append(i).append("\"");
-        }
-        return result.append(')').toString();
-    }
 
     /**
      * Executes aggregation queries via DuckDB or footer-stats fast paths.
@@ -294,11 +220,6 @@ public final class ExecutionService {
                     LogUtil.elapsedNanos(aggStartNanos));
         }
 
-        if (isHdfsData()) {
-            parallelAggregate(allocator, pq, fileUris, listener, startListener);
-            return;
-        }
-
         String duckSql = DuckDbAdapter.buildDuckSqlWithFilter(pq,
                 DuckDbAdapter.readParquetFromClause(ducksDbPaths(resolvedUris)), false);
         duckDbAdapter.streamSql(allocator, duckSql, listener, startListener);
@@ -364,100 +285,6 @@ public final class ExecutionService {
         }
     }
 
-    // ── parallel aggregation ──────────────────────────────────────────────
-
-    /**
-     * Runs aggregation in parallel across files using Acero + DuckDB.
-     *
-     * @param allocator     Arrow buffer allocator
-     * @param pq            parsed query
-     * @param fileUris      relative file paths
-     * @param listener      Flight stream listener
-     * @param startListener whether to call listener.start()
-     * @throws Exception on execution failure
-     */
-    public void parallelAggregate(BufferAllocator allocator, ParquetQueryParser pq,
-            String[] fileUris, FlightProducer.ServerStreamListener listener,
-            boolean startListener) throws Exception {
-
-        List<String> parquetUris = resolveUris(fileUris);
-        boolean hasFilter = pq.filter != null && !pq.filter.isBlank();
-
-        boolean isCountStarOnly = pq.groupByColumnNames.isEmpty()
-                && !pq.selectExprs.isEmpty()
-                && pq.selectExprs.stream()
-                        .allMatch(e -> e.func == ParquetQueryParser.SelectExpr.AggFunc.COUNT_STAR);
-
-        if (isCountStarOnly) {
-            byte[] filterBytes = filterBuilder.apply(pq);
-            Optional<String[]> cols = buildProjection(pq);
-            if (!hasFilter || filterBytes != null) {
-                int numCountStarCols = pq.selectExprs.size();
-                List<Future<List<Object[]>>> futures = new ArrayList<>(parquetUris.size());
-                for (String uri : parquetUris) {
-                    futures.add(ioPool.submit(() ->
-                            aceroAdapter.aggregateFile(allocator, uri, filterBytes, cols, numCountStarCols)));
-                }
-                List<Object[]> merged = mergePartialRows(
-                        pq.selectExprs, pq.groupByColumnNames, futures);
-                emitRowsAsArrow(allocator, pq, merged, listener, startListener);
-                return;
-            }
-        }
-
-        // DuckDB path: Acero scans → Arrow C streams → DuckDB aggregates
-        int numGroups = Math.min(duckDbAdapter.duckDbGroups(), parquetUris.size());
-        List<List<String>> groups = partitionIntoGroups(parquetUris, numGroups);
-        byte[] filterBytes = filterBuilder.apply(pq);
-        Optional<String[]> cols = buildProjection(pq);
-
-        List<Future<VectorSchemaRoot>> vsrFutures = new ArrayList<>(groups.size());
-        for (List<String> group : groups) {
-            String duckSql = DuckDbAdapter.buildGroupedDuckSql(
-                    pq, group.size(), filterBytes != null);
-            vsrFutures.add(ioPool.submit(() -> {
-                BufferAllocator child = allocator.newChildAllocator("par-agg", 0, Long.MAX_VALUE);
-                try {
-                    Connection conn = duckDbAdapter.connection();
-                    DuckDBConnection duckConn = conn.unwrap(DuckDBConnection.class);
-                    try (AceroAdapter.RegisteredArrowStreams streams =
-                                    aceroAdapter.exportToDuckDb(
-                                            child, group, filterBytes, cols, duckConn);
-                            Statement stmt = conn.createStatement();
-                            org.duckdb.DuckDBResultSet drs =
-                                    (org.duckdb.DuckDBResultSet) stmt.executeQuery(duckSql);
-                            ArrowReader arrowReader = (ArrowReader) drs.arrowExportStream(
-                                    allocator, duckDbAdapter.batchSize())) {
-                        return AceroAdapter.concatBatches(allocator, arrowReader);
-                    }
-                } catch (Exception e) {
-                    throw new RuntimeException(e);
-                } finally {
-                    child.close();
-                }
-            }));
-        }
-        List<VectorSchemaRoot> partials = new ArrayList<>(vsrFutures.size());
-        try {
-            for (Future<VectorSchemaRoot> f : vsrFutures) {
-                partials.add(f.get());
-            }
-            try (VectorSchemaRoot merged = mergeVsrPartials(allocator, pq, partials)) {
-                if (startListener) {
-                    listener.start(merged);
-                }
-                if (merged.getRowCount() > 0) {
-                    if (DuckDbAdapter.awaitListenerReady(
-                            listener, appConfig.flightListenerReadyTimeoutMillis())) {
-                        listener.putNext();
-                    }
-                }
-            }
-        } finally {
-            partials.forEach(VectorSchemaRoot::close);
-        }
-    }
-
     // ── private helpers ──────────────────────────────────────────────────
 
     /**
@@ -478,9 +305,7 @@ public final class ExecutionService {
     }
 
     /**
-     * Resolves relative file URIs for the native execution engines.
-     * HDFS files are exposed as local URIs because the packaged Arrow Dataset
-     * JNI library has no native HDFS support.
+     * Resolves relative file URIs to absolute URIs for DuckDB consumption.
      *
      * @param fileUris relative file paths
      * @return resolved URIs
@@ -491,16 +316,9 @@ public final class ExecutionService {
         for (String rel : fileUris) {
             org.apache.hadoop.fs.FileStatus status = parquetAdapter.fileSystem()
                     .getFileStatus(new Path(parquetAdapter.dataDirectory(), rel));
-            uris.add(resolveEngineUri(status));
+            uris.add(status.getPath().toUri().toString());
         }
         return uris;
-    }
-
-    private String resolveEngineUri(org.apache.hadoop.fs.FileStatus status) throws IOException {
-        if (isHdfsData()) {
-            return aceroFileResolver.resolve(status);
-        }
-        return status.getPath().toUri().toString();
     }
 
     /**
@@ -544,9 +362,7 @@ public final class ExecutionService {
         while (it.hasNext()) {
             org.apache.hadoop.fs.LocatedFileStatus f = it.next();
             if (f.isFile() && f.getPath().getName().endsWith(".parquet")) {
-                uris.add(isHdfsData()
-                        ? ducksDbPaths(List.of(aceroFileResolver.resolve(f))).get(0)
-                        : plainDuckDbPath(f.getPath()));
+                uris.add(plainDuckDbPath(f.getPath()));
             }
         }
         return uris;
@@ -577,56 +393,6 @@ public final class ExecutionService {
         return "file".equals(uri.getScheme())
                 ? uri.getPath()
                 : uri.toString();
-    }
-
-    /**
-     * Builds column projection array from parsed query, including filter columns.
-     *
-     * @param pq parsed query
-     * @return projected column names, empty if none needed
-     */
-    private Optional<String[]> buildProjection(ParquetQueryParser pq) {
-        java.util.Set<String> scanCols = projectedColumns(pq);
-        if (scanCols.isEmpty()) {
-            org.apache.arrow.vector.types.pojo.Schema tSchema =
-                    parquetAdapter.getTableSchema(pq.schema, pq.table);
-            if (!tSchema.getFields().isEmpty()) {
-                scanCols.add(tSchema.getFields().get(0).getName());
-            }
-        }
-        return scanCols.isEmpty() ? Optional.empty()
-                : Optional.of(scanCols.toArray(new String[0]));
-    }
-
-    /**
-     * Collects physical columns needed by the projection, aggregation, and filter.
-     *
-     * @param pq parsed query
-     * @return columns that must be present in the Acero stream
-     */
-    static java.util.Set<String> projectedColumns(ParquetQueryParser pq) {
-        java.util.Set<String> scanCols = new java.util.LinkedHashSet<>(pq.groupByColumnNames);
-        for (ParquetQueryParser.SelectExpr e : pq.selectExprs) {
-            scanCols.addAll(e.inputColumns);
-        }
-        if (pq.filter != null && !pq.filter.isBlank()) {
-            java.util.regex.Matcher m =
-                    java.util.regex.Pattern.compile("\"([^\"]+)\"").matcher(pq.filter);
-            while (m.find()) {
-                scanCols.add(m.group(1));
-            }
-        }
-        return scanCols;
-    }
-
-    /**
-     * Builds Substrait filter bytes from parsed query.
-     *
-     * @param pq parsed query
-     * @return filter bytes, may be null
-     */
-    private byte[] buildFilterBytes(ParquetQueryParser pq) {
-        return filterBuilder.apply(pq);
     }
 
     // ── emit ─────────────────────────────────────────────────────────────
@@ -704,238 +470,7 @@ public final class ExecutionService {
         throw new IllegalArgumentException("Cannot build schema query: missing schema/table");
     }
 
-    /**
-     * Merges partial aggregation results from parallel file groups.
-     *
-     * @param allocator Arrow buffer allocator
-     * @param pq        parsed query
-     * @param partials  partial VSRs from each group
-     * @return merged VectorSchemaRoot
-     */
-    private VectorSchemaRoot mergeVsrPartials(BufferAllocator allocator,
-            ParquetQueryParser pq, List<VectorSchemaRoot> partials) {
-        if (pq.groupByColumnNames.isEmpty()) {
-            return mergeWithoutGroupBy(allocator, pq, partials);
-        }
-        return mergeWithGroupBy(allocator, pq, partials);
-    }
 
-    private VectorSchemaRoot mergeWithoutGroupBy(BufferAllocator allocator,
-            ParquetQueryParser pq, List<VectorSchemaRoot> partials) {
-        List<ParquetQueryParser.SelectExpr> exprs = pq.selectExprs;
-        Long[] longAccum = new Long[exprs.size()];
-        Object[] sumAccum = new Object[exprs.size()];
-        Object[] objAccum = new Object[exprs.size()];
-        for (int i = 0; i < exprs.size(); i++) {
-            longAccum[i] = 0L;
-        }
-        boolean any = false;
-
-        for (VectorSchemaRoot partial : partials) {
-            if (partial.getRowCount() == 0) {
-                continue;
-            }
-            any = true;
-            int col = 0;
-            for (ParquetQueryParser.SelectExpr expr : exprs) {
-                FieldVector vec = partial.getVector(col);
-                if (!vec.isNull(0)) {
-                    switch (expr.func) {
-                        case COUNT_STAR, COUNT -> longAccum[col] = (Long) addLongs(longAccum[col], toLong(vec, 0));
-                        case SUM -> sumAccum[col] = addNumbers(
-                                sumAccum[col], vec.getObject(0));
-                        case MIN -> objAccum[col] = objAccum[col] == null
-                                ? vec.getObject(0) : minOf(objAccum[col], vec.getObject(0));
-                        case MAX -> objAccum[col] = objAccum[col] == null
-                                ? vec.getObject(0) : maxOf(objAccum[col], vec.getObject(0));
-                        default -> { }
-                    }
-                }
-                col++;
-            }
-        }
-
-        Schema outSchema = aggregationSchema(pq);
-        List<FieldVector> outVecs = createOutputVectors(allocator, outSchema, 1);
-        if (any) {
-            int col = 0;
-            for (ParquetQueryParser.SelectExpr expr : exprs) {
-                FieldVector v = outVecs.get(col);
-                switch (expr.func) {
-                    case COUNT_STAR, COUNT -> {
-                        if (longAccum[col] != null) {
-                            ((BigIntVector) v).setSafe(0, longAccum[col]);
-                        }
-                    }
-                    case SUM -> {
-                        if (sumAccum[col] != null) {
-                            setVectorValue(v, 0, sumAccum[col]);
-                        }
-                    }
-                    case MIN, MAX -> setVectorValue(v, 0, objAccum[col]);
-                    default -> { }
-                }
-                col++;
-            }
-        }
-        VectorSchemaRoot r = new VectorSchemaRoot(outSchema.getFields(), outVecs);
-        r.setRowCount(any ? 1 : 0);
-        return r;
-    }
-
-    private VectorSchemaRoot mergeWithGroupBy(BufferAllocator allocator,
-            ParquetQueryParser pq, List<VectorSchemaRoot> partials) {
-        List<ParquetQueryParser.SelectExpr> exprs = pq.selectExprs;
-        int numGbCols = pq.groupByColumnNames.size();
-        int numAggExprs = (int) exprs.stream()
-                .filter(e -> e.func != ParquetQueryParser.SelectExpr.AggFunc.COLUMN).count();
-        Map<List<Object>, Object[]> byKey = new LinkedHashMap<>();
-
-        for (VectorSchemaRoot partial : partials) {
-            Schema partialSchema = partial.getSchema();
-            List<Field> partialFields = partialSchema.getFields();
-
-            Map<String, Integer> colIndexByName = new LinkedHashMap<>();
-            for (int i = 0; i < partialFields.size(); i++) {
-                colIndexByName.put(partialFields.get(i).getName()
-                        .toLowerCase(java.util.Locale.ROOT), i);
-            }
-
-            int rowCount = partial.getRowCount();
-            for (int r = 0; r < rowCount; r++) {
-                List<Object> key = new ArrayList<>(numGbCols);
-                for (int c = 0; c < numGbCols; c++) {
-                    FieldVector gv = numGbCols > c && c < partialFields.size()
-                            ? partial.getVector(c) : null;
-                    key.add(gv != null ? gv.getObject(r) : null);
-                }
-                Object[] accum = byKey.computeIfAbsent(key, k -> new Object[numAggExprs]);
-                int ai = 0;
-                for (ParquetQueryParser.SelectExpr expr : exprs) {
-                    if (expr.func == ParquetQueryParser.SelectExpr.AggFunc.COLUMN) {
-                        continue;
-                    }
-                    int colPos = numGbCols + ai;
-                    String expectedName = expr.outputName != null ? expr.outputName
-                            : expr.inputColumn;
-                    Integer namedIdx = expectedName != null
-                            ? colIndexByName.get(expectedName
-                                    .toLowerCase(java.util.Locale.ROOT))
-                            : null;
-                    FieldVector vec = namedIdx != null
-                            ? partial.getVector(namedIdx)
-                            : (colPos < partialFields.size() ? partial.getVector(colPos) : null);
-                    if (vec != null && !vec.isNull(r)) {
-                        Object val = vec.getObject(r);
-                        switch (expr.func) {
-                            case COUNT_STAR, COUNT -> accum[ai] = addLongs(accum[ai], val);
-                            case SUM -> accum[ai] = addNumbers(accum[ai], val);
-                            case MIN -> accum[ai] = accum[ai] == null ? val : minOf(accum[ai], val);
-                            case MAX -> accum[ai] = accum[ai] == null ? val : maxOf(accum[ai], val);
-                            default -> { }
-                        }
-                    }
-                    ai++;
-                }
-            }
-        }
-
-        Schema outSchema = aggregationSchema(pq);
-        int totalRows = byKey.size();
-        List<FieldVector> outVecs = createOutputVectors(allocator, outSchema, totalRows);
-        int row = 0;
-        for (Map.Entry<List<Object>, Object[]> entry : byKey.entrySet()) {
-            List<Object> key = entry.getKey();
-            Object[] accum = entry.getValue();
-            int vecIdx = 0;
-            int ai = 0;
-            for (ParquetQueryParser.SelectExpr expr : exprs) {
-                FieldVector v = outVecs.get(vecIdx++);
-                if (expr.func == ParquetQueryParser.SelectExpr.AggFunc.COLUMN) {
-                    int gbPos = pq.groupByColumnNames.indexOf(expr.inputColumn);
-                    setVectorValue(v, row, key.get(gbPos));
-                } else {
-                    setVectorValue(v, row, accum[ai++]);
-                }
-            }
-            row++;
-        }
-        for (FieldVector v : outVecs) {
-            v.setValueCount(totalRows);
-        }
-        VectorSchemaRoot result = new VectorSchemaRoot(outSchema.getFields(), outVecs);
-        result.setRowCount(totalRows);
-        return result;
-    }
-
-    private Schema aggregationSchema(ParquetQueryParser pq) {
-        if (pq.selectExprs.isEmpty()) {
-            return metadataService.getQuerySchema(buildSelectExprQuery(pq));
-        }
-        return metadataService.buildAggregationSchema(pq);
-    }
-
-    private static List<FieldVector> createOutputVectors(BufferAllocator allocator,
-            Schema outSchema, int totalRows) {
-        List<FieldVector> outVecs = new ArrayList<>();
-        for (Field f : outSchema.getFields()) {
-            FieldVector v = f.createVector(allocator);
-            if (v instanceof FixedWidthVector fv) {
-                fv.allocateNew(Math.max(totalRows, 1));
-            } else if (v instanceof VariableWidthVector vv) {
-                vv.allocateNew(Math.max(totalRows, 1) * 16);
-            }
-            outVecs.add(v);
-        }
-        return outVecs;
-    }
-
-    /**
-     * Merges partial aggregation rows from parallel file scans.
-     *
-     * @param exprs            select expressions
-     * @param groupByColumnNames group-by columns
-     * @param futures          partial row futures
-     * @return merged rows
-     * @throws Exception on future resolution or merge failure
-     */
-    static List<Object[]> mergePartialRows(
-            List<ParquetQueryParser.SelectExpr> exprs,
-            List<String> groupByColumnNames,
-            List<Future<List<Object[]>>> futures) throws Exception {
-
-        int numGbCols = groupByColumnNames.size();
-        if (numGbCols == 0) {
-            Object[] merged = null;
-            for (Future<List<Object[]>> f : futures) {
-                List<Object[]> rows = f.get();
-                if (rows.isEmpty()) {
-                    continue;
-                }
-                Object[] row = rows.get(0);
-                if (merged == null) {
-                    merged = row.clone();
-                } else {
-                    mergeAggCols(exprs, merged, row, 0);
-                }
-            }
-            return merged != null ? Collections.singletonList(merged) : Collections.emptyList();
-        }
-
-        Map<List<Object>, Object[]> byKey = new LinkedHashMap<>();
-        for (Future<List<Object[]>> f : futures) {
-            for (Object[] row : f.get()) {
-                List<Object> key = new ArrayList<>(Arrays.asList(row).subList(0, numGbCols));
-                Object[] existing = byKey.get(key);
-                if (existing == null) {
-                    byKey.put(key, row.clone());
-                } else {
-                    mergeAggCols(exprs, existing, row, numGbCols);
-                }
-            }
-        }
-        return new ArrayList<>(byKey.values());
-    }
 
     /**
      * Merges aggregation columns from one row into another.
