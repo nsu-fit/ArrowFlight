@@ -133,21 +133,20 @@ COPY --from=build /src/target/hadoop-arrow-flight-1.0-SNAPSHOT.jar ${APP_JAR}
 
 # Replace stock libarrow_dataset_jni.so (HDFS=OFF) with custom HDFS-enabled build
 COPY --from=arrow-build /apache-arrow-${ARROW_VERSION}/cpp/build/release/libarrow_dataset_jni.so /tmp/
-RUN python3 -c "
-import zipfile, os
-jar = '${APP_JAR}'
-new_so = '/tmp/libarrow_dataset_jni.so'
-arcname = 'arrow_dataset_jni/x86_64/libarrow_dataset_jni.so'
-tmp = jar + '.tmp'
-with zipfile.ZipFile(jar, 'r') as zin:
-    with zipfile.ZipFile(tmp, 'w', zipfile.ZIP_DEFLATED) as zout:
-        for item in zin.infolist():
-            if item.filename != arcname:
-                zout.writestr(item, zin.read(item.filename))
-        zout.write(new_so, arcname)
-os.replace(tmp, jar)
-print('Replaced libarrow_dataset_jni.so with HDFS-enabled build')
-" && rm -f /tmp/libarrow_dataset_jni.so
+RUN echo "import zipfile, os" > /tmp/replace_so.py && \
+    echo "jar = '/opt/arrowflight/hadoop-arrow-flight-1.0-SNAPSHOT.jar'" >> /tmp/replace_so.py && \
+    echo "new_so = '/tmp/libarrow_dataset_jni.so'" >> /tmp/replace_so.py && \
+    echo "arcname = 'arrow_dataset_jni/x86_64/libarrow_dataset_jni.so'" >> /tmp/replace_so.py && \
+    echo "tmp = jar + '.tmp'" >> /tmp/replace_so.py && \
+    echo "with zipfile.ZipFile(jar, 'r') as zin:" >> /tmp/replace_so.py && \
+    echo "    with zipfile.ZipFile(tmp, 'w', zipfile.ZIP_DEFLATED) as zout:" >> /tmp/replace_so.py && \
+    echo "        for item in zin.infolist():" >> /tmp/replace_so.py && \
+    echo "            if item.filename != arcname:" >> /tmp/replace_so.py && \
+    echo "                zout.writestr(item, zin.read(item.filename))" >> /tmp/replace_so.py && \
+    echo "        zout.write(new_so, arcname)" >> /tmp/replace_so.py && \
+    echo "os.replace(tmp, jar)" >> /tmp/replace_so.py && \
+    echo "print('Replaced libarrow_dataset_jni.so with HDFS-enabled build')" >> /tmp/replace_so.py && \
+    python3 /tmp/replace_so.py && rm -f /tmp/replace_so.py /tmp/libarrow_dataset_jni.so
 
 COPY docker/bin/ ./bin/
 COPY docker/hadoop/ ${HADOOP_CONF_DIR}/
