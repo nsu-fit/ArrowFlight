@@ -76,9 +76,10 @@ COPY --from=download /opt/${HADOOP_PACKAGE} /opt/${HADOOP_PACKAGE}
 ENV HADOOP_HOME=/opt/${HADOOP_PACKAGE}
 ENV PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig
 
-RUN curl -fsSL https://github.com/apache/arrow/archive/apache-arrow-${ARROW_VERSION}.tar.gz \
-    | tar xz && \
-    cd apache-arrow-${ARROW_VERSION}/cpp && \
+RUN mkdir -p /arrow-source && \
+    curl -fsSL https://github.com/apache/arrow/archive/apache-arrow-${ARROW_VERSION}.tar.gz | \
+    tar xz -C /arrow-source --strip-components=1 && \
+    cd /arrow-source/cpp && \
     cmake -S . -B build -GNinja \
         -DCMAKE_BUILD_TYPE=Release \
         -DARROW_HDFS=ON \
@@ -132,7 +133,7 @@ WORKDIR ${APP_HOME}
 COPY --from=build /src/target/hadoop-arrow-flight-1.0-SNAPSHOT.jar ${APP_JAR}
 
 # Replace stock libarrow_dataset_jni.so (HDFS=OFF) with custom HDFS-enabled build
-COPY --from=arrow-build /apache-arrow-${ARROW_VERSION}/cpp/build/release/libarrow_dataset_jni.so /tmp/
+COPY --from=arrow-build /arrow-source/cpp/build/release/libarrow_dataset_jni.so /tmp/
 RUN echo "import zipfile, os" > /tmp/replace_so.py && \
     echo "jar = '/opt/arrowflight/hadoop-arrow-flight-1.0-SNAPSHOT.jar'" >> /tmp/replace_so.py && \
     echo "new_so = '/tmp/libarrow_dataset_jni.so'" >> /tmp/replace_so.py && \
