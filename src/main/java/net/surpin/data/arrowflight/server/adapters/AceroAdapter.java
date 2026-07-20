@@ -101,7 +101,7 @@ public final class AceroAdapter {
             Schema aceroSchema = scanner.schema();
             LOGGER.info("qid={} node={} acero=schema schema={} files={}",
                     qid, LogUtil.node(), aceroSchema, numFiles);
-
+                    
             VectorSchemaRoot vsr = reader.getVectorSchemaRoot();
             if (startListener) {
                 listener.start(vsr);
@@ -220,6 +220,24 @@ public final class AceroAdapter {
     public RegisteredArrowStreams exportToDuckDb(BufferAllocator allocator, List<String> fileUris,
             byte[] filterBytes, Optional<String[]> cols, DuckDBConnection duckConn)
             throws Exception {
+        return exportToDuckDb(allocator, fileUris, filterBytes, cols, duckConn, "t");
+    }
+
+    /**
+     * Scans Parquet files and registers their Arrow streams with a distinct alias prefix.
+     *
+     * @param allocator   Arrow buffer allocator
+     * @param fileUris    Parquet file URIs
+     * @param filterBytes optional Substrait filter bytes
+     * @param cols        optional column projection
+     * @param duckConn    DuckDB connection for stream registration
+     * @param aliasPrefix prefix for registered stream aliases
+     * @return registered streams and their aliases
+     * @throws Exception on scan or registration failure
+     */
+    public RegisteredArrowStreams exportToDuckDb(BufferAllocator allocator, List<String> fileUris,
+            byte[] filterBytes, Optional<String[]> cols, DuckDBConnection duckConn,
+            String aliasPrefix) throws Exception {
         long startNanos = System.nanoTime();
         String qid = LogUtil.qid();
         LOGGER.debug("qid={} node={} acero=exportToDuckDb start files={}",
@@ -260,7 +278,7 @@ public final class AceroAdapter {
                 // The exporter takes ownership of the reader, including on export failure.
                 unexportedReaders.remove(reader);
                 Data.exportArrayStream(allocator, reader, cStream);
-                String alias = "t" + i;
+                String alias = aliasPrefix + i;
                 duckConn.registerArrowStream(alias, cStream);
                 aliases.add(alias);
             }

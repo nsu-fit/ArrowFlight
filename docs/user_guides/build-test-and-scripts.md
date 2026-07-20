@@ -150,25 +150,9 @@ mvn test -Darrowflight.io.parallelism=64
 mvn test -Darrowflight.duckdb.threads=2
 ```
 
-## DuckDB HDFS Extension
+## HDFS runtime
 
-DuckDB does not need the HDFS extension for local Parquet files.
-
-For `hdfs://...` paths, DuckDB must load the HDFS extension. It can be configured through the config file:
-
-```properties
-duckDbHdfsExtension=/path/to/hadoopfs.duckdb_extension
-duckDbAllowUnsignedExtensions=true
-duckDbHdfsDefaultNamenode=hdfs://namenode:8020
-```
-
-Or through environment variables:
-
-```bash
-export DUCKDB_HDFS_EXTENSION=/path/to/hadoopfs.duckdb_extension
-export DUCKDB_ALLOW_UNSIGNED_EXTENSIONS=true
-export HDFS_DEFAULT_NAMENODE=hdfs://namenode:8020
-```
+HDFS Parquet files are opened by Arrow Dataset/Acero, not by DuckDB. The Linux runtime must provide `libhdfs`, Hadoop configuration, and the Hadoop Java classpath. The project Docker image and entrypoint configure `ARROW_LIBHDFS_DIR`, `LD_LIBRARY_PATH`, `HADOOP_CONF_DIR`, and `CLASSPATH` for this purpose.
 
 ## run.sh
 

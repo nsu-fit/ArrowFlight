@@ -39,10 +39,6 @@ public final class MetricsService implements AutoCloseable {
     private static final ConcurrentHashMap<String, QueryMetrics> QUERY_METRICS =
             new ConcurrentHashMap<>();
     private static final AtomicLong ACTIVE_QUERIES = new AtomicLong();
-    private static final AtomicLong MATERIALIZATION_BYTES = new AtomicLong();
-    private static final AtomicLong MATERIALIZATION_COUNT = new AtomicLong();
-    private static final AtomicLong MATERIALIZATION_FAILURES = new AtomicLong();
-    private static final AtomicLong MATERIALIZATION_NANOS = new AtomicLong();
 
     private final HttpServer server;
     private final ExecutorService executor;
@@ -92,23 +88,6 @@ public final class MetricsService implements AutoCloseable {
         String path = classify(query);
         ACTIVE_QUERIES.incrementAndGet();
         return new QueryObservation(path, Math.max(0L, logicalBytes));
-    }
-
-    /**
-     * Records one Hadoop-to-local-cache materialization operation.
-     *
-     * @param bytes copied bytes
-     * @param elapsedNanos copy duration in nanoseconds
-     * @param successful whether the complete file was materialized
-     */
-    public static void recordMaterialization(long bytes, long elapsedNanos,
-            boolean successful) {
-        MATERIALIZATION_COUNT.incrementAndGet();
-        MATERIALIZATION_BYTES.addAndGet(Math.max(0L, bytes));
-        MATERIALIZATION_NANOS.addAndGet(Math.max(0L, elapsedNanos));
-        if (!successful) {
-            MATERIALIZATION_FAILURES.incrementAndGet();
-        }
     }
 
     @Override
@@ -196,18 +175,6 @@ public final class MetricsService implements AutoCloseable {
         metric(metrics, "arrowflight_parquet_queries_active", "gauge",
                 "Currently executing Parquet queries", ACTIVE_QUERIES.get());
         appendQueryMetrics(metrics);
-        metric(metrics, "arrowflight_parquet_materialization_bytes_total", "counter",
-                "Hadoop bytes copied into the local Acero cache",
-                MATERIALIZATION_BYTES.get());
-        metric(metrics, "arrowflight_parquet_materializations_total", "counter",
-                "Hadoop files copied into the local Acero cache",
-                MATERIALIZATION_COUNT.get());
-        metric(metrics, "arrowflight_parquet_materialization_failures_total", "counter",
-                "Failed Hadoop-to-local-cache file copies",
-                MATERIALIZATION_FAILURES.get());
-        metric(metrics, "arrowflight_parquet_materialization_duration_seconds_total", "counter",
-                "Time spent copying Hadoop files into the local Acero cache",
-                seconds(MATERIALIZATION_NANOS.get()));
         return metrics.toString();
     }
 

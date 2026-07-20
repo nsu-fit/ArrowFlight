@@ -35,9 +35,8 @@ class ParquetAdapterTest {
         FileSystem fileSystem = new CatalogFileSystem(
                 dataDirectory, schemaDirectory, tableDirectory);
         AppConfig config = new AppConfig(
-                3, 4096, 4, 65536, 2, 2, 2, null, false,
-                null, null, null, null, 67108864, 30000L,
-                dataDirectory.toString(), null, 31001, 5701, 120, 3, 500, 0);
+                3, 4096, 4, 65536, 2, 2, 2, 67108864, 30000L,
+                dataDirectory.toString(), 31001, 5701, 120, 3, 500, 0);
 
         ParquetAdapter adapter = new CatalogTestParquetAdapter(config, fileSystem);
 

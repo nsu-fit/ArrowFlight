@@ -71,7 +71,7 @@ docker compose --profile test up spark-client
 | `data-generator` | — | Generates and distributes test Parquet files |
 | `spark-client` | — | Profiled (`--profile test`), runs `query_flight.py` |
 
-**Dockerfile**: Multi-stage — `maven:3.9.9-eclipse-temurin-21` build, `eclipse-temurin:21-jre-jammy` runtime with Spark 3.5.1 bundled.
+**Dockerfile**: Multi-stage — `maven:3.9.9-eclipse-temurin-21` build, `eclipse-temurin:21-jre-jammy` runtime with Hadoop 3.3.6 and Spark 3.5.1 bundled. Arrow Dataset JNI 18.0.0 uses the bundled Hadoop native client to open `hdfs://` URIs directly.
 
 ---
 
@@ -176,14 +176,13 @@ PR checks (`.github/workflows/ci.yml`) enforce on every pull request:
 
 ## Configuration
 
-Configuration resolves from three tiers: **JVM property** → **`arrowflight.properties`** → **default**. DuckDB HDFS settings additionally support environment variables.
+Configuration resolves from three tiers: **JVM property** → **`arrowflight.properties`** → **default**.
 
 Key properties (see `AppConfig.java` / `ConfigAdapter.java` for the full list):
 
 | Area | Key Properties |
 | :--- | :--- |
 | DuckDB | `batchSize`, `duckDbThreads`, `duckDbGroups`, `duckDbWarmConnections` |
-| DuckDB HDFS | `duckDbHdfsExtension`, `duckDbHdfsDefaultNamenode`, `duckDbHdfsHaNamenodes` |
 | I/O | `ioParallelism`, `ioParallelismMinThreads`, `ioFileBufferSize` |
 | gRPC | `grpcMaxInboundMessageSize`, `flightListenerReadyTimeoutMs` |
 | Client | `client.maxRetries`, `client.retryBackoffMs`, `client.connectTimeoutMs` |
@@ -244,5 +243,5 @@ Key properties (see `AppConfig.java` / `ConfigAdapter.java` for the full list):
 | **[Architecture — Query Execution](docs/architecture/sql-query-execution-flow.md)** | Full query lifecycle: parsing, endpoint routing, two-phase execution, DuckDB/Acero dispatch |
 | **[Architecture — Parquet Storage](docs/architecture/hadoop-parquet-storage.md)** | Storage model, Hadoop FS abstraction, block locality, file discovery |
 | **[ADR](docs/adr/)** | Architecture Decision Records (query engine selection, file distribution scheduler) |
-| **[User Guide — Build & Test](docs/user_guides/build-test-and-scripts.md)** | Build profiles, unit/integration/perf test commands, `run.sh` usage, DuckDB HDFS extension setup |
+| **[User Guide — Build & Test](docs/user_guides/build-test-and-scripts.md)** | Build profiles, unit/integration/perf test commands and `run.sh` usage |
 | **[BenchBase Spark — Linux](docs/user_guides/benchbase-spark-linux.ru.md)** | Russian guide for selected TPC-H queries and Flight-vs-Direct comparison runs |

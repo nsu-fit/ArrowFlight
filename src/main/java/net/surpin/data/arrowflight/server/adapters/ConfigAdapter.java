@@ -36,19 +36,6 @@ public class ConfigAdapter {
         int duckDbGroups = getInt("duckDbGroups",
                 "arrowflight.duckdb.groups", Math.min(8, ioParallelism), props);
         int duckDbThreads = getInt("duckDbThreads", "arrowflight.duckdb.threads", 1, props);
-        String duckDbHdfsExtension = getStringWithEnv("duckDbHdfsExtension",
-                "arrowflight.duckdb.hdfs.extension", "DUCKDB_HDFS_EXTENSION", null, props);
-        boolean duckDbAllowUnsignedExtensions = getBooleanWithEnv("duckDbAllowUnsignedExtensions",
-                "arrowflight.duckdb.allowUnsignedExtensions", "DUCKDB_ALLOW_UNSIGNED_EXTENSIONS",
-                false, props);
-        String duckDbHdfsDefaultNamenode = getStringWithEnv("duckDbHdfsDefaultNamenode",
-                "arrowflight.duckdb.hdfs.defaultNamenode", "HDFS_DEFAULT_NAMENODE", null, props);
-        String duckDbHdfsHaNamenodes = getStringWithEnv("duckDbHdfsHaNamenodes",
-                "arrowflight.duckdb.hdfs.haNamenodes", "HDFS_HA_NAMENODES", null, props);
-        String duckDbHdfsShortcircuit = getStringWithEnv("duckDbHdfsShortcircuit",
-                "arrowflight.duckdb.hdfs.shortcircuit", "HDFS_SHORTCIRCUIT", null, props);
-        String duckDbHdfsDomainSocketPath = getStringWithEnv("duckDbHdfsDomainSocketPath",
-                "arrowflight.duckdb.hdfs.domainSocketPath", "HDFS_DOMAIN_SOCKET_PATH", null, props);
         int grpcMaxInboundMessageSize = getInt("grpcMaxInboundMessageSize",
                 "arrowflight.grpc.maxInboundMessageSize", Integer.MAX_VALUE, props);
         long flightListenerReadyTimeoutMillis = getLong("flightListenerReadyTimeoutMs",
@@ -59,8 +46,6 @@ public class ConfigAdapter {
                             + flightListenerReadyTimeoutMillis);
         }
         String dataDir = getString("dataDir", null, "/data/parquet", props);
-        String localDataDir = getStringWithEnv("localDataDir", "arrowflight.localDataDir",
-                "FLIGHT_LOCAL_DATA_DIR", null, props);
         int port = getInt("port", null, 32010, props);
         int hazelcastPort = getInt("hazelcastPort", null, 5701, props);
         int hazelcastClusterJoinTimeoutSec = getInt("hazelcastClusterJoinTimeoutSec",
@@ -72,11 +57,8 @@ public class ConfigAdapter {
         return new AppConfig(
                 numServers, batchSize, ioParallelism, ioFileBufferSize,
                 duckDbWarmConnections, duckDbGroups, duckDbThreads,
-                duckDbHdfsExtension, duckDbAllowUnsignedExtensions,
-                duckDbHdfsDefaultNamenode, duckDbHdfsHaNamenodes,
-                duckDbHdfsShortcircuit, duckDbHdfsDomainSocketPath,
                 grpcMaxInboundMessageSize, flightListenerReadyTimeoutMillis,
-                dataDir, localDataDir, port, hazelcastPort, hazelcastClusterJoinTimeoutSec,
+                dataDir, port, hazelcastPort, hazelcastClusterJoinTimeoutSec,
                 clientMaxRetries, clientRetryBackoffMs, clientConnectTimeoutMs);
     }
 
@@ -118,37 +100,6 @@ public class ConfigAdapter {
         }
         if ((value == null || value.isBlank()) && sysAlias != null) {
             value = props.getProperty(sysAlias);
-        }
-        return value == null || value.isBlank() ? fallback : value.trim();
-    }
-
-    /**
-     * Reads a string config with environment variable fallback.
-     *
-     * @param key      primary config key
-     * @param sysAlias secondary system property key
-     * @param envName  environment variable name
-     * @param fallback default value
-     * @param props    loaded properties
-     * @return resolved value
-     */
-    private static String getStringWithEnv(String key, String sysAlias, String envName,
-            String fallback, Properties props) {
-        String value = System.getProperty(key);
-        if (value == null || value.isBlank()) {
-            value = props.getProperty(key);
-        }
-        if (value == null || value.isBlank()) {
-            value = System.getProperty(sysAlias);
-        }
-        if (value == null || value.isBlank()) {
-            value = props.getProperty(sysAlias);
-        }
-        if (value == null || value.isBlank()) {
-            String env = System.getenv(envName);
-            if (env != null && !env.isBlank()) {
-                value = env;
-            }
         }
         return value == null || value.isBlank() ? fallback : value.trim();
     }
@@ -198,22 +149,6 @@ public class ConfigAdapter {
         } catch (NumberFormatException e) {
             throw new IllegalArgumentException("Invalid integer for " + key + ": " + value, e);
         }
-    }
-
-    /**
-     * Reads a boolean config with environment variable fallback.
-     *
-     * @param key      primary config key
-     * @param sysAlias secondary system property key
-     * @param envName  environment variable name
-     * @param fallback default value
-     * @param props    loaded properties
-     * @return resolved value
-     */
-    private static boolean getBooleanWithEnv(String key, String sysAlias, String envName,
-            boolean fallback, Properties props) {
-        String value = getStringWithEnv(key, sysAlias, envName, null, props);
-        return value == null ? fallback : Boolean.parseBoolean(value);
     }
 
     /**

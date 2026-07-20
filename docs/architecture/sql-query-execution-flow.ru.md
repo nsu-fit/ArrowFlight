@@ -106,7 +106,7 @@ Acero используется для чтения без фильтра:
 - `SELECT * FROM schema.table`
 - `SELECT col1, col2 FROM schema.table`
 
-`ExecutionService` превращает назначенные относительные пути в абсолютные URI и создает Arrow Dataset scanner на файлы конкретного ticket. Projection передается в scanner как список колонок. Если projection нет, читаются все колонки таблицы.
+`ExecutionService` превращает назначенные относительные пути в абсолютные URI и создает Arrow Dataset scanner на файлы конкретного ticket. HDFS paths остаются `hdfs://` URI и напрямую открываются Arrow Dataset JNI с поддержкой HDFS. Projection передается в scanner как список колонок. Если projection нет, читаются все колонки таблицы.
 
 Arrow Dataset / Acero открывает Parquet-файлы, читает нужные колонки и возвращает Arrow batches. Java не конвертирует значения вручную: результат приходит как `ArrowReader` и `VectorSchemaRoot`.
 
@@ -123,22 +123,13 @@ DuckDB используется для запросов, где нужен SQL e
 - агрегаты, которые не удалось выполнить из footer statistics
 - `JOIN`
 
-Для single-table запросов `ExecutionService` строит SQL поверх DuckDB table function `read_parquet([...])`.
+Для локальных single-table запросов `ExecutionService` может строить SQL поверх DuckDB table function `read_parquet([...])`.
 
-Для join-запросов `ExecutionService` создает временные DuckDB views для alias-ов таблиц. Каждая view читает свои файлы через `read_parquet([...])`. После этого выполняется переписанный join SQL.
+Для HDFS aggregation, неподдерживаемых фильтров и join-запросов Acero напрямую читает HDFS и регистрирует Arrow C streams в DuckDB. Alias-ы join-таблиц создаются как временные DuckDB views поверх этих streams.
 
 DuckDB возвращает результат через `DuckDBResultSet.arrowExportStream`. Сервер копирует строки из DuckDB Arrow stream в Flight batches и отправляет клиенту.
 
-Для локальных файлов DuckDB extension не нужен. Для HDFS URI DuckDB должен загрузить HDFS extension.
-
-Настройки HDFS extension:
-
-- `duckDbHdfsExtension` или `DUCKDB_HDFS_EXTENSION`
-- `duckDbAllowUnsignedExtensions` или `DUCKDB_ALLOW_UNSIGNED_EXTENSIONS`
-- `duckDbHdfsDefaultNamenode` или `HDFS_DEFAULT_NAMENODE`
-- `duckDbHdfsHaNamenodes` или `HDFS_HA_NAMENODES`
-- `duckDbHdfsShortcircuit` или `HDFS_SHORTCIRCUIT`
-- `duckDbHdfsDomainSocketPath` или `HDFS_DOMAIN_SOCKET_PATH`
+Для локальных файлов DuckDB extension не нужен. HDFS execution path не передает HDFS URI в DuckDB, поэтому DuckDB HDFS extension не требуется.
 
 ## Runtime tuning
 

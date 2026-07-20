@@ -11,7 +11,54 @@ RUN mvn -q -DskipTests dependency:go-offline
 COPY src ./src
 RUN mvn -q -DskipTests package
 
+# ---- download stage (cached until ARGs change) ----
+FROM ${RUNTIME_IMAGE} AS download
+ARG SPARK_VERSION=3.5.1
+ARG SPARK_PACKAGE=spark-${SPARK_VERSION}-bin-hadoop3
+ARG HADOOP_VERSION=3.3.6
+ARG HADOOP_PACKAGE=hadoop-${HADOOP_VERSION}
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN set -eux; \
+    for url in \
+        "https://dlcdn.apache.org/spark/spark-${SPARK_VERSION}/${SPARK_PACKAGE}.tgz" \
+        "https://archive.apache.org/dist/spark/spark-${SPARK_VERSION}/${SPARK_PACKAGE}.tgz"; do \
+      rm -f /tmp/spark.tgz; \
+      if curl -fL --retry 5 --retry-all-errors --retry-delay 10 --connect-timeout 30 \
+          --continue-at - -o /tmp/spark.tgz "${url}" \
+          && tar -tzf /tmp/spark.tgz >/dev/null; then \
+        break; \
+      fi; \
+      echo "Spark download failed from ${url}" >&2; \
+      sleep 10; \
+    done; \
+    test -s /tmp/spark.tgz; \
+    tar -xzf /tmp/spark.tgz -C /opt; \
+    rm -f /tmp/spark.tgz
+
+RUN set -eux; \
+    for url in \
+        "https://archive.apache.org/dist/hadoop/common/hadoop-${HADOOP_VERSION}/${HADOOP_PACKAGE}.tar.gz" \
+        "https://dlcdn.apache.org/hadoop/common/hadoop-${HADOOP_VERSION}/${HADOOP_PACKAGE}.tar.gz"; do \
+      rm -f /tmp/hadoop.tgz; \
+      if curl -fL --retry 5 --retry-all-errors --retry-delay 10 --connect-timeout 30 \
+          --continue-at - -o /tmp/hadoop.tgz "${url}" \
+          && tar -tzf /tmp/hadoop.tgz >/dev/null; then \
+        break; \
+      fi; \
+      echo "Hadoop download failed from ${url}" >&2; \
+      sleep 10; \
+    done; \
+    test -s /tmp/hadoop.tgz; \
+    tar -xzf /tmp/hadoop.tgz -C /opt; \
+    rm -f /tmp/hadoop.tgz
+
+# ---- final stage ----
 FROM ${RUNTIME_IMAGE}
+
 ARG SPARK_VERSION=3.5.1
 ARG SPARK_PACKAGE=spark-${SPARK_VERSION}-bin-hadoop3
 ARG HADOOP_VERSION=3.3.6
@@ -24,26 +71,10 @@ ENV PATH=/opt/spark/bin:/opt/spark/sbin:${PATH}
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends bash ca-certificates curl procps python3 tini \
-    && rm -rf /var/lib/apt/lists/* \
-    && set -eux; \
-        for url in \
-            "https://dlcdn.apache.org/spark/spark-${SPARK_VERSION}/${SPARK_PACKAGE}.tgz" \
-            "https://archive.apache.org/dist/spark/spark-${SPARK_VERSION}/${SPARK_PACKAGE}.tgz"; do \
-          for attempt in 1 2 3 4 5; do \
-            rm -f /tmp/spark.tgz; \
-            if curl -fL --retry 5 --retry-all-errors --retry-delay 10 --connect-timeout 30 \
-                -o /tmp/spark.tgz "${url}" \
-                && tar -tzf /tmp/spark.tgz >/dev/null; then \
-              break 2; \
-            fi; \
-            echo "Spark download failed from ${url}, attempt ${attempt}" >&2; \
-            sleep 10; \
-          done; \
-        done; \
-        test -s /tmp/spark.tgz; \
-        tar -xzf /tmp/spark.tgz -C /opt; \
-        rm -f /tmp/spark.tgz; \
-        ln -s "/opt/${SPARK_PACKAGE}" "${SPARK_HOME}"
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=download /opt/${SPARK_PACKAGE} /opt/${SPARK_PACKAGE}
+RUN ln -s "/opt/${SPARK_PACKAGE}" "${SPARK_HOME}"
 
 ENV HADOOP_HOME=/opt/hadoop
 ENV HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
@@ -51,25 +82,8 @@ ENV ARROW_LIBHDFS_DIR=/opt/hadoop/lib/native
 ENV LD_LIBRARY_PATH=/opt/hadoop/lib/native:/opt/java/openjdk/lib/server
 ENV PATH=/opt/hadoop/bin:/opt/hadoop/sbin:${PATH}
 
-RUN set -eux; \
-        for url in \
-            "https://archive.apache.org/dist/hadoop/common/hadoop-${HADOOP_VERSION}/${HADOOP_PACKAGE}.tar.gz" \
-            "https://dlcdn.apache.org/hadoop/common/hadoop-${HADOOP_VERSION}/${HADOOP_PACKAGE}.tar.gz"; do \
-          for attempt in 1 2 3 4 5; do \
-            rm -f /tmp/hadoop.tgz; \
-            if curl -fL --retry 5 --retry-all-errors --retry-delay 10 --connect-timeout 30 \
-                -o /tmp/hadoop.tgz "${url}" \
-                && tar -tzf /tmp/hadoop.tgz >/dev/null; then \
-              break 2; \
-            fi; \
-            echo "Hadoop download failed from ${url}, attempt ${attempt}" >&2; \
-            sleep 10; \
-          done; \
-        done; \
-        test -s /tmp/hadoop.tgz; \
-        tar -xzf /tmp/hadoop.tgz -C /opt; \
-        rm -f /tmp/hadoop.tgz; \
-        ln -s "/opt/${HADOOP_PACKAGE}" "${HADOOP_HOME}"
+COPY --from=download /opt/${HADOOP_PACKAGE} /opt/${HADOOP_PACKAGE}
+RUN ln -s "/opt/${HADOOP_PACKAGE}" "${HADOOP_HOME}"
 
 WORKDIR ${APP_HOME}
 COPY --from=build /src/target/hadoop-arrow-flight-1.0-SNAPSHOT.jar ${APP_JAR}

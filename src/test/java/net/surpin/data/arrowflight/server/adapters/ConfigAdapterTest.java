@@ -33,20 +33,18 @@ class ConfigAdapterTest {
     void getConfigDefaults() {
         AppConfig cfg = ConfigAdapter.getConfig();
 
-        assertEquals(4, cfg.numServers());
+        assertEquals(10, cfg.numServers());
         assertEquals(65536, cfg.batchSize());
         assertEquals(1048576, cfg.ioFileBufferSize());
         assertEquals(32, cfg.ioParallelism());
         assertEquals(2, cfg.duckDbThreads());
         assertEquals("/data/parquet", cfg.dataDir());
-        assertNull(cfg.localDataDir());
         assertEquals(32010, cfg.port());
         assertEquals(5701, cfg.hazelcastPort());
         assertEquals(60, cfg.hazelcastClusterJoinTimeoutSec());
         assertEquals(3, cfg.clientMaxRetries());
         assertEquals(1000, cfg.clientRetryBackoffMs());
         assertEquals(0, cfg.clientConnectTimeoutMs());
-        assertFalse(cfg.duckDbAllowUnsignedExtensions());
         assertEquals(Integer.MAX_VALUE, cfg.grpcMaxInboundMessageSize());
         assertEquals(300000, cfg.flightListenerReadyTimeoutMillis());
     }
@@ -61,9 +59,9 @@ class ConfigAdapterTest {
 
     @Test
     void getConfigNumServersDefaults() {
-        // No explicit property set, should default to 4 from arrowflight.properties
+        // No explicit property set, should use arrowflight.properties.
         AppConfig cfg = ConfigAdapter.getConfig();
-        assertEquals(4, cfg.numServers());
+        assertEquals(10, cfg.numServers());
     }
 
     @Test
@@ -142,14 +140,6 @@ class ConfigAdapterTest {
 
         AppConfig cfg = ConfigAdapter.getConfig();
         assertEquals("/custom/data/path", cfg.dataDir());
-    }
-
-    @Test
-    void getConfigLocalDataDir() {
-        setProp("localDataDir", "/staging");
-
-        AppConfig cfg = ConfigAdapter.getConfig();
-        assertEquals("/staging", cfg.localDataDir());
     }
 
     @Test

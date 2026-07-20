@@ -1,6 +1,5 @@
 package net.surpin.data.arrowflight.server.adapters;
 
-import net.surpin.data.arrowflight.server.model.AppConfig;
 import net.surpin.data.arrowflight.server.services.ParquetQueryParser;
 import org.apache.arrow.flight.FlightProducer;
 import org.junit.jupiter.api.Tag;
@@ -191,26 +190,6 @@ class DuckDbAdapterTest {
 
         assertThrows(IllegalArgumentException.class,
                 () -> DuckDbAdapter.awaitListenerReady(listener, 0));
-    }
-
-    @Test
-    void ignoresHdfsOptionsWhenExtensionIsNotConfigured() throws Exception {
-        ExecutorService ioPool = Executors.newSingleThreadExecutor();
-        AppConfig config = new AppConfig(
-                3, 4096, 1, 131072, 1, 1, 1,
-                null, false, null, null,
-                "true", "/var/lib/hadoop-hdfs/socket/dn_socket",
-                1048576, 60000L, "/data/parquet", null, 32010, 5701, 60,
-                3, 1000, 30000);
-
-        try {
-            DuckDbAdapter adapter = new DuckDbAdapter(config, ioPool);
-            try (Connection connection = adapter.connection()) {
-                assertFalse(connection.isClosed());
-            }
-        } finally {
-            ioPool.shutdownNow();
-        }
     }
 
     // ── buildDuckSql / buildDuckSqlWithFilter ─────────────────────────────

@@ -14,6 +14,7 @@ import org.apache.arrow.vector.VarCharVector;
 import org.apache.arrow.vector.types.pojo.ArrowType;
 import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.FileStatus;
 import org.junit.jupiter.api.Test;
 
 import java.net.URI;
@@ -183,6 +184,22 @@ class ExecutionServiceTest {
         List<String> result = ExecutionService.ducksDbPaths(
                 List.of("file:/a.parquet", "hdfs://ns/b.parquet"));
         assertEquals(List.of("/a.parquet", "hdfs://ns/b.parquet"), result);
+    }
+
+    @Test
+    void engineUriPreservesHdfsSchemeAndAuthority() {
+        FileStatus status = new FileStatus(
+                10L, false, 1, 128L, 0L,
+                new Path("hdfs://namenode:8020/bench/tpch/lineitem/part.parquet"));
+
+        assertEquals("hdfs://namenode:8020/bench/tpch/lineitem/part.parquet",
+                ExecutionService.engineUri(status));
+    }
+
+    @Test
+    void arrowStreamsFromClauseUsesProvidedAliases() {
+        assertEquals("(SELECT * FROM \"join0_0\" UNION ALL SELECT * FROM \"join0_1\")",
+                ExecutionService.arrowStreamsFromClause(List.of("join0_0", "join0_1")));
     }
 
     // ── duckDbPath ──────────────────────────────────────────────────────────

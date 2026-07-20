@@ -153,7 +153,7 @@ Dashboard показывает:
 - CPU, working-set RAM и network I/O каждого Docker container;
 - heap, non-heap и потоки каждого Flight JVM;
 - active queries, failures, query rate и p95/mean server execution time;
-- logical Parquet throughput, physical disk throughput и скорость HDFS-to-Acero cache copy.
+- logical Parquet throughput, physical disk throughput и HDFS network I/O.
 
 `Parquet query/read duration` измеряет полный server path: получение файлов,
 scan, filter/aggregation и отправку результата. Это полезное benchmark-время, но

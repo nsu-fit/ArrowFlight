@@ -59,11 +59,7 @@ public final class DuckDbAdapter implements AutoCloseable {
 
         this.threadConn = ThreadLocal.withInitial(() -> {
             try {
-                String jdbcUrl = "jdbc:duckdb:";
-                if (appConfig.duckDbAllowUnsignedExtensions()) {
-                    jdbcUrl += "?allow_unsigned_extensions=true";
-                }
-                Connection conn = DriverManager.getConnection(jdbcUrl);
+                Connection conn = DriverManager.getConnection("jdbc:duckdb:");
                 configureConnection(conn);
                 allConnections.add(conn);
                 return conn;
@@ -87,37 +83,6 @@ public final class DuckDbAdapter implements AutoCloseable {
             } else {
                 s.execute("SET allowed_paths = ARRAY[]");
             }
-            String hdfsExtension = appConfig.duckDbHdfsExtension();
-            if (hdfsExtension != null) {
-                s.execute("LOAD " + sqlStringLiteral(hdfsExtension));
-                setOptionIfPresent(s, "hdfs_default_namenode",
-                        appConfig.duckDbHdfsDefaultNamenode());
-                setOptionIfPresent(s, "hdfs_ha_namenodes",
-                        appConfig.duckDbHdfsHaNamenodes());
-                setOptionIfPresent(s, "hdfs_shortcircuit",
-                        appConfig.duckDbHdfsShortcircuit());
-                setOptionIfPresent(s, "hdfs_domain_socket_path",
-                        appConfig.duckDbHdfsDomainSocketPath());
-            }
-        }
-    }
-
-    /**
-     * Set DuckDB option if value is non-null
-     * @param statement JDBC statement
-     * @param optionName option name
-     * @param value option value
-     * @throws Exception on SQL failure
-     */
-    private static void setOptionIfPresent(Statement statement, String optionName, String value)
-            throws Exception {
-        if (value == null) {
-            return;
-        }
-        if ("true".equalsIgnoreCase(value) || "false".equalsIgnoreCase(value)) {
-            statement.execute("SET " + optionName + " = " + value.toLowerCase());
-        } else {
-            statement.execute("SET " + optionName + " = " + sqlStringLiteral(value));
         }
     }
 

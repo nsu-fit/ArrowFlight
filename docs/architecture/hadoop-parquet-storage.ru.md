@@ -4,7 +4,7 @@
 
 ## Модель хранения
 
-Данные не хранятся внутри Arrow Flight сервера. Flight-ноды являются compute layer: они получают назначенные Parquet-файлы и читают их через Hadoop FileSystem.
+Данные не хранятся внутри Arrow Flight сервера. Flight-ноды являются compute layer: они получают назначенные Parquet-файлы и читают их напрямую из HDFS через Arrow Dataset JNI, собранный с поддержкой HDFS.
 
 Корень данных задается параметром `dataDirectory`. Таблицы ожидаются в структуре `schema/table`. Для каждой таблицы сервер рекурсивно ищет Parquet-файлы.
 
@@ -12,9 +12,9 @@
 
 ## Hadoop FileSystem
 
-Hadoop FileSystem используется как общий слой доступа к данным. Через него сервер может читать HDFS, локальную файловую систему или другой Hadoop-совместимый backend.
+Hadoop FileSystem используется для discovery, metadata и locality. Data pages читает Arrow Dataset / Acero. Docker image собирает Arrow Dataset JNI с `ARROW_HDFS=ON`, поэтому Acero может напрямую открывать `hdfs://` URI.
 
-Flight-нода не обязана иметь Parquet-файл на локальном диске. Если файл лежит в распределенной файловой системе, нода открывает его через Hadoop FileSystem.
+Flight-ноде не нужна локальная копия Parquet. Acero выполняет необходимые Parquet seek/range reads через HDFS и стримит Arrow batches без материализации полного файла в `/tmp`.
 
 При старте сервер создает `FileSystem`, связанный с `dataDirectory`. Все операции с файлами проходят через этот объект: listing, чтение metadata, получение абсолютных путей и открытие потоков.
 
@@ -58,11 +58,11 @@ Projection означает выбор только нужных колонок.
 
 ## Filter pushdown
 
-Если запрос содержит `WHERE`, проект направляет его в DuckDB, а не в Acero. DuckDB читает назначенные Parquet-файлы через `read_parquet([...])` и применяет SQL predicate в своем Parquet reader.
+Поддерживаемые фильтры преобразуются в Substrait и выполняются Acero. Если фильтр нельзя преобразовать, Acero сканирует HDFS Parquet и передает Arrow C streams в DuckDB, где применяется оставшийся SQL predicate.
 
-Для HDFS paths DuckDB должен загрузить DuckDB HDFS extension. Путь к extension и HDFS options задаются через `arrowflight.properties`, JVM system properties или environment variables.
+DuckDB в этом path не открывает HDFS URI. Он читает зарегистрированные Arrow streams, поэтому DuckDB HDFS extension и промежуточная Parquet-копия не нужны.
 
-Такая маршрутизация выбрана намеренно: Acero используется для filter-less full scan и projection, а DuckDB - для filtered scans, потому что его Parquet reader умеет predicate pushdown и row-group pruning.
+Такой routing оставляет HDFS I/O в Acero, а DuckDB использует только для SQL-операций, которых нет в Acero path.
 
 ## Footer fast path
 
@@ -72,7 +72,7 @@ Projection означает выбор только нужных колонок.
 
 Если нужная статистика доступна и запрос не содержит фильтра или группировки, сервер читает только metadata. Если статистики недостаточно, выполнение fallback-ится в DuckDB.
 
-Текущий fallback для обычных агрегаций - DuckDB. Acero не используется для grouped или filtered aggregation execution.
+Обычный aggregation path стримит Acero batches из HDFS в DuckDB и объединяет частичные результаты.
 
 ## Распределение файлов между Flight-нодами
 
