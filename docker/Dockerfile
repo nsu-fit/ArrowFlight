@@ -108,6 +108,7 @@ RUN cd /arrow-source/java && \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX=/arrow/install \
         -DCMAKE_PREFIX_PATH=/arrow/install \
+        -DBUILD_TESTING=OFF \
         -DARROW_JAVA_JNI_ENABLE_DATASET=ON \
         -DARROW_JAVA_JNI_ENABLE_C=OFF \
         -DARROW_JAVA_JNI_ENABLE_GANDIVA=OFF \
@@ -115,7 +116,9 @@ RUN cd /arrow-source/java && \
     && cmake --build build -- -j$(nproc) \
     && cmake --install build && \
     cp /arrow/install/lib/arrow_dataset_jni/x86_64/libarrow_dataset_jni.so /arrow/install/lib/ && \
-    rm -rf /arrow/install/lib/arrow_dataset_jni
+    rm -rf /arrow/install/lib/arrow_dataset_jni && \
+    test -s /arrow/install/lib/libarrow_dataset_jni.so && \
+    strings /arrow/install/lib/libarrow_dataset_jni.so | grep -q HadoopFileSystem
 
 # ---- final stage ----
 FROM ${RUNTIME_IMAGE}
