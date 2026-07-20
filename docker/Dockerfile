@@ -56,9 +56,52 @@ RUN set -eux; \
     tar -xzf /tmp/hadoop.tgz -C /opt; \
     rm -f /tmp/hadoop.tgz
 
+# ---- Arrow C++ JNI build with HDFS support ----
+FROM eclipse-temurin:21-jdk-jammy AS arrow-build
+ARG HADOOP_VERSION=3.3.6
+ARG HADOOP_PACKAGE=hadoop-${HADOOP_VERSION}
+ARG ARROW_VERSION=18.0.0
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential cmake ninja-build \
+    curl ca-certificates \
+    libssl-dev libcurl4-openssl-dev \
+    libboost-dev libboost-filesystem-dev \
+    libz-dev liblz4-dev libbrotli-dev \
+    libre2-dev libsnappy-dev libzstd-dev \
+    libutf8proc-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=download /opt/${HADOOP_PACKAGE} /opt/${HADOOP_PACKAGE}
+ENV HADOOP_HOME=/opt/${HADOOP_PACKAGE}
+ENV PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig
+
+RUN curl -fsSL https://github.com/apache/arrow/archive/apache-arrow-${ARROW_VERSION}.tar.gz \
+    | tar xz && \
+    cd apache-arrow-${ARROW_VERSION}/cpp && \
+    cmake -S . -B build -GNinja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DARROW_HDFS=ON \
+        -DARROW_DATASET=ON \
+        -DARROW_JNI=ON \
+        -DARROW_PARQUET=ON \
+        -DARROW_COMPUTE=ON \
+        -DARROW_CSV=OFF \
+        -DARROW_JSON=OFF \
+        -DARROW_FLIGHT=OFF \
+        -DARROW_GANDIVA=OFF \
+        -DARROW_ORC=OFF \
+        -DARROW_FILESYSTEM=ON \
+        -DBUILD_SHARED_LIBS=OFF \
+        -DBUILD_TESTING=OFF \
+        -DARROW_BUILD_TESTS=OFF \
+        -DARROW_DEPENDENCY_SOURCE=AUTO \
+    && cmake --build build --target arrow_dataset_jni -- -j$(nproc)
+
 # ---- final stage ----
 FROM ${RUNTIME_IMAGE}
 
+ARG ARROW_VERSION=18.0.0
 ARG SPARK_VERSION=3.5.1
 ARG SPARK_PACKAGE=spark-${SPARK_VERSION}-bin-hadoop3
 ARG HADOOP_VERSION=3.3.6
@@ -87,6 +130,25 @@ RUN ln -s "/opt/${HADOOP_PACKAGE}" "${HADOOP_HOME}"
 
 WORKDIR ${APP_HOME}
 COPY --from=build /src/target/hadoop-arrow-flight-1.0-SNAPSHOT.jar ${APP_JAR}
+
+# Replace stock libarrow_dataset_jni.so (HDFS=OFF) with custom HDFS-enabled build
+COPY --from=arrow-build /apache-arrow-${ARROW_VERSION}/cpp/build/release/libarrow_dataset_jni.so /tmp/
+RUN python3 -c "
+import zipfile, os
+jar = '${APP_JAR}'
+new_so = '/tmp/libarrow_dataset_jni.so'
+arcname = 'arrow_dataset_jni/x86_64/libarrow_dataset_jni.so'
+tmp = jar + '.tmp'
+with zipfile.ZipFile(jar, 'r') as zin:
+    with zipfile.ZipFile(tmp, 'w', zipfile.ZIP_DEFLATED) as zout:
+        for item in zin.infolist():
+            if item.filename != arcname:
+                zout.writestr(item, zin.read(item.filename))
+        zout.write(new_so, arcname)
+os.replace(tmp, jar)
+print('Replaced libarrow_dataset_jni.so with HDFS-enabled build')
+" && rm -f /tmp/libarrow_dataset_jni.so
+
 COPY docker/bin/ ./bin/
 COPY docker/hadoop/ ${HADOOP_CONF_DIR}/
 COPY docker/spark/ ./spark/
