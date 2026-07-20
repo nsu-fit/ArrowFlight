@@ -101,7 +101,7 @@ public final class AceroAdapter {
             Schema aceroSchema = scanner.schema();
             LOGGER.info("qid={} node={} acero=schema schema={} files={}",
                     qid, LogUtil.node(), aceroSchema, numFiles);
-                    
+
             VectorSchemaRoot vsr = reader.getVectorSchemaRoot();
             if (startListener) {
                 listener.start(vsr);
@@ -237,7 +237,7 @@ public final class AceroAdapter {
      */
     public RegisteredArrowStreams exportToDuckDb(BufferAllocator allocator, List<String> fileUris,
             byte[] filterBytes, Optional<String[]> cols, DuckDBConnection duckConn,
-            String aliasPrefix) throws Exception {
+            String aliasPrefix) throws Exception { 
         long startNanos = System.nanoTime();
         String qid = LogUtil.qid();
         LOGGER.debug("qid={} node={} acero=exportToDuckDb start files={}",
