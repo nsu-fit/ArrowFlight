@@ -6,7 +6,9 @@ import net.surpin.data.arrowflight.server.adapters.FilterConverter;
 import net.surpin.data.arrowflight.server.adapters.ParquetAdapter;
 import net.surpin.data.arrowflight.server.model.AppConfig;
 import net.surpin.data.arrowflight.server.model.FileAssignment;
+import net.surpin.data.arrowflight.server.services.AggregationService;
 import net.surpin.data.arrowflight.server.services.ExecutionService;
+import net.surpin.data.arrowflight.server.services.JoinService;
 import net.surpin.data.arrowflight.server.services.MetadataService;
 import net.surpin.data.arrowflight.server.services.ParquetQueryParser;
 import net.surpin.data.arrowflight.server.adapters.AceroAdapter;
@@ -86,9 +88,14 @@ class ParquetManagerIntegrationTest {
             }
         };
 
-        executionService = new ExecutionService(parquetAdapter, duckDbAdapter,
+        AggregationService aggService = new AggregationService(parquetAdapter, duckDbAdapter,
                 aceroAdapter, metadataService, appConfig,
                 Executors.newCachedThreadPool(), filterBuilder);
+        JoinService joinService = new JoinService(parquetAdapter, duckDbAdapter, appConfig);
+        executionService = new ExecutionService(parquetAdapter, duckDbAdapter,
+                aceroAdapter, metadataService, appConfig,
+                Executors.newCachedThreadPool(), filterBuilder,
+                aggService, joinService);
     }
 
     @Test

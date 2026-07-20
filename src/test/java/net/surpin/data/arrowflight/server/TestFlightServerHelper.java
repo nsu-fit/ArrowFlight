@@ -8,8 +8,10 @@ import net.surpin.data.arrowflight.server.adapters.FlightSqlProducer;
 import net.surpin.data.arrowflight.server.adapters.HazelcastAdapter;
 import net.surpin.data.arrowflight.server.adapters.ParquetAdapter;
 import net.surpin.data.arrowflight.server.model.AppConfig;
+import net.surpin.data.arrowflight.server.services.AggregationService;
 import net.surpin.data.arrowflight.server.services.ClusterService;
 import net.surpin.data.arrowflight.server.services.ExecutionService;
+import net.surpin.data.arrowflight.server.services.JoinService;
 import net.surpin.data.arrowflight.server.services.MetadataService;
 import net.surpin.data.arrowflight.server.services.ParquetQueryParser;
 import net.surpin.data.arrowflight.server.services.QueryPlanner;
@@ -118,9 +120,14 @@ public class TestFlightServerHelper implements AutoCloseable {
             }
         };
 
-        executionService = new ExecutionService(parquetAdapter, duckDbAdapter,
+        AggregationService aggService = new AggregationService(parquetAdapter, duckDbAdapter,
                 aceroAdapter, metadataService, appConfig,
                 Executors.newCachedThreadPool(), filterBuilder);
+        JoinService joinService = new JoinService(parquetAdapter, duckDbAdapter, appConfig);
+        executionService = new ExecutionService(parquetAdapter, duckDbAdapter,
+                aceroAdapter, metadataService, appConfig,
+                Executors.newCachedThreadPool(), filterBuilder,
+                aggService, joinService);
 
         flightSqlProducer = new FlightSqlProducer(location, allocator,
                 metadataService, queryPlanner, executionService, clusterService);

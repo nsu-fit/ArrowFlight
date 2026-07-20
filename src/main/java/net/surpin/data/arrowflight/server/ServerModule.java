@@ -36,8 +36,10 @@ import net.surpin.data.arrowflight.server.adapters.HazelcastAdapter;
 import net.surpin.data.arrowflight.server.adapters.ParquetAdapter;
 import net.surpin.data.arrowflight.server.services.ParquetQueryParser;
 import net.surpin.data.arrowflight.server.model.AppConfig;
+import net.surpin.data.arrowflight.server.services.AggregationService;
 import net.surpin.data.arrowflight.server.services.ClusterService;
 import net.surpin.data.arrowflight.server.services.ExecutionService;
+import net.surpin.data.arrowflight.server.services.JoinService;
 import net.surpin.data.arrowflight.server.services.MetadataService;
 import net.surpin.data.arrowflight.server.services.QueryPlanner;
 
@@ -319,6 +321,41 @@ public final class ServerModule {
     }
 
     /**
+     * Provide AggregationService singleton
+     * @param parquetAdapter parquet adapter
+     * @param duckDbAdapter DuckDB adapter
+     * @param aceroAdapter Acero adapter
+     * @param metadataService metadata service
+     * @param appConfig application configuration
+     * @param ioPool I/O thread pool
+     * @param filterBuilder filter builder function
+     * @return aggregation service
+     */
+    @Provides
+    @Singleton
+    AggregationService aggregation(ParquetAdapter parquetAdapter, DuckDbAdapter duckDbAdapter,
+            AceroAdapter aceroAdapter, MetadataService metadataService,
+            AppConfig appConfig, ExecutorService ioPool,
+            Function<ParquetQueryParser, byte[]> filterBuilder) {
+        return new AggregationService(parquetAdapter, duckDbAdapter, aceroAdapter,
+                metadataService, appConfig, ioPool, filterBuilder);
+    }
+
+    /**
+     * Provide JoinService singleton
+     * @param parquetAdapter parquet adapter
+     * @param duckDbAdapter DuckDB adapter
+     * @param appConfig application configuration
+     * @return join service
+     */
+    @Provides
+    @Singleton
+    JoinService join(ParquetAdapter parquetAdapter, DuckDbAdapter duckDbAdapter,
+            AppConfig appConfig) {
+        return new JoinService(parquetAdapter, duckDbAdapter, appConfig);
+    }
+
+    /**
      * Provide ExecutionService singleton
      * @param parquetAdapter parquet adapter
      * @param duckDbAdapter DuckDB adapter
@@ -327,6 +364,8 @@ public final class ServerModule {
      * @param appConfig application configuration
      * @param ioPool I/O thread pool
      * @param filterBuilder filter builder function
+     * @param aggregationService aggregation service
+     * @param joinService join service
      * @return execution service
      */
     @Provides
@@ -334,8 +373,11 @@ public final class ServerModule {
     ExecutionService execution(ParquetAdapter parquetAdapter, DuckDbAdapter duckDbAdapter,
             AceroAdapter aceroAdapter, MetadataService metadataService,
             AppConfig appConfig, ExecutorService ioPool,
-            Function<ParquetQueryParser, byte[]> filterBuilder) {
+            Function<ParquetQueryParser, byte[]> filterBuilder,
+            AggregationService aggregationService,
+            JoinService joinService) {
         return new ExecutionService(parquetAdapter, duckDbAdapter, aceroAdapter,
-                metadataService, appConfig, ioPool, filterBuilder);
+                metadataService, appConfig, ioPool, filterBuilder,
+                aggregationService, joinService);
     }
 }

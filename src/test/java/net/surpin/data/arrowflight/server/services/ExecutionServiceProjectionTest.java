@@ -18,7 +18,7 @@ class ExecutionServiceProjectionTest {
         assertEquals(Set.of(
                 "l_returnflag", "l_linestatus", "l_quantity", "l_extendedprice",
                 "l_discount", "l_tax", "l_shipdate"),
-                ExecutionService.projectedColumns(query));
+                ProjectionHelper.projectedColumns(query));
     }
 
     @Test
@@ -32,6 +32,6 @@ class ExecutionServiceProjectionTest {
 
         assertEquals(Set.of(
                 "l_extendedprice", "l_discount", "l_shipdate", "l_quantity"),
-                ExecutionService.projectedColumns(query));
+                ProjectionHelper.projectedColumns(query));
     }
 }
