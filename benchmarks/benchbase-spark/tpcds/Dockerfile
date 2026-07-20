@@ -16,9 +16,18 @@ FROM ${PYTHON_IMAGE} AS query-downloader
 WORKDIR /work
 COPY benchmarks/benchbase-spark/tpcds/generate-procedures.py /work/generate-procedures.py
 
-RUN mkdir -p /work/queries && \
-    python /work/generate-procedures.py --download && \
-    ls -1 /work/src/com/oltpbenchmark/benchmarks/tpcds/procedures/ | wc -l
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && git clone --depth 1 --filter=blob:none --sparse \
+        https://github.com/duckdb/duckdb.git /tmp/duckdb \
+    && cd /tmp/duckdb \
+    && git sparse-checkout set extension/tpcds/dsdgen/queries \
+    && mkdir -p /work/queries \
+    && cp /tmp/duckdb/extension/tpcds/dsdgen/queries/*.sql /work/queries/ \
+    && rm -rf /tmp/duckdb \
+    && python /work/generate-procedures.py \
+    && ls -1 /work/src/com/oltpbenchmark/benchmarks/tpcds/procedures/ | wc -l
 
 # -----------------------------------------------------------------------------
 # Stage 2: Clone BenchBase and patch it with the TPC-DS plugin.
