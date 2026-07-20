@@ -1,7 +1,6 @@
 package net.surpin.data.arrowflight.server.adapters;
 
 import org.apache.arrow.memory.BufferAllocator;
-import org.apache.arrow.vector.ValueVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.arrow.vector.ipc.ArrowReader;
 import org.apache.parquet.hadoop.ParquetFileReader;
@@ -18,6 +17,7 @@ import java.io.IOException;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.Statement;
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
@@ -25,6 +25,7 @@ import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 
@@ -73,6 +74,23 @@ public final class DuckDbAdapter implements AutoCloseable {
                 throw new RuntimeException("Failed to create thread-local DuckDB connection", e);
             }
         });
+
+        int warmCount = appConfig.duckDbWarmConnections();
+        if (warmCount > 0) {
+            LOGGER.info("node={} duckdb=warmup connections={}", LogUtil.node(), warmCount);
+            List<Future<Connection>> futs = new ArrayList<>(warmCount);
+            for (int i = 0; i < warmCount; i++) {
+                futs.add(ioPool.submit(threadConn::get));
+            }
+            for (Future<Connection> f : futs) {
+                try {
+                    f.get(30, TimeUnit.SECONDS);
+                } catch (Exception e) {
+                    LOGGER.warn("node={} duckdb=warmupFailed", LogUtil.node(), e);
+                }
+            }
+            LOGGER.info("node={} duckdb=warmupDone", LogUtil.node());
+        }
     }
 
     /**
@@ -198,13 +216,11 @@ public final class DuckDbAdapter implements AutoCloseable {
         long firstBatchNanos = -1;
         try (Statement stmt = conn.createStatement();
                 org.duckdb.DuckDBResultSet drs = (org.duckdb.DuckDBResultSet) stmt.executeQuery(duckSql);
-                ArrowReader reader = (ArrowReader) drs.arrowExportStream(allocator, batchSize);
-                VectorSchemaRoot flightRoot = VectorSchemaRoot.create(
-                        reader.getVectorSchemaRoot().getSchema(), allocator)) {
-            VectorSchemaRoot duckRoot = reader.getVectorSchemaRoot();
+                ArrowReader reader = (ArrowReader) drs.arrowExportStream(allocator, batchSize)) {
+            VectorSchemaRoot root = reader.getVectorSchemaRoot();
 
             if (startListener) {
-                listener.start(flightRoot);
+                listener.start(root);
             }
 
             int batchesSent = 0;
@@ -215,36 +231,31 @@ public final class DuckDbAdapter implements AutoCloseable {
                 if (firstBatchNanos < 0) {
                     firstBatchNanos = System.nanoTime() - startNanos;
                 }
-                int duckRows = duckRoot.getRowCount();
-                if (duckRows == 0) {
-                    duckRoot.clear();
+                int rows = root.getRowCount();
+                if (rows == 0) {
+                    root.clear();
                     continue;
                 }
-                for (int offset = 0; offset < duckRows; offset += batchSize) {
-                    int rowCount = Math.min(batchSize, duckRows - offset);
-                    copyRows(duckRoot, flightRoot, offset, rowCount);
-                    long bpStart = System.nanoTime();
-                    if (!awaitListenerReady(
-                            listener, appConfig.flightListenerReadyTimeoutMillis())) {
-                        backpressureNanos += System.nanoTime() - bpStart;
-                        cancelled = true;
-                        flightRoot.clear();
-                        break;
-                    }
+                long bpStart = System.nanoTime();
+                if (!awaitListenerReady(
+                        listener, appConfig.flightListenerReadyTimeoutMillis())) {
                     backpressureNanos += System.nanoTime() - bpStart;
-                    listener.putNext();
-                    batchesSent++;
-                    rowsSent += rowCount;
-                    if (batchesSent % 10 == 0) {
-                        LOGGER.debug("qid={} node={} duckdb=progress batches={} rows={} elapsed={} throughput={}rows/s",
-                                qid, LogUtil.node(), batchesSent, rowsSent,
-                                LogUtil.elapsedNanos(startNanos),
-                                rowsSent * 1_000_000_000L
-                                        / Math.max(1, System.nanoTime() - startNanos));
-                    }
-                    flightRoot.clear();
+                    cancelled = true;
+                    root.clear();
+                    break;
                 }
-                duckRoot.clear();
+                backpressureNanos += System.nanoTime() - bpStart;
+                listener.putNext();
+                batchesSent++;
+                rowsSent += rows;
+                if (batchesSent % 10 == 0) {
+                    LOGGER.debug("qid={} node={} duckdb=progress batches={} rows={} elapsed={} throughput={}rows/s",
+                            qid, LogUtil.node(), batchesSent, rowsSent,
+                            LogUtil.elapsedNanos(startNanos),
+                            rowsSent * 1_000_000_000L
+                                    / Math.max(1, System.nanoTime() - startNanos));
+                }
+                root.clear();
             }
             LOGGER.info("qid={} node={} duckdb=completed batches={} rows={} ttfB={} backpressureMs={} elapsed={} cancelled={}",
                     qid, LogUtil.node(), batchesSent, rowsSent,
@@ -252,28 +263,6 @@ public final class DuckDbAdapter implements AutoCloseable {
                     backpressureNanos / 1_000_000,
                     LogUtil.elapsedNanos(startNanos), cancelled);
         }
-    }
-
-    /**
-     * Copies a row range into an independent Flight-owned Arrow root.
-     *
-     * @param sourceRoot  DuckDB-owned source root
-     * @param targetRoot  Flight-owned target root
-     * @param sourceOffset first source row
-     * @param rowCount    number of rows to copy
-     */
-    static void copyRows(VectorSchemaRoot sourceRoot, VectorSchemaRoot targetRoot,
-            int sourceOffset, int rowCount) {
-        targetRoot.clear();
-        for (int column = 0; column < sourceRoot.getFieldVectors().size(); column++) {
-            ValueVector sourceVector = sourceRoot.getVector(column);
-            ValueVector targetVector = targetRoot.getVector(column);
-            for (int row = 0; row < rowCount; row++) {
-                targetVector.copyFromSafe(sourceOffset + row, row, sourceVector);
-            }
-            targetVector.setValueCount(rowCount);
-        }
-        targetRoot.setRowCount(rowCount);
     }
 
     /**
