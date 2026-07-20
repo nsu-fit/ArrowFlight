@@ -74,30 +74,40 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY --from=download /opt/${HADOOP_PACKAGE} /opt/${HADOOP_PACKAGE}
 ENV HADOOP_HOME=/opt/${HADOOP_PACKAGE}
-ENV PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig
 
+# Step 1: Build and install Arrow C++ shared libraries with HDFS
 RUN mkdir -p /arrow-source && \
     curl -fsSL https://github.com/apache/arrow/archive/apache-arrow-${ARROW_VERSION}.tar.gz | \
     tar xz -C /arrow-source --strip-components=1 && \
     cd /arrow-source/cpp && \
     cmake -S . -B build -GNinja \
         -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/arrow/install \
         -DARROW_HDFS=ON \
         -DARROW_DATASET=ON \
-        -DARROW_JNI=ON \
         -DARROW_PARQUET=ON \
         -DARROW_COMPUTE=ON \
+        -DARROW_FILESYSTEM=ON \
         -DARROW_CSV=OFF \
         -DARROW_JSON=OFF \
         -DARROW_FLIGHT=OFF \
         -DARROW_GANDIVA=OFF \
         -DARROW_ORC=OFF \
-        -DARROW_FILESYSTEM=ON \
-        -DBUILD_SHARED_LIBS=OFF \
+        -DBUILD_SHARED_LIBS=ON \
         -DBUILD_TESTING=OFF \
         -DARROW_BUILD_TESTS=OFF \
         -DARROW_DEPENDENCY_SOURCE=AUTO \
-    && cmake --build build --target arrow_dataset_jni -- -j$(nproc)
+    && cmake --build build -- -j$(nproc) \
+    && cmake --install build
+
+# Step 2: Build arrow_dataset_jni.so against the installed Arrow
+RUN cd /arrow-source/java/dataset/src/main/cpp && \
+    cmake -S . -B build -GNinja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/arrow/install \
+        -DCMAKE_PREFIX_PATH=/arrow/install \
+    && cmake --build build -- -j$(nproc) \
+    && cmake --install build
 
 # ---- final stage ----
 FROM ${RUNTIME_IMAGE}
@@ -123,7 +133,8 @@ RUN ln -s "/opt/${SPARK_PACKAGE}" "${SPARK_HOME}"
 ENV HADOOP_HOME=/opt/hadoop
 ENV HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
 ENV ARROW_LIBHDFS_DIR=/opt/hadoop/lib/native
-ENV LD_LIBRARY_PATH=/opt/hadoop/lib/native:/opt/java/openjdk/lib/server
+ENV ARROW_LIBRARY_PATH=/opt/arrow/lib
+ENV LD_LIBRARY_PATH=/opt/arrow/lib:/opt/hadoop/lib/native:/opt/java/openjdk/lib/server
 ENV PATH=/opt/hadoop/bin:/opt/hadoop/sbin:${PATH}
 
 COPY --from=download /opt/${HADOOP_PACKAGE} /opt/${HADOOP_PACKAGE}
@@ -132,22 +143,27 @@ RUN ln -s "/opt/${HADOOP_PACKAGE}" "${HADOOP_HOME}"
 WORKDIR ${APP_HOME}
 COPY --from=build /src/target/hadoop-arrow-flight-1.0-SNAPSHOT.jar ${APP_JAR}
 
-# Replace stock libarrow_dataset_jni.so (HDFS=OFF) with custom HDFS-enabled build
-COPY --from=arrow-build /arrow-source/cpp/build/release/libarrow_dataset_jni.so /tmp/
-RUN echo "import zipfile, os" > /tmp/replace_so.py && \
-    echo "jar = '/opt/arrowflight/hadoop-arrow-flight-1.0-SNAPSHOT.jar'" >> /tmp/replace_so.py && \
-    echo "new_so = '/tmp/libarrow_dataset_jni.so'" >> /tmp/replace_so.py && \
-    echo "arcname = 'arrow_dataset_jni/x86_64/libarrow_dataset_jni.so'" >> /tmp/replace_so.py && \
-    echo "tmp = jar + '.tmp'" >> /tmp/replace_so.py && \
-    echo "with zipfile.ZipFile(jar, 'r') as zin:" >> /tmp/replace_so.py && \
-    echo "    with zipfile.ZipFile(tmp, 'w', zipfile.ZIP_DEFLATED) as zout:" >> /tmp/replace_so.py && \
-    echo "        for item in zin.infolist():" >> /tmp/replace_so.py && \
-    echo "            if item.filename != arcname:" >> /tmp/replace_so.py && \
-    echo "                zout.writestr(item, zin.read(item.filename))" >> /tmp/replace_so.py && \
-    echo "        zout.write(new_so, arcname)" >> /tmp/replace_so.py && \
-    echo "os.replace(tmp, jar)" >> /tmp/replace_so.py && \
-    echo "print('Replaced libarrow_dataset_jni.so with HDFS-enabled build')" >> /tmp/replace_so.py && \
-    python3 /tmp/replace_so.py && rm -f /tmp/replace_so.py /tmp/libarrow_dataset_jni.so
+# Copy HDFS-enabled Arrow shared libraries
+COPY --from=arrow-build /arrow/install/lib/libarrow.so* /opt/arrow/lib/
+COPY --from=arrow-build /arrow/install/lib/libarrow_dataset.so* /opt/arrow/lib/
+COPY --from=arrow-build /arrow/install/lib/libparquet.so* /opt/arrow/lib/
+COPY --from=arrow-build /arrow/install/lib/libarrow_dataset_jni.so /opt/arrow/lib/
+
+# Rebuild JNI .so path inside JAR (remove stock, add HDFS-enabled)
+RUN echo "import zipfile, os, glob" > /tmp/rebuild_jar.py && \
+    echo "jar = '/opt/arrowflight/hadoop-arrow-flight-1.0-SNAPSHOT.jar'" >> /tmp/rebuild_jar.py && \
+    echo "new_so = '/opt/arrow/lib/libarrow_dataset_jni.so'" >> /tmp/rebuild_jar.py && \
+    echo "arcname = 'arrow_dataset_jni/x86_64/libarrow_dataset_jni.so'" >> /tmp/rebuild_jar.py && \
+    echo "tmp = jar + '.tmp'" >> /tmp/rebuild_jar.py && \
+    echo "with zipfile.ZipFile(jar, 'r') as zin:" >> /tmp/rebuild_jar.py && \
+    echo "    with zipfile.ZipFile(tmp, 'w', zipfile.ZIP_DEFLATED) as zout:" >> /tmp/rebuild_jar.py && \
+    echo "        for item in zin.infolist():" >> /tmp/rebuild_jar.py && \
+    echo "            if item.filename != arcname:" >> /tmp/rebuild_jar.py && \
+    echo "                zout.writestr(item, zin.read(item.filename))" >> /tmp/rebuild_jar.py && \
+    echo "        zout.write(new_so, arcname)" >> /tmp/rebuild_jar.py && \
+    echo "os.replace(tmp, jar)" >> /tmp/rebuild_jar.py && \
+    echo "print('JAR rebuilt with HDFS-enabled libarrow_dataset_jni.so')" >> /tmp/rebuild_jar.py && \
+    python3 /tmp/rebuild_jar.py && rm -f /tmp/rebuild_jar.py
 
 COPY docker/bin/ ./bin/
 COPY docker/hadoop/ ${HADOOP_CONF_DIR}/
