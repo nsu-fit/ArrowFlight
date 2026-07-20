@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>LogUtil.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Hadoop Arrow Flight SQL Server</a> &gt; <a href="index.source.html" class="el_package">net.surpin.data.arrowflight.server</a> &gt; <span class="el_source">LogUtil.java</span></div><h1>LogUtil.java</h1><pre class="source lang-java linenums">package net.surpin.data.arrowflight.server;
+
+/**
+ * Utility for formatting log context fields consistently.
+ * Every log entry for a query flow includes qid, node, thread, endpoint/ticket,
+ * and elapsed time. This class provides cached node identity and elapsed formatters.
+ */
+public final class LogUtil {
+
+    private static final String NODE;
+
+    /**
+     * Thread-local qid propagated across async execution boundaries.
+     */
+<span class="fc" id="L15">    private static final ThreadLocal&lt;String&gt; CURRENT_QID = new ThreadLocal&lt;&gt;();</span>
+
+    static {
+<span class="fc" id="L18">        String n = System.getenv(&quot;HOSTNAME&quot;);</span>
+<span class="pc bpc" id="L19" title="3 of 4 branches missed.">        if (n == null || n.isBlank()) {</span>
+            try {
+<span class="fc" id="L21">                n = java.net.InetAddress.getLocalHost().getHostName();</span>
+<span class="nc" id="L22">            } catch (Exception e) {</span>
+<span class="nc" id="L23">                n = &quot;unknown&quot;;</span>
+<span class="fc" id="L24">            }</span>
+        }
+<span class="fc" id="L26">        NODE = n;</span>
+<span class="fc" id="L27">    }</span>
+
+    private LogUtil() {
+    }
+
+    /**
+     * Returns the node name (hostname) for log correlation.
+     *
+     * @return node name
+     */
+    public static String node() {
+<span class="fc" id="L38">        return NODE;</span>
+    }
+
+    /**
+     * Sets the current thread's qid.
+     *
+     * @param qid query identifier, null to clear
+     */
+    public static void setQid(String qid) {
+<span class="nc bnc" id="L47" title="All 2 branches missed.">        if (qid != null) {</span>
+<span class="nc" id="L48">            CURRENT_QID.set(qid);</span>
+        } else {
+<span class="nc" id="L50">            CURRENT_QID.remove();</span>
+        }
+<span class="nc" id="L52">    }</span>
+
+    /**
+     * Returns the current thread's qid, or null.
+     *
+     * @return qid or null
+     */
+    public static String qid() {
+<span class="fc" id="L60">        return CURRENT_QID.get();</span>
+    }
+
+    /**
+     * Formats elapsed nanos as a human-readable duration.
+     *
+     * @param startNanos System.nanoTime() at operation start
+     * @return formatted string like &quot;1.234ms&quot; or &quot;0.567s&quot;
+     */
+    public static String elapsedNanos(long startNanos) {
+<span class="fc" id="L70">        long nanos = System.nanoTime() - startNanos;</span>
+<span class="pc bpc" id="L71" title="1 of 2 branches missed.">        if (nanos &lt; 1_000) {</span>
+<span class="nc" id="L72">            return nanos + &quot;ns&quot;;</span>
+        }
+<span class="fc bfc" id="L74" title="All 2 branches covered.">        if (nanos &lt; 1_000_000) {</span>
+<span class="fc" id="L75">            return String.format(&quot;%.1fµs&quot;, nanos / 1000.0);</span>
+        }
+<span class="fc bfc" id="L77" title="All 2 branches covered.">        if (nanos &lt; 1_000_000_000) {</span>
+<span class="fc" id="L78">            return String.format(&quot;%.2fms&quot;, nanos / 1_000_000.0);</span>
+        }
+<span class="fc" id="L80">        return String.format(&quot;%.3fs&quot;, nanos / 1_000_000_000.0);</span>
+    }
+
+    /**
+     * Formats elapsed wall-clock time in millis.
+     *
+     * @param startMillis System.currentTimeMillis() at operation start
+     * @return formatted string like &quot;1234ms&quot; or &quot;1.234s&quot;
+     */
+    public static String elapsedMs(long startMillis) {
+<span class="nc" id="L90">        long elapsed = System.currentTimeMillis() - startMillis;</span>
+<span class="nc bnc" id="L91" title="All 2 branches missed.">        if (elapsed &lt; 10_000) {</span>
+<span class="nc" id="L92">            return elapsed + &quot;ms&quot;;</span>
+        }
+<span class="nc" id="L94">        return String.format(&quot;%.3fs&quot;, elapsed / 1000.0);</span>
+    }
+
+    /**
+     * Builds a logging prefix with qid, node, thread.
+     *
+     * @param qid query identifier, may be null
+     * @return formatted prefix
+     */
+    public static String prefix(String qid) {
+<span class="nc" id="L104">        return &quot;node=&quot; + NODE</span>
+<span class="nc" id="L105">                + &quot; thread=&quot; + Thread.currentThread().getName()</span>
+<span class="nc bnc" id="L106" title="All 2 branches missed.">                + (qid != null ? &quot; qid=&quot; + qid : &quot;&quot;);</span>
+    }
+
+    /**
+     * Wraps a Runnable to capture and restore the current qid.
+     *
+     * @param task  original task
+     * @return task with qid context propagated
+     */
+    public static Runnable withQid(Runnable task) {
+<span class="nc" id="L116">        String captured = CURRENT_QID.get();</span>
+<span class="nc bnc" id="L117" title="All 2 branches missed.">        if (captured == null) {</span>
+<span class="nc" id="L118">            return task;</span>
+        }
+<span class="nc" id="L120">        return () -&gt; {</span>
+<span class="nc" id="L121">            String previous = CURRENT_QID.get();</span>
+<span class="nc" id="L122">            CURRENT_QID.set(captured);</span>
+            try {
+<span class="nc" id="L124">                task.run();</span>
+            } finally {
+<span class="nc bnc" id="L126" title="All 2 branches missed.">                if (previous != null) {</span>
+<span class="nc" id="L127">                    CURRENT_QID.set(previous);</span>
+                } else {
+<span class="nc" id="L129">                    CURRENT_QID.remove();</span>
+                }
+            }
+<span class="nc" id="L132">        };</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>
