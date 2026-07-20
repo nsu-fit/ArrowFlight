@@ -196,7 +196,7 @@ import net.surpin.data.arrowflight.server.model.AppConfig;
      */
     private void waitForCluster(String[] hosts, int timeoutSec) {
 <span class="nc" id="L198">        HazelcastInstance hazelcast = component.clusterService().getHazelcastInstance();</span>
-<span class="nc" id="L199">        long started = System.nanoTime();</span>
+<span class="nc" id="L199">        long t = LogUtil.mark();</span>
 <span class="nc" id="L200">        ReentrantLock membershipLock = new ReentrantLock();</span>
 <span class="nc" id="L201">        Condition membershipChanged = membershipLock.newCondition();</span>
 
@@ -222,7 +222,7 @@ import net.surpin.data.arrowflight.server.model.AppConfig;
                     membershipLock, membershipChanged, hosts.length,
 <span class="nc" id="L223">                    TimeUnit.SECONDS.toMillis(timeoutSec));</span>
 <span class="nc bnc" id="L224" title="All 2 branches missed.">            if (!joined) {</span>
-<span class="nc" id="L225">                long elapsed = TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - started);</span>
+<span class="nc" id="L225">                long elapsed = TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - t);</span>
 <span class="nc" id="L226">                int connected = hazelcast.getCluster().getMembers().size();</span>
 <span class="nc" id="L227">                String msg = String.format(</span>
                         &quot;Cluster join timeout after %ds: only %d of %d nodes connected. &quot;
@@ -238,9 +238,10 @@ import net.surpin.data.arrowflight.server.model.AppConfig;
 <span class="nc" id="L238">            hazelcast.getCluster().removeMembershipListener(listenerId);</span>
         }
 
-<span class="nc" id="L241">        long totalSec = TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - started);</span>
-<span class="nc" id="L242">        LOGGER.info(&quot;All {} nodes connected in {}s. Initializing...&quot;, hosts.length, totalSec);</span>
-<span class="nc" id="L243">    }</span>
+<span class="nc" id="L241">        LogUtil.logTiming(t, &quot;cluster.waitForMembers&quot;, &quot;expected=&quot; + hosts.length);</span>
+<span class="nc" id="L242">        long totalSec = TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - t);</span>
+<span class="nc" id="L243">        LOGGER.info(&quot;All {} nodes connected in {}s. Initializing...&quot;, hosts.length, totalSec);</span>
+<span class="nc" id="L244">    }</span>
 
     /**
      * Waits until a changing member count reaches the expected value.
@@ -257,23 +258,23 @@ import net.surpin.data.arrowflight.server.model.AppConfig;
     static boolean awaitMemberCount(IntSupplier memberCount, ReentrantLock lock,
             Condition membershipChanged, int expected, long timeoutMillis)
             throws InterruptedException {
-<span class="pc bpc" id="L260" title="2 of 4 branches missed.">        if (expected &lt;= 0 || timeoutMillis &lt;= 0) {</span>
-<span class="nc" id="L261">            throw new IllegalArgumentException(</span>
+<span class="pc bpc" id="L261" title="2 of 4 branches missed.">        if (expected &lt;= 0 || timeoutMillis &lt;= 0) {</span>
+<span class="nc" id="L262">            throw new IllegalArgumentException(</span>
                     &quot;Expected member count and timeout must be positive&quot;);
         }
 
-<span class="fc" id="L265">        long remainingNanos = TimeUnit.MILLISECONDS.toNanos(timeoutMillis);</span>
-<span class="fc" id="L266">        lock.lockInterruptibly();</span>
+<span class="fc" id="L266">        long remainingNanos = TimeUnit.MILLISECONDS.toNanos(timeoutMillis);</span>
+<span class="fc" id="L267">        lock.lockInterruptibly();</span>
         try {
-<span class="fc bfc" id="L268" title="All 2 branches covered.">            while (memberCount.getAsInt() &lt; expected) {</span>
-<span class="fc bfc" id="L269" title="All 2 branches covered.">                if (remainingNanos &lt;= 0) {</span>
-<span class="fc" id="L270">                    return false;</span>
+<span class="fc bfc" id="L269" title="All 2 branches covered.">            while (memberCount.getAsInt() &lt; expected) {</span>
+<span class="fc bfc" id="L270" title="All 2 branches covered.">                if (remainingNanos &lt;= 0) {</span>
+<span class="fc" id="L271">                    return false;</span>
                 }
-<span class="fc" id="L272">                remainingNanos = membershipChanged.awaitNanos(remainingNanos);</span>
+<span class="fc" id="L273">                remainingNanos = membershipChanged.awaitNanos(remainingNanos);</span>
             }
-<span class="fc" id="L274">            return true;</span>
+<span class="fc" id="L275">            return true;</span>
         } finally {
-<span class="fc" id="L276">            lock.unlock();</span>
+<span class="fc" id="L277">            lock.unlock();</span>
         }
     }
 
@@ -285,12 +286,12 @@ import net.surpin.data.arrowflight.server.model.AppConfig;
      * @return argument value or default
      */
     private String getArgValue(String[] args, String key, String defaultValue) {
-<span class="fc bfc" id="L288" title="All 2 branches covered.">        for (int i = 0; i &lt; args.length; i++) {</span>
-<span class="fc bfc" id="L289" title="All 4 branches covered.">            if (args[i].equals(key) &amp;&amp; i + 1 &lt; args.length) {</span>
-<span class="fc" id="L290">                return args[i + 1];</span>
+<span class="fc bfc" id="L289" title="All 2 branches covered.">        for (int i = 0; i &lt; args.length; i++) {</span>
+<span class="fc bfc" id="L290" title="All 4 branches covered.">            if (args[i].equals(key) &amp;&amp; i + 1 &lt; args.length) {</span>
+<span class="fc" id="L291">                return args[i + 1];</span>
             }
         }
-<span class="fc" id="L293">        return defaultValue;</span>
+<span class="fc" id="L294">        return defaultValue;</span>
     }
 
     /**
@@ -300,8 +301,8 @@ import net.surpin.data.arrowflight.server.model.AppConfig;
      * @throws Exception on startup failure
      */
     public static void main(String... args) throws Exception {
-<span class="nc" id="L303">        HadoopArrowFlightServer server = new HadoopArrowFlightServer();</span>
-<span class="nc" id="L304">        server.start(args);</span>
-<span class="nc" id="L305">    }</span>
+<span class="nc" id="L304">        HadoopArrowFlightServer server = new HadoopArrowFlightServer();</span>
+<span class="nc" id="L305">        server.start(args);</span>
+<span class="nc" id="L306">    }</span>
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

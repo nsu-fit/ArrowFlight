@@ -67,47 +67,47 @@ final class AceroFileResolver {
      * @throws IOException if the source cannot be mapped or copied
      */
     String resolve(FileStatus status) throws IOException {
-<span class="fc" id="L70">        long startNanos = System.nanoTime();</span>
+<span class="fc" id="L70">        long t = LogUtil.mark();</span>
 <span class="fc" id="L71">        String qid = LogUtil.qid();</span>
 <span class="fc" id="L72">        String relative = relativePath(status.getPath());</span>
 
 <span class="fc bfc" id="L74" title="All 2 branches covered.">        if (localDataRoot != null) {</span>
 <span class="fc" id="L75">            java.nio.file.Path local = safeResolve(localDataRoot, relative);</span>
 <span class="pc bpc" id="L76" title="1 of 2 branches missed.">            if (isExpectedFile(local, status.getLen())) {</span>
-<span class="fc" id="L77">                LOGGER.debug(&quot;qid={} node={} resolve=localMirror source={} localPath={} size={} elapsed={}&quot;,</span>
-<span class="fc" id="L78">                        qid, LogUtil.node(), status.getPath(), local,</span>
-<span class="fc" id="L79">                        status.getLen(), LogUtil.elapsedNanos(startNanos));</span>
-<span class="fc" id="L80">                return local.toUri().toString();</span>
+<span class="fc" id="L77">                LogUtil.logTiming(t, &quot;resolve.localMirror&quot;, &quot;source=&quot; + status.getPath().getName() + &quot; size=&quot; + status.getLen());</span>
+<span class="fc" id="L78">                return local.toUri().toString();</span>
             }
-<span class="nc bnc" id="L82" title="All 2 branches missed.">            if (Files.exists(local)) {</span>
-<span class="nc" id="L83">                LOGGER.warn(&quot;qid={} node={} resolve=staleMirror source={} localPath={} expected={} found={}&quot;,</span>
-<span class="nc" id="L84">                        qid, LogUtil.node(), status.getPath(), local,</span>
-<span class="nc" id="L85">                        status.getLen(), Files.size(local));</span>
+<span class="nc bnc" id="L80" title="All 2 branches missed.">            if (Files.exists(local)) {</span>
+<span class="nc" id="L81">                LOGGER.warn(&quot;qid={} node={} resolve=staleMirror source={} localPath={} expected={} found={}&quot;,</span>
+<span class="nc" id="L82">                        qid, LogUtil.node(), status.getPath(), local,</span>
+<span class="nc" id="L83">                        status.getLen(), Files.size(local));</span>
             }
         }
 
-<span class="fc" id="L89">        java.nio.file.Path versionRoot = cacheRoot.resolve(</span>
-<span class="fc" id="L90">                status.getModificationTime() + &quot;-&quot; + status.getLen());</span>
-<span class="fc" id="L91">        java.nio.file.Path cached = safeResolve(versionRoot, relative);</span>
-<span class="fc" id="L92">        Object lock = new Object();</span>
-<span class="fc" id="L93">        Object existing = copyLocks.putIfAbsent(cached.toString(), lock);</span>
-<span class="pc bpc" id="L94" title="1 of 2 branches missed.">        Object actual = existing != null ? existing : lock;</span>
-<span class="fc" id="L95">        synchronized (actual) {</span>
-<span class="pc bpc" id="L96" title="1 of 2 branches missed.">            if (!isExpectedFile(cached, status.getLen())) {</span>
-<span class="fc" id="L97">                copyToCache(status, cached);</span>
+<span class="fc" id="L87">        java.nio.file.Path versionRoot = cacheRoot.resolve(</span>
+<span class="fc" id="L88">                status.getModificationTime() + &quot;-&quot; + status.getLen());</span>
+<span class="fc" id="L89">        java.nio.file.Path cached = safeResolve(versionRoot, relative);</span>
+<span class="fc" id="L90">        Object lock = new Object();</span>
+<span class="fc" id="L91">        Object existing = copyLocks.putIfAbsent(cached.toString(), lock);</span>
+<span class="pc bpc" id="L92" title="1 of 2 branches missed.">        Object actual = existing != null ? existing : lock;</span>
+<span class="pc bpc" id="L93" title="1 of 2 branches missed.">        boolean waited = existing != null;</span>
+<span class="fc" id="L94">        synchronized (actual) {</span>
+<span class="pc bpc" id="L95" title="1 of 2 branches missed.">            if (!isExpectedFile(cached, status.getLen())) {</span>
+<span class="fc" id="L96">                copyToCache(status, cached);</span>
             }
-<span class="fc" id="L99">        }</span>
-<span class="fc" id="L100">        copyLocks.remove(cached.toString(), lock);</span>
-<span class="fc" id="L101">        LOGGER.debug(&quot;qid={} node={} resolve=cached source={} cached={} size={} modTime={} elapsed={}&quot;,</span>
-<span class="fc" id="L102">                qid, LogUtil.node(), status.getPath(), cached,</span>
-<span class="fc" id="L103">                status.getLen(), status.getModificationTime(),</span>
-<span class="fc" id="L104">                LogUtil.elapsedNanos(startNanos));</span>
+<span class="fc" id="L98">        }</span>
+<span class="fc" id="L99">        copyLocks.remove(cached.toString(), lock);</span>
+<span class="fc" id="L100">        String extra = &quot;source=&quot; + status.getPath().getName() + &quot; size=&quot; + status.getLen();</span>
+<span class="pc bpc" id="L101" title="1 of 2 branches missed.">        if (waited) {</span>
+<span class="nc" id="L102">            extra += &quot; syncWait=true&quot;;</span>
+        }
+<span class="fc" id="L104">        LogUtil.logTiming(t, &quot;resolve.hadoopFile&quot;, extra);</span>
 <span class="fc" id="L105">        return cached.toUri().toString();</span>
     }
 
     private void copyToCache(FileStatus status, java.nio.file.Path destination)
             throws IOException {
-<span class="fc" id="L110">        long startedNanos = System.nanoTime();</span>
+<span class="fc" id="L110">        long t = LogUtil.mark();</span>
 <span class="fc" id="L111">        long copiedLength = 0L;</span>
 <span class="fc" id="L112">        boolean successful = false;</span>
 <span class="fc" id="L113">        java.nio.file.Path destinationParent = destination.getParent();</span>
@@ -142,54 +142,55 @@ final class AceroFileResolver {
         } finally {
 <span class="fc" id="L143">            Files.deleteIfExists(temporary);</span>
 <span class="fc" id="L144">            MetricsService.recordMaterialization(copiedLength,</span>
-<span class="fc" id="L145">                    System.nanoTime() - startedNanos, successful);</span>
+<span class="fc" id="L145">                    System.nanoTime() - t, successful);</span>
         }
-<span class="fc" id="L147">    }</span>
+<span class="fc" id="L147">        LogUtil.logTiming(t, &quot;resolve.copyToCache&quot;, &quot;source=&quot; + status.getPath().getName() + &quot; size=&quot; + status.getLen() + &quot; copied=&quot; + copiedLength);</span>
+<span class="fc" id="L148">    }</span>
 
     private static void moveIntoPlace(java.nio.file.Path source,
             java.nio.file.Path destination) throws IOException {
         try {
-<span class="fc" id="L152">            Files.move(source, destination, StandardCopyOption.ATOMIC_MOVE,</span>
+<span class="fc" id="L153">            Files.move(source, destination, StandardCopyOption.ATOMIC_MOVE,</span>
                     StandardCopyOption.REPLACE_EXISTING);
-<span class="nc" id="L154">        } catch (AtomicMoveNotSupportedException ignored) {</span>
-<span class="nc" id="L155">            Files.move(source, destination, StandardCopyOption.REPLACE_EXISTING);</span>
-<span class="fc" id="L156">        }</span>
-<span class="fc" id="L157">    }</span>
+<span class="nc" id="L155">        } catch (AtomicMoveNotSupportedException ignored) {</span>
+<span class="nc" id="L156">            Files.move(source, destination, StandardCopyOption.REPLACE_EXISTING);</span>
+<span class="fc" id="L157">        }</span>
+<span class="fc" id="L158">    }</span>
 
     private String relativePath(Path source) throws IOException {
-<span class="fc" id="L160">        URI qualifiedSource = fileSystem.makeQualified(source).toUri().normalize();</span>
-<span class="pc bpc" id="L161" title="1 of 2 branches missed.">        if (!sameLocation(qualifiedDataRoot, qualifiedSource)) {</span>
-<span class="nc" id="L162">            throw new IOException(&quot;Hadoop file is outside configured data directory: &quot; + source);</span>
+<span class="fc" id="L161">        URI qualifiedSource = fileSystem.makeQualified(source).toUri().normalize();</span>
+<span class="pc bpc" id="L162" title="1 of 2 branches missed.">        if (!sameLocation(qualifiedDataRoot, qualifiedSource)) {</span>
+<span class="nc" id="L163">            throw new IOException(&quot;Hadoop file is outside configured data directory: &quot; + source);</span>
         }
 
-<span class="fc" id="L165">        String rootPath = qualifiedDataRoot.getPath();</span>
-<span class="pc bpc" id="L166" title="1 of 2 branches missed.">        if (!rootPath.endsWith(&quot;/&quot;)) {</span>
-<span class="nc" id="L167">            rootPath += &quot;/&quot;;</span>
+<span class="fc" id="L166">        String rootPath = qualifiedDataRoot.getPath();</span>
+<span class="pc bpc" id="L167" title="1 of 2 branches missed.">        if (!rootPath.endsWith(&quot;/&quot;)) {</span>
+<span class="nc" id="L168">            rootPath += &quot;/&quot;;</span>
         }
-<span class="fc" id="L169">        String sourcePath = qualifiedSource.getPath();</span>
-<span class="pc bpc" id="L170" title="2 of 4 branches missed.">        if (!sourcePath.startsWith(rootPath) || sourcePath.length() == rootPath.length()) {</span>
-<span class="nc" id="L171">            throw new IOException(&quot;Hadoop file is outside configured data directory: &quot; + source);</span>
+<span class="fc" id="L170">        String sourcePath = qualifiedSource.getPath();</span>
+<span class="pc bpc" id="L171" title="2 of 4 branches missed.">        if (!sourcePath.startsWith(rootPath) || sourcePath.length() == rootPath.length()) {</span>
+<span class="nc" id="L172">            throw new IOException(&quot;Hadoop file is outside configured data directory: &quot; + source);</span>
         }
-<span class="fc" id="L173">        return sourcePath.substring(rootPath.length());</span>
+<span class="fc" id="L174">        return sourcePath.substring(rootPath.length());</span>
     }
 
     private static boolean sameLocation(URI root, URI source) {
-<span class="pc bpc" id="L177" title="1 of 2 branches missed.">        return java.util.Objects.equals(root.getScheme(), source.getScheme())</span>
-<span class="pc bpc" id="L178" title="1 of 2 branches missed.">                &amp;&amp; java.util.Objects.equals(root.getAuthority(), source.getAuthority());</span>
+<span class="pc bpc" id="L178" title="1 of 2 branches missed.">        return java.util.Objects.equals(root.getScheme(), source.getScheme())</span>
+<span class="pc bpc" id="L179" title="1 of 2 branches missed.">                &amp;&amp; java.util.Objects.equals(root.getAuthority(), source.getAuthority());</span>
     }
 
     private static java.nio.file.Path safeResolve(java.nio.file.Path root, String relative)
             throws IOException {
-<span class="fc" id="L183">        java.nio.file.Path resolved = root.resolve(relative).normalize();</span>
-<span class="pc bpc" id="L184" title="1 of 2 branches missed.">        if (!resolved.startsWith(root)) {</span>
-<span class="nc" id="L185">            throw new IOException(&quot;Unsafe relative Hadoop path: &quot; + relative);</span>
+<span class="fc" id="L184">        java.nio.file.Path resolved = root.resolve(relative).normalize();</span>
+<span class="pc bpc" id="L185" title="1 of 2 branches missed.">        if (!resolved.startsWith(root)) {</span>
+<span class="nc" id="L186">            throw new IOException(&quot;Unsafe relative Hadoop path: &quot; + relative);</span>
         }
-<span class="fc" id="L187">        return resolved;</span>
+<span class="fc" id="L188">        return resolved;</span>
     }
 
     private static boolean isExpectedFile(java.nio.file.Path file, long expectedLength)
             throws IOException {
-<span class="pc bpc" id="L192" title="1 of 4 branches missed.">        return Files.isRegularFile(file) &amp;&amp; Files.size(file) == expectedLength;</span>
+<span class="pc bpc" id="L193" title="1 of 4 branches missed.">        return Files.isRegularFile(file) &amp;&amp; Files.size(file) == expectedLength;</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>
