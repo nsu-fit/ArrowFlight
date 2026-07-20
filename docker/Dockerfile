@@ -90,6 +90,7 @@ RUN mkdir -p /arrow-source && \
         -DARROW_PARQUET=ON \
         -DARROW_COMPUTE=ON \
         -DARROW_FILESYSTEM=ON \
+        -DARROW_WITH_SNAPPY=ON \
         -DARROW_BUILD_SHARED=ON \
         -DARROW_BUILD_STATIC=ON \
         -DARROW_CSV=OFF \
@@ -135,7 +136,9 @@ ENV SPARK_HOME=/opt/spark
 ENV PATH=/opt/spark/bin:/opt/spark/sbin:${PATH}
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends bash ca-certificates curl procps python3 tini \
+    && apt-get install -y --no-install-recommends \
+        bash ca-certificates curl procps python3 tini \
+        libre2-9 libsnappy1v5 libutf8proc2 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=download /opt/${SPARK_PACKAGE} /opt/${SPARK_PACKAGE}
@@ -161,6 +164,15 @@ COPY --from=arrow-build /arrow/install/lib/libarrow_acero.so* /opt/arrow/lib/
 COPY --from=arrow-build /arrow/install/lib/libarrow_substrait.so* /opt/arrow/lib/
 COPY --from=arrow-build /arrow/install/lib/libparquet.so* /opt/arrow/lib/
 COPY --from=arrow-build /arrow/install/lib/libarrow_dataset_jni.so /opt/arrow/lib/
+
+# Fail the image build when an Arrow JNI runtime dependency is missing.
+RUN set -eux; \
+    for library in /opt/arrow/lib/*.so*; do \
+      ldd "${library}"; \
+      if ldd "${library}" | grep -q "not found"; then \
+        exit 1; \
+      fi; \
+    done
 
 # Rebuild JNI .so path inside JAR (remove stock, add HDFS-enabled)
 RUN echo "import zipfile, os, glob" > /tmp/rebuild_jar.py && \
