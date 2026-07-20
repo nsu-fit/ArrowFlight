@@ -3,6 +3,7 @@
 ARG MAVEN_IMAGE=maven:3.9.9-eclipse-temurin-21
 ARG RUNTIME_IMAGE=eclipse-temurin:21-jre-jammy
 
+# ── build stage: compile Java code ────────────────────────
 FROM ${MAVEN_IMAGE} AS build
 WORKDIR /src
 COPY pom.xml .
@@ -11,29 +12,70 @@ RUN mvn -q -DskipTests dependency:go-offline
 COPY src ./src
 RUN mvn -q -DskipTests package
 
-FROM ${RUNTIME_IMAGE}
-ARG SPARK_VERSION=3.5.1
+# ── duckdb-hdfs build stage: compile extension from source ──
+FROM ubuntu:jammy AS duckdb-hdfs-build
+ARG DUCKDB_HDFS_VERSION=1.4.1
+ARG LIBHDFS3_VERSION=2.2.30
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    build-essential cmake git ninja-build python3 curl ca-certificates pkg-config \
+    libssl-dev libkrb5-dev uuid-dev \
+    libgsasl7-dev libxml2-dev libboost-dev libprotobuf-dev \
+    && rm -rf /var/lib/apt/lists/*
+# libhdfs3 — from source (no apt package, need correct protobuf soname)
+RUN git clone --depth 1 --branch "v${LIBHDFS3_VERSION}" \
+    https://github.com/vincent-chang/libhdfs3.git /tmp/libhdfs3-build
+RUN cd /tmp/libhdfs3-build && mkdir build && cd build && \
+    ../bootstrap --shared && make -j"$(nproc)" && make install && \
+    rm -rf /tmp/libhdfs3-build
+# Build duckdb-hdfs extension (source via archive, submodules separately)
+RUN curl -fL --retry 5 --retry-all-errors --retry-delay 10 --connect-timeout 30 \
+    -o /tmp/duckdb-hdfs.tar.gz \
+    "https://github.com/vincent-chang/duckdb-hdfs/archive/refs/tags/v${DUCKDB_HDFS_VERSION}.tar.gz" \
+    && mkdir -p /duckdb-hdfs \
+    && tar -xzf /tmp/duckdb-hdfs.tar.gz --strip-components=1 -C /duckdb-hdfs \
+    && rm -f /tmp/duckdb-hdfs.tar.gz
+RUN git clone --depth 1 --branch "v${DUCKDB_HDFS_VERSION}" \
+    https://github.com/duckdb/duckdb.git /duckdb-hdfs/duckdb
+# Build extension directly via duckdb cmake
+RUN cmake -DCMAKE_BUILD_TYPE=Release \
+        -DDUCKDB_EXTENSION_CONFIGS="/duckdb-hdfs/extension_config.cmake" \
+        -DEXTENSION_STATIC_BUILD=1 \
+        -S /duckdb-hdfs/duckdb \
+        -B /duckdb-hdfs/build/release && \
+    cmake --build /duckdb-hdfs/build/release --config Release -j"$(nproc)"
+RUN EXT_FILE="$(find /duckdb-hdfs/build -name 'hadoopfs.duckdb_extension' -type f | head -1)"; \
+    test -n "${EXT_FILE}" && cp "${EXT_FILE}" /duckdb-hdfs/hadoopfs.duckdb_extension && echo "Build OK" || \
+    { echo "ERROR: hadoopfs.duckdb_extension not found"; exit 1; }
+
+# ── base stage: heavy dependencies (Spark, Hadoop, DuckDB) ──
+# No COPY from context → always cached when versions unchanged.
+FROM ${RUNTIME_IMAGE} AS base
+ARG SPARK_VERSION=3.5.9
 ARG SPARK_PACKAGE=spark-${SPARK_VERSION}-bin-hadoop3
 ARG HADOOP_VERSION=3.3.6
 ARG HADOOP_PACKAGE=hadoop-${HADOOP_VERSION}
 ARG DUCKDB_HDFS_VERSION=1.4.1
-ARG DUCKDB_HDFS_SHA256=22c9b9ce9e5345a51206b025f5e0ec8b63b501b81cee57a12ecb39dc1c26a7b1
 
 ENV APP_HOME=/opt/arrowflight
-ENV APP_JAR=/opt/arrowflight/hadoop-arrow-flight-1.0-SNAPSHOT.jar
 ENV SPARK_HOME=/opt/spark
+ENV HADOOP_HOME=/opt/hadoop
+ENV HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
+ENV ARROW_LIBHDFS_DIR=/opt/hadoop/lib/native
 ENV DUCKDB_HDFS_HOME=/opt/duckdb-hdfs
 ENV DUCKDB_HDFS_EXTENSION=/opt/duckdb-hdfs/hadoopfs.duckdb_extension
 ENV DUCKDB_ALLOW_UNSIGNED_EXTENSIONS=true
-ENV PATH=/opt/spark/bin:/opt/spark/sbin:${PATH}
+ENV LD_LIBRARY_PATH=/opt/duckdb-hdfs:/opt/hadoop/lib/native:/opt/java/openjdk/lib/server
+ENV PATH=/opt/spark/bin:/opt/spark/sbin:/opt/hadoop/bin:/opt/hadoop/sbin:${PATH}
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends bash ca-certificates curl procps python3 tini \
-    && rm -rf /var/lib/apt/lists/* \
-    && set -eux; \
+    && apt-get install -y --no-install-recommends bash ca-certificates curl procps tini \
+        libuuid1 libprotobuf23 libxml2 libkrb5-3 libgsasl7 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN set -eux; \
         for url in \
-            "https://dlcdn.apache.org/spark/spark-${SPARK_VERSION}/${SPARK_PACKAGE}.tgz" \
-            "https://archive.apache.org/dist/spark/spark-${SPARK_VERSION}/${SPARK_PACKAGE}.tgz"; do \
+            "https://archive.apache.org/dist/spark/spark-${SPARK_VERSION}/${SPARK_PACKAGE}.tgz" \
+            "https://dlcdn.apache.org/spark/spark-${SPARK_VERSION}/${SPARK_PACKAGE}.tgz"; do \
           for attempt in 1 2 3 4 5; do \
             rm -f /tmp/spark.tgz; \
             if curl -fL --retry 5 --retry-all-errors --retry-delay 10 --connect-timeout 30 \
@@ -50,16 +92,10 @@ RUN apt-get update \
         rm -f /tmp/spark.tgz; \
         ln -s "/opt/${SPARK_PACKAGE}" "${SPARK_HOME}"
 
-ENV HADOOP_HOME=/opt/hadoop
-ENV HADOOP_CONF_DIR=/opt/hadoop/etc/hadoop
-ENV ARROW_LIBHDFS_DIR=/opt/hadoop/lib/native
-ENV LD_LIBRARY_PATH=/opt/hadoop/lib/native:/opt/java/openjdk/lib/server
-ENV PATH=/opt/hadoop/bin:/opt/hadoop/sbin:${PATH}
-
 RUN set -eux; \
         for url in \
-            "https://archive.apache.org/dist/hadoop/common/hadoop-${HADOOP_VERSION}/${HADOOP_PACKAGE}.tar.gz" \
-            "https://dlcdn.apache.org/hadoop/common/hadoop-${HADOOP_VERSION}/${HADOOP_PACKAGE}.tar.gz"; do \
+            "https://dlcdn.apache.org/hadoop/common/hadoop-${HADOOP_VERSION}/${HADOOP_PACKAGE}.tar.gz" \
+            "https://archive.apache.org/dist/hadoop/common/hadoop-${HADOOP_VERSION}/${HADOOP_PACKAGE}.tar.gz"; do \
           for attempt in 1 2 3 4 5; do \
             rm -f /tmp/hadoop.tgz; \
             if curl -fL --retry 5 --retry-all-errors --retry-delay 10 --connect-timeout 30 \
@@ -76,19 +112,20 @@ RUN set -eux; \
         rm -f /tmp/hadoop.tgz; \
         ln -s "/opt/${HADOOP_PACKAGE}" "${HADOOP_HOME}"
 
-RUN set -eux; \
-        curl -fL --retry 5 --retry-all-errors --retry-delay 10 --connect-timeout 30 \
-          -o /tmp/duckdb-hdfs.tgz \
-          "https://github.com/vincent-chang/duckdb-hdfs/releases/download/v${DUCKDB_HDFS_VERSION}/duckdb-hdfs.v${DUCKDB_HDFS_VERSION}.linux_amd64.tgz"; \
-        echo "${DUCKDB_HDFS_SHA256}  /tmp/duckdb-hdfs.tgz" | sha256sum -c -; \
-        tar -xzf /tmp/duckdb-hdfs.tgz -C /opt; \
-        rm -f /tmp/duckdb-hdfs.tgz; \
-        LD_LIBRARY_PATH="${DUCKDB_HDFS_HOME}" \
-          "${DUCKDB_HDFS_HOME}/duckdb" -unsigned -c \
-          "LOAD '${DUCKDB_HDFS_EXTENSION}';"
+RUN mkdir -p /opt/duckdb-hdfs
+COPY --from=duckdb-hdfs-build \
+    /duckdb-hdfs/hadoopfs.duckdb_extension \
+    ${DUCKDB_HDFS_EXTENSION}
+COPY --from=duckdb-hdfs-build \
+    /usr/local/lib/libhdfs3.so* \
+    /opt/duckdb-hdfs/
+RUN test -f "${DUCKDB_HDFS_EXTENSION}" \
+    && test "$(stat -c%s "${DUCKDB_HDFS_EXTENSION}")" -gt 10000 \
+    && echo "duckdb-hdfs extension ready (size: $(stat -c%s ${DUCKDB_HDFS_EXTENSION}) bytes)"
 
-ENV LD_LIBRARY_PATH=/opt/duckdb-hdfs:/opt/hadoop/lib/native:/opt/java/openjdk/lib/server
-
+# ── app stage: thin application layer (rebuilt on every code change) ──
+FROM base AS app
+ENV APP_JAR=/opt/arrowflight/hadoop-arrow-flight-1.0-SNAPSHOT.jar
 WORKDIR ${APP_HOME}
 COPY --from=build /src/target/hadoop-arrow-flight-1.0-SNAPSHOT.jar ${APP_JAR}
 COPY docker/bin/ ./bin/
