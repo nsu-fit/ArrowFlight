@@ -16,17 +16,8 @@ FROM ${PYTHON_IMAGE} AS query-downloader
 WORKDIR /work
 COPY benchmarks/benchbase-spark/tpcds/generate-procedures.py /work/generate-procedures.py
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
-
 RUN mkdir -p /work/queries && \
-    for n in $(seq -w 1 99); do \
-      url="https://raw.githubusercontent.com/duckdb/duckdb/main/extension/tpcds/dsdgen/queries/${n}.sql"; \
-      echo "Downloading ${url}"; \
-      curl -sfL --retry 3 --retry-delay 2 -o "/work/queries/${n}.sql" "${url}"; \
-    done && \
-    python /work/generate-procedures.py && \
+    python /work/generate-procedures.py --download && \
     ls -1 /work/src/com/oltpbenchmark/benchmarks/tpcds/procedures/ | wc -l
 
 # -----------------------------------------------------------------------------
