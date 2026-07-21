@@ -63,11 +63,22 @@ RUN mvn -q -DskipTests package -P postgres
 FROM ${RUNTIME_IMAGE}
 
 ARG BENCHBASE_HOME=/benchbase
+ARG LOG4J_VERSION=2.24.3
 WORKDIR ${BENCHBASE_HOME}
 
-COPY --from=builder /src/target/benchbase.jar benchbase.jar
-COPY --from=builder /src/target/lib/ lib/
-COPY --from=builder /src/config/ config/
+COPY --from=builder /src/target/benchbase-postgres.tgz /tmp/
+
+RUN tar -xzf /tmp/benchbase-postgres.tgz -C /tmp \
+    && mv /tmp/benchbase-postgres/benchbase*.jar benchbase.jar \
+    && mv /tmp/benchbase-postgres/lib/ lib/ \
+    && mv /tmp/benchbase-postgres/config/ config/ \
+    && rm -rf /tmp/benchbase-postgres /tmp/benchbase-postgres.tgz
+
+# BenchBase dependencies pull in log4j-api 3.x which conflicts with
+# commons-logging. Add log4j-api 2.x with a filename prefix that ensures
+# it loads first in the classpath (overriding the incompatible 3.x).
+ADD https://repo1.maven.org/maven2/org/apache/logging/log4j/log4j-api/${LOG4J_VERSION}/log4j-api-${LOG4J_VERSION}.jar 000-log4j-api.jar
+ADD https://repo1.maven.org/maven2/org/apache/logging/log4j/log4j-core/${LOG4J_VERSION}/log4j-core-${LOG4J_VERSION}.jar 000-log4j-core.jar
 
 RUN mkdir -p results
 
