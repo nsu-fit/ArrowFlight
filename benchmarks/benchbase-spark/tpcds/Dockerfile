@@ -49,7 +49,11 @@ COPY --from=query-downloader /work/src/com/oltpbenchmark/benchmarks/tpcds/proced
      src/main/java/com/oltpbenchmark/benchmarks/tpcds/procedures/
 
 # Build BenchBase with the Postgres profile (JDBC driver for Thrift Server).
-RUN mvn -q -DskipTests package -P postgres
+# BenchBase pom.xml declares Java 23, but the code uses only Java 21 features.
+RUN mvn -q -DskipTests package -P postgres \
+    -Djava.version=21 \
+    -Dmaven.compiler.source=21 \
+    -Dmaven.compiler.target=21
 
 # -----------------------------------------------------------------------------
 # Stage 3: Runtime image.
