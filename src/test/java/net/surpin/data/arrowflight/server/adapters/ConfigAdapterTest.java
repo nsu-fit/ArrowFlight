@@ -33,11 +33,11 @@ class ConfigAdapterTest {
     void getConfigDefaults() {
         AppConfig cfg = ConfigAdapter.getConfig();
 
-        assertEquals(10, cfg.numServers());
+        assertEquals(4, cfg.numServers());
         assertEquals(65536, cfg.batchSize());
         assertEquals(1048576, cfg.ioFileBufferSize());
         assertEquals(32, cfg.ioParallelism());
-        assertEquals(2, cfg.duckDbThreads());
+        assertEquals(1, cfg.duckDbThreads());
         assertEquals("/data/parquet", cfg.dataDir());
         assertEquals(32010, cfg.port());
         assertEquals(5701, cfg.hazelcastPort());
@@ -61,7 +61,7 @@ class ConfigAdapterTest {
     void getConfigNumServersDefaults() {
         // No explicit property set, should use arrowflight.properties.
         AppConfig cfg = ConfigAdapter.getConfig();
-        assertEquals(10, cfg.numServers());
+        assertEquals(4, cfg.numServers());
     }
 
     @Test

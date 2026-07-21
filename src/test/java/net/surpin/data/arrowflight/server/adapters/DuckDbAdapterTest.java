@@ -1,5 +1,6 @@
 package net.surpin.data.arrowflight.server.adapters;
 
+import net.surpin.data.arrowflight.server.model.AppConfig;
 import net.surpin.data.arrowflight.server.services.ParquetQueryParser;
 import org.apache.arrow.flight.FlightProducer;
 import org.junit.jupiter.api.Tag;
@@ -31,6 +32,26 @@ import static org.mockito.Mockito.when;
 /** Tests DuckDB SQL helpers, connection setup, and Flight backpressure handling. */
 @Tag("unit")
 class DuckDbAdapterTest {
+
+    /** Verifies Java-backed Arrow streams cannot enable unsafe DuckDB worker callbacks. */
+    @Test
+    void connectionForcesSingleThreadForArrowCallbacks() throws Exception {
+        AppConfig config = mock(AppConfig.class);
+        when(config.batchSize()).thenReturn(65536);
+        when(config.duckDbGroups()).thenReturn(8);
+        when(config.duckDbThreads()).thenReturn(4);
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+
+        try (DuckDbAdapter adapter = new DuckDbAdapter(config, executor);
+             Statement statement = adapter.connection().createStatement();
+             ResultSet result = statement.executeQuery(
+                     "SELECT CAST(current_setting('threads') AS INTEGER)")) {
+            assertTrue(result.next());
+            assertEquals(1, result.getInt(1));
+        } finally {
+            executor.shutdownNow();
+        }
+    }
 
     @Test
     void sqlStringLiteralNormal() {

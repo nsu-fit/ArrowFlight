@@ -376,7 +376,7 @@ public final class ExecutionService {
                                 + DuckDbAdapter.quoteIdentifier(jt.alias())
                                 + " AS SELECT * FROM " + fromClause);
                     }
-                    LogUtil.logTiming(tView, "engine:join.createView", "alias=" + jt.alias() + " files=" + (tableUris != null ? tableUris.size() : 0));
+                    LogUtil.logTiming(tView, "engine:join.createView", "alias=" + jt.alias() + " files=" + tableUris.size());
                     registeredAliases.add(jt.alias());
                 }
 

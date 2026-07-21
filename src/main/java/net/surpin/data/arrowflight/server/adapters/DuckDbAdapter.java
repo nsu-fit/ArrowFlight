@@ -37,6 +37,7 @@ import net.surpin.data.arrowflight.server.LogUtil;
 public final class DuckDbAdapter implements AutoCloseable {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(DuckDbAdapter.class);
+    private static final int ARROW_STREAM_SAFE_THREAD_COUNT = 1;
     private final ThreadLocal<Connection> threadConn;
     private final Set<Connection> allConnections = ConcurrentHashMap.newKeySet();
     private final ExecutorService ioPool;
@@ -76,7 +77,12 @@ public final class DuckDbAdapter implements AutoCloseable {
      */
     private void configureConnection(Connection conn) throws Exception {
         try (Statement s = conn.createStatement()) {
-            s.execute("SET threads = " + appConfig.duckDbThreads());
+            if (appConfig.duckDbThreads() != ARROW_STREAM_SAFE_THREAD_COUNT) {
+                LOGGER.warn("DuckDB threads={} is unsafe for Java-backed Arrow streams; "
+                                + "using threads={} to keep JNI callbacks on the calling thread",
+                        appConfig.duckDbThreads(), ARROW_STREAM_SAFE_THREAD_COUNT);
+            }
+            s.execute("SET threads = " + ARROW_STREAM_SAFE_THREAD_COUNT);
             String dataDir = appConfig.dataDir();
             if (dataDir != null) {
                 setArrayOptionIfPresent(s, "allowed_paths", dataDir);
