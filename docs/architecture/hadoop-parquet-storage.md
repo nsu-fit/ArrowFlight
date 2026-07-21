@@ -4,7 +4,7 @@ This document describes how the project works with files through Hadoop FileSyst
 
 ## Storage Model
 
-Data is not stored inside the Arrow Flight server. Flight nodes act as the compute layer: they receive assigned Parquet file paths and read those files through Hadoop FileSystem.
+Data is not stored inside the Arrow Flight server. Flight nodes act as the compute layer: they receive assigned Parquet file paths and read those files directly from HDFS through the HDFS-enabled Arrow Dataset JNI library.
 
 The data root is configured by the `dataDirectory` parameter. Tables are expected under a `schema/table` hierarchy. For each table, the server recursively searches for Parquet files.
 
@@ -12,9 +12,9 @@ The data root is configured by the `dataDirectory` parameter. Tables are expecte
 
 ## Hadoop FileSystem
 
-Hadoop FileSystem is used as a common abstraction for data access. This allows the server to read from HDFS, a local filesystem, or another Hadoop-compatible storage backend, as long as it is available through the Hadoop API.
+Hadoop FileSystem is used for discovery, metadata access, and locality information. Arrow Dataset / Acero performs data-page reads. The Docker image builds Arrow Dataset JNI with `ARROW_HDFS=ON`, so Acero can open `hdfs://` URIs directly.
 
-A Flight node does not need to have a Parquet file on its local disk. If the file is stored in a distributed filesystem, the node opens it through Hadoop FileSystem and reads it over the network.
+A Flight node does not need a local Parquet copy. Acero uses HDFS seek and range reads required by Parquet and streams Arrow batches without materializing the complete file in `/tmp`.
 
 When the server starts, it creates a `FileSystem` instance associated with `dataDirectory`. All file operations then go through that object: listing files, reading metadata, resolving absolute paths, and opening files.
 
@@ -58,11 +58,11 @@ If no projection is specified, the scanner reads all table columns.
 
 ## Filter Pushdown
 
-If a query contains a filter, the project routes it to DuckDB instead of Acero. DuckDB reads the assigned Parquet files through `read_parquet([...])` and applies SQL predicates in the DuckDB Parquet reader.
+Supported filters are converted to Substrait and executed by Acero. If a filter cannot be converted, Acero scans the HDFS Parquet files and exposes Arrow C streams to DuckDB, which applies the remaining SQL predicate.
 
-For HDFS paths, DuckDB needs the DuckDB HDFS extension to be loaded. The extension path and HDFS options are configured through `arrowflight.properties`, JVM system properties, or environment variables.
+DuckDB never opens HDFS paths in this flow. It consumes registered Arrow streams, so no DuckDB HDFS extension and no intermediate Parquet copy are required.
 
-This routing is intentional: Acero is used for filter-less full scans and projections, while DuckDB is used for filtered scans because its Parquet reader can use predicate pushdown and row-group pruning.
+This routing keeps HDFS I/O in Acero while using DuckDB only for SQL operations not implemented by the Acero path.
 
 ## Footer Fast Path
 
@@ -72,13 +72,13 @@ For total row counts, the project can use row count information from the Parquet
 
 If the required statistics are available and the query does not require filtering or grouping, the server reads only metadata. If the statistics are not sufficient, execution falls back to the regular aggregation path.
 
-The current regular aggregation fallback is DuckDB. Acero is not used for grouped or filtered aggregation execution.
+The regular aggregation path streams Acero batches from HDFS into DuckDB and merges partial aggregate results.
 
 ## File Distribution Across Flight Nodes
 
-File distribution starts in `FlightSqlProducer.determineEndpoints`, which delegates to `QueryPlanner.determineEndpoints`. For each Parquet file, the server chooses the Flight server that will read it.
+File distribution is performed in `FlightSqlProducer.determineEndpoints`. For each Parquet file, the server chooses the Flight server that will read it.
 
-Server selection is handled by `QueryPlanner.pickServer`.
+Server selection is handled by `pickServer`.
 
 Selection logic:
 
@@ -90,4 +90,3 @@ After a server is selected, the file is added to the list of files assigned to t
 ## Current Distribution Limitations
 
 The greedy load-aware strategy distributes data volume (file size). However, it operates at the whole-file level and does not split files across nodes. Extremely large single files still pin all their data to one node.
-

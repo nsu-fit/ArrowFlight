@@ -126,6 +126,10 @@ public class HadoopArrowFlightServer {
         }
 
         try {
+            // Increase HTTP/2 initial flow control window from default 64KB to 1MB.
+            // Allows server to send larger Arrow batches without waiting for WINDOW_UPDATE.
+            System.setProperty("grpc.netty.server.flowControlWindow", "1048576");
+
             Location location = Location.forGrpcInsecure(localhost, port);
             server = FlightServer.builder(
                     component.allocator(),

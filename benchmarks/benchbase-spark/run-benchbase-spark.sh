@@ -316,7 +316,9 @@ wait_service_healthy() {
 }
 
 start_storage_cluster() {
-  compose up --build -d hdfs-namenode spark-master "${FLIGHT_SERVER_SERVICES[@]}"
+  echo "Building shared ArrowFlight image once"
+  compose build hdfs-namenode
+  compose up --no-build -d hdfs-namenode spark-master "${FLIGHT_SERVER_SERVICES[@]}"
   wait_service_healthy hdfs-namenode 180
   start_observability
 }
@@ -330,7 +332,7 @@ start_observability() {
 }
 
 start_thrift() {
-  compose --profile benchbase up --build --force-recreate -d spark-thrift-server
+  compose --profile benchbase up --no-build --force-recreate -d spark-thrift-server
   wait_service_healthy spark-thrift-server 180
 }
 

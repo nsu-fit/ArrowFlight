@@ -110,19 +110,6 @@ jobs:
           format: jacoco
           base-path: /src/main/java
 
-      - name: SonarCloud Scan
-        uses: SonarSource/sonarcloud-github-action@v2
-        continue-on-error: true
-        if: always()
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        with:
-          args: >
-            -Dsonar.projectKey=nsu-fit_ArrowFlight
-            -Dsonar.organization=nsu-fit
-            -Dsonar.java.binaries=target/classes
-            -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
-
       - name: Deploy JaCoCo report to gh-pages (main)
         uses: peaceiris/actions-gh-pages@v4
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'

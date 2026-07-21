@@ -126,7 +126,7 @@ src/main/resources/arrowflight.properties
 
 Ключевые параметры:
 
-- `batchSize` - общий Arrow batch size для Acero и DuckDB export, задаёт максимальный размер Flight batch.
+- `batchSize` - общий Arrow batch size для Acero и DuckDB export.
 - `ioParallelism` - явное число worker threads. Если пустой, считается по формуле.
 - `ioParallelismMinThreads` - нижняя граница thread pool.
 - `ioParallelismMaxCores` - максимум CPU cores для расчета; `0` значит без ограничения.
@@ -150,27 +150,9 @@ mvn test -Darrowflight.io.parallelism=64
 mvn test -Darrowflight.duckdb.threads=2
 ```
 
-## DuckDB HDFS extension
+## HDFS runtime
 
-Для локальных Parquet-файлов DuckDB HDFS extension не нужен.
-
-Для `hdfs://...` путей DuckDB должен загрузить HDFS extension. Можно задать через config:
-
-```properties
-duckDbHdfsExtension=/path/to/hadoopfs.duckdb_extension
-duckDbAllowUnsignedExtensions=true
-duckDbHdfsDefaultNamenode=hdfs://namenode:8020
-```
-
-Или через environment variables:
-
-```bash
-export DUCKDB_HDFS_EXTENSION=/path/to/hadoopfs.duckdb_extension
-export DUCKDB_ALLOW_UNSIGNED_EXTENSIONS=true
-export HDFS_DEFAULT_NAMENODE=hdfs://namenode:8020
-```
-
-Docker-образ проекта сам скачивает подходящий release `duckdb-hdfs`, проверяет его SHA-256 и выставляет эти переменные окружения.
+HDFS Parquet-файлы открывает Arrow Dataset/Acero, а не DuckDB. В Linux runtime должны быть доступны `libhdfs`, Hadoop configuration и Java classpath Hadoop. Docker image и entrypoint проекта задают для этого `ARROW_LIBHDFS_DIR`, `LD_LIBRARY_PATH`, `HADOOP_CONF_DIR` и `CLASSPATH`.
 
 ## run.sh
 

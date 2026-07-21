@@ -33,11 +33,11 @@ class ConfigAdapterTest {
     void getConfigDefaults() {
         AppConfig cfg = ConfigAdapter.getConfig();
 
-        assertEquals(10, cfg.numServers());
-        assertEquals(65536, cfg.batchSize());
+        assertEquals(4, cfg.numServers());
+        assertEquals(4096, cfg.batchSize());
         assertEquals(1048576, cfg.ioFileBufferSize());
         assertEquals(32, cfg.ioParallelism());
-        assertEquals(8, cfg.duckDbThreads());
+        assertEquals(2, cfg.duckDbThreads());
         assertEquals("/data/parquet", cfg.dataDir());
         assertNull(cfg.localDataDir());
         assertEquals(32010, cfg.port());
@@ -49,7 +49,7 @@ class ConfigAdapterTest {
         assertFalse(cfg.duckDbAllowUnsignedExtensions());
         assertTrue(cfg.metricsEnabled());
         assertEquals(Integer.MAX_VALUE, cfg.grpcMaxInboundMessageSize());
-        assertEquals(300000, cfg.flightListenerReadyTimeoutMillis());
+        assertEquals(60000, cfg.flightListenerReadyTimeoutMillis());
     }
 
     @Test
@@ -64,7 +64,7 @@ class ConfigAdapterTest {
     void getConfigNumServersDefaults() {
         // No explicit property set, should use arrowflight.properties.
         AppConfig cfg = ConfigAdapter.getConfig();
-        assertEquals(10, cfg.numServers());
+        assertEquals(4, cfg.numServers());
     }
 
     @Test

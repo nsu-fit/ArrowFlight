@@ -118,10 +118,8 @@ When planning a query, `FlightSqlProducer` calls `fileLocations()` to build a co
 
 ```java
 public Map<String, FileAssignment> fileLocations() {
-    Map<String, Map<String, Long>> inventories = new LinkedHashMap<>();
-    for (Map.Entry<String, Map<String, Long>> entry : hazelcast.serverFiles().entrySet()) {
-        inventories.put(entry.getKey(), entry.getValue());
-    }
+    Set<String> inventoryServers = hazelcast.serverFiles().keySet();
+    Map<String, Map<String, Long>> inventories = hazelcast.serverFiles().getAll(inventoryServers);
     Map<String, FileAssignment> result = new LinkedHashMap<>();
     for (Map.Entry<String, Map<String, Long>> server : inventories.entrySet()) {
         String serverUri = server.getKey();
@@ -205,7 +203,7 @@ During `GetFlightInfo`:
 1. `FlightSqlProducer` calls `filterLiveServers()` to get active nodes.
 2. `ParquetAdapter.locationsForQuery()` determines which files belong to the query.
 3. `ClusterService.fileLocations()` provides the distributed file inventory.
-4. `QueryPlanner.pickServer()` selects the best node for each file, preferring nodes that host the file's blocks and picking the one with the lowest load among candidates.
+4. `pickServer()` selects the best node for each file, preferring nodes that host the file's blocks and picking the one with the lowest load among candidates.
 5. A handle is stored in `statementCache` with a 10-minute TTL.
 6. Each endpoint stores its own handle with the assigned file list.
 

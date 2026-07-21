@@ -8,8 +8,6 @@ This document describes how an SQL query flows through the Arrow Flight server: 
 
 `FlightSqlProducer` implements the Flight SQL layer. It receives queries, creates `FlightInfo`, builds `Ticket` objects, creates endpoints, and restores query state during `DoGet`.
 
-`QueryPlanner` handles file distribution across nodes: it receives parsed queries and file inventories, runs `pickServer` for locality-aware assignment, and builds per-node endpoints.
-
 `ExecutionService`, `MetadataService`, and `ParquetAdapter` handle Parquet-related work. `ParquetAdapter` owns file discovery and locality detection. `MetadataService` handles schema construction and Java footer fast paths. `ExecutionService` orchestrates Arrow Dataset / Acero scans and DuckDB execution.
 
 `ParquetQueryParser` parses SQL and extracts schema, table, selected columns, filters, aggregations, and group by columns.
@@ -61,13 +59,13 @@ This schema is returned to the client as part of `FlightInfo`.
 
 ## File Distribution
 
-File distribution starts in `FlightSqlProducer.determineEndpoints`, which delegates to `QueryPlanner.determineEndpoints`.
+File distribution is performed in `FlightSqlProducer.determineEndpoints`.
 
 First, the server reads the SQL query from `statementCache`. Then `ParquetAdapter.locationsForQuery` determines which Parquet files belong to the query table and which Hadoop hosts store their blocks.
 
 Next, the server retrieves all registered Flight servers from `serverRegistry`. Each Flight node registers itself in `serverRegistry` during startup.
 
-For each file, the server calls `QueryPlanner.pickServer`. This method chooses the Flight server that will read the file.
+For each file, the server calls `pickServer`. This method chooses the Flight server that will read the file.
 
 If a Flight server runs on a host that stores the file blocks, that node is preferred. If no useful locality is available, the file is assigned using round-robin distribution across all Flight servers.
 
@@ -127,7 +125,7 @@ Examples:
 - `SELECT * FROM schema.table`
 - `SELECT col1, col2 FROM schema.table`
 
-The method resolves assigned relative file paths into absolute URIs and creates one Arrow Dataset scanner for the files assigned to the current ticket. Projection passes the required column list to the scanner. If no projection is specified, all columns are scanned.
+The method resolves assigned relative file paths into absolute URIs and creates one Arrow Dataset scanner for the files assigned to the current ticket. HDFS paths remain `hdfs://` URIs and are opened directly by the HDFS-enabled Arrow Dataset JNI library. Projection passes the required column list to the scanner. If no projection is specified, all columns are scanned.
 
 Reading is performed by Arrow Dataset / Acero. It opens Parquet files, reads the required columns, and returns Arrow batches.
 
@@ -146,20 +144,11 @@ DuckDB is used for query shapes that need SQL execution beyond a simple scan:
 - aggregates that cannot use footer statistics
 - joins
 
-For single-table queries, `ExecutionService` builds SQL over DuckDB's `read_parquet([...])` table function. For joins, it creates temporary DuckDB views for each table alias, each view backed by `read_parquet([...])`, and then executes the rewritten join SQL against those views.
+For local single-table queries, `ExecutionService` can build SQL over DuckDB's `read_parquet([...])` table function. For HDFS aggregations, unsupported filters, and joins, Acero reads HDFS directly and registers Arrow C streams in DuckDB. Join table aliases are temporary DuckDB views over those streams.
 
-DuckDB returns results through `DuckDBResultSet.arrowExportStream`. The server copies rows into a separate Flight-owned root before `putNext()`, so reuse of DuckDB's buffers cannot corrupt an in-flight batch.
+DuckDB returns results through `DuckDBResultSet.arrowExportStream`. The server copies rows from DuckDB's Arrow stream into Flight batches and sends them to the client.
 
-When DuckDB reads local files, no extension is required. For HDFS, `ExecutionService` preserves the qualified `hdfs://authority/path` URI and DuckDB opens it through the configured HDFS extension. The Docker image installs and verifies `duckdb-hdfs` automatically.
-
-Relevant settings include:
-
-- `duckDbHdfsExtension` or `DUCKDB_HDFS_EXTENSION`
-- `duckDbAllowUnsignedExtensions` or `DUCKDB_ALLOW_UNSIGNED_EXTENSIONS`
-- `duckDbHdfsDefaultNamenode` or `HDFS_DEFAULT_NAMENODE`
-- `duckDbHdfsHaNamenodes` or `HDFS_HA_NAMENODES`
-- `duckDbHdfsShortcircuit` or `HDFS_SHORTCIRCUIT`
-- `duckDbHdfsDomainSocketPath` or `HDFS_DOMAIN_SOCKET_PATH`
+DuckDB reads local files without an extension. The HDFS execution path does not pass HDFS URIs to DuckDB and therefore does not require a DuckDB HDFS extension.
 
 ## Runtime Tuning
 

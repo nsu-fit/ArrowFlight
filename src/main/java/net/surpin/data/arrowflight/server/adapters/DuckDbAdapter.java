@@ -23,11 +23,17 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+import org.apache.arrow.vector.FieldVector;
 
 import net.surpin.data.arrowflight.server.services.ParquetQueryParser;
 import net.surpin.data.arrowflight.server.model.AppConfig;
@@ -203,6 +209,8 @@ public final class DuckDbAdapter implements AutoCloseable {
 
     /**
      * Streams DuckDB SQL query results as Arrow batches to a Flight listener.
+     * Uses a producer-consumer pattern to decouple DuckDB reads from gRPC sends,
+     * preventing DuckDB from blocking on backpressure from a slow consumer.
      *
      * @param allocator    Arrow buffer allocator
      * @param duckSql      DuckDB SQL query
@@ -218,58 +226,168 @@ public final class DuckDbAdapter implements AutoCloseable {
         LOGGER.info("qid={} node={} thread={} duckdb=start batchSize={} sql='{}'",
                 qid, LogUtil.node(), Thread.currentThread().getName(), batchSize, duckSql);
         Connection conn = threadConn.get();
-        long firstBatchNanos = -1;
+        AtomicLong firstBatchNanos = new AtomicLong(-1);
         long backpressureNanos = 0;
         try (Statement stmt = conn.createStatement();
                 org.duckdb.DuckDBResultSet drs = (org.duckdb.DuckDBResultSet) stmt.executeQuery(duckSql);
                 ArrowReader reader = (ArrowReader) drs.arrowExportStream(allocator, batchSize)) {
-            VectorSchemaRoot root = reader.getVectorSchemaRoot();
+            VectorSchemaRoot duckRoot = reader.getVectorSchemaRoot();
 
-            if (startListener) {
-                listener.start(root);
+            int poolCapacity = 4;
+            ArrayBlockingQueue<VectorSchemaRoot> readyQueue =
+                    new ArrayBlockingQueue<>(poolCapacity);
+            ArrayBlockingQueue<VectorSchemaRoot> freeQueue =
+                    new ArrayBlockingQueue<>(poolCapacity);
+            for (int i = 0; i < poolCapacity; i++) {
+                freeQueue.put(VectorSchemaRoot.create(duckRoot.getSchema(), allocator));
             }
+
+            VectorSchemaRoot sendRoot = VectorSchemaRoot.create(duckRoot.getSchema(), allocator);
+            if (startListener) {
+                listener.start(sendRoot);
+            }
+
+            AtomicBoolean producerAlive = new AtomicBoolean(true);
+            AtomicBoolean cancelled = new AtomicBoolean(false);
+            AtomicReference<Exception> producerError = new AtomicReference<>();
+
+            Future<?> producerFuture = ioPool.submit(() -> {
+                VectorSchemaRoot held = null;
+                try {
+                    while (!Thread.currentThread().isInterrupted()) {
+                        if (cancelled.get()) {
+                            break;
+                        }
+                        held = freeQueue.take();
+                        if (cancelled.get()) {
+                            freeQueue.put(held);
+                            held = null;
+                            break;
+                        }
+                        if (!reader.loadNextBatch()) {
+                            freeQueue.put(held);
+                            held = null;
+                            break;
+                        }
+                        int rows = duckRoot.getRowCount();
+                        if (rows == 0) {
+                            duckRoot.clear();
+                            freeQueue.put(held);
+                            held = null;
+                            continue;
+                        }
+                        if (firstBatchNanos.get() < 0) {
+                            firstBatchNanos.set(System.nanoTime() - t);
+                        }
+                        transferRoot(duckRoot, held);
+                        duckRoot.clear();
+                        readyQueue.put(held);
+                        held = null;
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                } catch (Exception e) {
+                    producerError.set(e);
+                } finally {
+                    producerAlive.set(false);
+                    if (held != null) {
+                        held.close();
+                    }
+                }
+            });
 
             int batchesSent = 0;
             long rowsSent = 0;
-            boolean cancelled = false;
-            while (!cancelled && reader.loadNextBatch()) {
-                if (firstBatchNanos < 0) {
-                    firstBatchNanos = System.nanoTime() - t;
-                    LogUtil.logTiming(t, "duckdb.firstBatch", "sql='" + duckSql.substring(0, Math.min(100, duckSql.length())) + "'");
-                }
-                int rows = root.getRowCount();
-                if (rows == 0) {
-                    root.clear();
-                    continue;
-                }
-                long bpStart = System.nanoTime();
-                if (!awaitListenerReady(
-                        listener, appConfig.flightListenerReadyTimeoutMillis())) {
+            try {
+                while (true) {
+                    if (cancelled.get()) {
+                        break;
+                    }
+                    VectorSchemaRoot buf;
+                    try {
+                        buf = readyQueue.poll(100, TimeUnit.MILLISECONDS);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        throw new RuntimeException(e);
+                    }
+                    if (buf == null) {
+                        if (!producerAlive.get()) {
+                            if (producerError.get() != null) {
+                                throw new RuntimeException(producerError.get());
+                            }
+                            break;
+                        }
+                        continue;
+                    }
+
+                    transferRoot(buf, sendRoot);
+                    buf.clear();
+                    freeQueue.put(buf);
+
+                    if (firstBatchNanos.get() > 0 && batchesSent == 0) {
+                        LogUtil.logTiming(t, "duckdb.firstBatch",
+                                "sql='" + duckSql.substring(0, Math.min(100, duckSql.length())) + "'");
+                    }
+
+                    int rows = sendRoot.getRowCount();
+                    long bpStart = System.nanoTime();
+                    if (!awaitListenerReady(
+                            listener, appConfig.flightListenerReadyTimeoutMillis())) {
+                        backpressureNanos += System.nanoTime() - bpStart;
+                        cancelled.set(true);
+                        break;
+                    }
                     backpressureNanos += System.nanoTime() - bpStart;
-                    cancelled = true;
-                    root.clear();
-                    break;
+                    listener.putNext();
+                    batchesSent++;
+                    rowsSent += rows;
+                    if (batchesSent % 10 == 0) {
+                        LOGGER.debug("qid={} node={} duckdb=progress batches={} rows={} elapsed={} throughput={}rows/s",
+                                qid, LogUtil.node(), batchesSent, rowsSent,
+                                LogUtil.elapsedNanos(t),
+                                rowsSent * 1_000_000_000L
+                                        / Math.max(1, System.nanoTime() - t));
+                    }
                 }
-                backpressureNanos += System.nanoTime() - bpStart;
-                listener.putNext();
-                batchesSent++;
-                rowsSent += rows;
-                if (batchesSent % 10 == 0) {
-                    LOGGER.debug("qid={} node={} duckdb=progress batches={} rows={} elapsed={} throughput={}rows/s",
-                            qid, LogUtil.node(), batchesSent, rowsSent,
-                            LogUtil.elapsedNanos(startNanos),
-                            rowsSent * 1_000_000_000L
-                                    / Math.max(1, System.nanoTime() - startNanos));
+            } finally {
+                if (cancelled.get()) {
+                    producerFuture.cancel(true);
                 }
-                root.clear();
+                List<VectorSchemaRoot> remaining = new ArrayList<>();
+                freeQueue.drainTo(remaining);
+                readyQueue.drainTo(remaining);
+                for (VectorSchemaRoot root : remaining) {
+                    root.close();
+                }
             }
-            LogUtil.logTiming(t, "duckdb.streamSql", "batches=" + batchesSent + " rows=" + rowsSent + " backpressureMs=" + backpressureNanos / 1_000_000);
+            sendRoot.close();
+
+            LogUtil.logTiming(t, "duckdb.streamSql",
+                    "batches=" + batchesSent + " rows=" + rowsSent
+                    + " backpressureMs=" + backpressureNanos / 1_000_000);
             LOGGER.info("qid={} node={} duckdb=completed batches={} rows={} ttfB={} backpressureMs={} elapsed={} cancelled={}",
                     qid, LogUtil.node(), batchesSent, rowsSent,
-                    firstBatchNanos >= 0 ? formatDuration(firstBatchNanos) : "N/A",
+                    firstBatchNanos.get() >= 0 ? formatDuration(firstBatchNanos.get()) : "N/A",
                     backpressureNanos / 1_000_000,
-                    LogUtil.elapsedNanos(t), cancelled);
+                    LogUtil.elapsedNanos(t), cancelled.get());
         }
+    }
+
+    /**
+     * Transfers buffer ownership from source VectorSchemaRoot to destination
+     * via FieldVector.makeTransferPair. Source buffers are moved to destination,
+     * source gets destination's old buffers (which are then cleared by the caller).
+     *
+     * @param src source root (data will be moved out)
+     * @param dst destination root (receives source data)
+     */
+    private static void transferRoot(VectorSchemaRoot src, VectorSchemaRoot dst) {
+        List<FieldVector> srcVecs = src.getFieldVectors();
+        List<FieldVector> dstVecs = dst.getFieldVectors();
+        for (int i = 0; i < srcVecs.size(); i++) {
+            srcVecs.get(i).makeTransferPair(dstVecs.get(i)).transfer();
+        }
+        dst.setRowCount(src.getRowCount());
     }
 
     /**

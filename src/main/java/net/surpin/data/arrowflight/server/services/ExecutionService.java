@@ -122,69 +122,11 @@ public final class ExecutionService {
             return;
         }
 
-        if (parsedQuery.filter != null && !parsedQuery.filter.isBlank()) {
-            long tFilter = LogUtil.mark();
-            byte[] filterBytes = filterBuilder.apply(parsedQuery);
-            LogUtil.logTiming(tFilter, "filter.build", "hasFilter=" + (filterBytes != null));
-            if (isHdfsData() && filterBytes != null) {
-                LOGGER.info("qid={} node={} execution=engine engine=Acero+SubstraitFilter files={}",
-                        LogUtil.qid(), LogUtil.node(), resolvedUris.size());
-                aceroAdapter.scanBatches(allocator, query, parsedQuery,
-                        resolvedUris, filterBytes, listener, startListener);
-                return;
-            }
-            if (isHdfsData()) {
-                LOGGER.info("qid={} node={} execution=engine engine=Acero+DuckDB(hdfs-filter) files={}",
-                        LogUtil.qid(), LogUtil.node(), resolvedUris.size());
-                streamHdfsFilterViaArrow(allocator, parsedQuery, resolvedUris,
-                        listener, startListener);
-                return;
-            }
-            LOGGER.info("qid={} node={} execution=engine engine=DuckDB files={}",
-                    LogUtil.qid(), LogUtil.node(), resolvedUris.size());
-            String duckSql = DuckDbAdapter.buildSelectSql(parsedQuery,
-                    DuckDbAdapter.readParquetFromClause(ducksDbPaths(resolvedUris)));
-            duckDbAdapter.streamSql(allocator, duckSql, listener, startListener);
-            return;
-        }
-
-        LOGGER.info("qid={} node={} execution=engine engine=Acero(full-scan) files={}",
+        LOGGER.info("qid={} node={} execution=engine engine=DuckDB files={}",
                 LogUtil.qid(), LogUtil.node(), resolvedUris.size());
-        aceroAdapter.scanBatches(allocator, query, parsedQuery,
-                resolvedUris, listener, startListener);
-    }
-
-
-    private void streamHdfsFilterViaArrow(BufferAllocator allocator, ParquetQueryParser pq,
-            List<String> resolvedUris, FlightProducer.ServerStreamListener listener,
-            boolean startListener) throws Exception {
-        long t = LogUtil.mark();
-        try (BufferAllocator child = allocator.newChildAllocator(
-                "hdfs-filter", 0, Long.MAX_VALUE)) {
-            Connection conn = duckDbAdapter.connection();
-            DuckDBConnection duckConn = conn.unwrap(DuckDBConnection.class);
-            try (AceroAdapter.RegisteredArrowStreams streams = aceroAdapter.exportToDuckDb(
-                    child, resolvedUris, null, buildProjection(pq), duckConn)) {
-                String duckSql = DuckDbAdapter.buildSelectSql(
-                        pq, arrowStreamsFromClause(streams.aliases().size()));
-                duckDbAdapter.streamSql(allocator, duckSql, listener, startListener);
-            }
-        }
-        LogUtil.logTiming(t, "engine:hdfsHybrid", "files=" + resolvedUris.size());
-    }
-
-    private static String arrowStreamsFromClause(int count) {
-        if (count == 1) {
-            return "\"t0\"";
-        }
-        StringBuilder result = new StringBuilder("(");
-        for (int i = 0; i < count; i++) {
-            if (i > 0) {
-                result.append(" UNION ALL ");
-            }
-            result.append("SELECT * FROM \"t").append(i).append("\"");
-        }
-        return result.append(')').toString();
+        String duckSql = DuckDbAdapter.buildSelectSql(parsedQuery,
+                DuckDbAdapter.readParquetFromClause(ducksDbPaths(resolvedUris)));
+        duckDbAdapter.streamSql(allocator, duckSql, listener, startListener);
     }
 
     /**
@@ -346,101 +288,6 @@ public final class ExecutionService {
         LogUtil.logTiming(t, "engine:join", "tables=" + pq.joinTables.size());
     }
 
-    // ── parallel aggregation ──────────────────────────────────────────────
-
-    /**
-     * Runs aggregation in parallel across files using Acero + DuckDB.
-     *
-     * @param allocator     Arrow buffer allocator
-     * @param pq            parsed query
-     * @param fileUris      relative file paths
-     * @param listener      Flight stream listener
-     * @param startListener whether to call listener.start()
-     * @throws Exception on execution failure
-     */
-    public void parallelAggregate(BufferAllocator allocator, ParquetQueryParser pq,
-            String[] fileUris, FlightProducer.ServerStreamListener listener,
-            boolean startListener) throws Exception {
-        long t = LogUtil.mark();
-        List<String> parquetUris = resolveUris(fileUris);
-        boolean hasFilter = pq.filter != null && !pq.filter.isBlank();
-
-        boolean isCountStarOnly = pq.groupByColumnNames.isEmpty()
-                && !pq.selectExprs.isEmpty()
-                && pq.selectExprs.stream()
-                        .allMatch(e -> e.func == ParquetQueryParser.SelectExpr.AggFunc.COUNT_STAR);
-
-        if (isCountStarOnly) {
-            byte[] filterBytes = filterBuilder.apply(pq);
-            Optional<String[]> cols = buildProjection(pq);
-            if (!hasFilter || filterBytes != null) {
-                int numCountStarCols = pq.selectExprs.size();
-                List<Future<List<Object[]>>> futures = new ArrayList<>(parquetUris.size());
-                for (String uri : parquetUris) {
-                    futures.add(ioPool.submit(() ->
-                            aceroAdapter.aggregateFile(allocator, uri, filterBytes, cols, numCountStarCols)));
-                }
-                List<Object[]> merged = mergePartialRows(
-                        pq.selectExprs, pq.groupByColumnNames, futures);
-                emitRowsAsArrow(allocator, pq, merged, listener, startListener);
-                return;
-            }
-        }
-
-        // DuckDB path: Acero scans → Arrow C streams → DuckDB aggregates
-        int numGroups = Math.min(duckDbAdapter.duckDbGroups(), parquetUris.size());
-        List<List<String>> groups = partitionIntoGroups(parquetUris, numGroups);
-        byte[] filterBytes = filterBuilder.apply(pq);
-        Optional<String[]> cols = buildProjection(pq);
-
-        List<Future<VectorSchemaRoot>> vsrFutures = new ArrayList<>(groups.size());
-        for (List<String> group : groups) {
-            String duckSql = DuckDbAdapter.buildGroupedDuckSql(
-                    pq, group.size(), filterBytes != null);
-            vsrFutures.add(ioPool.submit(() -> {
-                BufferAllocator child = allocator.newChildAllocator("par-agg", 0, Long.MAX_VALUE);
-                try {
-                    Connection conn = duckDbAdapter.connection();
-                    DuckDBConnection duckConn = conn.unwrap(DuckDBConnection.class);
-                    try (AceroAdapter.RegisteredArrowStreams streams =
-                                    aceroAdapter.exportToDuckDb(
-                                            child, group, filterBytes, cols, duckConn);
-                            Statement stmt = conn.createStatement();
-                            org.duckdb.DuckDBResultSet drs =
-                                    (org.duckdb.DuckDBResultSet) stmt.executeQuery(duckSql);
-                            ArrowReader arrowReader = (ArrowReader) drs.arrowExportStream(
-                                    allocator, duckDbAdapter.batchSize())) {
-                        return AceroAdapter.concatBatches(allocator, arrowReader);
-                    }
-                } catch (Exception e) {
-                    throw new RuntimeException(e);
-                } finally {
-                    child.close();
-                }
-            }));
-        }
-        List<VectorSchemaRoot> partials = new ArrayList<>(vsrFutures.size());
-        try {
-            for (Future<VectorSchemaRoot> f : vsrFutures) {
-                partials.add(f.get());
-            }
-            try (VectorSchemaRoot merged = mergeVsrPartials(allocator, pq, partials)) {
-                if (startListener) {
-                    listener.start(merged);
-                }
-                if (merged.getRowCount() > 0) {
-                    if (DuckDbAdapter.awaitListenerReady(
-                            listener, appConfig.flightListenerReadyTimeoutMillis())) {
-                        listener.putNext();
-                    }
-                }
-            }
-        } finally {
-            partials.forEach(VectorSchemaRoot::close);
-        }
-        LogUtil.logTiming(t, "engine:parAgg", "files=" + fileUris.length + " groups=" + Math.min(duckDbAdapter.duckDbGroups(), parquetUris.size()));
-    }
-
     // ── private helpers ──────────────────────────────────────────────────
 
     /**
@@ -479,16 +326,6 @@ public final class ExecutionService {
         }
         LogUtil.logTiming(t, "files.resolveUris", "files=" + uris.size());
         return uris;
-    }
-
-    private String resolveEngineUri(org.apache.hadoop.fs.FileStatus status) throws IOException {
-        if (isHdfsData()) {
-            long t = LogUtil.mark();
-            String uri = aceroFileResolver.resolve(status);
-            LogUtil.logTiming(t, "resolve.hadoopFile", "size=" + status.getLen());
-            return uri;
-        }
-        return status.getPath().toUri().toString();
     }
 
     /**
