@@ -108,7 +108,7 @@ public final class ServerModule {
     }
 
     /**
-     * Provides a bounded virtual-thread I/O executor singleton.
+     * Provides a bounded platform-thread executor for native and blocking I/O.
      *
      * @param config application configuration
      * @return executor service
@@ -117,10 +117,11 @@ public final class ServerModule {
     @Singleton
     ExecutorService ioPool(AppConfig config) {
         int parallelism = config.ioParallelism();
-        LOGGER.info("node={} pool=create type=virtual threads={}", LogUtil.node(), parallelism);
+        LOGGER.info("node={} pool=create type=platform threads={}", LogUtil.node(), parallelism);
         return new java.util.concurrent.AbstractExecutorService() {
             private final ExecutorService delegate = Executors.newFixedThreadPool(
-                    parallelism, Thread.ofVirtual().name("parquet-io-", 0).factory());
+                    parallelism,
+                    Thread.ofPlatform().daemon().name("parquet-io-", 0).factory());
             private final java.util.concurrent.atomic.AtomicInteger activeTasks = new java.util.concurrent.atomic.AtomicInteger(0);
             private final java.util.concurrent.atomic.AtomicLong submittedTasks = new java.util.concurrent.atomic.AtomicLong(0);
 

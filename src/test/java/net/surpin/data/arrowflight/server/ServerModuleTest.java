@@ -18,9 +18,9 @@ import static org.mockito.Mockito.when;
 @Tag("unit")
 class ServerModuleTest {
 
-    /** Verifies that the I/O executor uses bounded, named virtual workers. */
+    /** Verifies that the I/O executor uses bounded, named platform workers. */
     @Test
-    void ioPoolUsesBoundedVirtualThreads() throws Exception {
+    void ioPoolUsesBoundedPlatformThreads() throws Exception {
         AppConfig config = mock(AppConfig.class);
         when(config.ioParallelism()).thenReturn(1);
         ServerModule module = new ServerModule(null, null, null, null);
@@ -33,12 +33,12 @@ class ServerModuleTest {
             Future<Boolean> first = executor.submit(() -> {
                 firstStarted.countDown();
                 releaseFirst.await();
-                return Thread.currentThread().isVirtual()
+                return !Thread.currentThread().isVirtual()
                         && Thread.currentThread().getName().startsWith("parquet-io-");
             });
             Future<Boolean> second = executor.submit(() -> {
                 secondStarted.countDown();
-                return Thread.currentThread().isVirtual();
+                return !Thread.currentThread().isVirtual();
             });
 
             assertTrue(firstStarted.await(1, TimeUnit.SECONDS));
