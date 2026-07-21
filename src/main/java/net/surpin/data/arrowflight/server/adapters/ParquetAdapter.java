@@ -137,7 +137,7 @@ public class ParquetAdapter {
      * @return Arrow schema
      */
     public Schema getTableSchema(String schema, String table, List<String> columns) {
-        long startNanos = System.nanoTime();
+        long t = LogUtil.mark();
         validateName(schema);
         validateName(table);
         try {
@@ -158,6 +158,7 @@ public class ParquetAdapter {
             if (parquetPath == null) {
                 LOGGER.warn("node={} parquet=schemaNotFound table={}.{} path={}",
                         LogUtil.node(), schema, table, tableDirectoryPath);
+                LogUtil.logTiming(t, "schema.tableNotFound", "table=" + schema + "." + table);
                 return new Schema(Collections.emptyList(), null);
             }
 
@@ -177,15 +178,14 @@ public class ParquetAdapter {
                 }
             })) {
                 parquetSchema = reader.getFooter().getFileMetaData().getSchema();
-                LOGGER.debug("node={} parquet=schemaRead table={}.{} file={} size={} fields={} elapsed={}",
-                        LogUtil.node(), schema, table, parquetPath.getName(), fileLen,
-                        parquetSchema.getFieldCount(), LogUtil.elapsedNanos(startNanos));
             }
 
-            return SchemaConverter.convert(
+            Schema result = SchemaConverter.convert(
                     parquetSchema,
                     cd -> columns == null || columns.isEmpty()
                             || cd.getPath().length == 1 && columns.contains(cd.getPath()[0]));
+            LogUtil.logTiming(t, "schema.readFooter", "table=" + schema + "." + table + " fields=" + parquetSchema.getFieldCount());
+            return result;
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
@@ -265,7 +265,7 @@ public class ParquetAdapter {
      * @throws IOException on HDFS read failure
      */
     public Map<String, FileAssignment> locationsForQuery(String query) throws IOException {
-        long startNanos = System.nanoTime();
+        long t = LogUtil.mark();
         ParquetQueryParser parsedQuery = ParquetQueryParser.parse(query);
         Map<String, FileAssignment> result = new HashMap<>();
         URI dataDirectoryURI = fileSystem.getFileStatus(new Path(dataDirectory)).getPath().toUri();
@@ -291,9 +291,7 @@ public class ParquetAdapter {
                     fileCount++;
                     totalBytes += file.getLen();
                 }
-                LOGGER.info("node={} parquet=filesForTable table={}.{} files={} bytes={} elapsed={}",
-                        LogUtil.node(), jt.schema(), jt.table(), fileCount, totalBytes,
-                        LogUtil.elapsedNanos(startNanos));
+                LogUtil.logTiming(t, "schema.discoverJoinTable", "table=" + jt.schema() + "." + jt.table() + " files=" + fileCount + " bytes=" + totalBytes);
             }
             return result;
         }
@@ -314,9 +312,7 @@ public class ParquetAdapter {
             fileCount++;
             totalBytes += file.getLen();
         }
-        LOGGER.info("node={} parquet=locationsFound table={}.{} files={} bytes={} elapsed={}",
-                LogUtil.node(), parsedQuery.schema, parsedQuery.table,
-                fileCount, totalBytes, LogUtil.elapsedNanos(startNanos));
+        LogUtil.logTiming(t, "schema.discover", "table=" + (parsedQuery.schema != null ? parsedQuery.schema + "." : "") + (parsedQuery.table != null ? parsedQuery.table : "") + " files=" + fileCount + " bytes=" + totalBytes);
         return result;
     }
 
@@ -329,7 +325,7 @@ public class ParquetAdapter {
      * @throws IOException on file-system access failure
      */
     public Map<String, Long> localFileInventory() throws IOException {
-        long startNanos = System.nanoTime();
+        long t = LogUtil.mark();
         Map<String, Long> result = new LinkedHashMap<>();
         Path root = new Path(this.dataDirectory);
         if (!this.fileSystem.exists(root)) {
@@ -352,9 +348,7 @@ public class ParquetAdapter {
             }
         }
         long totalBytes = result.values().stream().mapToLong(Long::longValue).sum();
-        LOGGER.info("node={} parquet=inventoryComplete localFiles={} bytes={} scanned={} elapsed={}",
-                LogUtil.node(), result.size(), totalBytes, scanned,
-                LogUtil.elapsedNanos(startNanos));
+        LogUtil.logTiming(t, "parquet.localInventory", "localFiles=" + result.size() + " scanned=" + scanned + " totalBytes=" + totalBytes);
         return result;
     }
 

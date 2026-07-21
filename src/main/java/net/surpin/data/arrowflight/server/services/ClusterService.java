@@ -15,6 +15,7 @@ import java.util.concurrent.TimeUnit;
 
 import com.hazelcast.core.HazelcastInstance;
 
+import net.surpin.data.arrowflight.server.LogUtil;
 import net.surpin.data.arrowflight.server.adapters.HazelcastAdapter;
 import net.surpin.data.arrowflight.server.model.AppConfig;
 import net.surpin.data.arrowflight.server.model.FileAssignment;
@@ -87,6 +88,7 @@ public final class ClusterService implements AutoCloseable {
      * @return set of live server URIs
      */
     public Set<String> filterLiveServers(Set<String> serverUris) {
+        long t = LogUtil.mark();
         long now = System.currentTimeMillis();
         long deadline = now - HEARTBEAT_TIMEOUT_SEC * 1000;
 
@@ -107,6 +109,7 @@ public final class ClusterService implements AutoCloseable {
                 hazelcast.serverHeartbeats().remove(uri);
             }
         }
+        LogUtil.logTiming(t, "hazelcast.filterLiveServers", "total=" + serverUris.size() + " live=" + live.size());
         return live;
     }
 
@@ -116,10 +119,12 @@ public final class ClusterService implements AutoCloseable {
      * @return map of URI to load (bytes)
      */
     public Map<String, Long> allServerLoads() {
+        long t = LogUtil.mark();
         Map<String, Long> result = new LinkedHashMap<>();
         for (Map.Entry<String, Long> entry : hazelcast.serverRegistry().entrySet()) {
             result.put(entry.getKey(), entry.getValue());
         }
+        LogUtil.logTiming(t, "hazelcast.allServerLoads", "servers=" + result.size());
         return result;
     }
 
@@ -151,6 +156,7 @@ public final class ClusterService implements AutoCloseable {
      * @return relative path to size and owning servers
      */
     public Map<String, FileAssignment> fileLocations() {
+        long t = LogUtil.mark();
         Map<String, Map<String, Long>> inventories = new LinkedHashMap<>();
         for (Map.Entry<String, Map<String, Long>> entry : hazelcast.serverFiles().entrySet()) {
             inventories.put(entry.getKey(), entry.getValue());
@@ -174,6 +180,7 @@ public final class ClusterService implements AutoCloseable {
                 });
             }
         }
+        LogUtil.logTiming(t, "hazelcast.fileLocations", "files=" + result.size());
         return result;
     }
 
@@ -191,6 +198,7 @@ public final class ClusterService implements AutoCloseable {
      * @param delta bytes to add (positive or negative)
      */
     public void addLoad(String uri, long delta) {
+        long t = LogUtil.mark();
         hazelcast.serverRegistry().compute(uri, (k, v) -> {
             if (v == null) {
                 return delta;
@@ -198,6 +206,7 @@ public final class ClusterService implements AutoCloseable {
             long updated = v + delta;
             return updated <= 0 ? 0L : updated;
         });
+        LogUtil.logTiming(t, "hazelcast.addLoad", "uri=" + uri + " delta=" + delta);
     }
 
     /**
@@ -207,7 +216,9 @@ public final class ClusterService implements AutoCloseable {
      * @param state  handle state
      */
     public void storeHandle(String handle, HandleState state) {
+        long t = LogUtil.mark();
         hazelcast.statementCache().put(handle, state, 10, TimeUnit.MINUTES);
+        LogUtil.logTiming(t, "hazelcast.storeHandle");
     }
 
     /**
@@ -217,7 +228,10 @@ public final class ClusterService implements AutoCloseable {
      * @return handle state, or null if not found
      */
     public HandleState getHandle(String handle) {
-        return (HandleState) hazelcast.statementCache().get(handle);
+        long t = LogUtil.mark();
+        HandleState state = (HandleState) hazelcast.statementCache().get(handle);
+        LogUtil.logTiming(t, "hazelcast.getHandle", "found=" + (state != null));
+        return state;
     }
 
     /**

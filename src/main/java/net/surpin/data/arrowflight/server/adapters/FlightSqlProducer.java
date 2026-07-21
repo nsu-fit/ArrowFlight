@@ -99,7 +99,9 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
             FlightProducer.ServerStreamListener listener) {
         final ByteString handle = ticket.getStatementHandle();
         String qid = qid(handle);
+        long tGet = LogUtil.mark();
         HandleState state = clusterService.getHandle(handle.toStringUtf8());
+        LogUtil.logTiming(tGet, "execution.getHandle");
         if (state == null) {
             LOGGER.error("qid={} No HandleState found", qid);
             listener.error(new IllegalStateException("No HandleState found for qid=" + qid));
@@ -116,7 +118,7 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
 
         String serverUri = state.serverUri() != null ? state.serverUri() : "local";
         long bytes = state.bytes();
-        long started = System.currentTimeMillis();
+        long tExec = LogUtil.mark();
         LogUtil.setQid(qid);
         LOGGER.info("qid={} node={} thread={} execution=start server={} files={} bytes={} endpoint={} query='{}'",
                 qid, LogUtil.node(), Thread.currentThread().getName(),
@@ -128,13 +130,15 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
         try {
             executionService.readParquet(allocator, query, filePaths, listener, true);
             listener.completed();
-            long elapsed = System.currentTimeMillis() - started;
+            LogUtil.logTiming(tExec, "execution.total", "files=" + filePaths.length);
+            long elapsed = System.currentTimeMillis() - tExec;
             LOGGER.info("qid={} node={} thread={} execution=completed server={} elapsedMs={} files={} result=completed query='{}'",
                     qid, LogUtil.node(), Thread.currentThread().getName(),
                     serverUri, elapsed, filePaths.length, query);
         } catch (Exception e) {
             observation.markFailed();
-            long elapsed = System.currentTimeMillis() - started;
+            LogUtil.logTiming(tExec, "execution.failed", "files=" + filePaths.length);
+            long elapsed = System.currentTimeMillis() - tExec;
             String failure = failureDescription(e);
             LOGGER.error("qid={} node={} thread={} execution=failed server={} elapsedMs={} files={} result=failed error='{}'",
                     qid, LogUtil.node(), Thread.currentThread().getName(),
@@ -184,10 +188,11 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
     @Override
     public FlightInfo getFlightInfoStatement(FlightSql.CommandStatementQuery command,
             FlightProducer.CallContext context, FlightDescriptor descriptor) {
+        long t = LogUtil.mark();
         ByteString handle = copyFrom(randomUUID().toString().getBytes(StandardCharsets.UTF_8));
         String query = command.getQuery();
         String qid = qid(handle);
-        LOGGER.info("getFlightInfoStatement: qid={}, query='{}'", qid, query);
+        LogUtil.logTiming(t, "schema.resolveQuery", "qid=" + qid);
 
         Schema arrowSchema;
         try {
@@ -211,7 +216,9 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
                     .toRuntimeException();
         }
 
+        long tStore = LogUtil.mark();
         clusterService.storeHandle(handle.toStringUtf8(), HandleState.forQuery(query));
+        LogUtil.logTiming(tStore, "planning.storeHandle", "qid=" + qid);
 
         FlightSql.TicketStatementQuery ticket = FlightSql.TicketStatementQuery.newBuilder()
                 .setStatementHandle(handle).build();
@@ -246,17 +253,22 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
     @Override
     protected <T extends Message> List<FlightEndpoint> determineEndpoints(
             T request, FlightDescriptor descriptor, Schema schema) {
+        long t = LogUtil.mark();
         try {
             if (request instanceof FlightSql.TicketStatementQuery ticketQuery) {
+                long tGet = LogUtil.mark();
                 final ByteString handle = ticketQuery.getStatementHandle();
                 HandleState state = clusterService.getHandle(handle.toStringUtf8());
+                LogUtil.logTiming(tGet, "planning.getHandle");
                 if (state == null) {
                     throw CallStatus.NOT_FOUND
                             .withDescription("No handle state found")
                             .toRuntimeException();
                 }
                 String query = state.query();
-                return queryPlanner.determineEndpoints(query);
+                List<FlightEndpoint> endpoints = queryPlanner.determineEndpoints(query);
+                LogUtil.logTiming(t, "planning.determineEndpoints", "endpoints=" + endpoints.size());
+                return endpoints;
             } else {
                 Ticket ticket = new Ticket(Any.pack(request).toByteArray());
                 return List.of(new FlightEndpoint(ticket, location));
