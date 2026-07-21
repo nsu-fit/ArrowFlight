@@ -89,10 +89,6 @@ flight_server_command() {
     read -r -a extra_java_opts <<< "${JAVA_OPTS}"
     java_opts+=("${extra_java_opts[@]}")
   fi
-  local metrics_args=()
-  if [[ -n "${FLIGHT_METRICS_ENABLED:-}" ]]; then
-    metrics_args=(--metrics-enabled "${FLIGHT_METRICS_ENABLED}")
-  fi
 
   local command=(java "${java_opts[@]}" \
     -cp "${runtime_classpath}" \
@@ -104,7 +100,6 @@ flight_server_command() {
     --storage-host "${FLIGHT_LOCAL_STORAGE_HOST:-$(hostname -f)}" \
     --hazelcast-port "${HAZELCAST_PORT:-5701}" \
     --metrics-port "${FLIGHT_METRICS_PORT:-9404}" \
-    "${metrics_args[@]}" \
     "$@")
   if [[ "${FLIGHT_SERVER_EXEC:-false}" == "true" ]]; then
     exec "${command[@]}"
@@ -253,7 +248,7 @@ case "${mode}" in
     exec "${SPARK_HOME}/bin/spark-submit" \
       "${spark_common_conf[@]}" \
       --class org.apache.spark.sql.hive.thriftserver.HiveThriftServer2 \
-      "${SPARK_HOME}/jars/spark-hive-thriftserver_2.12-3.5.1.jar" \
+      "${SPARK_HOME}/jars/spark-hive-thriftserver_2.12-3.5.9.jar" \
       --hiveconf "hive.server2.thrift.bind.host=${SPARK_THRIFT_BIND_HOST:-0.0.0.0}" \
       --hiveconf "hive.server2.thrift.port=${SPARK_THRIFT_PORT:-10000}" \
       "$@"
