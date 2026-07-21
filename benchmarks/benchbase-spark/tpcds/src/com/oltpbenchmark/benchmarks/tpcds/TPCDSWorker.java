@@ -1,9 +1,8 @@
 package com.oltpbenchmark.benchmarks.tpcds;
 
-import com.oltpbenchmark.api.Procedure;
-import com.oltpbenchmark.api.Procedure.UserAbortException;
 import com.oltpbenchmark.api.TransactionType;
 import com.oltpbenchmark.api.Worker;
+import com.oltpbenchmark.benchmarks.tpcds.procedures.TPCDSProcedure;
 import com.oltpbenchmark.types.TransactionStatus;
 import java.sql.Connection;
 import java.sql.SQLException;
@@ -22,9 +21,9 @@ public final class TPCDSWorker extends Worker<TPCDSBenchmark> {
     protected TransactionStatus executeWork(
             final Connection conn,
             final TransactionType nextTransaction)
-            throws UserAbortException, SQLException {
+            throws SQLException {
         try {
-            Procedure proc = this.getProcedure(nextTransaction.getProcedureClass());
+            TPCDSProcedure proc = (TPCDSProcedure) this.getProcedure(nextTransaction.getProcedureClass());
             proc.run(conn);
         } catch (ClassCastException e) {
             throw new RuntimeException(e);

@@ -71,7 +71,6 @@ def generate_class(num: int, sql: str) -> str:
     class_lines = [
         "package com.oltpbenchmark.benchmarks.tpcds.procedures;",
         "",
-        "import com.oltpbenchmark.api.Procedure;",
         "import java.sql.Connection;",
         "import java.sql.ResultSet;",
         "import java.sql.SQLException;",
@@ -81,7 +80,7 @@ def generate_class(num: int, sql: str) -> str:
         " * TPC-DS Query %d." % num,
         ' * SQL source: DuckDB TPC-DS extension (standard SQL, Spark-compatible).',
         " */",
-        "public final class Q%d extends Procedure {" % num,
+        "public final class Q%d extends TPCDSProcedure {" % num,
         "",
         "    private static final String SQL =",
     ]
