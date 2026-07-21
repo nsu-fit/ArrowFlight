@@ -35,8 +35,8 @@ RUN apt-get update \
 FROM ${MAVEN_IMAGE} AS builder
 
 WORKDIR /src
-# Clone BenchBase, pin to commit before Java 23 upgrade (46fc66f, 4 commits behind HEAD).
-RUN git clone --depth 10 https://github.com/cmu-db/benchbase.git . \
+# Clone BenchBase, pin to commit before Java 23 upgrade (46fc66f).
+RUN git clone https://github.com/cmu-db/benchbase.git . \
     && git checkout 46fc66f
 
 # Patch plugin.xml to register TPC-DS.
