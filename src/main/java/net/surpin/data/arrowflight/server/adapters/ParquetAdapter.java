@@ -137,6 +137,7 @@ public class ParquetAdapter {
      * @return Arrow schema
      */
     public Schema getTableSchema(String schema, String table, List<String> columns) {
+        long t = LogUtil.mark();
         long startNanos = System.nanoTime();
         validateName(schema);
         validateName(table);
@@ -177,6 +178,7 @@ public class ParquetAdapter {
                 }
             })) {
                 parquetSchema = reader.getFooter().getFileMetaData().getSchema();
+                LogUtil.logTiming(t, "parquet.schemaRead", "table=" + schema + "." + table + " fields=" + parquetSchema.getFieldCount());
                 LOGGER.debug("node={} parquet=schemaRead table={}.{} file={} size={} fields={} elapsed={}",
                         LogUtil.node(), schema, table, parquetPath.getName(), fileLen,
                         parquetSchema.getFieldCount(), LogUtil.elapsedNanos(startNanos));
@@ -266,6 +268,7 @@ public class ParquetAdapter {
      * @throws IOException on HDFS read failure
      */
     public Map<String, FileAssignment> locationsForQuery(String query) throws IOException {
+        long t = LogUtil.mark();
         long startNanos = System.nanoTime();
         ParquetQueryParser parsedQuery = ParquetQueryParser.parse(query);
         Map<String, FileAssignment> result = new HashMap<>();
@@ -292,6 +295,7 @@ public class ParquetAdapter {
                     fileCount++;
                     totalBytes += file.getLen();
                 }
+                LogUtil.logTiming(t, "parquet.filesForTable", "table=" + jt.schema() + "." + jt.table() + " files=" + fileCount + " bytes=" + totalBytes);
                 LOGGER.info("node={} parquet=filesForTable table={}.{} files={} bytes={} elapsed={}",
                         LogUtil.node(), jt.schema(), jt.table(), fileCount, totalBytes,
                         LogUtil.elapsedNanos(startNanos));
@@ -315,6 +319,7 @@ public class ParquetAdapter {
             fileCount++;
             totalBytes += file.getLen();
         }
+        LogUtil.logTiming(t, "parquet.locationsFound", "table=" + parsedQuery.schema + "." + parsedQuery.table + " files=" + fileCount + " bytes=" + totalBytes);
         LOGGER.info("node={} parquet=locationsFound table={}.{} files={} bytes={} elapsed={}",
                 LogUtil.node(), parsedQuery.schema, parsedQuery.table,
                 fileCount, totalBytes, LogUtil.elapsedNanos(startNanos));

@@ -73,15 +73,17 @@ public final class QueryPlanner {
      */
     public List<FlightEndpoint> determineEndpoints(String query)
             throws IOException {
+        long t = LogUtil.mark();
         ParquetQueryParser parsed = ParquetQueryParser.parse(query);
         Set<String> allServerUris = validatedServerUris();
         Map<String, Long> serverLoad = validatedServerLoad(allServerUris);
         Map<String, FileAssignment> pathLocations = validatedPathLocations(parsed, allServerUris);
 
-        if (parsed.isJoin) {
-            return joinEndpoints(query, pathLocations, allServerUris);
-        }
-        return distributeEndpoints(query, pathLocations, serverLoad);
+        List<FlightEndpoint> endpoints = parsed.isJoin
+                ? joinEndpoints(query, pathLocations, allServerUris)
+                : distributeEndpoints(query, pathLocations, serverLoad);
+        LogUtil.logTiming(t, "planning.determineEndpoints", "type=" + (parsed.isJoin ? "join" : "distribute") + " endpoints=" + endpoints.size());
+        return endpoints;
     }
 
     private Set<String> validatedServerUris() throws IOException {

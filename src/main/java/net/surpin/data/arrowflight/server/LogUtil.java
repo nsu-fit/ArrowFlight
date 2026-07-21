@@ -1,11 +1,16 @@
 package net.surpin.data.arrowflight.server;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * Utility for formatting log context fields consistently.
  * Every log entry for a query flow includes qid, node, thread, endpoint/ticket,
  * and elapsed time. This class provides cached node identity and elapsed formatters.
  */
 public final class LogUtil {
+
+    private static final Logger TIMING_LOG = LoggerFactory.getLogger("Timing");
 
     private static final String NODE;
 
@@ -130,5 +135,64 @@ public final class LogUtil {
                 }
             }
         };
+    }
+
+    // ── Timing (DEBUG-level structured timing events) ─────────────────────
+
+    /**
+     * Returns a nanosecond timestamp if timing is enabled, or -1 if disabled.
+     * Pass the returned value to {@link #logTiming(long, String)}.
+     *
+     * @return System.nanoTime() when DEBUG is enabled, -1 otherwise
+     */
+    public static long mark() {
+        return TIMING_LOG.isDebugEnabled() ? System.nanoTime() : -1L;
+    }
+
+    /**
+     * Logs a timing event at DEBUG level. No-op when timing is disabled.
+     *
+     * @param mark  value from {@link #mark()}
+     * @param event event name
+     */
+    public static void logTiming(long mark, String event) {
+        logTiming(mark, event, "");
+    }
+
+    /**
+     * Logs a timing event with extra key=value context at DEBUG level.
+     * No-op when timing is disabled.
+     *
+     * @param mark  value from {@link #mark()}
+     * @param event event name
+     * @param extra extra context (e.g. "files=12 engine=DuckDB"), empty string to omit
+     */
+    public static void logTiming(long mark, String event, String extra) {
+        if (mark < 0) {
+            return;
+        }
+        long elapsed = System.nanoTime() - mark;
+        TIMING_LOG.debug("timing={} elapsedNs={} elapsed={} node={} qid={}{}",
+                event, elapsed, formatTiming(elapsed), NODE, qid(),
+                extra.isEmpty() ? "" : " " + extra);
+    }
+
+    /**
+     * Formats nanoseconds as a human-readable duration for timing logs.
+     *
+     * @param nanos elapsed nanoseconds
+     * @return formatted string like "1.23ms" or "1.234s"
+     */
+    private static String formatTiming(long nanos) {
+        if (nanos < 1_000) {
+            return nanos + "ns";
+        }
+        if (nanos < 1_000_000) {
+            return String.format("%.1fµs", nanos / 1000.0);
+        }
+        if (nanos < 1_000_000_000) {
+            return String.format("%.2fms", nanos / 1_000_000.0);
+        }
+        return String.format("%.3fs", nanos / 1_000_000_000.0);
     }
 }

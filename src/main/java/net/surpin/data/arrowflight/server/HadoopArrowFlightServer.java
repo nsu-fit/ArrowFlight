@@ -190,6 +190,7 @@ public class HadoopArrowFlightServer {
      * @throws IllegalStateException if timeout reached or interrupted
      */
     private void waitForCluster(String[] hosts, int timeoutSec) {
+        long t = LogUtil.mark();
         HazelcastInstance hazelcast = component.clusterService().getHazelcastInstance();
         long started = System.nanoTime();
         ReentrantLock membershipLock = new ReentrantLock();
@@ -234,6 +235,7 @@ public class HadoopArrowFlightServer {
         }
 
         long totalSec = TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - started);
+        LogUtil.logTiming(t, "cluster.waitForCluster", "hosts=" + hosts.length + " elapsedSec=" + totalSec);
         LOGGER.info("All {} nodes connected in {}s. Initializing...", hosts.length, totalSec);
     }
 

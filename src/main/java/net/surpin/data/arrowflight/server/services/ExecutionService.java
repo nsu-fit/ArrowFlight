@@ -100,7 +100,9 @@ public final class ExecutionService {
      */
     public void readParquet(BufferAllocator allocator, String query, String[] fileUris,
             FlightProducer.ServerStreamListener listener, boolean startListener) throws Exception {
+        long tParse = LogUtil.mark();
         ParquetQueryParser parsedQuery = ParquetQueryParser.parse(query);
+        LogUtil.logTiming(tParse, "parseQuery");
 
         if (parsedQuery.isJoin) {
             executeJoin(allocator, parsedQuery, fileUris, listener, startListener);
@@ -108,8 +110,10 @@ public final class ExecutionService {
         }
 
         if (fileUris == null) {
+            long tDiscover = LogUtil.mark();
             fileUris = parquetAdapter.locationsForQuery(query)
                     .keySet().toArray(new String[0]);
+            LogUtil.logTiming(tDiscover, "files.discover", "files=" + fileUris.length);
         }
 
         List<Path> parquetFiles = resolveParquetFiles(parsedQuery, fileUris);
@@ -118,7 +122,9 @@ public final class ExecutionService {
             return;
         }
 
+        long tResolve = LogUtil.mark();
         List<String> resolvedUris = resolveUris(fileUris);
+        LogUtil.logTiming(tResolve, "files.resolveUris", "files=" + resolvedUris.size());
         LOGGER.debug("qid={} node={} execution=filesResolved files={} paths={}",
                 LogUtil.qid(), LogUtil.node(), resolvedUris.size(), resolvedUris);
 
@@ -218,6 +224,7 @@ public final class ExecutionService {
             List<Path> parquetFiles, List<String> resolvedUris, String[] fileUris,
             FlightProducer.ServerStreamListener listener,
             boolean startListener) throws Exception {
+        long t = LogUtil.mark();
         long aggStartNanos = System.nanoTime();
 
         if (parquetFiles.isEmpty()) {
@@ -242,6 +249,7 @@ public final class ExecutionService {
             for (Future<Long> f : futs) {
                 total += f.get();
             }
+            LogUtil.logTiming(t, "engine:agg.footerCount", "files=" + parquetFiles.size() + " total=" + total);
             LOGGER.info("qid={} node={} execution=engine engine=footer-count files={} total={} elapsed={}",
                     LogUtil.qid(), LogUtil.node(), parquetFiles.size(), total,
                     LogUtil.elapsedNanos(aggStartNanos));
@@ -284,6 +292,7 @@ public final class ExecutionService {
                 }
             }
             if (allHaveStats) {
+                LogUtil.logTiming(t, "engine:agg.footerStats", "files=" + parquetFiles.size());
                 LOGGER.debug("qid={} node={} execution=engine engine=footer-stats files={} elapsed={}",
                         LogUtil.qid(), LogUtil.node(), parquetFiles.size(),
                         LogUtil.elapsedNanos(aggStartNanos));
@@ -292,6 +301,7 @@ public final class ExecutionService {
                 emitRowsAsArrow(allocator, pq, rows, listener, startListener);
                 return;
             }
+            LogUtil.logTiming(t, "engine:agg.footerStatsFallback", "files=" + parquetFiles.size());
             LOGGER.info("qid={} node={} execution=engine engine=DuckDB(fallback) reason=statsMissing files={} elapsed={}",
                     LogUtil.qid(), LogUtil.node(), parquetFiles.size(),
                     LogUtil.elapsedNanos(aggStartNanos));
@@ -322,7 +332,7 @@ public final class ExecutionService {
     private void executeJoin(BufferAllocator allocator, ParquetQueryParser pq,
             String[] fileUris, FlightProducer.ServerStreamListener listener,
             boolean startListener) throws Exception {
-
+        long t = LogUtil.mark();
         Connection conn = duckDbAdapter.connection();
         List<String> registeredAliases = new ArrayList<>();
         List<AceroAdapter.RegisteredArrowStreams> registeredStreams = new ArrayList<>();
@@ -348,6 +358,7 @@ public final class ExecutionService {
                     if (tableUris.isEmpty()) {
                         throw new IOException("No Parquet files found for table: " + key);
                     }
+                    long tView = LogUtil.mark();
                     String fromClause;
                     if (isHdfsData()) {
                         DuckDBConnection duckConn = conn.unwrap(DuckDBConnection.class);
@@ -365,11 +376,13 @@ public final class ExecutionService {
                                 + DuckDbAdapter.quoteIdentifier(jt.alias())
                                 + " AS SELECT * FROM " + fromClause);
                     }
+                    LogUtil.logTiming(tView, "engine:join.createView", "alias=" + jt.alias() + " files=" + (tableUris != null ? tableUris.size() : 0));
                     registeredAliases.add(jt.alias());
                 }
 
                 duckDbAdapter.streamSql(allocator, pq.duckDbSql, listener, startListener);
             } finally {
+                long tDrop = LogUtil.mark();
                 try (Statement stmt = conn.createStatement()) {
                     for (String alias : registeredAliases) {
                         try {
@@ -379,11 +392,13 @@ public final class ExecutionService {
                         }
                     }
                 }
+                LogUtil.logTiming(tDrop, "engine:join.dropViews", "aliases=" + registeredAliases.size());
                 for (int i = registeredStreams.size() - 1; i >= 0; i--) {
                     registeredStreams.get(i).close();
                 }
             }
         }
+        LogUtil.logTiming(t, "engine:join", "tables=" + pq.joinTables.size());
     }
 
     // ── parallel aggregation ──────────────────────────────────────────────
@@ -492,10 +507,12 @@ public final class ExecutionService {
      */
     private List<Path> resolveParquetFiles(ParquetQueryParser pq, String[] fileUris)
             throws IOException {
+        long t = LogUtil.mark();
         List<Path> files = new ArrayList<>();
         for (String uri : fileUris) {
             files.add(new Path(parquetAdapter.dataDirectory(), uri));
         }
+        LogUtil.logTiming(t, "files.resolvePaths", "files=" + files.size());
         return files;
     }
 
@@ -507,12 +524,14 @@ public final class ExecutionService {
      * @throws IOException on HDFS read failure
      */
     private List<String> resolveUris(String[] fileUris) throws IOException {
+        long t = LogUtil.mark();
         List<String> uris = new ArrayList<>(fileUris.length);
         for (String rel : fileUris) {
             org.apache.hadoop.fs.FileStatus status = parquetAdapter.fileSystem()
                     .getFileStatus(new Path(parquetAdapter.dataDirectory(), rel));
             uris.add(resolveEngineUri(status));
         }
+        LogUtil.logTiming(t, "files.resolveUrisDetail", "files=" + uris.size());
         return uris;
     }
 
@@ -559,6 +578,7 @@ public final class ExecutionService {
      * @throws IOException on HDFS read failure
      */
     private List<String> resolveTableFiles(String key) throws IOException {
+        long t = LogUtil.mark();
         int dot = key.indexOf('.');
         String schema = dot > 0 ? key.substring(0, dot) : null;
         String table = dot > 0 ? key.substring(dot + 1) : key;
@@ -576,6 +596,7 @@ public final class ExecutionService {
                         : plainDuckDbPath(f.getPath()));
             }
         }
+        LogUtil.logTiming(t, "engine:join.resolveTableFiles", "table=" + key + " files=" + uris.size());
         return uris;
     }
 
@@ -671,7 +692,7 @@ public final class ExecutionService {
     private void emitRowsAsArrow(BufferAllocator allocator, ParquetQueryParser pq,
             List<Object[]> rows, FlightProducer.ServerStreamListener listener,
             boolean startListener) throws InterruptedException {
-
+        long t = LogUtil.mark();
         Schema aggSchema = pq.selectExprs.isEmpty()
                 ? metadataService.getQuerySchema(buildSelectExprQuery(pq))
                 : metadataService.buildAggregationSchema(pq);
@@ -716,6 +737,7 @@ public final class ExecutionService {
                 }
             }
         }
+        LogUtil.logTiming(t, "engine:agg.emitRows", "rows=" + rows.size());
     }
 
     /**

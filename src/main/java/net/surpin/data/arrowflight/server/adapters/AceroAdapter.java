@@ -83,6 +83,7 @@ public final class AceroAdapter {
             FlightProducer.ServerStreamListener listener, boolean startListener) throws Exception {
         List<String> selectedColumns = parsedQuery.columns;
         String qid = LogUtil.qid();
+        long t = LogUtil.mark();
         long startNanos = System.nanoTime();
         int numFiles = parquetUris.size();
 
@@ -142,6 +143,7 @@ public final class AceroAdapter {
                 }
                 vsr.clear();
             }
+            LogUtil.logTiming(t, "acero.scanBatches", "files=" + numFiles + " batches=" + batchesSent + " rows=" + rowsSent + " backpressureMs=" + backpressureNanos / 1_000_000);
             LOGGER.info("qid={} node={} acero=completed files={} batches={} rows={} backpressureMs={} elapsed={} cancelled={}",
                     qid, LogUtil.node(), numFiles, batchesSent, rowsSent,
                     backpressureNanos / 1_000_000,
@@ -175,6 +177,7 @@ public final class AceroAdapter {
     public List<Object[]> aggregateFile(BufferAllocator allocator, String fileUri,
             byte[] filterBytes, Optional<String[]> cols,
             int numCountStarCols) throws Exception {
+        long t = LogUtil.mark();
         long startNanos = System.nanoTime();
         String qid = LogUtil.qid();
         LOGGER.debug("qid={} node={} acero=aggregateFile start file={} hasFilter={}",
@@ -197,6 +200,7 @@ public final class AceroAdapter {
                     count += reader.getVectorSchemaRoot().getRowCount();
                 }
             }
+            LogUtil.logTiming(t, "acero.aggregateFile", "file=" + fileUri + " count=" + count);
             LOGGER.debug("qid={} node={} acero=aggregateFile completed file={} count={} elapsed={}",
                     qid, LogUtil.node(), fileUri, count, LogUtil.elapsedNanos(startNanos));
             Object[] row = new Object[numCountStarCols];

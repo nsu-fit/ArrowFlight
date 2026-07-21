@@ -15,6 +15,7 @@ import java.util.concurrent.TimeUnit;
 
 import com.hazelcast.core.HazelcastInstance;
 
+import net.surpin.data.arrowflight.server.LogUtil;
 import net.surpin.data.arrowflight.server.adapters.HazelcastAdapter;
 import net.surpin.data.arrowflight.server.model.AppConfig;
 import net.surpin.data.arrowflight.server.model.FileAssignment;
@@ -87,6 +88,7 @@ public final class ClusterService implements AutoCloseable {
      * @return set of live server URIs
      */
     public Set<String> filterLiveServers(Set<String> serverUris) {
+        long t = LogUtil.mark();
         long now = System.currentTimeMillis();
         long deadline = now - HEARTBEAT_TIMEOUT_SEC * 1000;
 
@@ -107,6 +109,7 @@ public final class ClusterService implements AutoCloseable {
                 hazelcast.serverHeartbeats().remove(uri);
             }
         }
+        LogUtil.logTiming(t, "cluster.filterLiveServers", "servers=" + live.size());
         return live;
     }
 
@@ -207,7 +210,9 @@ public final class ClusterService implements AutoCloseable {
      * @param state  handle state
      */
     public void storeHandle(String handle, HandleState state) {
+        long t = LogUtil.mark();
         hazelcast.statementCache().put(handle, state, 10, TimeUnit.MINUTES);
+        LogUtil.logTiming(t, "cluster.storeHandle");
     }
 
     /**
@@ -217,7 +222,10 @@ public final class ClusterService implements AutoCloseable {
      * @return handle state, or null if not found
      */
     public HandleState getHandle(String handle) {
-        return (HandleState) hazelcast.statementCache().get(handle);
+        long t = LogUtil.mark();
+        HandleState state = (HandleState) hazelcast.statementCache().get(handle);
+        LogUtil.logTiming(t, "cluster.getHandle");
+        return state;
     }
 
     /**

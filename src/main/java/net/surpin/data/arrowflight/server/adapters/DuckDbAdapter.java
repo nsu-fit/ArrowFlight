@@ -152,6 +152,7 @@ public final class DuckDbAdapter implements AutoCloseable {
             org.apache.arrow.flight.FlightProducer.ServerStreamListener listener,
             boolean startListener) throws Exception {
         String qid = LogUtil.qid();
+        long t = LogUtil.mark();
         long startNanos = System.nanoTime();
         LOGGER.info("qid={} node={} thread={} duckdb=start batchSize={} sql='{}'",
                 qid, LogUtil.node(), Thread.currentThread().getName(), batchSize, duckSql);
@@ -176,6 +177,10 @@ public final class DuckDbAdapter implements AutoCloseable {
                     root.clear();
                     continue;
                 }
+                if (batchesSent == 0) {
+                    LogUtil.logTiming(t, "duckdb.firstBatch",
+                            "sql='" + duckSql.substring(0, Math.min(100, duckSql.length())) + "'");
+                }
                 long bpStart = System.nanoTime();
                 if (!awaitListenerReady(
                         listener, appConfig.flightListenerReadyTimeoutMillis())) {
@@ -196,6 +201,9 @@ public final class DuckDbAdapter implements AutoCloseable {
                 }
                 root.clear();
             }
+            LogUtil.logTiming(t, "duckdb.streamSql",
+                    "batches=" + batchesSent + " rows=" + rowsSent
+                    + " backpressureMs=" + backpressureNanos / 1_000_000);
             LOGGER.info("qid={} node={} duckdb=completed batches={} rows={} ttfB={} backpressureMs={} elapsed={} cancelled={}",
                     qid, LogUtil.node(), batchesSent, rowsSent,
                     ttfB > 0 ? LogUtil.elapsedNanos(ttfB) : "N/A",
@@ -214,6 +222,7 @@ public final class DuckDbAdapter implements AutoCloseable {
      */
     public static long footerRowCount(org.apache.hadoop.fs.FileSystem fileSystem,
             org.apache.hadoop.fs.Path full) throws IOException {
+        long t = LogUtil.mark();
         final long fileLen = fileSystem.getFileStatus(full).getLen();
         try (ParquetFileReader pfr = ParquetFileReader.open(new InputFile() {
             @Override
@@ -230,6 +239,7 @@ public final class DuckDbAdapter implements AutoCloseable {
             for (BlockMetaData b : pfr.getFooter().getBlocks()) {
                 count += b.getRowCount();
             }
+            LogUtil.logTiming(t, "duckdb.footerRowCount", "file=" + full.getName() + " count=" + count);
             return count;
         }
     }
@@ -245,6 +255,7 @@ public final class DuckDbAdapter implements AutoCloseable {
      */
     public static Optional<Object[]> footerStats(org.apache.hadoop.fs.FileSystem fileSystem,
             org.apache.hadoop.fs.Path full, ParquetQueryParser pq) throws IOException {
+        long t = LogUtil.mark();
         final long fileLen = fileSystem.getFileStatus(full).getLen();
         try (ParquetFileReader pfr = ParquetFileReader.open(new InputFile() {
             @Override
@@ -302,6 +313,7 @@ public final class DuckDbAdapter implements AutoCloseable {
                     result[i] = totalRows;
                 }
             }
+            LogUtil.logTiming(t, "duckdb.footerStats", "file=" + full.getName());
             return Optional.of(result);
         }
     }
@@ -530,6 +542,7 @@ public final class DuckDbAdapter implements AutoCloseable {
         long deadlineNanos = System.nanoTime()
                 + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
         long waitStart = System.nanoTime();
+        long t = LogUtil.mark();
         while (!listener.isCancelled() && !listener.isReady()) {
             long remainingNanos = deadlineNanos - System.nanoTime();
             if (remainingNanos <= 0
@@ -537,11 +550,15 @@ public final class DuckDbAdapter implements AutoCloseable {
                 LOGGER.warn("qid={} node={} backpressure=timeout timeoutMs={} waited={}",
                         LogUtil.qid(), LogUtil.node(), timeoutMillis,
                         LogUtil.elapsedNanos(waitStart));
+                LogUtil.logTiming(t, "duckdb.awaitListenerReadyTimeout", "timeoutMs=" + timeoutMillis);
                 return false;
             }
         }
         long totalWaitNanos = System.nanoTime() - waitStart;
         boolean ready = !listener.isCancelled() && listener.isReady();
+        if (ready && totalWaitNanos > 10_000) {
+            LogUtil.logTiming(t, "duckdb.awaitListenerReady", "waitMs=" + totalWaitNanos / 1_000_000);
+        }
         if (totalWaitNanos > 100_000_000) { // >100ms
             LOGGER.debug("qid={} node={} backpressure=waited waitMs={} ready={} cancelled={}",
                     LogUtil.qid(), LogUtil.node(), totalWaitNanos / 1_000_000,

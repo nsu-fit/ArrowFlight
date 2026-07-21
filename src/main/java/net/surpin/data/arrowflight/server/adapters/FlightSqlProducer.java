@@ -99,7 +99,9 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
             FlightProducer.ServerStreamListener listener) {
         final ByteString handle = ticket.getStatementHandle();
         String qid = qid(handle);
+        long tGet = LogUtil.mark();
         HandleState state = clusterService.getHandle(handle.toStringUtf8());
+        LogUtil.logTiming(tGet, "planning.getHandle");
         if (state == null) {
             LOGGER.error("qid={} No HandleState found", qid);
             listener.error(new IllegalStateException("No HandleState found for qid=" + qid));
@@ -125,15 +127,18 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
         MDC.put("qid", qid);
         MetricsService.QueryObservation observation =
                 MetricsService.observeQuery(query, bytes);
+        long tExec = LogUtil.mark();
         try {
             executionService.readParquet(allocator, query, filePaths, listener, true);
             listener.completed();
+            LogUtil.logTiming(tExec, "execution.total", "files=" + filePaths.length);
             long elapsed = System.currentTimeMillis() - started;
             LOGGER.info("qid={} node={} thread={} execution=completed server={} elapsedMs={} files={} result=completed query='{}'",
                     qid, LogUtil.node(), Thread.currentThread().getName(),
                     serverUri, elapsed, filePaths.length, query);
         } catch (Exception e) {
             observation.markFailed();
+            LogUtil.logTiming(tExec, "execution.failed", "files=" + filePaths.length);
             long elapsed = System.currentTimeMillis() - started;
             String failure = failureDescription(e);
             LOGGER.error("qid={} node={} thread={} execution=failed server={} elapsedMs={} files={} result=failed error='{}'",
@@ -178,6 +183,7 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
         String qid = qid(handle);
         LOGGER.info("getFlightInfoStatement: qid={}, query='{}'", qid, query);
 
+        long t = LogUtil.mark();
         Schema arrowSchema;
         try {
             arrowSchema = metadataService.getQuerySchema(query);
@@ -187,6 +193,7 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
                     .withDescription("Error getting Arrow schema for query")
                     .withCause(e).toRuntimeException();
         }
+        LogUtil.logTiming(t, "schema.resolveQuery", "qid=" + qid);
 
         if (arrowSchema == null) {
             LOGGER.error("Arrow schema not found for query: {}", query);
@@ -195,7 +202,9 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
                     .toRuntimeException();
         }
 
+        long tStore = LogUtil.mark();
         clusterService.storeHandle(handle.toStringUtf8(), HandleState.forQuery(query));
+        LogUtil.logTiming(tStore, "planning.storeHandle", "qid=" + qid);
 
         FlightSql.TicketStatementQuery ticket = FlightSql.TicketStatementQuery.newBuilder()
                 .setStatementHandle(handle).build();

@@ -41,6 +41,7 @@ import java.util.function.Predicate;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+import net.surpin.data.arrowflight.server.LogUtil;
 import net.surpin.data.arrowflight.server.adapters.ParquetAdapter;
 import net.surpin.data.arrowflight.server.adapters.SchemaConverter;
 import net.surpin.data.arrowflight.server.services.ParquetQueryParser;
@@ -112,13 +113,18 @@ public final class MetadataService {
      * @return Arrow schema
      */
     public Schema getQuerySchema(String query) {
+        long t = LogUtil.mark();
         ParquetQueryParser pq = ParquetQueryParser.parse(query);
+        Schema schema;
         if (pq.isJoin) {
-            return buildJoinSchema(pq);
+            schema = buildJoinSchema(pq);
+        } else {
+            schema = pq.hasAggregation
+                    ? buildAggregationSchema(pq)
+                    : parquetAdapter.getTableSchema(pq.schema, pq.table, pq.columns);
         }
-        return pq.hasAggregation
-                ? buildAggregationSchema(pq)
-                : parquetAdapter.getTableSchema(pq.schema, pq.table, pq.columns);
+        LogUtil.logTiming(t, "schema.getQuerySchema", "type=" + (pq.isJoin ? "join" : pq.hasAggregation ? "agg" : "select"));
+        return schema;
     }
 
     /**
