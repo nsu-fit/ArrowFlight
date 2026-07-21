@@ -35,7 +35,10 @@ RUN apt-get update \
 FROM ${MAVEN_IMAGE} AS builder
 
 WORKDIR /src
-RUN git clone --depth 1 https://github.com/cmu-db/benchbase.git .
+# Clone BenchBase, then pin to commit before Java 23 upgrade (46fc66f).
+RUN git clone --depth 1 https://github.com/cmu-db/benchbase.git . \
+    && git fetch --depth 1 origin 46fc66f \
+    && git checkout 46fc66f
 
 # Patch plugin.xml to register TPC-DS.
 COPY benchmarks/benchbase-spark/tpcds/plugin.xml config/plugin.xml
@@ -49,11 +52,7 @@ COPY --from=query-downloader /work/src/com/oltpbenchmark/benchmarks/tpcds/proced
      src/main/java/com/oltpbenchmark/benchmarks/tpcds/procedures/
 
 # Build BenchBase with the Postgres profile (JDBC driver for Thrift Server).
-# BenchBase pom.xml declares Java 23, but the code uses only Java 21 features.
-RUN mvn -q -DskipTests package -P postgres \
-    -Djava.version=21 \
-    -Dmaven.compiler.source=21 \
-    -Dmaven.compiler.target=21
+RUN mvn -q -DskipTests package -P postgres
 
 # -----------------------------------------------------------------------------
 # Stage 3: Runtime image.
