@@ -1,6 +1,7 @@
 package com.oltpbenchmark.benchmarks.tpcds;
 
 import com.oltpbenchmark.api.Procedure;
+import com.oltpbenchmark.api.Procedure.UserAbortException;
 import com.oltpbenchmark.api.TransactionType;
 import com.oltpbenchmark.api.Worker;
 import com.oltpbenchmark.types.TransactionStatus;
