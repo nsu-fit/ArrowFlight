@@ -1071,13 +1071,11 @@ public final class ArrowConversion implements Serializable {
      * Get or create an instance of Vector
      * @return - the singleton instance of Vector
      */
-    public static ArrowConversion getOrCreate() {
-        synchronized (ArrowConversion.class) {
-            if (ArrowConversion.inst == null) {
-                ArrowConversion.inst = new ArrowConversion();
-            }
-            return ArrowConversion.inst;
+    public static synchronized ArrowConversion getOrCreate() {
+        if (ArrowConversion.inst == null) {
+            ArrowConversion.inst = new ArrowConversion();
         }
+        return ArrowConversion.inst;
     }
 
     /**
