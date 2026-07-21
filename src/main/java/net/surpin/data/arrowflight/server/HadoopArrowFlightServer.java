@@ -47,21 +47,30 @@ public class HadoopArrowFlightServer {
         } catch (IOException e) {
             throw new ExceptionInInitializerError(e);
         }
+        String logLevel = null;
         for (String key : new String[]{"logLevel", "arrowflight.log.level"}) {
             String v = System.getProperty(key);
             if (v != null && !v.isBlank()) {
-                System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", v.trim());
-                return;
+                logLevel = v.trim();
+                break;
             }
             v = props.getProperty(key);
             if (v != null && !v.isBlank()) {
-                System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", v.trim());
-                return;
+                logLevel = v.trim();
+                break;
             }
         }
-        String env = System.getenv("LOGGING_LEVEL");
-        if (env != null && !env.isBlank()) {
-            System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", env.trim());
+        if (logLevel == null) {
+            String env = System.getenv("LOGGING_LEVEL");
+            if (env != null && !env.isBlank()) {
+                logLevel = env.trim();
+            }
+        }
+        if (logLevel != null) {
+            // SLF4J Simple provider
+            System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", logLevel);
+            // Log4j2 SimpleLogger fallback (when log4j-slf4j2-impl wins classpath race)
+            System.setProperty("org.apache.logging.log4j.simplelog.level", logLevel);
         }
     }
 

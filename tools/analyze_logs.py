@@ -34,12 +34,19 @@ RESET = '\033[0m'
 DIM = '\033[2m'
 BOLD = '\033[1m'
 
-# ── parse TIMING_LOG and INFO lines ───────────────────────────────────
+# ── log line format ────────────────────────────────────────────────────
+# Various timestamp formats:
+#   SLF4J Simple:        <relMs> [<thread>] <level> ...
+#   Log4j2 SimpleLogger: <yyyy-MM-dd HH:mm:ss.SSS> [<thread>] <level> ...
+#   Log4j2:              <HH:mm:ss.SSS> [<thread>] <level> ...
+# Optional logger + " - " prefix (<logger> - ) is captured but discarded.
+# ── parse TIMING_LOG lines ────────────────────────────────────────────
 PAT_TIMING = re.compile(
     r'^'
-    r'(?P<ts>\d{2}:\d{2}:\d{2}\.\d{3})\s+'
+    r'(?P<ts>[^\[]+?)\s*'
     r'\[(?P<thread>[^\]]+)\]\s+'
     r'(?P<level>[A-Z]+)\s+'
+    r'(?:\S+(?:\s+\S+)*?\s+-\s+)?'
     r'qid=(?P<qid>\S+)?\s*'
     r'node=(?P<node>\S+)?\s*'
     r'TIMING\s+'
@@ -49,11 +56,13 @@ PAT_TIMING = re.compile(
     r'(?P<detail>.*)'
 )
 
+# ── parse INFO lines (qid= node= ... query='...') ─────────────────────
 PAT_INFO = re.compile(
     r'^'
-    r'(?P<ts>\d{2}:\d{2}:\d{2}\.\d{3})\s+'
+    r'(?P<ts>[^\[]+?)\s*'
     r'\[(?P<thread>[^\]]+)\]\s+'
     r'(?P<level>[A-Z]+)\s+'
+    r'(?:\S+(?:\s+\S+)*?\s+-\s+)?'
     r'qid=(?P<qid>\S+)?\s*'
     r'node=(?P<node>\S+)?\s*'
     r'.*?'
