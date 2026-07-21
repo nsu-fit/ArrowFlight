@@ -46,6 +46,10 @@ COPY benchmarks/benchbase-spark/tpcds/plugin.xml config/plugin.xml
 COPY benchmarks/benchbase-spark/tpcds/src/com/oltpbenchmark/benchmarks/tpcds/TPCDSWorker.java \
      src/main/java/com/oltpbenchmark/benchmarks/tpcds/TPCDSWorker.java
 
+# Copy TPCDSProcedure base class (not generated — lives in the repo).
+COPY benchmarks/benchbase-spark/tpcds/src/com/oltpbenchmark/benchmarks/tpcds/procedures/TPCDSProcedure.java \
+     src/main/java/com/oltpbenchmark/benchmarks/tpcds/procedures/TPCDSProcedure.java
+
 # Add generated TPC-DS query procedures (Q1.java ... Q99.java).
 COPY --from=query-downloader /work/src/com/oltpbenchmark/benchmarks/tpcds/procedures/ \
      src/main/java/com/oltpbenchmark/benchmarks/tpcds/procedures/
