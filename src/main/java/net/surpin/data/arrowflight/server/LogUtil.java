@@ -172,27 +172,9 @@ public final class LogUtil {
             return;
         }
         long elapsed = System.nanoTime() - mark;
-        TIMING_LOG.debug("timing={} elapsedNs={} elapsed={} node={} qid={}{}",
-                event, elapsed, formatTiming(elapsed), NODE, qid(),
+        TIMING_LOG.debug("TIMING thread={} durationUs={} tag={}{}",
+                Thread.currentThread().getName(), elapsed, event,
                 extra.isEmpty() ? "" : " " + extra);
     }
 
-    /**
-     * Formats nanoseconds as a human-readable duration for timing logs.
-     *
-     * @param nanos elapsed nanoseconds
-     * @return formatted string like "1.23ms" or "1.234s"
-     */
-    private static String formatTiming(long nanos) {
-        if (nanos < 1_000) {
-            return nanos + "ns";
-        }
-        if (nanos < 1_000_000) {
-            return String.format("%.1fµs", nanos / 1000.0);
-        }
-        if (nanos < 1_000_000_000) {
-            return String.format("%.2fms", nanos / 1_000_000.0);
-        }
-        return String.format("%.3fs", nanos / 1_000_000_000.0);
-    }
 }
