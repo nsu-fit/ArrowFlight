@@ -20,6 +20,7 @@ x-server-node-env: &server-node-env
   SPARK_WORKER_CORES: "2"
   SPARK_WORKER_MEMORY: 2g
   JAVA_OPTS: -Xmx2g
+  LOGGING_LEVEL: "${FLIGHT_LOG_LEVEL:-INFO}"
 
 x-server-node: &server-node
   <<: *arrowflight-image

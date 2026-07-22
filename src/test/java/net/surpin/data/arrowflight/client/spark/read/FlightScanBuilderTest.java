@@ -7,6 +7,8 @@ import org.apache.spark.sql.connector.expressions.Expression;
 import org.apache.spark.sql.connector.expressions.FieldReference;
 import org.apache.spark.sql.connector.expressions.LiteralValue;
 import org.apache.spark.sql.connector.expressions.filter.Predicate;
+import org.apache.spark.sql.connector.read.SupportsPushDownFilters;
+import org.apache.spark.sql.connector.read.SupportsPushDownV2Filters;
 import org.apache.spark.sql.sources.*;
 import org.apache.spark.sql.types.*;
 import org.junit.jupiter.api.Test;
@@ -49,6 +51,13 @@ class FlightScanBuilderTest {
     }
 
     // ── pushFilters ───────────────────────────────────────────────────────
+
+    /** Verifies Spark selects V2 filtering so column comparisons can reach Flight. */
+    @Test
+    void exposesOnlyV2FilterPushdownToSpark() {
+        assertFalse(SupportsPushDownFilters.class.isAssignableFrom(FlightScanBuilder.class));
+        assertTrue(SupportsPushDownV2Filters.class.isAssignableFrom(FlightScanBuilder.class));
+    }
 
     @Test
     void pushFiltersReturnsUnhandledForUnsupported() {

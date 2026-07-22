@@ -8,6 +8,9 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.Serializable;
+import java.net.URI;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 /**
  * Describes the data-structure of flight input-partitions
@@ -20,6 +23,7 @@ public class FlightInputPartition implements InputPartition, Serializable {
      */
     public static class FlightEndpointInputPartition extends FlightInputPartition {
         private final Endpoint ep;
+        private final String[] preferredLocations;
 
         /**
          * Construct a flight end-point input-partition
@@ -29,6 +33,7 @@ public class FlightInputPartition implements InputPartition, Serializable {
         public FlightEndpointInputPartition(Schema schema, Endpoint ep) {
             super(schema);
             this.ep = ep;
+            this.preferredLocations = endpointHosts(ep);
         }
 
         /**
@@ -37,6 +42,35 @@ public class FlightInputPartition implements InputPartition, Serializable {
          */
         public Endpoint getEndpoint() {
             return this.ep;
+        }
+
+        @Override
+        public String[] preferredLocations() {
+            return this.preferredLocations.clone();
+        }
+
+        /**
+         * Resolves Spark locality hints from Flight endpoint host names.
+         *
+         * @param endpoint Flight endpoint assigned to the partition
+         * @return unique endpoint and colocated Spark worker host names
+         */
+        private static String[] endpointHosts(Endpoint endpoint) {
+            Set<String> hosts = new LinkedHashSet<>();
+            if (endpoint == null || endpoint.getURIs() == null) {
+                return new String[0];
+            }
+            for (URI uri : endpoint.getURIs()) {
+                if (uri == null || uri.getHost() == null || uri.getHost().isBlank()) {
+                    continue;
+                }
+                String host = uri.getHost();
+                hosts.add(host);
+                if (host.startsWith("flight-server-")) {
+                    hosts.add("server-node-" + host.substring("flight-server-".length()));
+                }
+            }
+            return hosts.toArray(new String[0]);
         }
     }
 

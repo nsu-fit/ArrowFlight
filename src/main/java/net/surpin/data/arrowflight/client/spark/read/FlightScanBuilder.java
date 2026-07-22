@@ -31,8 +31,8 @@ import java.util.Optional;
 /**
  * Build flight scans which supports pushed-down filter, fields & aggregates
  */
-public final class FlightScanBuilder implements ScanBuilder, SupportsPushDownFilters,
-        SupportsPushDownV2Filters, SupportsPushDownRequiredColumns, SupportsPushDownAggregates {
+public final class FlightScanBuilder implements ScanBuilder, SupportsPushDownV2Filters,
+        SupportsPushDownRequiredColumns, SupportsPushDownAggregates {
     private static final Logger LOGGER = LoggerFactory.getLogger(FlightScanBuilder.class);
 
     private final Configuration configuration;
@@ -390,7 +390,6 @@ public final class FlightScanBuilder implements ScanBuilder, SupportsPushDownFil
      * @param filters - the pushed-down filters
      * @return - not-accepted filters
      */
-    @Override
     public Filter[] pushFilters(Filter[] filters) {
         LOGGER.debug("{}.pushFilters()", this.getClass().getName());
 
@@ -411,7 +410,6 @@ public final class FlightScanBuilder implements ScanBuilder, SupportsPushDownFil
      * For SupportsPushDownFilters interface
      * @return - the pushed-down filters
      */
-    @Override
     public Filter[] pushedFilters() {
         return this.pdFilters;
     }

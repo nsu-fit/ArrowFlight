@@ -53,15 +53,18 @@ public class HadoopArrowFlightServer {
                 System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", v.trim());
                 return;
             }
-            v = props.getProperty(key);
-            if (v != null && !v.isBlank()) {
-                System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", v.trim());
-                return;
-            }
         }
         String env = System.getenv("LOGGING_LEVEL");
         if (env != null && !env.isBlank()) {
             System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", env.trim());
+            return;
+        }
+        for (String key : new String[]{"logLevel", "arrowflight.log.level"}) {
+            String v = props.getProperty(key);
+            if (v != null && !v.isBlank()) {
+                System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", v.trim());
+                return;
+            }
         }
     }
 

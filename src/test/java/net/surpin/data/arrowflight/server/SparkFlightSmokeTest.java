@@ -131,10 +131,29 @@ class SparkFlightSmokeTest {
         assertEquals(101L, minId, "smallest surviving id must be 101, confirming the filter really ran server-side/pruned rows");
     }
 
-    // ── 4. aggregation pushdown ───────────────────────────────────────────
-
+    /** Verifies Spark routes column comparisons through the V2 Flight filter API. */
     @Test
     @Order(4)
+    void filterPushdown_columnComparisonRunsInFlight() {
+        Dataset<Row> filtered = flightRead()
+                .where("int_col < double_col")
+                .select("id");
+
+        String plan = physicalPlan(filtered);
+        String lower = plan.toLowerCase();
+        assertTrue(lower.contains("int_col") && lower.contains("double_col")
+                        && lower.contains("where"),
+                "expected column comparison pushed into the Flight SQL scan, got:\n" + plan);
+
+        long rows = filtered.count();
+        assertTrue(rows > 0 && rows < 1000,
+                "column comparison must filter the server-side result, rows=" + rows);
+    }
+
+    // ── 5. aggregation pushdown ───────────────────────────────────────────
+
+    @Test
+    @Order(5)
     void aggregationPushdown_groupByTinyintColSendsGroupByCountSql() {
         Dataset<Row> grouped = flightRead().groupBy("tinyint_col").count();
 
@@ -156,7 +175,7 @@ class SparkFlightSmokeTest {
 
     /** Verifies AVG is decomposed remotely and merged to its final value by Spark. */
     @Test
-    @Order(5)
+    @Order(6)
     void aggregationPushdown_avgUsesPartialSumAndCountWithSparkFinalMerge() {
         Dataset<Row> averaged = flightRead().selectExpr("avg(double_col) AS avg_value");
 
@@ -174,10 +193,10 @@ class SparkFlightSmokeTest {
         assertEquals(expected, averaged.first().getDouble(0), 1.0e-9);
     }
 
-    // ── 6. auth requirement / blocker ─────────────────────────────────────
+    // ── 7. auth requirement / blocker ─────────────────────────────────────
 
     @Test
-    @Order(6)
+    @Order(7)
     void missingCredentials_isBlockedByMandatoryUserPasswordCheck() {
         RuntimeException ex = assertThrows(RuntimeException.class, () ->
                 spark.read()
