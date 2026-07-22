@@ -379,27 +379,39 @@ public final class Configuration implements Serializable {
 <span class="nc" id="L379">        this.connectTimeoutMs = connectTimeoutMs;</span>
 <span class="nc" id="L380">    }</span>
 
+    private static String formatValue(Object value) {
+<span class="fc bfc" id="L383" title="All 2 branches covered.">        return value != null ? value.toString() : &quot;[not set]&quot;;</span>
+    }
+
+    private static String formatSensitive(Object value) {
+<span class="fc bfc" id="L387" title="All 2 branches covered.">        return value != null ? &quot;[hidden]&quot; : &quot;[not set]&quot;;</span>
+    }
+
+    private static String formatBytes(byte[] bytes) {
+<span class="fc bfc" id="L391" title="All 2 branches covered.">        return bytes != null ? &quot;[hidden, &quot; + bytes.length + &quot; bytes]&quot; : &quot;[not set]&quot;;</span>
+    }
+
     @Override
     public String toString() {
-<span class="fc" id="L384">        return &quot;Configuration{&quot; +</span>
-                &quot;fsHost='&quot; + fsHost + '\'' +
-                &quot;, fsPort=&quot; + fsPort +
-                &quot;, tlsEnabled=&quot; + tlsEnabled +
-                &quot;, crtVerify=&quot; + crtVerify +
-                &quot;, trustStoreJks='&quot; + trustStoreJks + '\'' +
-<span class="fc bfc" id="L390" title="All 2 branches covered.">                &quot;, trustStorePass='&quot; + (trustStorePass != null ? &quot;[hidden]&quot; : &quot;[not set]&quot;) + '\'' +</span>
-                &quot;, user='&quot; + user + '\'' +
-<span class="fc bfc" id="L392" title="All 2 branches covered.">                &quot;, password='&quot; + (password != null ? &quot;[hidden]&quot; : &quot;[not set]&quot;) + '\'' +</span>
-<span class="fc bfc" id="L393" title="All 2 branches covered.">                &quot;, bearerToken='&quot; + (bearerToken != null ? &quot;[hidden]&quot; : &quot;[not set]&quot;) + '\'' +</span>
-                &quot;, defaultSchema='&quot; + defaultSchema + '\'' +
-                &quot;, routingTag='&quot; + routingTag + '\'' +
-                &quot;, routingQueue='&quot; + routingQueue + '\'' +
-<span class="fc bfc" id="L397" title="All 2 branches covered.">                &quot;, certBytes='&quot; + (certBytes != null ? &quot;[hidden, &quot; + certBytes.length + &quot; bytes]&quot; : &quot;[not set]&quot;) + '\'' +</span>
-                &quot;, allocationLimit=&quot; + allocationLimit +
-                &quot;, maxRetries=&quot; + maxRetries +
-                &quot;, retryBackoffMs=&quot; + retryBackoffMs +
-                &quot;, connectTimeoutMs=&quot; + connectTimeoutMs +
-                '}';
+<span class="fc" id="L396">        return &quot;Configuration{&quot; +</span>
+<span class="fc" id="L397">            &quot;fsHost='&quot; + formatValue(fsHost) + '\'' +</span>
+            &quot;, fsPort=&quot; + fsPort +
+            &quot;, tlsEnabled=&quot; + tlsEnabled +
+            &quot;, crtVerify=&quot; + crtVerify +
+<span class="fc" id="L401">            &quot;, trustStoreJks='&quot; + formatValue(trustStoreJks) + '\'' +</span>
+<span class="fc" id="L402">            &quot;, trustStorePass='&quot; + formatSensitive(trustStorePass) + '\'' +</span>
+<span class="fc" id="L403">            &quot;, user='&quot; + formatValue(user) + '\'' +</span>
+<span class="fc" id="L404">            &quot;, password='&quot; + formatSensitive(password) + '\'' +</span>
+<span class="fc" id="L405">            &quot;, bearerToken='&quot; + formatSensitive(bearerToken) + '\'' +</span>
+<span class="fc" id="L406">            &quot;, defaultSchema='&quot; + formatValue(defaultSchema) + '\'' +</span>
+<span class="fc" id="L407">            &quot;, routingTag='&quot; + formatValue(routingTag) + '\'' +</span>
+<span class="fc" id="L408">            &quot;, routingQueue='&quot; + formatValue(routingQueue) + '\'' +</span>
+<span class="fc" id="L409">            &quot;, certBytes='&quot; + formatBytes(certBytes) + '\'' +</span>
+            &quot;, allocationLimit=&quot; + allocationLimit +
+            &quot;, maxRetries=&quot; + maxRetries +
+            &quot;, retryBackoffMs=&quot; + retryBackoffMs +
+            &quot;, connectTimeoutMs=&quot; + connectTimeoutMs +
+            '}';
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>
