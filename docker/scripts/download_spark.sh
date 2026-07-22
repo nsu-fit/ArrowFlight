@@ -3,6 +3,7 @@ set -e
 
 SPARK_VERSION=${SPARK_VERSION:-3.5.9}
 SPARK_PACKAGE="spark-${SPARK_VERSION}-bin-hadoop3"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [ -d "/opt/${SPARK_PACKAGE}" ]; then
     echo "==> Spark already downloaded, skipping."
@@ -11,6 +12,7 @@ fi
 
 echo "==> Downloading Spark ${SPARK_VERSION}..."
 
+"${SCRIPT_DIR}/configure_apt_mirror.sh"
 apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 

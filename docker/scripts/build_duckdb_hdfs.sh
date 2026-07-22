@@ -3,6 +3,7 @@ set -e
 
 DUCKDB_HDFS_VERSION=${DUCKDB_HDFS_VERSION:-1.4.1}
 INSTALL_DIR="/opt/duckdb-extensions"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Check if the extension is already compiled to skip unnecessary work
 if [ -d "${INSTALL_DIR}" ] && [ -f "${INSTALL_DIR}/hadoopfs.duckdb_extension" ]; then
@@ -14,6 +15,7 @@ echo "==> Building DuckDB HDFS extension (version ${DUCKDB_HDFS_VERSION})..."
 
 # Install build dependencies
 # yasm is required for libhdfs3 assembly optimizations
+"${SCRIPT_DIR}/configure_apt_mirror.sh"
 apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     build-essential cmake git ninja-build yasm curl ca-certificates pkg-config \
     libssl-dev libkrb5-dev uuid-dev \

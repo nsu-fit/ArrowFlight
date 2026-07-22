@@ -3,6 +3,7 @@ set -e
 
 HADOOP_VERSION=${HADOOP_VERSION:-3.3.6}
 HADOOP_PACKAGE="hadoop-${HADOOP_VERSION}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [ -d "/opt/${HADOOP_PACKAGE}" ]; then
     echo "==> Hadoop already downloaded, skipping."
@@ -11,6 +12,7 @@ fi
 
 echo "==> Downloading Hadoop ${HADOOP_VERSION}..."
 
+"${SCRIPT_DIR}/configure_apt_mirror.sh"
 apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
