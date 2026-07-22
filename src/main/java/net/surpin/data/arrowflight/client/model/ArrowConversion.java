@@ -33,6 +33,7 @@ import java.util.stream.IntStream;
  * Defines utility methods for transformation & conversion
  */
 public final class ArrowConversion implements Serializable {
+    private static final String FORMAT = "%s-%s";
     //the fromConversion interface
     @FunctionalInterface
     private interface ConvertFrom<X, Y, Z, R> {
@@ -82,7 +83,7 @@ public final class ArrowConversion implements Serializable {
      * @return - a custom FieldVector hodling java-type objects
      */
     public FieldVector convert(org.apache.arrow.vector.FieldVector vector, FieldType type, int rowCount) {
-        String key = String.format("%s-%s", vector.getClass().getTypeName(), type.getTypeID());
+        String key = String.format(FORMAT, vector.getClass().getTypeName(), type.getTypeID());
         if (!this.fromConverters.containsKey(key)) {
             throw new RuntimeException(String.format("The %s doesn't have a converter defined.", key));
         }
@@ -122,53 +123,53 @@ public final class ArrowConversion implements Serializable {
      * Initialize from-converters
      */
     private void initializeFrom() {
-        this.fromConverters.put(String.format("%s-%s", TinyIntVector.class.getTypeName(), FieldType.IDs.BYTE), ArrowConversion.fromTinyInt);
-        this.fromConverters.put(String.format("%s-%s", SmallIntVector.class.getTypeName(), FieldType.IDs.SHORT), ArrowConversion.fromSmallInt);
-        this.fromConverters.put(String.format("%s-%s", IntVector.class.getTypeName(), FieldType.IDs.INT), ArrowConversion.fromInt);
-        this.fromConverters.put(String.format("%s-%s", BigIntVector.class.getTypeName(), FieldType.IDs.LONG), ArrowConversion.fromBigInt);
-        this.fromConverters.put(String.format("%s-%s", UInt1Vector.class.getTypeName(), FieldType.IDs.SHORT), ArrowConversion.fromUInt1);
-        this.fromConverters.put(String.format("%s-%s", UInt2Vector.class.getTypeName(), FieldType.IDs.INT), ArrowConversion.fromUInt2);
-        this.fromConverters.put(String.format("%s-%s", UInt4Vector.class.getTypeName(), FieldType.IDs.INT), ArrowConversion.fromUInt4Int);
-        this.fromConverters.put(String.format("%s-%s", UInt4Vector.class.getTypeName(), FieldType.IDs.LONG), ArrowConversion.fromUInt4Long);
-        this.fromConverters.put(String.format("%s-%s", UInt8Vector.class.getTypeName(), FieldType.IDs.LONG), ArrowConversion.fromUInt8Long);
-        this.fromConverters.put(String.format("%s-%s", UInt8Vector.class.getTypeName(), FieldType.IDs.BIGINT), ArrowConversion.fromUInt8Bigint);
-        this.fromConverters.put(String.format("%s-%s", Float4Vector.class.getTypeName(), FieldType.IDs.FLOAT), ArrowConversion.fromFloat4);
-        this.fromConverters.put(String.format("%s-%s", Float8Vector.class.getTypeName(), FieldType.IDs.DOUBLE), ArrowConversion.fromFloat8);
-        this.fromConverters.put(String.format("%s-%s", DecimalVector.class.getTypeName(), FieldType.IDs.DECIMAL), ArrowConversion.fromDecimal);
-        this.fromConverters.put(String.format("%s-%s", Decimal256Vector.class.getTypeName(), FieldType.IDs.DECIMAL), ArrowConversion.fromDecimal256);
-        this.fromConverters.put(String.format("%s-%s", VarCharVector.class.getTypeName(), FieldType.IDs.VARCHAR), ArrowConversion.fromVarChar);
-        this.fromConverters.put(String.format("%s-%s", LargeVarCharVector.class.getTypeName(), FieldType.IDs.VARCHAR), ArrowConversion.fromLargeVarChar);
-        this.fromConverters.put(String.format("%s-%s", BitVector.class.getTypeName(), FieldType.IDs.BOOLEAN), ArrowConversion.fromBit);
-        this.fromConverters.put(String.format("%s-%s", DateDayVector.class.getTypeName(), FieldType.IDs.DATE), ArrowConversion.fromDateDay);
-        this.fromConverters.put(String.format("%s-%s", DateMilliVector.class.getTypeName(), FieldType.IDs.DATE), ArrowConversion.fromDateMilli);
-        this.fromConverters.put(String.format("%s-%s", TimeSecVector.class.getTypeName(), FieldType.IDs.TIME), ArrowConversion.fromTimeSec);
-        this.fromConverters.put(String.format("%s-%s", TimeMilliVector.class.getTypeName(), FieldType.IDs.TIME), ArrowConversion.fromTimeMilli);
-        this.fromConverters.put(String.format("%s-%s", TimeMicroVector.class.getTypeName(), FieldType.IDs.TIME), ArrowConversion.fromTimeMicro);
-        this.fromConverters.put(String.format("%s-%s", TimeNanoVector.class.getTypeName(), FieldType.IDs.TIME), ArrowConversion.fromTimeNano);
-        this.fromConverters.put(String.format("%s-%s", TimeStampMicroVector.class.getTypeName(), FieldType.IDs.TIMESTAMP), ArrowConversion.fromTimeStampMicro);
-        this.fromConverters.put(String.format("%s-%s", TimeStampMicroTZVector.class.getTypeName(), FieldType.IDs.TIMESTAMP), ArrowConversion.fromTimeStampMicroTZ);
-        this.fromConverters.put(String.format("%s-%s", TimeStampMilliVector.class.getTypeName(), FieldType.IDs.TIMESTAMP), ArrowConversion.fromTimeStampMilli);
-        this.fromConverters.put(String.format("%s-%s", TimeStampMilliTZVector.class.getTypeName(), FieldType.IDs.TIMESTAMP), ArrowConversion.fromTimeStampMilliTZ);
-        this.fromConverters.put(String.format("%s-%s", TimeStampSecVector.class.getTypeName(), FieldType.IDs.TIMESTAMP), ArrowConversion.fromTimeStampSec);
-        this.fromConverters.put(String.format("%s-%s", TimeStampSecTZVector.class.getTypeName(), FieldType.IDs.TIMESTAMP), ArrowConversion.fromTimeStampSecTZ);
-        this.fromConverters.put(String.format("%s-%s", TimeStampNanoVector.class.getTypeName(), FieldType.IDs.TIMESTAMP), ArrowConversion.fromTimeStampNano);
+        this.fromConverters.put(String.format(FORMAT, TinyIntVector.class.getTypeName(), FieldType.IDs.BYTE), ArrowConversion.fromTinyInt);
+        this.fromConverters.put(String.format(FORMAT, SmallIntVector.class.getTypeName(), FieldType.IDs.SHORT), ArrowConversion.fromSmallInt);
+        this.fromConverters.put(String.format(FORMAT, IntVector.class.getTypeName(), FieldType.IDs.INT), ArrowConversion.fromInt);
+        this.fromConverters.put(String.format(FORMAT, BigIntVector.class.getTypeName(), FieldType.IDs.LONG), ArrowConversion.fromBigInt);
+        this.fromConverters.put(String.format(FORMAT, UInt1Vector.class.getTypeName(), FieldType.IDs.SHORT), ArrowConversion.fromUInt1);
+        this.fromConverters.put(String.format(FORMAT, UInt2Vector.class.getTypeName(), FieldType.IDs.INT), ArrowConversion.fromUInt2);
+        this.fromConverters.put(String.format(FORMAT, UInt4Vector.class.getTypeName(), FieldType.IDs.INT), ArrowConversion.fromUInt4Int);
+        this.fromConverters.put(String.format(FORMAT, UInt4Vector.class.getTypeName(), FieldType.IDs.LONG), ArrowConversion.fromUInt4Long);
+        this.fromConverters.put(String.format(FORMAT, UInt8Vector.class.getTypeName(), FieldType.IDs.LONG), ArrowConversion.fromUInt8Long);
+        this.fromConverters.put(String.format(FORMAT, UInt8Vector.class.getTypeName(), FieldType.IDs.BIGINT), ArrowConversion.fromUInt8Bigint);
+        this.fromConverters.put(String.format(FORMAT, Float4Vector.class.getTypeName(), FieldType.IDs.FLOAT), ArrowConversion.fromFloat4);
+        this.fromConverters.put(String.format(FORMAT, Float8Vector.class.getTypeName(), FieldType.IDs.DOUBLE), ArrowConversion.fromFloat8);
+        this.fromConverters.put(String.format(FORMAT, DecimalVector.class.getTypeName(), FieldType.IDs.DECIMAL), ArrowConversion.fromDecimal);
+        this.fromConverters.put(String.format(FORMAT, Decimal256Vector.class.getTypeName(), FieldType.IDs.DECIMAL), ArrowConversion.fromDecimal256);
+        this.fromConverters.put(String.format(FORMAT, VarCharVector.class.getTypeName(), FieldType.IDs.VARCHAR), ArrowConversion.fromVarChar);
+        this.fromConverters.put(String.format(FORMAT, LargeVarCharVector.class.getTypeName(), FieldType.IDs.VARCHAR), ArrowConversion.fromLargeVarChar);
+        this.fromConverters.put(String.format(FORMAT, BitVector.class.getTypeName(), FieldType.IDs.BOOLEAN), ArrowConversion.fromBit);
+        this.fromConverters.put(String.format(FORMAT, DateDayVector.class.getTypeName(), FieldType.IDs.DATE), ArrowConversion.fromDateDay);
+        this.fromConverters.put(String.format(FORMAT, DateMilliVector.class.getTypeName(), FieldType.IDs.DATE), ArrowConversion.fromDateMilli);
+        this.fromConverters.put(String.format(FORMAT, TimeSecVector.class.getTypeName(), FieldType.IDs.TIME), ArrowConversion.fromTimeSec);
+        this.fromConverters.put(String.format(FORMAT, TimeMilliVector.class.getTypeName(), FieldType.IDs.TIME), ArrowConversion.fromTimeMilli);
+        this.fromConverters.put(String.format(FORMAT, TimeMicroVector.class.getTypeName(), FieldType.IDs.TIME), ArrowConversion.fromTimeMicro);
+        this.fromConverters.put(String.format(FORMAT, TimeNanoVector.class.getTypeName(), FieldType.IDs.TIME), ArrowConversion.fromTimeNano);
+        this.fromConverters.put(String.format(FORMAT, TimeStampMicroVector.class.getTypeName(), FieldType.IDs.TIMESTAMP), ArrowConversion.fromTimeStampMicro);
+        this.fromConverters.put(String.format(FORMAT, TimeStampMicroTZVector.class.getTypeName(), FieldType.IDs.TIMESTAMP), ArrowConversion.fromTimeStampMicroTZ);
+        this.fromConverters.put(String.format(FORMAT, TimeStampMilliVector.class.getTypeName(), FieldType.IDs.TIMESTAMP), ArrowConversion.fromTimeStampMilli);
+        this.fromConverters.put(String.format(FORMAT, TimeStampMilliTZVector.class.getTypeName(), FieldType.IDs.TIMESTAMP), ArrowConversion.fromTimeStampMilliTZ);
+        this.fromConverters.put(String.format(FORMAT, TimeStampSecVector.class.getTypeName(), FieldType.IDs.TIMESTAMP), ArrowConversion.fromTimeStampSec);
+        this.fromConverters.put(String.format(FORMAT, TimeStampSecTZVector.class.getTypeName(), FieldType.IDs.TIMESTAMP), ArrowConversion.fromTimeStampSecTZ);
+        this.fromConverters.put(String.format(FORMAT, TimeStampNanoVector.class.getTypeName(), FieldType.IDs.TIMESTAMP), ArrowConversion.fromTimeStampNano);
 
-        this.fromConverters.put(String.format("%s-%s", TimeStampNanoVector.class.getTypeName(), FieldType.IDs.INT), ArrowConversion.fromTimeStampNanoToInt);
+        this.fromConverters.put(String.format(FORMAT, TimeStampNanoVector.class.getTypeName(), FieldType.IDs.INT), ArrowConversion.fromTimeStampNanoToInt);
 
-        this.fromConverters.put(String.format("%s-%s", TimeStampNanoTZVector.class.getTypeName(), FieldType.IDs.TIMESTAMP), ArrowConversion.fromTimeStampNanoTZ);
-        this.fromConverters.put(String.format("%s-%s", IntervalYearVector.class.getTypeName(), FieldType.IDs.PERIOD_YEAR_MONTH), ArrowConversion.fromIntervalYear);
-        this.fromConverters.put(String.format("%s-%s", IntervalDayVector.class.getTypeName(), FieldType.IDs.DURATION_DAY_TIME), ArrowConversion.fromIntervalDay);
-        this.fromConverters.put(String.format("%s-%s", DurationVector.class.getTypeName(), FieldType.IDs.DURATION_DAY_TIME), ArrowConversion.fromDuration);
-        this.fromConverters.put(String.format("%s-%s", IntervalMonthDayNanoVector.class.getTypeName(), FieldType.IDs.PERIOD_DURATION_MONTH_DAY_TIME), ArrowConversion.fromMonthDay);
-        this.fromConverters.put(String.format("%s-%s", NullVector.class.getTypeName(), FieldType.IDs.NULL), ArrowConversion.fromNull);
-        this.fromConverters.put(String.format("%s-%s", VarBinaryVector.class.getTypeName(), FieldType.IDs.BYTES), ArrowConversion.fromVarBinary);
-        this.fromConverters.put(String.format("%s-%s", LargeVarBinaryVector.class.getTypeName(), FieldType.IDs.BYTES), ArrowConversion.fromLargeVarBinary);
-        this.fromConverters.put(String.format("%s-%s", FixedSizeBinaryVector.class.getTypeName(), FieldType.IDs.BYTES), ArrowConversion.fromFixedSizeBinary);
-        this.fromConverters.put(String.format("%s-%s", LargeListVector.class.getTypeName(), FieldType.IDs.LIST), ArrowConversion.fromLargeList);
-        this.fromConverters.put(String.format("%s-%s", FixedSizeListVector.class.getTypeName(), FieldType.IDs.LIST), ArrowConversion.fromFixedSizeList);
-        this.fromConverters.put(String.format("%s-%s", MapVector.class.getTypeName(), FieldType.IDs.MAP), ArrowConversion.fromMap);
-        this.fromConverters.put(String.format("%s-%s", ListVector.class.getTypeName(), FieldType.IDs.LIST), ArrowConversion.fromList);
-        this.fromConverters.put(String.format("%s-%s", StructVector.class.getTypeName(), FieldType.IDs.STRUCT), ArrowConversion.fromStruct);
+        this.fromConverters.put(String.format(FORMAT, TimeStampNanoTZVector.class.getTypeName(), FieldType.IDs.TIMESTAMP), ArrowConversion.fromTimeStampNanoTZ);
+        this.fromConverters.put(String.format(FORMAT, IntervalYearVector.class.getTypeName(), FieldType.IDs.PERIOD_YEAR_MONTH), ArrowConversion.fromIntervalYear);
+        this.fromConverters.put(String.format(FORMAT, IntervalDayVector.class.getTypeName(), FieldType.IDs.DURATION_DAY_TIME), ArrowConversion.fromIntervalDay);
+        this.fromConverters.put(String.format(FORMAT, DurationVector.class.getTypeName(), FieldType.IDs.DURATION_DAY_TIME), ArrowConversion.fromDuration);
+        this.fromConverters.put(String.format(FORMAT, IntervalMonthDayNanoVector.class.getTypeName(), FieldType.IDs.PERIOD_DURATION_MONTH_DAY_TIME), ArrowConversion.fromMonthDay);
+        this.fromConverters.put(String.format(FORMAT, NullVector.class.getTypeName(), FieldType.IDs.NULL), ArrowConversion.fromNull);
+        this.fromConverters.put(String.format(FORMAT, VarBinaryVector.class.getTypeName(), FieldType.IDs.BYTES), ArrowConversion.fromVarBinary);
+        this.fromConverters.put(String.format(FORMAT, LargeVarBinaryVector.class.getTypeName(), FieldType.IDs.BYTES), ArrowConversion.fromLargeVarBinary);
+        this.fromConverters.put(String.format(FORMAT, FixedSizeBinaryVector.class.getTypeName(), FieldType.IDs.BYTES), ArrowConversion.fromFixedSizeBinary);
+        this.fromConverters.put(String.format(FORMAT, LargeListVector.class.getTypeName(), FieldType.IDs.LIST), ArrowConversion.fromLargeList);
+        this.fromConverters.put(String.format(FORMAT, FixedSizeListVector.class.getTypeName(), FieldType.IDs.LIST), ArrowConversion.fromFixedSizeList);
+        this.fromConverters.put(String.format(FORMAT, MapVector.class.getTypeName(), FieldType.IDs.MAP), ArrowConversion.fromMap);
+        this.fromConverters.put(String.format(FORMAT, ListVector.class.getTypeName(), FieldType.IDs.LIST), ArrowConversion.fromList);
+        this.fromConverters.put(String.format(FORMAT, StructVector.class.getTypeName(), FieldType.IDs.STRUCT), ArrowConversion.fromStruct);
     }
     //convert arrow TinyIntVector to FieldVector for BYTE
     private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromTinyInt = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.<TinyIntVector>cast(vector))::getObject).toArray(Object[]::new));
