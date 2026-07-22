@@ -120,7 +120,8 @@ DuckDB возвращает результат через `DuckDBResultSet.arrow
 
 Основной файл настроек: `src/main/resources/arrowflight.properties`.
 
-Главная streaming-настройка - `batchSize`. Она задаёт размер DuckDB Arrow export batch и поэтому влияет на batch-и, которые уходят через Flight.
+Главные streaming-настройки - `batchSize` и `flightBackpressureThresholdBytes`.
+Они задают размер DuckDB Arrow export batch и объём сериализованных данных, который Flight может отправлять конвейером до ожидания клиента.
 
 Параллелизм I/O считается так:
 

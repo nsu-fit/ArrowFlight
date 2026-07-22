@@ -154,10 +154,30 @@ class SparkFlightSmokeTest {
                 + rows.stream().map(Row::toString).collect(Collectors.joining(", ")));
     }
 
-    // ── 5. auth requirement / blocker ─────────────────────────────────────
-
+    /** Verifies AVG is decomposed remotely and merged to its final value by Spark. */
     @Test
     @Order(5)
+    void aggregationPushdown_avgUsesPartialSumAndCountWithSparkFinalMerge() {
+        Dataset<Row> averaged = flightRead().selectExpr("avg(double_col) AS avg_value");
+
+        String plan = physicalPlan(averaged);
+        String lower = plan.toLowerCase();
+        assertTrue(lower.contains("sum("),
+                "expected AVG partial SUM pushed into the Flight scan, got:\n" + plan);
+        assertTrue(lower.contains("count("),
+                "expected AVG partial COUNT pushed into the Flight scan, got:\n" + plan);
+        assertTrue(lower.contains("aggregate"),
+                "expected Spark to retain the final aggregate merge, got:\n" + plan);
+
+        List<Row> values = flightRead().select("double_col").collectAsList();
+        double expected = values.stream().mapToDouble(row -> row.getDouble(0)).average().orElseThrow();
+        assertEquals(expected, averaged.first().getDouble(0), 1.0e-9);
+    }
+
+    // ── 6. auth requirement / blocker ─────────────────────────────────────
+
+    @Test
+    @Order(6)
     void missingCredentials_isBlockedByMandatoryUserPasswordCheck() {
         RuntimeException ex = assertThrows(RuntimeException.class, () ->
                 spark.read()

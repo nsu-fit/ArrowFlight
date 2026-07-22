@@ -114,7 +114,7 @@ public final class ExecutionService {
         LogUtil.logTiming(tResolve, "files.resolveUris", "files=" + resolvedUris.size());
 
         if (parsedQuery.hasAggregation) {
-            LOGGER.info("qid={} node={} execution=engine engine=DuckDB(aggregation) hasGroupBy={} files={}",
+            LOGGER.debug("qid={} node={} execution=engine engine=DuckDB(aggregation) hasGroupBy={} files={}",
                     LogUtil.qid(), LogUtil.node(), !parsedQuery.groupByColumnNames.isEmpty(),
                     parquetFiles.size());
             executeAggregation(allocator, parsedQuery, parquetFiles, resolvedUris,
@@ -122,7 +122,7 @@ public final class ExecutionService {
             return;
         }
 
-        LOGGER.info("qid={} node={} execution=engine engine=DuckDB files={}",
+        LOGGER.debug("qid={} node={} execution=engine engine=DuckDB files={}",
                 LogUtil.qid(), LogUtil.node(), resolvedUris.size());
         String duckSql = DuckDbAdapter.buildSelectSql(parsedQuery,
                 DuckDbAdapter.readParquetFromClause(ducksDbPaths(resolvedUris)));
@@ -320,9 +320,8 @@ public final class ExecutionService {
         long t = LogUtil.mark();
         List<String> uris = new ArrayList<>(fileUris.length);
         for (String rel : fileUris) {
-            org.apache.hadoop.fs.FileStatus status = parquetAdapter.fileSystem()
-                    .getFileStatus(new Path(parquetAdapter.dataDirectory(), rel));
-            uris.add(status.getPath().toUri().toString());
+            Path path = new Path(parquetAdapter.dataDirectory(), rel);
+            uris.add(parquetAdapter.fileSystem().makeQualified(path).toUri().toString());
         }
         LogUtil.logTiming(t, "files.resolveUris", "files=" + uris.size());
         return uris;

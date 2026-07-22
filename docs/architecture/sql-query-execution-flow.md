@@ -137,7 +137,8 @@ DuckDB reads local files without an extension. HDFS URIs require the configured 
 
 The default runtime configuration lives in `src/main/resources/arrowflight.properties`.
 
-The most important streaming value is `batchSize`. It controls DuckDB Arrow export batch size and therefore affects the batches sent through Flight.
+The most important streaming values are `batchSize` and `flightBackpressureThresholdBytes`.
+They control DuckDB Arrow export granularity and how much serialized output Flight may pipeline before waiting for the client.
 
 I/O parallelism is also configurable. If `ioParallelism` is set, that exact thread count is used. Otherwise the value is derived from available CPU cores:
 

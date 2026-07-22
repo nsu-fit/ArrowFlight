@@ -56,7 +56,7 @@ public final class FlightScanBuilder implements ScanBuilder, SupportsPushDownFil
      * @param partitionBehavior - the partitioning behavior when loading data from remote flight service
      */
     public FlightScanBuilder(Configuration configuration, Table table, PartitionBehavior partitionBehavior) {
-        LOGGER.info("{}()", this.getClass().getName());
+        LOGGER.debug("{}()", this.getClass().getName());
         this.configuration = configuration;
         this.table = table;
         this.partitionBehavior = partitionBehavior;
@@ -69,7 +69,7 @@ public final class FlightScanBuilder implements ScanBuilder, SupportsPushDownFil
      */
     @Override
     public boolean pushAggregation(Aggregation aggregation) {
-        LOGGER.info("{}.pushAggregation()", this.getClass().getName());
+        LOGGER.debug("{}.pushAggregation()", this.getClass().getName());
 
         List<String> pdAggregateColumns = new ArrayList<>();
         for (AggregateFunc agg : aggregation.aggregateExpressions()) {
@@ -392,7 +392,7 @@ public final class FlightScanBuilder implements ScanBuilder, SupportsPushDownFil
      */
     @Override
     public Filter[] pushFilters(Filter[] filters) {
-        LOGGER.info("{}.pushFilters()", this.getClass().getName());
+        LOGGER.debug("{}.pushFilters()", this.getClass().getName());
 
         List<Filter> pushed = new ArrayList<>();
         List<Filter> unhandled = new ArrayList<>();
@@ -424,7 +424,7 @@ public final class FlightScanBuilder implements ScanBuilder, SupportsPushDownFil
      */
     @Override
     public Predicate[] pushPredicates(Predicate[] predicates) {
-        LOGGER.info("{}.pushPredicates()", this.getClass().getName());
+        LOGGER.debug("{}.pushPredicates()", this.getClass().getName());
 
         List<Predicate> pushed = new ArrayList<>();
         List<Predicate> unhandled = new ArrayList<>();
@@ -456,7 +456,7 @@ public final class FlightScanBuilder implements ScanBuilder, SupportsPushDownFil
     @Override
     public void pruneColumns(StructType columns) {
         this.pdColumns = columns.fields();
-        LOGGER.info("{}.pruneColumns(): columns={}", this.getClass().getName(),
+        LOGGER.debug("{}.pruneColumns(): columns={}", this.getClass().getName(),
                 Arrays.toString(Arrays.stream(this.pdColumns)
                         .map(StructField::name).toArray(String[]::new)));
     }
@@ -467,7 +467,7 @@ public final class FlightScanBuilder implements ScanBuilder, SupportsPushDownFil
      */
     @Override
     public Scan build() {
-        LOGGER.info("{}.build()", this.getClass().getName());
+        LOGGER.debug("{}.build()", this.getClass().getName());
 
         //adjust flight-table upon pushed filters & columns
         List<String> whereParts = new ArrayList<>();
@@ -476,7 +476,7 @@ public final class FlightScanBuilder implements ScanBuilder, SupportsPushDownFil
         Arrays.stream(this.pdPredicates).map(this.table::toWhereClause)
                 .forEach(whereParts::add);
         String where = String.join(" and ", whereParts);
-        LOGGER.info("{}.build(): columns={} filters={} predicates={}",
+        LOGGER.debug("{}.build(): columns={} filters={} predicates={}",
                 this.getClass().getName(),
                 Arrays.toString(Arrays.stream(this.pdColumns)
                         .map(StructField::name).toArray(String[]::new)),

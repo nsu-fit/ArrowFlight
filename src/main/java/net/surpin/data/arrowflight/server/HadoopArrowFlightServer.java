@@ -136,6 +136,7 @@ public class HadoopArrowFlightServer {
                     location,
                     component.producer())
                     .maxInboundMessageSize(config.grpcMaxInboundMessageSize())
+                    .backpressureThreshold(config.flightBackpressureThresholdBytes())
                     .build();
             server.start();
 

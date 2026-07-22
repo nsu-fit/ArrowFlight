@@ -19,6 +19,7 @@ EXEC_CONFIG_IN_CONTAINER="/benchbase/config/custom/${BENCHMARK}.xml"
 FLIGHT_SERVER_SERVICES=()
 COMPARE_PARENT_RUN_ID=""
 BENCHBASE_TIME_SECONDS="${BENCHBASE_TIME_SECONDS:-}"
+BENCHBASE_WARMUP_SECONDS="${BENCHBASE_WARMUP_SECONDS:-}"
 BENCHBASE_TERMINALS="${BENCHBASE_TERMINALS:-}"
 BENCHBASE_RATE="${BENCHBASE_RATE:-unlimited}"
 BENCHBASE_DB_SCHEMA="${BENCHBASE_DB_SCHEMA:-}"
@@ -246,7 +247,12 @@ prepare_execute_config() {
   EXEC_CONFIG_IN_CONTAINER="/benchbase/config/custom/${BENCHMARK}.xml"
   local db_schema="${BENCHBASE_DB_SCHEMA:-${BENCHMARK}}"
 
-  if [[ -z "${QUERY_SET}" && -z "${BENCHBASE_TIME_SECONDS}" && -z "${BENCHBASE_TERMINALS}" && "${db_schema}" == "${BENCHMARK}" && "${BENCHMARK_SCALE_FACTOR}" == "0.01" ]]; then
+  if [[ ! "${BENCHBASE_WARMUP_SECONDS:-0}" =~ ^[0-9]+$ ]]; then
+    echo "BENCHBASE_WARMUP_SECONDS must be a non-negative integer: ${BENCHBASE_WARMUP_SECONDS}" >&2
+    exit 2
+  fi
+
+  if [[ -z "${QUERY_SET}" && -z "${BENCHBASE_TIME_SECONDS}" && -z "${BENCHBASE_WARMUP_SECONDS}" && -z "${BENCHBASE_TERMINALS}" && "${db_schema}" == "${BENCHMARK}" && "${BENCHMARK_SCALE_FACTOR}" == "0.01" ]]; then
     return
   fi
 
@@ -284,7 +290,7 @@ prepare_execute_config() {
   if [[ -n "${BENCHBASE_TIME_SECONDS}" ]]; then
     sed -i "s#<serial>.*</serial>#      <serial>false</serial>#" "${GENERATED_CONFIG_LOCAL}"
     sed -i "s#<rate>.*</rate>#      <rate>${BENCHBASE_RATE}</rate>#" "${GENERATED_CONFIG_LOCAL}"
-    sed -i "/<serial>false<\/serial>/a\\      <time>${BENCHBASE_TIME_SECONDS}</time>\\n      <warmup>0</warmup>" "${GENERATED_CONFIG_LOCAL}"
+    sed -i "/<serial>false<\/serial>/a\\      <time>${BENCHBASE_TIME_SECONDS}</time>\\n      <warmup>${BENCHBASE_WARMUP_SECONDS:-0}</warmup>" "${GENERATED_CONFIG_LOCAL}"
   fi
 
   EXEC_CONFIG_IN_CONTAINER="/benchbase/config/custom/$(basename "${GENERATED_CONFIG_LOCAL}")"
@@ -495,6 +501,8 @@ benchbase_progress() {
   local db_schema="$1"
   local interval_seconds="${BENCHBASE_PROGRESS_INTERVAL_SECONDS:-30}"
   local elapsed_seconds=0
+  local warmup_seconds="${BENCHBASE_WARMUP_SECONDS:-0}"
+  local total_seconds=$((warmup_seconds + BENCHBASE_TIME_SECONDS))
 
   if [[ ! "${interval_seconds}" =~ ^[1-9][0-9]*$ ]]; then
     echo "BENCHBASE_PROGRESS_INTERVAL_SECONDS must be a positive integer: ${interval_seconds}" >&2
@@ -503,8 +511,11 @@ benchbase_progress() {
 
   while sleep "${interval_seconds}"; do
     elapsed_seconds=$((elapsed_seconds + interval_seconds))
-    if (( elapsed_seconds < BENCHBASE_TIME_SECONDS )); then
-      echo "[BenchBase] ${db_schema}: ${elapsed_seconds}s elapsed; measurement running, $((BENCHBASE_TIME_SECONDS - elapsed_seconds))s remaining"
+    if (( elapsed_seconds < warmup_seconds )); then
+      echo "[BenchBase] ${db_schema}: ${elapsed_seconds}s elapsed; warmup running, $((warmup_seconds - elapsed_seconds))s remaining"
+    elif (( elapsed_seconds < total_seconds )); then
+      local measured_seconds=$((elapsed_seconds - warmup_seconds))
+      echo "[BenchBase] ${db_schema}: ${elapsed_seconds}s elapsed; measurement running, $((BENCHBASE_TIME_SECONDS - measured_seconds))s remaining"
     else
       echo "[BenchBase] ${db_schema}: measurement window ended; waiting for the current query before phase exit"
     fi
@@ -629,7 +640,7 @@ benchbase_execute() {
   local db_schema="${BENCHBASE_DB_SCHEMA:-${BENCHMARK}}"
   local log_file="${RESULTS_DIR}/last-${BENCHMARK}-${db_schema}.log"
   local progress_pid=""
-  echo "[BenchBase] Starting schema=${db_schema}, measurement=${BENCHBASE_TIME_SECONDS:-serial}s, terminals=${BENCHBASE_TERMINALS:-config default}"
+  echo "[BenchBase] Starting schema=${db_schema}, warmup=${BENCHBASE_WARMUP_SECONDS:-0}s, measurement=${BENCHBASE_TIME_SECONDS:-serial}s, terminals=${BENCHBASE_TERMINALS:-config default}"
   if [[ -n "${BENCHBASE_TIME_SECONDS}" ]]; then
     benchbase_progress "${db_schema}" &
     progress_pid="$!"
@@ -736,6 +747,7 @@ if [[ "${MODE}" == "graph" || "${MODE}" == "compare" ]]; then
   fi
   QUERY_SET="${QUERY_SET:-q6}"
   BENCHBASE_TIME_SECONDS="${BENCHBASE_TIME_SECONDS:-60}"
+  BENCHBASE_WARMUP_SECONDS="${BENCHBASE_WARMUP_SECONDS:-30}"
   BENCHBASE_TERMINALS="${BENCHBASE_TERMINALS:-1}"
 fi
 

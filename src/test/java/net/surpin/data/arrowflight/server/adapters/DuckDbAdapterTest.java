@@ -244,7 +244,8 @@ class DuckDbAdapterTest {
                 3, 4096, 1, 131072, 1, 1, 1,
                 null, false, null, null,
                 "true", "/var/lib/hadoop-hdfs/socket/dn_socket",
-                false, 1048576, 60000L, "/data/parquet", null, 32010, 5701, 60,
+                false, 1048576, 67108864, 60000L, "/data/parquet", null,
+                32010, 5701, 60,
                 3, 1000, 30000);
 
         try {
@@ -264,7 +265,7 @@ class DuckDbAdapterTest {
         AppConfig config = new AppConfig(
                 3, 2, 1, 131072, 1, 1, 1,
                 null, false, null, null,
-                null, null, false, 1048576, 60000L, null, null,
+                null, null, false, 1048576, 67108864, 60000L, null, null,
                 32010, 5701, 60, 3, 1000, 30000);
         FlightProducer.ServerStreamListener listener =
                 mock(FlightProducer.ServerStreamListener.class);
@@ -292,6 +293,40 @@ class DuckDbAdapterTest {
         verify(listener).start(any(VectorSchemaRoot.class));
     }
 
+    /** Verifies stream completion is signalled immediately after the final batch. */
+    @Test
+    void streamSqlDoesNotAddPollingDelayAfterFinalBatch() throws Exception {
+        ExecutorService ioPool = Executors.newSingleThreadExecutor();
+        ExecutorService caller = Executors.newSingleThreadExecutor();
+        AppConfig config = new AppConfig(
+                3, 2, 1, 131072, 1, 1, 1,
+                null, false, null, null,
+                null, null, false, 1048576, 67108864, 60000L, null, null,
+                32010, 5701, 60, 3, 1000, 30000);
+        FlightProducer.ServerStreamListener listener =
+                mock(FlightProducer.ServerStreamListener.class);
+        CountDownLatch finalBatchSent = new CountDownLatch(3);
+        when(listener.isReady()).thenReturn(true);
+        doAnswer(invocation -> {
+            finalBatchSent.countDown();
+            return null;
+        }).when(listener).putNext();
+
+        try (RootAllocator allocator = new RootAllocator();
+                DuckDbAdapter adapter = new DuckDbAdapter(config, ioPool)) {
+            Future<Void> result = caller.submit(() -> {
+                adapter.streamSql(allocator,
+                        "SELECT range AS id FROM range(0, 5)", listener, true);
+                return null;
+            });
+            assertTrue(finalBatchSent.await(1, TimeUnit.SECONDS));
+            assertNull(result.get(75, TimeUnit.MILLISECONDS));
+        } finally {
+            caller.shutdownNow();
+            ioPool.shutdownNow();
+        }
+    }
+
     /** Verifies a stalled Flight consumer aborts the DuckDB producer with timeout status. */
     @Test
     void streamSqlPropagatesListenerTimeout() throws Exception {
@@ -299,7 +334,7 @@ class DuckDbAdapterTest {
         AppConfig config = new AppConfig(
                 3, 2, 1, 131072, 1, 1, 1,
                 null, false, null, null,
-                null, null, false, 1048576, 25L, null, null,
+                null, null, false, 1048576, 67108864, 25L, null, null,
                 32010, 5701, 60, 3, 1000, 30000);
         FlightProducer.ServerStreamListener listener =
                 mock(FlightProducer.ServerStreamListener.class);

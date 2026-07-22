@@ -161,11 +161,11 @@ public final class Table implements Serializable {
      * @param config - the connection configuration
      */
     public void initialize(Configuration config) {
-        LOGGER.info("Table.initialize(): config: {}", config);
+        LOGGER.debug("Table.initialize(): config: {}", config);
         try {
             Client client = Client.getOrCreate(config);
             QueryEndpoints eps = client.getQueryEndpoints(this.getQueryStatement());
-            LOGGER.info("Table.initialize(): endpoints: {}", eps);
+            LOGGER.debug("Table.initialize(): endpoints: {}", eps);
 
             this.sparkSchema = new StructType(Arrays.stream(Field.from(eps.getSchema())).map(fs -> new StructField(fs.getName(), FieldType.toSpark(fs.getType()), true, Metadata.empty())).toArray(StructField[]::new));
             this.schema = eps.getSchema();
@@ -184,7 +184,7 @@ public final class Table implements Serializable {
      * @param config connection configuration
      */
     public void initializeSchema(Configuration config) {
-        LOGGER.info("Table.initializeSchema(): config: {}", config);
+        LOGGER.debug("Table.initializeSchema(): config: {}", config);
         try {
             Schema resultSchema = Client.getOrCreate(config).getQuerySchema(this.getQueryStatement());
             this.sparkSchema = new StructType(Arrays.stream(Field.from(resultSchema))

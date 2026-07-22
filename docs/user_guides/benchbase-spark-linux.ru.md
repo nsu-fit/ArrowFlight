@@ -39,6 +39,7 @@ chmod +x run-benchmark-spark.sh
 
 BENCHMARK_SCALE_FACTOR=0.01 \
 BENCHBASE_TIME_SECONDS=60 \
+BENCHBASE_WARMUP_SECONDS=30 \
 BENCHBASE_TERMINALS=1 \
 ./run-benchmark-spark.sh \
   tpch compare q1,q6,q14
@@ -47,7 +48,7 @@ BENCHBASE_TERMINALS=1 \
 `compare` выполняет полный цикл:
 
 1. удаляет старые benchmark containers и volumes;
-2. запускает HDFS NameNode и три `DataNode + Flight + Spark worker` ноды;
+2. запускает HDFS NameNode и четыре `DataNode + Flight + Spark worker` ноды;
 3. генерирует один TPC-H dataset и загружает его в `hdfs://hdfs-namenode:8020/bench`;
 4. публикует `tpch_flight` и `tpch_direct` поверх тех же HDFS Parquet-файлов;
 5. запускает выбранные queries для обоих путей;
@@ -73,6 +74,7 @@ direct/*.report.html
 ```bash
 BENCHMARK_SCALE_FACTOR=0.1       # TPC-H scale factor
 BENCHBASE_TIME_SECONDS=120      # длительность каждого пути
+BENCHBASE_WARMUP_SECONDS=30     # отдельный прогрев перед измерением (default для compare/graph)
 BENCHBASE_TERMINALS=2           # параллельные BenchBase workers
 BENCHBASE_RATE=unlimited        # лимит requests/sec
 BENCHBASE_QUERY_TIMEOUT_SECONDS=120   # timeout BenchBase query через JDBC

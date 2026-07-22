@@ -29,7 +29,7 @@ public class ConfigAdapter {
         Properties props = loadProperties();
         int ioParallelism = computeIoParallelism(props);
         int numServers = getInt("numServers", "arrowflight.cluster.numServers", 3, props);
-        int batchSize = getInt("batchSize", "arrowflight.duckdb.batchSize", 4096, props);
+        int batchSize = getInt("batchSize", "arrowflight.duckdb.batchSize", 65536, props);
         int ioFileBufferSize = getInt("ioFileBufferSize", null, 131072, props);
         int duckDbWarmConnections = getInt("duckDbWarmConnections",
                 "arrowflight.duckdb.warmConnections", Math.min(8, ioParallelism), props);
@@ -53,6 +53,13 @@ public class ConfigAdapter {
                 "arrowflight.metrics.enabled", "FLIGHT_METRICS_ENABLED", false, props);
         int grpcMaxInboundMessageSize = getInt("grpcMaxInboundMessageSize",
                 "arrowflight.grpc.maxInboundMessageSize", Integer.MAX_VALUE, props);
+        int flightBackpressureThresholdBytes = getInt("flightBackpressureThresholdBytes",
+                "arrowflight.flight.backpressureThresholdBytes", 67_108_864, props);
+        if (flightBackpressureThresholdBytes <= 0) {
+            throw new IllegalArgumentException(
+                    "flightBackpressureThresholdBytes must be positive: "
+                            + flightBackpressureThresholdBytes);
+        }
         long flightListenerReadyTimeoutMillis = getLong("flightListenerReadyTimeoutMs",
                 "arrowflight.flight.listenerReadyTimeoutMs", 300_000L, props);
         if (flightListenerReadyTimeoutMillis <= 0) {
@@ -78,7 +85,8 @@ public class ConfigAdapter {
                 duckDbHdfsDefaultNamenode, duckDbHdfsHaNamenodes,
                 duckDbHdfsShortcircuit, duckDbHdfsDomainSocketPath,
                 metricsEnabled,
-                grpcMaxInboundMessageSize, flightListenerReadyTimeoutMillis,
+                grpcMaxInboundMessageSize, flightBackpressureThresholdBytes,
+                flightListenerReadyTimeoutMillis,
                 dataDir, localDataDir, port, hazelcastPort, hazelcastClusterJoinTimeoutSec,
                 clientMaxRetries, clientRetryBackoffMs, clientConnectTimeoutMs);
     }

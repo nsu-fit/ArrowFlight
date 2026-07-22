@@ -34,7 +34,7 @@ class ConfigAdapterTest {
         AppConfig cfg = ConfigAdapter.getConfig();
 
         assertEquals(4, cfg.numServers());
-        assertEquals(4096, cfg.batchSize());
+        assertEquals(65536, cfg.batchSize());
         assertEquals(1048576, cfg.ioFileBufferSize());
         assertEquals(32, cfg.ioParallelism());
         assertEquals(1, cfg.duckDbThreads());
@@ -49,7 +49,8 @@ class ConfigAdapterTest {
         assertFalse(cfg.duckDbAllowUnsignedExtensions());
         assertTrue(cfg.metricsEnabled());
         assertEquals(Integer.MAX_VALUE, cfg.grpcMaxInboundMessageSize());
-        assertEquals(60000, cfg.flightListenerReadyTimeoutMillis());
+        assertEquals(67108864, cfg.flightBackpressureThresholdBytes());
+        assertEquals(300000, cfg.flightListenerReadyTimeoutMillis());
     }
 
     @Test
@@ -188,6 +189,25 @@ class ConfigAdapterTest {
 
         AppConfig cfg = ConfigAdapter.getConfig();
         assertEquals(1048576, cfg.grpcMaxInboundMessageSize());
+    }
+
+    /** Verifies the Flight outbound backpressure budget is configurable. */
+    @Test
+    void getConfigFlightBackpressureThreshold() {
+        setProp("flightBackpressureThresholdBytes", "33554432");
+
+        AppConfig cfg = ConfigAdapter.getConfig();
+        assertEquals(33554432, cfg.flightBackpressureThresholdBytes());
+    }
+
+    /** Verifies a non-positive Flight outbound backpressure budget is rejected. */
+    @Test
+    void getConfigRejectsNonPositiveFlightBackpressureThreshold() {
+        setProp("flightBackpressureThresholdBytes", "0");
+
+        IllegalArgumentException error = assertThrows(
+                IllegalArgumentException.class, ConfigAdapter::getConfig);
+        assertTrue(error.getMessage().contains("flightBackpressureThresholdBytes"));
     }
 
     /** Verifies benchmark metrics can be disabled with a system property. */

@@ -135,6 +135,7 @@ src/main/resources/arrowflight.properties
 - `duckDbGroups` - сколько групп использовать для старых grouped helper paths.
 - `duckDbThreads` - `SET threads` для DuckDB connection.
 - `grpcMaxInboundMessageSize` - max inbound gRPC message size.
+- `flightBackpressureThresholdBytes` - максимум сериализованных outbound bytes в очереди до включения Flight backpressure.
 - `flightListenerReadyTimeoutMs` - timeout ожидания готовности Flight listener.
 
 Формула `ioParallelism`, если он не задан явно:

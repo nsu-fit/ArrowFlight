@@ -184,7 +184,7 @@ Key properties (see `AppConfig.java` / `ConfigAdapter.java` for the full list):
 | :--- | :--- |
 | DuckDB | `batchSize`, `duckDbThreads`, `duckDbGroups`, `duckDbWarmConnections` |
 | I/O | `ioParallelism`, `ioParallelismMinThreads`, `ioFileBufferSize` |
-| gRPC | `grpcMaxInboundMessageSize`, `flightListenerReadyTimeoutMs` |
+| Flight/gRPC | `grpcMaxInboundMessageSize`, `flightBackpressureThresholdBytes`, `flightListenerReadyTimeoutMs` |
 | Client | `client.maxRetries`, `client.retryBackoffMs`, `client.connectTimeoutMs` |
 | Hazelcast | `hazelcastClusterJoinTimeoutSec` |
 

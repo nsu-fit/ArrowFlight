@@ -135,6 +135,7 @@ Key parameters:
 - `duckDbGroups` - number of groups used by older grouped helper paths.
 - `duckDbThreads` - `SET threads` value for each DuckDB connection.
 - `grpcMaxInboundMessageSize` - max inbound gRPC message size.
+- `flightBackpressureThresholdBytes` - max serialized outbound bytes queued before Flight applies backpressure.
 - `flightListenerReadyTimeoutMs` - timeout for waiting until the Flight listener is ready.
 
 If `ioParallelism` is not set explicitly, the formula is:

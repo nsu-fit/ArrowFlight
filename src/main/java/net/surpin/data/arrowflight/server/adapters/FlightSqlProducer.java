@@ -123,7 +123,7 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
         long tExec = LogUtil.mark();
         long executionStartNanos = System.nanoTime();
         LogUtil.setQid(qid);
-        LOGGER.info("qid={} node={} thread={} execution=start server={} files={} bytes={} endpoint={} query='{}'",
+        LOGGER.debug("qid={} node={} thread={} execution=start server={} files={} bytes={} endpoint={} query='{}'",
                 qid, LogUtil.node(), Thread.currentThread().getName(),
                 serverUri, filePaths.length, bytes, qid, query);
 
@@ -136,7 +136,7 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
             LogUtil.logTiming(tExec, "execution.total", "files=" + filePaths.length);
             long elapsed = TimeUnit.NANOSECONDS.toMillis(
                     System.nanoTime() - executionStartNanos);
-            LOGGER.info("qid={} node={} thread={} execution=completed server={} elapsedMs={} files={} result=completed query='{}'",
+            LOGGER.debug("qid={} node={} thread={} execution=completed server={} elapsedMs={} files={} result=completed query='{}'",
                     qid, LogUtil.node(), Thread.currentThread().getName(),
                     serverUri, elapsed, filePaths.length, query);
         } catch (Exception e) {
@@ -238,7 +238,7 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
     public SchemaResult getSchemaStatement(FlightSql.CommandStatementQuery command,
             FlightProducer.CallContext context, FlightDescriptor descriptor) {
         String query = command.getQuery();
-        LOGGER.info("getSchemaStatement: {}", query);
+        LOGGER.debug("getSchemaStatement: {}", query);
 
         Schema arrowSchema;
         try {

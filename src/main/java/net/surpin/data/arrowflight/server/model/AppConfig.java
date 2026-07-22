@@ -20,6 +20,7 @@ public record AppConfig(
     String duckDbHdfsDomainSocketPath,
     boolean metricsEnabled,
     int grpcMaxInboundMessageSize,
+    int flightBackpressureThresholdBytes,
     long flightListenerReadyTimeoutMillis,
     String dataDir,
     String localDataDir,

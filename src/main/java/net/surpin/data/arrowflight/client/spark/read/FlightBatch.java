@@ -25,7 +25,7 @@ public class FlightBatch implements Batch, Serializable {
      * @param table - the table object
      */
     public FlightBatch(Configuration configuration, Table table) {
-        LOGGER.info("{}()", this.getClass().getName());
+        LOGGER.debug("{}()", this.getClass().getName());
         this.configuration = configuration;
         this.table = table;
     }
@@ -36,14 +36,14 @@ public class FlightBatch implements Batch, Serializable {
      */
     @Override
     public InputPartition[] planInputPartitions() {
-        LOGGER.info("{}.planInputPartitions()", this.getClass().getName());
+        LOGGER.debug("{}.planInputPartitions()", this.getClass().getName());
         String[] partitionQueries = this.table.getPartitionStatements();
-        LOGGER.info("{}.planInputPartitions(): partitionQueries = {}", this.getClass().getName(), Arrays.asList(partitionQueries));
+        LOGGER.debug("{}.planInputPartitions(): partitionQueries = {}", this.getClass().getName(), Arrays.asList(partitionQueries));
         if (partitionQueries.length > 0) {
-            LOGGER.info("{}.planInputPartitions(): partitionQueries = {}", this.getClass().getName(), Arrays.asList(partitionQueries));
+            LOGGER.debug("{}.planInputPartitions(): partitionQueries = {}", this.getClass().getName(), Arrays.asList(partitionQueries));
             return Arrays.stream(partitionQueries).map(q -> new FlightInputPartition.FlightQueryInputPartition(this.table.getSchema(), q)).toArray(InputPartition[]::new);
         } else {
-            LOGGER.info("{}.planInputPartitions(): endpoints = {}", this.getClass().getName(), Arrays.asList(this.table.getEndpoints()));
+            LOGGER.debug("{}.planInputPartitions(): endpoints = {}", this.getClass().getName(), Arrays.asList(this.table.getEndpoints()));
             return Arrays.stream(this.table.getEndpoints()).map(e -> new FlightInputPartition.FlightEndpointInputPartition(this.table.getSchema(), e)).toArray(InputPartition[]::new);
         }
     }
@@ -54,7 +54,7 @@ public class FlightBatch implements Batch, Serializable {
      */
     @Override
     public PartitionReaderFactory createReaderFactory() {
-        LOGGER.info("{}.createReaderFactory()", this.getClass().getName());
+        LOGGER.debug("{}.createReaderFactory()", this.getClass().getName());
         return new FlightPartitionReaderFactory(this.configuration);
     }
 }

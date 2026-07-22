@@ -25,7 +25,7 @@ public class FlightScan implements Scan, Serializable {
      * @param table - the table object
      */
     public FlightScan(Configuration configuration, Table table) {
-        LOGGER.info("{}()", this.getClass().getName());
+        LOGGER.debug("{}()", this.getClass().getName());
 
         this.configuration = configuration;
         this.table = table;
@@ -55,7 +55,7 @@ public class FlightScan implements Scan, Serializable {
      */
     @Override
     public Batch toBatch() {
-        LOGGER.info("{}.toBatch()", this.getClass().getName());
+        LOGGER.debug("{}.toBatch()", this.getClass().getName());
         return new FlightBatch(this.configuration, this.table);
     }
 }

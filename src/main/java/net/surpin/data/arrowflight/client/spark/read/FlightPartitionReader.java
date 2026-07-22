@@ -95,7 +95,7 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
         this.configuration = configuration;
         this.inputPartition = inputPartition;
         this.client = Client.getOrCreate(configuration);
-        LOGGER.info("node={} spark=readerCreate partition={} class={}",
+        LOGGER.debug("node={} spark=readerCreate partition={} class={}",
                 NODE, inputPartition, inputPartition.getClass().getSimpleName());
     }
 
@@ -129,7 +129,7 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
                 totalBatches = 0;
                 totalRows = 0;
                 if (!openStream()) {
-                    LOGGER.info("node={} spark=readerNoData partition={}", NODE, inputPartition);
+                    LOGGER.debug("node={} spark=readerNoData partition={}", NODE, inputPartition);
                     return false;
                 }
                 nextRetryCount = 0;
@@ -156,7 +156,7 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
                     totalBatches++;
                     totalRows += batchRowCount;
                     if (totalBatches == 1) {
-                        LOGGER.info("node={} spark=ttfB batchRowCount={} elapsed={}",
+                        LOGGER.debug("node={} spark=ttfB batchRowCount={} elapsed={}",
                                 NODE, batchRowCount, elapsedNanos(readStartNanos));
                     }
                     if (totalBatches % 10 == 0) {
@@ -178,7 +178,7 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
                 }
             }
 
-            LOGGER.info("node={} spark=readerCompleted batches={} rows={} elapsed={}",
+            LOGGER.debug("node={} spark=readerCompleted batches={} rows={} elapsed={}",
                     NODE, totalBatches, totalRows, elapsedNanos(readStartNanos));
             // no more batches
             hasCurrent = false;
@@ -217,7 +217,7 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
                 if (this.batchRowCount > 0) {
                     totalBatches++;
                     totalRows += this.batchRowCount;
-                    LOGGER.info("node={} spark=ttfB columnarBatchRowCount={} elapsed={}",
+                    LOGGER.debug("node={} spark=ttfB columnarBatchRowCount={} elapsed={}",
                             NODE, this.batchRowCount, elapsedNanos(readStartNanos));
                     return true;
                 }
@@ -238,7 +238,7 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
                 }
             }
 
-            LOGGER.info("node={} spark=columnarCompleted batches={} rows={} elapsed={}",
+            LOGGER.debug("node={} spark=columnarCompleted batches={} rows={} elapsed={}",
                     NODE, totalBatches, totalRows, elapsedNanos(readStartNanos));
             closeStream();
             return false;
@@ -343,7 +343,7 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
             try {
                 closeStream();
                 QueryEndpoints qeps = this.client.getQueryEndpoints(dqPartition.getQuery());
-                LOGGER.info("FlightPartitionReader.openQueryStream(): endpoints: {}", qeps);
+                LOGGER.debug("FlightPartitionReader.openQueryStream(): endpoints: {}", qeps);
                 if (qeps.getEndpoints().length == 0) {
                     return false;
                 }
@@ -448,7 +448,7 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
         Schema schema = dePartition.getSchema();
         String ticketHex = bytesToHex(endpoint.getTicket());
         String uris = Arrays.toString(endpoint.getURIs());
-        LOGGER.info("node={} spark=openEndpointStream ticket={} uris={}",
+        LOGGER.debug("node={} spark=openEndpointStream ticket={} uris={}",
                 NODE, ticketHex, uris);
 
         org.apache.arrow.flight.FlightEndpoint fep = new org.apache.arrow.flight.FlightEndpoint(
@@ -470,7 +470,7 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
             batchRowCount = root.getRowCount();
         }
 
-        LOGGER.info("node={} spark=endpointStreamOpened ticket={} firstBatchRowCount={}",
+        LOGGER.debug("node={} spark=endpointStreamOpened ticket={} firstBatchRowCount={}",
                 NODE, ticketHex, batchRowCount);
         return true;
     }

@@ -31,9 +31,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.apache.arrow.vector.FieldVector;
 
@@ -229,7 +228,7 @@ public final class DuckDbAdapter implements AutoCloseable {
         String qid = LogUtil.qid();
         long t = LogUtil.mark();
         long streamStartNanos = System.nanoTime();
-        LOGGER.info("qid={} node={} thread={} duckdb=start batchSize={} sql='{}'",
+        LOGGER.debug("qid={} node={} thread={} duckdb=start batchSize={} sql='{}'",
                 qid, LogUtil.node(), Thread.currentThread().getName(), batchSize, duckSql);
         Connection conn = threadConn.get();
         AtomicLong firstBatchNanos = new AtomicLong(-1);
@@ -240,7 +239,7 @@ public final class DuckDbAdapter implements AutoCloseable {
             VectorSchemaRoot duckRoot = reader.getVectorSchemaRoot();
 
             int poolCapacity = 4;
-            ArrayBlockingQueue<VectorSchemaRoot> readyQueue =
+            ArrayBlockingQueue<StreamChunk> readyQueue =
                     new ArrayBlockingQueue<>(poolCapacity);
             ArrayBlockingQueue<VectorSchemaRoot> freeQueue =
                     new ArrayBlockingQueue<>(poolCapacity);
@@ -253,16 +252,17 @@ public final class DuckDbAdapter implements AutoCloseable {
             if (startListener) {
                 listener.start(sendRoot);
             }
+            ListenerReadiness listenerReadiness = new ListenerReadiness(
+                    listener, appConfig.flightListenerReadyTimeoutMillis());
 
-            AtomicBoolean producerAlive = new AtomicBoolean(true);
             AtomicBoolean producerStarted = new AtomicBoolean(false);
             AtomicBoolean cancelled = new AtomicBoolean(false);
-            AtomicReference<Exception> producerError = new AtomicReference<>();
             CountDownLatch producerStopped = new CountDownLatch(1);
 
             Future<?> producerFuture = ioPool.submit(() -> {
                 producerStarted.set(true);
                 VectorSchemaRoot held = null;
+                Exception terminalError = null;
                 try {
                     while (!Thread.currentThread().isInterrupted()) {
                         if (cancelled.get()) {
@@ -291,17 +291,26 @@ public final class DuckDbAdapter implements AutoCloseable {
                         }
                         transferRoot(duckRoot, held);
                         duckRoot.clear();
-                        readyQueue.put(held);
+                        readyQueue.put(new StreamChunk(held, null, false));
                         held = null;
                     }
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
+                    if (!cancelled.get()) {
+                        terminalError = e;
+                    }
                 } catch (Exception e) {
-                    producerError.set(e);
+                    terminalError = e;
                 } finally {
-                    producerAlive.set(false);
                     if (held != null) {
                         held.close();
+                    }
+                    if (!cancelled.get()) {
+                        try {
+                            readyQueue.put(new StreamChunk(null, terminalError, true));
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        }
                     }
                     producerStopped.countDown();
                 }
@@ -314,22 +323,20 @@ public final class DuckDbAdapter implements AutoCloseable {
                     if (cancelled.get()) {
                         break;
                     }
-                    VectorSchemaRoot buf;
+                    StreamChunk chunk;
                     try {
-                        buf = readyQueue.poll(100, TimeUnit.MILLISECONDS);
+                        chunk = readyQueue.take();
                     } catch (InterruptedException e) {
                         Thread.currentThread().interrupt();
                         throw new RuntimeException(e);
                     }
-                    if (buf == null) {
-                        if (!producerAlive.get()) {
-                            if (producerError.get() != null) {
-                                throw new RuntimeException(producerError.get());
-                            }
-                            break;
+                    if (chunk.end()) {
+                        if (chunk.error() != null) {
+                            throw new RuntimeException(chunk.error());
                         }
-                        continue;
+                        break;
                     }
+                    VectorSchemaRoot buf = chunk.root();
 
                     transferRoot(buf, sendRoot);
                     buf.clear();
@@ -342,8 +349,7 @@ public final class DuckDbAdapter implements AutoCloseable {
 
                     int rows = sendRoot.getRowCount();
                     long bpStart = System.nanoTime();
-                    awaitListenerReady(
-                            listener, appConfig.flightListenerReadyTimeoutMillis());
+                    listenerReadiness.await();
                     backpressureNanos += System.nanoTime() - bpStart;
                     listener.putNext();
                     batchesSent++;
@@ -373,7 +379,7 @@ public final class DuckDbAdapter implements AutoCloseable {
             LogUtil.logTiming(t, "duckdb.streamSql",
                     "batches=" + batchesSent + " rows=" + rowsSent
                     + " backpressureMs=" + backpressureNanos / 1_000_000);
-            LOGGER.info("qid={} node={} duckdb=completed batches={} rows={} ttfB={} backpressureMs={} elapsed={} cancelled={}",
+            LOGGER.debug("qid={} node={} duckdb=completed batches={} rows={} ttfB={} backpressureMs={} elapsed={} cancelled={}",
                     qid, LogUtil.node(), batchesSent, rowsSent,
                     firstBatchNanos.get() >= 0 ? formatDuration(firstBatchNanos.get()) : "N/A",
                     backpressureNanos / 1_000_000,
@@ -382,7 +388,12 @@ public final class DuckDbAdapter implements AutoCloseable {
                 sendRoot.close();
                 List<VectorSchemaRoot> remaining = new ArrayList<>();
                 freeQueue.drainTo(remaining);
-                readyQueue.drainTo(remaining);
+                List<StreamChunk> ready = new ArrayList<>();
+                readyQueue.drainTo(ready);
+                ready.stream()
+                        .map(StreamChunk::root)
+                        .filter(java.util.Objects::nonNull)
+                        .forEach(remaining::add);
                 for (VectorSchemaRoot root : remaining) {
                     root.close();
                 }
@@ -405,6 +416,16 @@ public final class DuckDbAdapter implements AutoCloseable {
             srcVecs.get(i).makeTransferPair(dstVecs.get(i)).transfer();
         }
         dst.setRowCount(src.getRowCount());
+    }
+
+    /**
+     * Carries either a ready Arrow batch or the producer's terminal state.
+     *
+     * @param root Arrow batch, or null for the terminal state
+     * @param error producer failure, or null for successful completion
+     * @param end whether this chunk terminates the stream
+     */
+    private record StreamChunk(VectorSchemaRoot root, Exception error, boolean end) {
     }
 
     /**
@@ -738,61 +759,90 @@ public final class DuckDbAdapter implements AutoCloseable {
             org.apache.arrow.flight.FlightProducer.ServerStreamListener listener,
             long timeoutMillis)
             throws InterruptedException {
-        if (timeoutMillis <= 0) {
-            throw new IllegalArgumentException(
-                    "Flight listener readiness timeout must be positive: " + timeoutMillis);
+        return new ListenerReadiness(listener, timeoutMillis).await();
+    }
+
+    /** Maintains one readiness signal and callback registration for a Flight stream. */
+    private static final class ListenerReadiness {
+        private final org.apache.arrow.flight.FlightProducer.ServerStreamListener listener;
+        private final long timeoutMillis;
+        private final Semaphore stateChanged = new Semaphore(0);
+
+        /**
+         * Registers callbacks used by every batch in one Flight stream.
+         *
+         * @param listener Flight stream listener
+         * @param timeoutMillis maximum wait time in milliseconds
+         */
+        private ListenerReadiness(
+                org.apache.arrow.flight.FlightProducer.ServerStreamListener listener,
+                long timeoutMillis) {
+            if (timeoutMillis <= 0) {
+                throw new IllegalArgumentException(
+                        "Flight listener readiness timeout must be positive: " + timeoutMillis);
+            }
+            this.listener = listener;
+            this.timeoutMillis = timeoutMillis;
+            Runnable stateChangeHandler = stateChanged::release;
+            listener.setOnReadyHandler(stateChangeHandler);
+            listener.setOnCancelHandler(stateChangeHandler);
         }
 
-        Semaphore stateChanged = new Semaphore(0);
-        Runnable stateChangeHandler = stateChanged::release;
-        listener.setOnReadyHandler(stateChangeHandler);
-        listener.setOnCancelHandler(stateChangeHandler);
+        /**
+         * Waits until the listener can accept the next Arrow batch.
+         *
+         * @return true when the listener is ready
+         * @throws InterruptedException if waiting is interrupted
+         */
+        private boolean await() throws InterruptedException {
+            long deadlineNanos = System.nanoTime()
+                    + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
+            long waitStart = System.nanoTime();
+            long t = LogUtil.mark();
+            while (true) {
+                if (listener.isCancelled()) {
+                    long waitedNanos = System.nanoTime() - waitStart;
+                    LOGGER.info("qid={} node={} backpressure=cancelled waited={}",
+                            LogUtil.qid(), LogUtil.node(), LogUtil.elapsedNanos(waitStart));
+                    LogUtil.logTiming(t, "duckdb.awaitListenerReadyCancelled",
+                            "waitMs=" + waitedNanos / 1_000_000);
+                    throw CallStatus.CANCELLED
+                            .withDescription("Flight client cancelled while waiting for readiness")
+                            .toRuntimeException();
+                }
+                if (listener.isReady()) {
+                    break;
+                }
 
-        long deadlineNanos = System.nanoTime()
-                + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
-        long waitStart = System.nanoTime();
-        long t = LogUtil.mark();
-        while (true) {
-            if (listener.isCancelled()) {
-                long waitedNanos = System.nanoTime() - waitStart;
-                LOGGER.info("qid={} node={} backpressure=cancelled waited={}",
-                        LogUtil.qid(), LogUtil.node(), LogUtil.elapsedNanos(waitStart));
-                LogUtil.logTiming(t, "duckdb.awaitListenerReadyCancelled",
-                        "waitMs=" + waitedNanos / 1_000_000);
-                throw CallStatus.CANCELLED
-                        .withDescription("Flight client cancelled while waiting for readiness")
-                        .toRuntimeException();
-            }
-            if (listener.isReady()) {
-                break;
-            }
+                long remainingNanos = deadlineNanos - System.nanoTime();
+                if (remainingNanos <= 0) {
+                    LOGGER.warn("qid={} node={} backpressure=timeout timeoutMs={} waited={}",
+                            LogUtil.qid(), LogUtil.node(), timeoutMillis,
+                            LogUtil.elapsedNanos(waitStart));
+                    LogUtil.logTiming(t, "duckdb.awaitListenerReadyTimeout",
+                            "timeoutMs=" + timeoutMillis);
+                    throw CallStatus.TIMED_OUT
+                            .withDescription("Flight listener was not ready within "
+                                    + timeoutMillis + " ms")
+                            .toRuntimeException();
+                }
 
-            long remainingNanos = deadlineNanos - System.nanoTime();
-            if (remainingNanos <= 0) {
-                LOGGER.warn("qid={} node={} backpressure=timeout timeoutMs={} waited={}",
-                        LogUtil.qid(), LogUtil.node(), timeoutMillis,
-                        LogUtil.elapsedNanos(waitStart));
-                LogUtil.logTiming(t, "duckdb.awaitListenerReadyTimeout", "timeoutMs=" + timeoutMillis);
-                throw CallStatus.TIMED_OUT
-                        .withDescription("Flight listener was not ready within "
-                                + timeoutMillis + " ms")
-                        .toRuntimeException();
+                long waitSliceNanos = Math.min(remainingNanos, LISTENER_STATE_POLL_NANOS);
+                if (stateChanged.tryAcquire(waitSliceNanos, TimeUnit.NANOSECONDS)) {
+                    continue;
+                }
             }
-
-            long waitSliceNanos = Math.min(remainingNanos, LISTENER_STATE_POLL_NANOS);
-            if (stateChanged.tryAcquire(waitSliceNanos, TimeUnit.NANOSECONDS)) {
-                continue;
+            long totalWaitNanos = System.nanoTime() - waitStart;
+            if (totalWaitNanos > 10_000) {
+                LogUtil.logTiming(t, "duckdb.awaitListenerReady",
+                        "waitMs=" + totalWaitNanos / 1_000_000);
             }
+            if (totalWaitNanos > 100_000_000) { // >100ms
+                LOGGER.debug("qid={} node={} backpressure=waited waitMs={} ready=true cancelled=false",
+                        LogUtil.qid(), LogUtil.node(), totalWaitNanos / 1_000_000);
+            }
+            return true;
         }
-        long totalWaitNanos = System.nanoTime() - waitStart;
-        if (totalWaitNanos > 10_000) {
-            LogUtil.logTiming(t, "duckdb.awaitListenerReady", "waitMs=" + totalWaitNanos / 1_000_000);
-        }
-        if (totalWaitNanos > 100_000_000) { // >100ms
-            LOGGER.debug("qid={} node={} backpressure=waited waitMs={} ready=true cancelled=false",
-                    LogUtil.qid(), LogUtil.node(), totalWaitNanos / 1_000_000);
-        }
-        return true;
     }
 
     /**
