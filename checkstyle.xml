@@ -22,7 +22,6 @@
                 org.apache.spark.sql.connector.expressions.aggregate,
                 org.apache.parquet.schema,
                 java.time,
-                io.substrait.proto,
                 org.jooq"/>
         </module>
 

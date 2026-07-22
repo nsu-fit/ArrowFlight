@@ -137,7 +137,7 @@
     },
     {
       "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "description": "Logical input comes from planned Parquet file sizes. Acero reads HDFS directly; host disk reads show DataNode activity.",
+      "description": "Logical input comes from planned Parquet file sizes. DuckDB reads assigned files; host disk reads show DataNode activity.",
       "fieldConfig": {"defaults": {"custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "showPoints": "never"}, "min": 0, "unit": "Bps"}, "overrides": []},
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 28},
       "id": 12,

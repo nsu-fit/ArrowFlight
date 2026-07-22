@@ -3,6 +3,10 @@ package net.surpin.data.arrowflight.client.spark.read;
 import net.surpin.data.arrowflight.client.Configuration;
 import net.surpin.data.arrowflight.client.model.Table;
 import net.surpin.data.arrowflight.client.write.PartitionBehavior;
+import org.apache.spark.sql.connector.expressions.Expression;
+import org.apache.spark.sql.connector.expressions.FieldReference;
+import org.apache.spark.sql.connector.expressions.LiteralValue;
+import org.apache.spark.sql.connector.expressions.filter.Predicate;
 import org.apache.spark.sql.sources.*;
 import org.apache.spark.sql.types.*;
 import org.junit.jupiter.api.Test;
@@ -97,6 +101,40 @@ class FlightScanBuilderTest {
         Filter[] unhandled = builder.pushFilters(new Filter[0]);
         assertEquals(0, unhandled.length);
         assertEquals(0, builder.pushedFilters().length);
+    }
+
+    @Test
+    void pushPredicatesAcceptsColumnToColumnComparison() {
+        Table t = tableWithSchema();
+        FlightScanBuilder builder = new FlightScanBuilder(config(), t, noPartitioning());
+        Predicate comparison = new Predicate("<", new Expression[]{
+                FieldReference.column("l_commitdate"),
+                FieldReference.column("l_receiptdate")
+        });
+
+        Predicate[] unhandled = builder.pushPredicates(new Predicate[]{comparison});
+
+        assertEquals(0, unhandled.length);
+        assertArrayEquals(new Predicate[]{comparison}, builder.pushedPredicates());
+    }
+
+    @Test
+    void pushPredicatesReturnsUnsupportedExpressionsToSpark() {
+        Table t = tableWithSchema();
+        FlightScanBuilder builder = new FlightScanBuilder(config(), t, noPartitioning());
+        Predicate unsupported = new Predicate(">", new Expression[]{
+                new org.apache.spark.sql.connector.expressions.GeneralScalarExpression(
+                        "+", new Expression[]{
+                                FieldReference.column("id"),
+                                new LiteralValue<>(1, DataTypes.IntegerType)
+                        }),
+                new LiteralValue<>(10, DataTypes.IntegerType)
+        });
+
+        Predicate[] unhandled = builder.pushPredicates(new Predicate[]{unsupported});
+
+        assertArrayEquals(new Predicate[]{unsupported}, unhandled);
+        assertEquals(0, builder.pushedPredicates().length);
     }
 
     // ── pruneColumns ──────────────────────────────────────────────────────

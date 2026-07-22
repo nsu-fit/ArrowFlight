@@ -30,7 +30,7 @@ import static org.apache.arrow.memory.DefaultAllocationManagerOption.ALLOCATION_
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Performance comparison: local Arrow Dataset read (embedded) vs remote Arrow Flight read (gRPC).
+ * Performance comparison between embedded DuckDB and remote Arrow Flight reads.
  *
  * Can be run two ways:
  *   1. As a JUnit test:  mvn test -DexcludedGroups="" -Dgroups=perf
@@ -281,7 +281,7 @@ class ArrowFlightPerfTest {
         }
         System.out.println("=".repeat(W));
         System.out.println("Delta: positive = Flight slower (gRPC overhead), negative = Flight faster");
-        System.out.println("Local Arrow = Arrow Dataset JNI scan, same engine used by the server");
+        System.out.println("Local Arrow = embedded DuckDB scan, same engine used by the server");
         System.out.println("Flight      = same scan served over gRPC from embedded server");
     }
 

@@ -9,7 +9,6 @@ import net.surpin.data.arrowflight.server.model.AppConfig;
 import net.surpin.data.arrowflight.server.services.ClusterService;
 import net.surpin.data.arrowflight.server.services.ExecutionService;
 import net.surpin.data.arrowflight.server.services.MetadataService;
-import net.surpin.data.arrowflight.server.services.ParquetQueryParser;
 import net.surpin.data.arrowflight.server.services.QueryPlanner;
 import org.apache.arrow.flight.*;
 import org.apache.arrow.flight.sql.FlightSqlClient;
@@ -34,7 +33,6 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.ServerSocket;
 import java.net.URI;
-import java.nio.ByteBuffer;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -44,7 +42,6 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.Executors;
-import java.util.function.Function;
 
 import static org.apache.arrow.memory.DefaultAllocationManagerOption.ALLOCATION_MANAGER_TYPE_PROPERTY_NAME;
 

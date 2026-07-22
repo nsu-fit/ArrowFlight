@@ -71,7 +71,7 @@ docker compose --profile test up spark-client
 | `data-generator` | — | Generates and distributes test Parquet files |
 | `spark-client` | — | Profiled (`--profile test`), runs `query_flight.py` |
 
-**Dockerfile**: Multi-stage — `maven:3.9.9-eclipse-temurin-21` build, `eclipse-temurin:21-jre-jammy` runtime with Hadoop 3.3.6 and Spark 3.5.9 bundled. Arrow Dataset JNI 18.0.0 uses the bundled Hadoop native client to open `hdfs://` URIs directly.
+**Dockerfile**: Multi-stage — `maven:3.9.9-eclipse-temurin-21` build and `eclipse-temurin:21-jre-jammy` runtime with Hadoop 3.3.6 and Spark 3.5.9 bundled. DuckDB opens assigned Parquet files and exports results as Arrow batches.
 
 ---
 
@@ -152,7 +152,7 @@ Supports exponential backoff retry, connection pooling, TLS, BasicAuth and Beare
 3. Returns `FlightInfo` with endpoints (each containing a `Ticket` and node address).
 4. **Client** calls `DoGet` for each endpoint (passing the Ticket).
 5. On each node, **Flight Adapter** restores the query and file list from the Ticket, initiating a two-phase file acquisition via Hazelcast locks.
-6. **Parquet Adapter** executes via Acero or DuckDB (with fast-path if applicable) and streams results as `VectorSchemaRoot`.
+6. **Execution Service** uses a Parquet-footer fast path when possible, otherwise executes through DuckDB and streams results as `VectorSchemaRoot`.
 7. **Client** receives and processes data.
 
 ---
@@ -195,7 +195,7 @@ Key properties (see `AppConfig.java` / `ConfigAdapter.java` for the full list):
 | Feature | Status |
 | :--- | :--- |
 | `SELECT` with projection | Supported |
-| `WHERE` filtering (server-side via Substrait C++) | Supported |
+| `WHERE` filtering (server-side via DuckDB) | Supported |
 | `COUNT`, `SUM`, `MIN`, `MAX` | Supported |
 | `COUNT(DISTINCT col)` | Supported |
 | `GROUP BY` | Supported (requires client-side merge) |
@@ -230,9 +230,7 @@ Key properties (see `AppConfig.java` / `ConfigAdapter.java` for the full list):
 | **jOOQ** | SQL parsing |
 | **Hazelcast** | Distributed cache, node registry, coordination |
 | **Hadoop FileSystem** | HDFS / S3 / local FS access |
-| **Acero (Arrow Dataset)** | C++ Parquet scanning, filtering, projection |
-| **DuckDB** | Aggregation and server-side join execution |
-| **Substrait / Isthmus** | SQL filter to Acero plan conversion |
+| **DuckDB** | Parquet scanning, filtering, aggregation and server-side joins |
 
 ---
 
@@ -240,8 +238,8 @@ Key properties (see `AppConfig.java` / `ConfigAdapter.java` for the full list):
 
 | Document | Description |
 | :--- | :--- |
-| **[Architecture — Query Execution](docs/architecture/sql-query-execution-flow.md)** | Full query lifecycle: parsing, endpoint routing, two-phase execution, DuckDB/Acero dispatch |
+| **[Architecture — Query Execution](docs/architecture/sql-query-execution-flow.md)** | Full query lifecycle: parsing, endpoint routing, footer fast path and DuckDB execution |
 | **[Architecture — Parquet Storage](docs/architecture/hadoop-parquet-storage.md)** | Storage model, Hadoop FS abstraction, block locality, file discovery |
-| **[ADR](docs/adr/)** | Architecture Decision Records (query engine selection, file distribution scheduler) |
+| **[ADR](docs/adr/)** | Architecture Decision Records for distribution and benchmark strategy |
 | **[User Guide — Build & Test](docs/user_guides/build-test-and-scripts.md)** | Build profiles, unit/integration/perf test commands and `run.sh` usage |
 | **[BenchBase Spark — Linux](docs/user_guides/benchbase-spark-linux.ru.md)** | Russian guide for selected TPC-H queries and Flight-vs-Direct comparison runs |

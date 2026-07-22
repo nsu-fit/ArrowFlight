@@ -26,14 +26,14 @@ git --version
 
 ```bash
 git fetch origin
-git switch feature/adr-0001-hybrid-query-engine
+git switch feature/goto-duckdb
 git pull --ff-only
 ```
 
 Если локальной ветки еще  нет:
 
 ```bash
-git switch --track origin/feature/adr-0001-hybrid-query-engine
+git switch --track origin/feature/goto-duckdb
 ```
 
 Проверить текущую ветку:
@@ -126,7 +126,7 @@ src/main/resources/arrowflight.properties
 
 Ключевые параметры:
 
-- `batchSize` - общий Arrow batch size для Acero и DuckDB export.
+- `batchSize` - размер Arrow batch для DuckDB export и Flight streaming.
 - `ioParallelism` - явное число worker threads. Если пустой, считается по формуле.
 - `ioParallelismMinThreads` - нижняя граница thread pool.
 - `ioParallelismMaxCores` - максимум CPU cores для расчета; `0` значит без ограничения.
@@ -152,7 +152,7 @@ mvn test -Darrowflight.duckdb.threads=2
 
 ## HDFS runtime
 
-HDFS Parquet-файлы открывает Arrow Dataset/Acero, а не DuckDB. В Linux runtime должны быть доступны `libhdfs`, Hadoop configuration и Java classpath Hadoop. Docker image и entrypoint проекта задают для этого `ARROW_LIBHDFS_DIR`, `LD_LIBRARY_PATH`, `HADOOP_CONF_DIR` и `CLASSPATH`.
+HDFS Parquet-файлы открывает DuckDB через настроенный HDFS extension. В Linux runtime должны быть доступны `libhdfs`, Hadoop configuration и Java classpath Hadoop. Docker image и entrypoint проекта задают для этого `LD_LIBRARY_PATH`, `HADOOP_CONF_DIR` и `CLASSPATH`.
 
 ## run.sh
 
@@ -176,9 +176,9 @@ HDFS Parquet-файлы открывает Arrow Dataset/Acero, а не DuckDB. 
 ```bash
 chmod +x run.sh
 
-./run.sh -b feature/adr-0001-hybrid-query-engine -t all
-./run.sh -b feature/adr-0001-hybrid-query-engine -t ArrowFlightPerfTest
-./run.sh -b feature/adr-0001-hybrid-query-engine -t perf -r 500000 -n 5
+./run.sh -b feature/goto-duckdb -t all
+./run.sh -b feature/goto-duckdb -t ArrowFlightPerfTest
+./run.sh -b feature/goto-duckdb -t perf -r 500000 -n 5
 ./run.sh -b main -t all --force-reset
 ```
 

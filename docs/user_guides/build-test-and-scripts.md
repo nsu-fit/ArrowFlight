@@ -26,14 +26,14 @@ From the repository root:
 
 ```bash
 git fetch origin
-git switch feature/adr-0001-hybrid-query-engine
+git switch feature/goto-duckdb
 git pull --ff-only
 ```
 
 If the local branch does not exist yet:
 
 ```bash
-git switch --track origin/feature/adr-0001-hybrid-query-engine
+git switch --track origin/feature/goto-duckdb
 ```
 
 Check the current branch:
@@ -126,7 +126,7 @@ src/main/resources/arrowflight.properties
 
 Key parameters:
 
-- `batchSize` - shared Arrow batch size for Acero and DuckDB export.
+- `batchSize` - Arrow batch size used by DuckDB export and Flight streaming.
 - `ioParallelism` - explicit worker thread count. If empty, the value is calculated.
 - `ioParallelismMinThreads` - lower bound for the thread pool.
 - `ioParallelismMaxCores` - max CPU cores used in the calculation; `0` means no limit.
@@ -152,7 +152,7 @@ mvn test -Darrowflight.duckdb.threads=2
 
 ## HDFS runtime
 
-HDFS Parquet files are opened by Arrow Dataset/Acero, not by DuckDB. The Linux runtime must provide `libhdfs`, Hadoop configuration, and the Hadoop Java classpath. The project Docker image and entrypoint configure `ARROW_LIBHDFS_DIR`, `LD_LIBRARY_PATH`, `HADOOP_CONF_DIR`, and `CLASSPATH` for this purpose.
+HDFS Parquet files are opened by DuckDB through the configured HDFS extension. The Linux runtime provides `libhdfs`, Hadoop configuration, and the Hadoop Java classpath. The project Docker image and entrypoint configure `LD_LIBRARY_PATH`, `HADOOP_CONF_DIR`, and `CLASSPATH` for this purpose.
 
 ## run.sh
 
@@ -176,9 +176,9 @@ Examples:
 ```bash
 chmod +x run.sh
 
-./run.sh -b feature/adr-0001-hybrid-query-engine -t all
-./run.sh -b feature/adr-0001-hybrid-query-engine -t ArrowFlightPerfTest
-./run.sh -b feature/adr-0001-hybrid-query-engine -t perf -r 500000 -n 5
+./run.sh -b feature/goto-duckdb -t all
+./run.sh -b feature/goto-duckdb -t ArrowFlightPerfTest
+./run.sh -b feature/goto-duckdb -t perf -r 500000 -n 5
 ./run.sh -b main -t all --force-reset
 ```
 

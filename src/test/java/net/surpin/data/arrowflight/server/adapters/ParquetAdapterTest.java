@@ -26,7 +26,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class ParquetAdapterTest {
 
-    /** Verifies construction populates DDL metadata used by Substrait filter pushdown. */
+    /** Verifies construction populates cached table DDL metadata. */
     @Test
     void constructorInitializesCatalogDdlCache() throws Exception {
         Path dataDirectory = new Path("/data");

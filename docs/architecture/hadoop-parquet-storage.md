@@ -4,7 +4,7 @@ This document describes how the project works with files through Hadoop FileSyst
 
 ## Storage Model
 
-Data is not stored inside the Arrow Flight server. Flight nodes act as the compute layer: they receive assigned Parquet file paths and read those files directly from HDFS through the HDFS-enabled Arrow Dataset JNI library.
+Data is not stored inside the Arrow Flight server. Flight nodes act as the compute layer: they receive assigned Parquet file paths and DuckDB reads those files through its configured filesystem support.
 
 The data root is configured by the `dataDirectory` parameter. Tables are expected under a `schema/table` hierarchy. For each table, the server recursively searches for Parquet files.
 
@@ -12,9 +12,9 @@ The data root is configured by the `dataDirectory` parameter. Tables are expecte
 
 ## Hadoop FileSystem
 
-Hadoop FileSystem is used for discovery, metadata access, and locality information. Arrow Dataset / Acero performs data-page reads. The Docker image builds Arrow Dataset JNI with `ARROW_HDFS=ON`, so Acero can open `hdfs://` URIs directly.
+Hadoop FileSystem is used for discovery, metadata access, and locality information. DuckDB performs data-page reads and opens `hdfs://` URIs through the configured HDFS extension.
 
-A Flight node does not need a local Parquet copy. Acero uses HDFS seek and range reads required by Parquet and streams Arrow batches without materializing the complete file in `/tmp`.
+A Flight node does not need a local Parquet copy. DuckDB reads the assigned Parquet files and exports query results as Arrow batches without materializing the complete file in `/tmp`.
 
 When the server starts, it creates a `FileSystem` instance associated with `dataDirectory`. All file operations then go through that object: listing files, reading metadata, resolving absolute paths, and opening files.
 
@@ -50,19 +50,15 @@ The current implementation distributes work at the whole-file level. Row groups 
 
 ## Projection
 
-Projection means selecting only the columns required by a query. For a regular `SELECT`, the query parser extracts the selected columns and passes them to the Arrow Dataset scanner.
+Projection means selecting only the columns required by a query. For a regular `SELECT`, the query parser extracts the selected columns and includes them in the DuckDB query.
 
-If a query requires only a subset of columns, Acero can read only those columns. This reduces disk I/O and the amount of data that must be converted to Arrow.
+If a query requires only a subset of columns, DuckDB can read only those columns from Parquet. This reduces disk I/O and the amount of data exported to Arrow.
 
-If no projection is specified, the scanner reads all table columns.
+If no projection is specified, DuckDB reads all table columns.
 
 ## Filter Pushdown
 
-Supported filters are converted to Substrait and executed by Acero. If a filter cannot be converted, Acero scans the HDFS Parquet files and exposes Arrow C streams to DuckDB, which applies the remaining SQL predicate.
-
-DuckDB never opens HDFS paths in this flow. It consumes registered Arrow streams, so no DuckDB HDFS extension and no intermediate Parquet copy are required.
-
-This routing keeps HDFS I/O in Acero while using DuckDB only for SQL operations not implemented by the Acero path.
+Spark V2 predicates and SQL filters are translated into the SQL sent to DuckDB. DuckDB applies supported Parquet predicate and projection pushdown while reading assigned files. HDFS paths require the configured DuckDB HDFS extension.
 
 ## Footer Fast Path
 
@@ -72,7 +68,7 @@ For total row counts, the project can use row count information from the Parquet
 
 If the required statistics are available and the query does not require filtering or grouping, the server reads only metadata. If the statistics are not sufficient, execution falls back to the regular aggregation path.
 
-The regular aggregation path streams Acero batches from HDFS into DuckDB and merges partial aggregate results.
+The regular aggregation path is executed by DuckDB and partial results from Flight nodes are merged by the client when required.
 
 ## File Distribution Across Flight Nodes
 

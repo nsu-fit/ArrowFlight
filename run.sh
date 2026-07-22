@@ -17,9 +17,9 @@ usage() {
     echo ""
     echo "Examples:"
     echo "  $0 -b main -t all"
-    echo "  $0 -b duckdb-only-no-acero -t perf"
-    echo "  $0 -b duckdb-only-no-acero -t perf -r 500000 -n 5"
-    echo "  $0 -b duckdb-only-no-acero -t ArrowFlightPerfTest"
+    echo "  $0 -b feature/goto-duckdb -t perf"
+    echo "  $0 -b feature/goto-duckdb -t perf -r 500000 -n 5"
+    echo "  $0 -b feature/goto-duckdb -t ArrowFlightPerfTest"
     echo "  $0 -b main -t all --force-reset"
     exit 1
 }

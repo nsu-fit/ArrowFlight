@@ -59,8 +59,8 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
     private Field[] fields;
 
     // Schema from FlightInfo (what Spark's codegen was compiled against).
-    // Kept separately because `fields` is overwritten per-batch with Acero's stream schema,
-    // which may differ in integer width (e.g. Acero returns Int8, FlightInfo said Int32).
+    // Kept separately because `fields` is overwritten per batch with the stream schema,
+    // which may differ in integer width from the schema advertised by FlightInfo.
     // getValue() uses sparkFields to return the exact Java type Spark's getInt()/getByte() expects.
     private Field[] sparkFields;
 

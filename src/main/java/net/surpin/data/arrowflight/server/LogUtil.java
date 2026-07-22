@@ -3,6 +3,8 @@ package net.surpin.data.arrowflight.server;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.concurrent.TimeUnit;
+
 /**
  * Utility for formatting log context fields consistently.
  * Every log entry for a query flow includes qid, node, thread, endpoint/ticket,
@@ -171,9 +173,9 @@ public final class LogUtil {
         if (mark < 0) {
             return;
         }
-        long elapsed = System.nanoTime() - mark;
-        TIMING_LOG.debug("TIMING thread={} durationUs={} tag={}{}",
-                Thread.currentThread().getName(), elapsed, event,
+        long elapsedMicros = TimeUnit.NANOSECONDS.toMicros(System.nanoTime() - mark);
+        TIMING_LOG.debug("qid={} node={} TIMING thread={} durationUs={} tag={}{}",
+                qid(), NODE, Thread.currentThread().getName(), elapsedMicros, event,
                 extra.isEmpty() ? "" : " " + extra);
     }
 

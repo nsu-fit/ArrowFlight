@@ -30,7 +30,6 @@
         <grpc.version>1.65.0</grpc.version>
         <jackson.version>2.15.3</jackson.version>
         <hazelcast.version>5.6.0</hazelcast.version>
-        <substrait.version>0.91.0</substrait.version>
         <checkstyle.failOnViolation>true</checkstyle.failOnViolation>
         <!-- SonarCloud -->
         <sonar.projectKey>nsu-fit_ArrowFlight</sonar.projectKey>
@@ -96,12 +95,6 @@
             <version>${arrow.version}</version>
         </dependency>
 
-        <dependency>
-            <groupId>org.apache.arrow</groupId>
-            <artifactId>arrow-dataset</artifactId>
-            <version>${arrow.version}</version>
-        </dependency>
-
         <!-- Required by DuckDB JDBC arrowExportStream. -->
         <dependency>
             <groupId>org.apache.arrow</groupId>
@@ -113,18 +106,6 @@
             <groupId>org.duckdb</groupId>
             <artifactId>duckdb_jdbc</artifactId>
             <version>${duckdb.version}</version>
-        </dependency>
-
-        <dependency>
-            <groupId>io.substrait</groupId>
-            <artifactId>core</artifactId>
-            <version>${substrait.version}</version>
-        </dependency>
-
-        <dependency>
-            <groupId>io.substrait</groupId>
-            <artifactId>isthmus</artifactId>
-            <version>${substrait.version}</version>
         </dependency>
 
         <dependency>
