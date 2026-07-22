@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>HandleState.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Hadoop Arrow Flight SQL Server</a> &gt; <a href="index.source.html" class="el_package">net.surpin.data.arrowflight.server.model</a> &gt; <span class="el_source">HandleState.java</span></div><h1>HandleState.java</h1><pre class="source lang-java linenums">package net.surpin.data.arrowflight.server.model;
+
+import java.io.Serializable;
+
+/**
+ * State associated with a query handle, including query text, file paths, server URI, and byte count.
+ */
+<span class="fc" id="L8">public record HandleState(String query, String[] filePaths, String serverUri, long bytes) implements Serializable {</span>
+
+    /**
+     * @param query SQL query text
+     * @return handle state with no file paths or server URI
+     */
+    public static HandleState forQuery(String query) {
+<span class="fc" id="L15">        return new HandleState(query, null, null, 0L);</span>
+    }
+
+    /**
+     * @param query SQL query text
+     * @param filePaths paths to Parquet files
+     * @param serverUri URI of the server holding the files
+     * @param bytes total file size
+     * @return handle state with all fields populated
+     */
+    public static HandleState forServerFiles(String query, String[] filePaths, String serverUri, long bytes) {
+<span class="fc" id="L26">        return new HandleState(query, filePaths, serverUri, bytes);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>
