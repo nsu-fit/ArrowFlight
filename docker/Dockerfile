@@ -7,11 +7,14 @@ FROM ${MAVEN_IMAGE} AS build
 WORKDIR /src
 COPY pom.xml .
 COPY checkstyle.xml spotbugs-exclude.xml ./
-RUN mvn -q dependency:go-offline dependency:resolve-plugins
+RUN --mount=type=cache,target=/root/.m2 \
+    mvn -q dependency:go-offline
 COPY src/main ./src/main
-RUN mvn -q compile test-compile
+RUN --mount=type=cache,target=/root/.m2 \
+    mvn -q compile test-compile
 COPY src/test ./src/test
-RUN mvn -q -DskipTests package
+RUN --mount=type=cache,target=/root/.m2 \
+    mvn -q -DskipTests package
 
 # ---- download stage (cached until ARGs change) ----
 FROM ${RUNTIME_IMAGE} AS download
