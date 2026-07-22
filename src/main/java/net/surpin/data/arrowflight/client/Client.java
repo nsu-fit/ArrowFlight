@@ -6,6 +6,7 @@ import net.surpin.data.arrowflight.client.model.RowSet;
 import net.surpin.data.arrowflight.client.query.Endpoint;
 import net.surpin.data.arrowflight.client.query.QueryEndpoints;
 import com.google.protobuf.Any;
+import net.surpin.data.arrowflight.server.LogUtil;
 import org.apache.arrow.flight.*;
 import org.apache.arrow.flight.auth2.BasicAuthCredentialWriter;
 import org.apache.arrow.flight.auth2.BearerCredentialWriter;
@@ -30,6 +31,7 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Locale;
 import java.util.Set;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.TimeUnit;
@@ -184,7 +186,7 @@ public final class Client implements AutoCloseable {
                 }
             }
             LOGGER.info("node={} client=fetchCompleted batches={} rows={} elapsed={}",
-                    NODE, batches, rows, elapsedNanos(startNanos));
+                    NODE, batches, rows, LogUtil.elapsedNanos(startNanos));
             return rs;
         }, "fetch");
     }
@@ -219,7 +221,7 @@ public final class Client implements AutoCloseable {
                     rows += root.getRowCount();
                     if (batches == 1) {
                         LOGGER.info("node={} client=ttfB batchRowCount={} elapsed={}",
-                                NODE, root.getRowCount(), elapsedNanos(startNanos));
+                                NODE, root.getRowCount(), LogUtil.elapsedNanos(startNanos));
                     }
                     boolean shouldContinue = callback.onBatch(root, fields);
                     if (!shouldContinue) {
@@ -228,7 +230,7 @@ public final class Client implements AutoCloseable {
                 }
             }
             LOGGER.info("node={} client=fetchStreamingCompleted batches={} rows={} elapsed={}",
-                    NODE, batches, rows, elapsedNanos(startNanos));
+                    NODE, batches, rows, LogUtil.elapsedNanos(startNanos));
             return null;
         }, "fetchStreaming");
     }
@@ -281,7 +283,7 @@ public final class Client implements AutoCloseable {
                         NODE, endpointIdx++, batches, count);
             }
             LOGGER.info("node={} client=executeCompleted totalRows={} endpoints={} elapsed={}",
-                    NODE, count, fi.getEndpoints().size(), elapsedNanos(startNanos));
+                    NODE, count, fi.getEndpoints().size(), LogUtil.elapsedNanos(startNanos));
             return count;
         }, "execute");
     }
@@ -448,12 +450,6 @@ public final class Client implements AutoCloseable {
         LOGGER.info("Client.authenticate: handshake finished");
         return usePassword ? Client.factory.getCredentialCallOption() : credentialOption;
     }
-
-    @FunctionalInterface
-    interface RetryableCall<T> {
-        T call() throws Exception;
-    }
-
     /**
      * Executes a call with exponential backoff retry on recoverable errors.
      *
@@ -461,42 +457,75 @@ public final class Client implements AutoCloseable {
      * @param operation operation name for logging
      * @return result
      */
-    <T> T retryWithBackoff(RetryableCall<T> callable, String operation) {
+    public <T> T retryWithBackoff(Callable<T> callable, String operation) {
         int maxRetries = config.getMaxRetries();
-        long backoffMs = config.getRetryBackoffMs();
         Exception lastException = null;
 
         for (int attempt = 0; attempt <= maxRetries; attempt++) {
+            if (attempt > 0) {
+                long delay = calculateBackoff(attempt);
+                sleepQuietly(delay);
+            }
             try {
-                if (attempt > 0) {
-                    long delay = backoffMs * (1L << (attempt - 1));
-                    LOGGER.info("Retry attempt {} for '{}', waiting {}ms", attempt, operation, delay);
-                    Thread.sleep(delay);
-                }
                 return callable.call();
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new RuntimeException("Interrupted during retry of " + operation, e);
-            } catch (FlightRuntimeException e) {
+            } catch (Exception e) {
                 lastException = e;
-                LOGGER.warn("Flight error in '{}' (attempt {} of {}): {}", operation, attempt, maxRetries + 1, e.getMessage());
-                if (isInternalError(e) && attempt < maxRetries) {
+                logError(e, attempt, maxRetries, operation);
+                if (shouldRetry(e, attempt, maxRetries)) {
                     continue;
                 }
                 break;
-            } catch (Exception e) {
-                lastException = e;
-                LOGGER.warn("Error in '{}' (attempt {} of {}): {}", operation, attempt, maxRetries + 1, e.getMessage());
-                if (attempt < maxRetries) {
-                    continue;
-                }
             }
         }
 
-        if (lastException instanceof RuntimeException) {
-            throw (RuntimeException) lastException;
+        throw wrapException(lastException, operation, maxRetries);
+    }
+
+    private long calculateBackoff(int attempt) {
+        return config.getRetryBackoffMs() * (1L << (attempt - 1));
+    }
+
+    private void sleepQuietly(long delay) {
+        try {
+            LOGGER.info("Retry waiting {}ms", delay);
+            Thread.sleep(delay);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Interrupted during retry", e);
         }
-        throw new RuntimeException("Failed " + operation + " after " + (maxRetries + 1) + " attempts", lastException);
+    }
+
+    /**
+     * Returns {@code true} if a retry is allowed: attempts remain and the exception is retryable
+     * (internal FlightRuntimeException may still be retried, others always are).
+     *
+     * @param e          the exception that occurred during the operation
+     * @param attempt    the current attempt index (0-based)
+     * @param maxRetries the maximum number of retry attempts allowed (inclusive of the initial attempt)
+     * @return {@code true} if the operation should be retried, {@code false} otherwise
+     */
+    private boolean shouldRetry(Exception e, int attempt, int maxRetries) {
+        if (attempt >= maxRetries) {
+            return false; // лимит исчерпан
+        }
+        if (e instanceof FlightRuntimeException) {
+            return isInternalError((FlightRuntimeException) e);
+        }
+
+        return true;
+    }
+
+    private void logError(Exception e, int attempt, int maxRetries, String operation) {
+        LOGGER.warn("Error in '{}' (attempt {} of {}): {}",
+            operation, attempt, maxRetries + 1, e.getMessage());
+    }
+
+    private RuntimeException wrapException(Exception lastException, String operation, int maxRetries) {
+        if (lastException instanceof RuntimeException) {
+            return (RuntimeException) lastException;
+        }
+        return new RuntimeException("Failed " + operation + " after " + (maxRetries + 1) + " attempts",
+            lastException);
     }
 
     /**
@@ -575,23 +604,6 @@ public final class Client implements AutoCloseable {
      */
     public Configuration getConfig() {
         return this.config;
-    }
-
-    /**
-     * Formats elapsed nanoseconds as human-readable duration.
-     */
-    private static String elapsedNanos(long startNanos) {
-        long nanos = System.nanoTime() - startNanos;
-        if (nanos < 1_000) {
-            return nanos + "ns";
-        }
-        if (nanos < 1_000_000) {
-            return String.format("%.1fµs", nanos / 1000.0);
-        }
-        if (nanos < 1_000_000_000) {
-            return String.format("%.2fms", nanos / 1_000_000.0);
-        }
-        return String.format("%.3fs", nanos / 1_000_000_000.0);
     }
 
     /**

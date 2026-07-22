@@ -1,6 +1,5 @@
 package net.surpin.data.arrowflight.client.model;
 
-import com.google.common.collect.Streams;
 import org.apache.arrow.vector.*;
 import org.apache.arrow.vector.complex.*;
 import org.apache.arrow.vector.holders.*;
@@ -8,25 +7,15 @@ import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.catalyst.expressions.UnsafeArrayData;
 import org.apache.spark.sql.catalyst.expressions.UnsafeMapData;
 import org.apache.spark.sql.catalyst.expressions.UnsafeRow;
-import org.apache.spark.sql.catalyst.util.ArrayBasedMapData;
-import org.apache.spark.sql.catalyst.util.ArrayData;
 import org.apache.spark.sql.catalyst.util.DateTimeUtils;
 import org.apache.spark.sql.catalyst.util.IntervalUtils;
 import org.apache.spark.sql.types.*;
-import org.apache.spark.unsafe.types.UTF8String;
-import org.apache.arrow.vector.util.JsonStringHashMap;
-import scala.collection.JavaConverters;
 import java.io.Serializable;
 import java.math.BigDecimal;
 import java.sql.Timestamp;
 import java.time.*;
 import java.util.Arrays;
-import java.util.List;
 import java.util.Map;
-import java.util.function.BiFunction;
-import java.util.function.Consumer;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 /**
@@ -34,30 +23,17 @@ import java.util.stream.IntStream;
  */
 public final class ArrowConversion implements Serializable {
     private static final String FORMAT = "%s-%s";
+    private static final String CONVERTER_NOT_FOUND_MSG = "The %s doesn't have a converter defined.";
+
     //the fromConversion interface
     @FunctionalInterface
-    private interface ConvertFrom<X, Y, Z, R> {
+    public interface ConvertFrom<X, Y, Z, R> {
         R apply(X x, Y y, Z z);
     }
     //the toConversion interface
     @FunctionalInterface
-    private interface ConvertTo<A, B, C, D> {
+    public interface ConvertTo<A, B, C, D> {
         void apply(A a, B b, C c, D d);
-    }
-    /**
-     * Casts a FieldVector to a specific vector subtype.
-     * @param fv the field vector to cast
-     * @param <V> target vector type
-     * @return casted vector
-     * @throws RuntimeException if cast fails
-     */
-    @SuppressWarnings("unchecked")
-    private static <V extends org.apache.arrow.vector.FieldVector> V cast(org.apache.arrow.vector.FieldVector fv) {
-        try {
-            return (V) fv;
-        } catch (Exception e) {
-            throw new RuntimeException(String.format("ArrowVector casting to [%s] failed.", fv.getClass().getTypeName()), e);
-        }
     }
 
     //the from-converter container
@@ -85,7 +61,7 @@ public final class ArrowConversion implements Serializable {
     public FieldVector convert(org.apache.arrow.vector.FieldVector vector, FieldType type, int rowCount) {
         String key = String.format(FORMAT, vector.getClass().getTypeName(), type.getTypeID());
         if (!this.fromConverters.containsKey(key)) {
-            throw new RuntimeException(String.format("The %s doesn't have a converter defined.", key));
+            throw new RuntimeException(String.format(CONVERTER_NOT_FOUND_MSG, key));
         }
         return this.fromConverters.get(key).apply(vector, rowCount, type);
     }
@@ -100,7 +76,7 @@ public final class ArrowConversion implements Serializable {
     public void populate(org.apache.arrow.vector.FieldVector vector, InternalRow[] rows, int idxColumn, DataType type) {
         String key = vector.getClass().getTypeName();
         if (!this.toConverters.containsKey(key)) {
-            throw new RuntimeException(String.format("The %s doesn't have a converter defined.", key));
+            throw new RuntimeException(String.format(CONVERTER_NOT_FOUND_MSG, key));
         }
         this.toConverters.get(key).apply(vector, rows, idxColumn, type);
     }
@@ -114,7 +90,7 @@ public final class ArrowConversion implements Serializable {
     private void populateObject(org.apache.arrow.vector.FieldVector vector, int index, Object value, DataType type) {
         String key = vector.getClass().getTypeName();
         if (!this.toObjectConverters.containsKey(key)) {
-            throw new RuntimeException(String.format("The %s doesn't have a converter defined.", key));
+            throw new RuntimeException(String.format(CONVERTER_NOT_FOUND_MSG, key));
         }
         this.toObjectConverters.get(key).apply(vector, index, value, type);
     }
@@ -172,109 +148,109 @@ public final class ArrowConversion implements Serializable {
         this.fromConverters.put(String.format(FORMAT, StructVector.class.getTypeName(), FieldType.IDs.STRUCT), ArrowConversion.fromStruct);
     }
     //convert arrow TinyIntVector to FieldVector for BYTE
-    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromTinyInt = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.<TinyIntVector>cast(vector))::getObject).toArray(Object[]::new));
+    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromTinyInt = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((TypeConversionHelper.<TinyIntVector>cast(vector))::getObject).toArray(Object[]::new));
     //convert arrow SmallIntVector to FieldVector for SHORT
-    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromSmallInt = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.<SmallIntVector>cast(vector))::getObject).toArray(Object[]::new));
+    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromSmallInt = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((TypeConversionHelper.<SmallIntVector>cast(vector))::getObject).toArray(Object[]::new));
     //convert arrow IntVector to FieldVector for INT
-    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromInt = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.<IntVector>cast(vector))::getObject).toArray(Object[]::new));
+    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromInt = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((TypeConversionHelper.<IntVector>cast(vector))::getObject).toArray(Object[]::new));
     //convert arrow BigIntVector to FieldVector for LONG
-    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromBigInt = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.<BigIntVector>cast(vector))::getObject).toArray(Object[]::new));
+    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromBigInt = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((TypeConversionHelper.<BigIntVector>cast(vector))::getObject).toArray(Object[]::new));
     //convert arrow UInt1Vector to FieldVector for SHORT
-    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromUInt1 = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.<UInt1Vector>cast(vector))::getObject).toArray(Object[]::new));
+    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromUInt1 = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((TypeConversionHelper.<UInt1Vector>cast(vector))::getObject).toArray(Object[]::new));
     //convert arrow UInt2Vector to FieldVector for INT
-    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromUInt2 = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.<UInt2Vector>cast(vector))::getObject).toArray(Object[]::new));
+    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromUInt2 = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((TypeConversionHelper.<UInt2Vector>cast(vector))::getObject).toArray(Object[]::new));
     //convert arrow UInt4Vector to FieldVector for INT
-    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromUInt4Int = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.<UInt4Vector>cast(vector))::getObject).toArray(Object[]::new));
+    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromUInt4Int = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((TypeConversionHelper.<UInt4Vector>cast(vector))::getObject).toArray(Object[]::new));
     //convert arrow UInt4Vector to FieldVector for LONG
-    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromUInt4Long = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.<UInt4Vector>cast(vector))::getObjectNoOverflow).toArray(Object[]::new));
+    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromUInt4Long = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((TypeConversionHelper.<UInt4Vector>cast(vector))::getObjectNoOverflow).toArray(Object[]::new));
     //convert arrow UInt8Vector to FieldVector for LONG
-    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromUInt8Long = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.<UInt8Vector>cast(vector))::getObject).toArray(Object[]::new));
+    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromUInt8Long = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((TypeConversionHelper.<UInt8Vector>cast(vector))::getObject).toArray(Object[]::new));
     //convert arrow UInt8Vector to FieldVector for BIGINT
-    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromUInt8Bigint = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.<UInt8Vector>cast(vector))::getObjectNoOverflow).toArray(Object[]::new));
+    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromUInt8Bigint = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((TypeConversionHelper.<UInt8Vector>cast(vector))::getObjectNoOverflow).toArray(Object[]::new));
     //convert arrow Float4Vector to FieldVector for FLOAT
-    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromFloat4 = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.<Float4Vector>cast(vector))::getObject).toArray(Object[]::new));
+    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromFloat4 = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((TypeConversionHelper.<Float4Vector>cast(vector))::getObject).toArray(Object[]::new));
     //convert arrow Float8Vector to FieldVector for DOUBLE
-    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromFloat8 = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.<Float8Vector>cast(vector))::getObject).toArray(Object[]::new));
+    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromFloat8 = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((TypeConversionHelper.<Float8Vector>cast(vector))::getObject).toArray(Object[]::new));
     //convert arrow DecimalVector to FieldVector for DECIMAL
-    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromDecimal = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.<DecimalVector>cast(vector))::getObject).map(bd -> (bd == null) ? null : ArrowConversion.bigDecimalToDecimal.apply(bd)).toArray(Object[]::new));
+    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromDecimal = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((TypeConversionHelper.<DecimalVector>cast(vector))::getObject).map(bd -> (bd == null) ? null : TypeConversionHelper.bigDecimalToDecimal.apply(bd)).toArray(Object[]::new));
     //convert arrow Decimal256Vector to FieldVector for DECIMAL
-    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromDecimal256 = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.<Decimal256Vector>cast(vector))::getObject).map(bd -> (bd == null) ? null : ArrowConversion.bigDecimalToDecimal.apply(bd)).toArray(Object[]::new));
+    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromDecimal256 = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((TypeConversionHelper.<Decimal256Vector>cast(vector))::getObject).map(bd -> (bd == null) ? null : TypeConversionHelper.bigDecimalToDecimal.apply(bd)).toArray(Object[]::new));
     //convert arrow VarCharVector to FieldVector for STRING
-    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromVarChar = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.<VarCharVector>cast(vector))::getObject).map(s -> (s == null) ? null : ArrowConversion.stringToUtf8String.apply(s.toString())).toArray(Object[]::new));
+    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromVarChar = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((TypeConversionHelper.<VarCharVector>cast(vector))::getObject).map(s -> (s == null) ? null : TypeConversionHelper.stringToUtf8String.apply(s.toString())).toArray(Object[]::new));
     //convert arrow LargeVarCharVector to FieldVector for STRING
-    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromLargeVarChar = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.<LargeVarCharVector>cast(vector))::getObject).map(s -> (s == null) ? null : ArrowConversion.stringToUtf8String.apply(s.toString())).toArray(Object[]::new));
+    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromLargeVarChar = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((TypeConversionHelper.<LargeVarCharVector>cast(vector))::getObject).map(s -> (s == null) ? null : TypeConversionHelper.stringToUtf8String.apply(s.toString())).toArray(Object[]::new));
     //convert arrow BitVector to FieldVector for STRING
-    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromBit = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.<BitVector>cast(vector))::getObject).toArray(Object[]::new));
+    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromBit = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((TypeConversionHelper.<BitVector>cast(vector))::getObject).toArray(Object[]::new));
     //convert arrow DateDayVector to FieldVector for DATE
-    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromDateDay = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.<DateDayVector>cast(vector))::getObject).map(dd -> (dd == null) ? null : ArrowConversion.dateDayToInt.apply(dd)).toArray(Object[]::new));
+    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromDateDay = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((TypeConversionHelper.<DateDayVector>cast(vector))::getObject).map(dd -> (dd == null) ? null : TypeConversionHelper.dateDayToInt.apply(dd)).toArray(Object[]::new));
     //convert arrow DateMilliVector to FieldVector for DATE
-    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromDateMilli = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.<DateMilliVector>cast(vector))::getObject).map(ldt -> (ldt == null) ? null : ArrowConversion.localDateTimeToInt.apply(ldt)).toArray(Object[]::new));
+    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromDateMilli = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((TypeConversionHelper.<DateMilliVector>cast(vector))::getObject).map(ldt -> (ldt == null) ? null : TypeConversionHelper.localDateTimeToInt.apply(ldt)).toArray(Object[]::new));
     //convert arrow TimeSecVector to FieldVector for TIME
-    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromTimeSec = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.<TimeSecVector>cast(vector))::getObject).map(ts -> (ts == null) ? null : ArrowConversion.timeSecToString.apply(ts)).toArray(Object[]::new));
+    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromTimeSec = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((TypeConversionHelper.<TimeSecVector>cast(vector))::getObject).map(ts -> (ts == null) ? null : TypeConversionHelper.timeSecToString.apply(ts)).toArray(Object[]::new));
     //convert arrow TimeMilliVector to FieldVector for TIME
-    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromTimeMilli = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.<TimeMilliVector>cast(vector))::getObject).map(tm -> (tm == null) ? null : ArrowConversion.timeMilliToString.apply(tm)).toArray(Object[]::new));
+    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromTimeMilli = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((TypeConversionHelper.<TimeMilliVector>cast(vector))::getObject).map(tm -> (tm == null) ? null : TypeConversionHelper.timeMilliToString.apply(tm)).toArray(Object[]::new));
     //convert arrow TimeMicroVector to FieldVector for TIME
-    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromTimeMicro = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.<TimeMicroVector>cast(vector))::getObject).map(tm -> (tm == null) ? null : ArrowConversion.timeMicroToString.apply(tm)).toArray(Object[]::new));
+    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromTimeMicro = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((TypeConversionHelper.<TimeMicroVector>cast(vector))::getObject).map(tm -> (tm == null) ? null : TypeConversionHelper.timeMicroToString.apply(tm)).toArray(Object[]::new));
     //convert arrow TimeNanoVector to FieldVector for TIME
-    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromTimeNano = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.<TimeNanoVector>cast(vector))::getObject).map(tn -> (tn == null) ? null : ArrowConversion.timeNanoToString.apply(tn)).toArray(Object[]::new));
+    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromTimeNano = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((TypeConversionHelper.<TimeNanoVector>cast(vector))::getObject).map(tn -> (tn == null) ? null : TypeConversionHelper.timeNanoToString.apply(tn)).toArray(Object[]::new));
     //convert arrow TimeStampMicroVector to FieldVector for TIMESTAMP
-    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromTimeStampMicro = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.<TimeStampMicroVector>cast(vector))::getObject).map(tsm -> (tsm == null) ? null : ArrowConversion.localDateTimeToLong.apply(tsm)).toArray(Object[]::new));
+    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromTimeStampMicro = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((TypeConversionHelper.<TimeStampMicroVector>cast(vector))::getObject).map(tsm -> (tsm == null) ? null : TypeConversionHelper.localDateTimeToLong.apply(tsm)).toArray(Object[]::new));
     //convert arrow TimeStampMicroTZVector to FieldVector for TIMESTAMP
     private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromTimeStampMicroTZ = (vector, size, type) -> {
-        TimeStampMicroTZVector value = ArrowConversion.cast(vector);
-        return new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj(value::getObject).map(tsm -> (tsm == null) ? null : ArrowConversion.timestampMicroTZToLong.apply(tsm, value.getTimeZone())).toArray(Object[]::new));
+        TimeStampMicroTZVector value = TypeConversionHelper.cast(vector);
+        return new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj(value::getObject).map(tsm -> (tsm == null) ? null : TypeConversionHelper.timestampMicroTZToLong.apply(tsm, value.getTimeZone())).toArray(Object[]::new));
     };
     //convert arrow TimeStampMilliVector to FieldVector for TIMESTAMP
-    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromTimeStampMilli = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.<TimeStampMilliVector>cast(vector))::getObject).map(tsm -> (tsm == null) ? null : ArrowConversion.timestampToLong.apply(Timestamp.valueOf(tsm))).toArray(Object[]::new));
+    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromTimeStampMilli = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((TypeConversionHelper.<TimeStampMilliVector>cast(vector))::getObject).map(tsm -> (tsm == null) ? null : TypeConversionHelper.timestampToLong.apply(Timestamp.valueOf(tsm))).toArray(Object[]::new));
     //convert arrow TimeStampMilliTZVector to FieldVector for TIMESTAMP
     private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromTimeStampMilliTZ = (vector, size, type) -> {
-        TimeStampMilliTZVector value = ArrowConversion.cast(vector);
-        return new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj(value::getObject).map(tsm -> (tsm == null) ? null : ArrowConversion.timestampMilliTZToLong.apply(tsm, value.getTimeZone())).toArray(Object[]::new));
+        TimeStampMilliTZVector value = TypeConversionHelper.cast(vector);
+        return new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj(value::getObject).map(tsm -> (tsm == null) ? null : TypeConversionHelper.timestampMilliTZToLong.apply(tsm, value.getTimeZone())).toArray(Object[]::new));
     };
     //convert arrow TimeStampSecVector to FieldVector for TIMESTAMP
-    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromTimeStampSec = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.<TimeStampSecVector>cast(vector))::getObject).map(ldt -> (ldt == null) ? null : ArrowConversion.localDateTimeToLong.apply(ldt)).toArray(Object[]::new));
+    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromTimeStampSec = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((TypeConversionHelper.<TimeStampSecVector>cast(vector))::getObject).map(ldt -> (ldt == null) ? null : TypeConversionHelper.localDateTimeToLong.apply(ldt)).toArray(Object[]::new));
     //convert arrow TimeStampSecTZVector to FieldVector for TIMESTAMP
     private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromTimeStampSecTZ = (vector, size, type) -> {
-        TimeStampSecTZVector value = ArrowConversion.cast(vector);
-        return new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj(value::getObject).map(l -> (l == null) ? null : ArrowConversion.timestampSecTZToLong.apply(l, value.getTimeZone())).toArray(Object[]::new));
+        TimeStampSecTZVector value = TypeConversionHelper.cast(vector);
+        return new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj(value::getObject).map(l -> (l == null) ? null : TypeConversionHelper.timestampSecTZToLong.apply(l, value.getTimeZone())).toArray(Object[]::new));
     };
     //convert arrow TimeStampNanoVector to FieldVector for TIMESTAMP
-    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromTimeStampNano = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.<TimeStampNanoVector>cast(vector))::getObject).map(ldt -> (ldt == null) ? null : ArrowConversion.localDateTimeToLong.apply(ldt)).toArray(Object[]::new));
+    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromTimeStampNano = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((TypeConversionHelper.<TimeStampNanoVector>cast(vector))::getObject).map(ldt -> (ldt == null) ? null : TypeConversionHelper.localDateTimeToLong.apply(ldt)).toArray(Object[]::new));
 
-    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromTimeStampNanoToInt = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.<TimeStampNanoVector>cast(vector))::getObject).map(ldt -> (ldt == null) ? null : ArrowConversion.localDateTimeToInt.apply(ldt)).toArray(Object[]::new));
+    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromTimeStampNanoToInt = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((TypeConversionHelper.<TimeStampNanoVector>cast(vector))::getObject).map(ldt -> (ldt == null) ? null : TypeConversionHelper.localDateTimeToInt.apply(ldt)).toArray(Object[]::new));
 
 
     //convert arrow TimeStampNanoTZVector to FieldVector for TIMESTAMP
     private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromTimeStampNanoTZ = (vector, size, type) -> {
-        TimeStampNanoTZVector value = ArrowConversion.cast(vector);
-        return new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj(value::getObject).map(l -> (l == null) ? null : ArrowConversion.timestampNanoTZToLong.apply(l, value.getTimeZone())).toArray(Object[]::new));
+        TimeStampNanoTZVector value = TypeConversionHelper.cast(vector);
+        return new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj(value::getObject).map(l -> (l == null) ? null : TypeConversionHelper.timestampNanoTZToLong.apply(l, value.getTimeZone())).toArray(Object[]::new));
     };
     //convert arrow IntervalYearVector to FieldVector for PERIOD_YEAR_MONTH
-    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromIntervalYear = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.<IntervalYearVector>cast(vector))::getObject).map(p -> (p == null) ? null : ArrowConversion.periodToInt.apply(p)).toArray(Object[]::new));
+    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromIntervalYear = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((TypeConversionHelper.<IntervalYearVector>cast(vector))::getObject).map(p -> (p == null) ? null : TypeConversionHelper.periodToInt.apply(p)).toArray(Object[]::new));
     //convert arrow IntervalDayVector to FieldVector for DURATION_DAY_TIME
-    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromIntervalDay = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.<IntervalDayVector>cast(vector))::getObject).map(d -> (d == null) ? null : ArrowConversion.durationToLong.apply(d)).toArray(Object[]::new));
+    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromIntervalDay = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((TypeConversionHelper.<IntervalDayVector>cast(vector))::getObject).map(d -> (d == null) ? null : TypeConversionHelper.durationToLong.apply(d)).toArray(Object[]::new));
     //convert arrow DurationVector to FieldVector for DURATION_DAY_TIME
-    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromDuration = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.<DurationVector>cast(vector))::getObject).map(d -> (d == null) ? null : ArrowConversion.durationToLong.apply(d)).toArray(Object[]::new));
+    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromDuration = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((TypeConversionHelper.<DurationVector>cast(vector))::getObject).map(d -> (d == null) ? null : TypeConversionHelper.durationToLong.apply(d)).toArray(Object[]::new));
     //convert arrow IntervalMonthDayNanoVector to FieldVector for PERIOD_DURATION_MONTH_DAY_TIME
-    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromMonthDay = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.<IntervalMonthDayNanoVector>cast(vector))::getObject).map(pd -> (pd == null) ? null : ArrowConversion.translatePeriodDuration.apply(pd)).toArray(Object[]::new));
+    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromMonthDay = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((TypeConversionHelper.<IntervalMonthDayNanoVector>cast(vector))::getObject).map(pd -> (pd == null) ? null : TypeConversionHelper.translatePeriodDuration.apply(pd)).toArray(Object[]::new));
     //convert arrow NullVector to FieldVector for NULL
-    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromNull = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.<NullVector>cast(vector))::getObject).toArray(Object[]::new));
+    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromNull = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((TypeConversionHelper.<NullVector>cast(vector))::getObject).toArray(Object[]::new));
     //convert arrow VarBinaryVector to FieldVector for BYTES
-    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromVarBinary = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.<VarBinaryVector>cast(vector))::getObject).toArray(Object[]::new));
+    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromVarBinary = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((TypeConversionHelper.<VarBinaryVector>cast(vector))::getObject).toArray(Object[]::new));
     //convert arrow LargeVarBinaryVector to FieldVector for BYTES
-    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromLargeVarBinary = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.<LargeVarBinaryVector>cast(vector))::getObject).toArray(Object[]::new));
+    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromLargeVarBinary = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((TypeConversionHelper.<LargeVarBinaryVector>cast(vector))::getObject).toArray(Object[]::new));
     //convert arrow FixedSizeBinaryVector to FieldVector for BYTES
-    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromFixedSizeBinary = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.<FixedSizeBinaryVector>cast(vector))::getObject).toArray(Object[]::new));
+    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromFixedSizeBinary = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((TypeConversionHelper.<FixedSizeBinaryVector>cast(vector))::getObject).toArray(Object[]::new));
     //convert arrow LargeListVector to FieldVector for LIST
-    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromLargeList = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.<LargeListVector>cast(vector))::getObject).map(e -> (e == null) ? null : ArrowConversion.translateList.apply(e, ArrowConversion.cast(vector), (FieldType.ListType) type)).toArray(Object[]::new));
+    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromLargeList = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((TypeConversionHelper.<LargeListVector>cast(vector))::getObject).map(e -> (e == null) ? null : TypeConversionHelper.translateList.apply(e, TypeConversionHelper.cast(vector), (FieldType.ListType) type)).toArray(Object[]::new));
     //convert arrow FixedSizeListVector to FieldVector for LIST
-    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromFixedSizeList = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.<FixedSizeListVector>cast(vector))::getObject).map(e -> (e == null) ? null : ArrowConversion.translateList.apply(e, ArrowConversion.cast(vector), (FieldType.ListType) type)).toArray(Object[]::new));
+    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromFixedSizeList = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((TypeConversionHelper.<FixedSizeListVector>cast(vector))::getObject).map(e -> (e == null) ? null : TypeConversionHelper.translateList.apply(e, TypeConversionHelper.cast(vector), (FieldType.ListType) type)).toArray(Object[]::new));
     //convert arrow MapVector to FieldVector for MAP
-    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromMap = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.<MapVector>cast(vector))::getObject).map(e -> (e == null) ? null : ArrowConversion.translateMap.apply(e, ArrowConversion.cast(vector), (FieldType.MapType) type)).toArray(Object[]::new));
+    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromMap = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((TypeConversionHelper.<MapVector>cast(vector))::getObject).map(e -> (e == null) ? null : TypeConversionHelper.translateMap.apply(e, TypeConversionHelper.cast(vector), (FieldType.MapType) type)).toArray(Object[]::new));
     //convert arrow ListVector to FieldVector for LIST
-    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromList = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.<ListVector>cast(vector))::getObject).map(e -> (e == null) ? null : ArrowConversion.translateList.apply(e, ArrowConversion.cast(vector), (FieldType.ListType) type)).toArray(Object[]::new));
+    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromList = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((TypeConversionHelper.<ListVector>cast(vector))::getObject).map(e -> (e == null) ? null : TypeConversionHelper.translateList.apply(e, TypeConversionHelper.cast(vector), (FieldType.ListType) type)).toArray(Object[]::new));
     //convert arrow StructVector to FieldVector for STRUCT
-    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromStruct = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((ArrowConversion.<StructVector>cast(vector))::getObject).map(e -> (e == null) ? null : ArrowConversion.mapElseStruct.apply(e, ArrowConversion.cast(vector), (FieldType.StructType) type)).toArray(Object[]::new));
+    private static final ConvertFrom<org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector> fromStruct = (vector, size, type) -> new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((TypeConversionHelper.<StructVector>cast(vector))::getObject).map(e -> (e == null) ? null : TypeConversionHelper.mapElseStruct.apply(e, TypeConversionHelper.cast(vector), (FieldType.StructType) type)).toArray(Object[]::new));
 
     /**
      * Initialize to-converters
@@ -356,9 +332,9 @@ public final class ArrowConversion implements Serializable {
     private static final NullableTinyIntHolder nullTinyInt = new NullableTinyIntHolder();
     private static final ConvertTo<org.apache.arrow.vector.FieldVector, Integer, Object, DataType> toTinyIntObject = (vector, row, value, type) -> {
         if (value == null) {
-            ArrowConversion.<TinyIntVector>cast(vector).setSafe(row, ArrowConversion.nullTinyInt);
+            TypeConversionHelper.<TinyIntVector>cast(vector).setSafe(row, ArrowConversion.nullTinyInt);
         } else {
-            ArrowConversion.<TinyIntVector>cast(vector).setSafe(row, (value instanceof Number) ? (Byte) value : Byte.parseByte(value.toString()));
+            TypeConversionHelper.<TinyIntVector>cast(vector).setSafe(row, (value instanceof Number) ? (Byte) value : Byte.parseByte(value.toString()));
         }
     };
     //convert SHORT to arrow SmallIntVector
@@ -366,9 +342,9 @@ public final class ArrowConversion implements Serializable {
     private static final NullableSmallIntHolder nullSmallInt = new NullableSmallIntHolder();
     private static final ConvertTo<org.apache.arrow.vector.FieldVector, Integer, Object, DataType> toSmallIntObject = (vector, row, value, type) -> {
         if (value == null) {
-            ArrowConversion.<SmallIntVector>cast(vector).setSafe(row, ArrowConversion.nullSmallInt);
+            TypeConversionHelper.<SmallIntVector>cast(vector).setSafe(row, ArrowConversion.nullSmallInt);
         } else {
-            ArrowConversion.<SmallIntVector>cast(vector).setSafe(row, (value instanceof Number) ? (Short) value : Short.parseShort(value.toString()));
+            TypeConversionHelper.<SmallIntVector>cast(vector).setSafe(row, (value instanceof Number) ? (Short) value : Short.parseShort(value.toString()));
         }
     };
     //convert INT to arrow IntVector
@@ -376,9 +352,9 @@ public final class ArrowConversion implements Serializable {
     private static final NullableIntHolder nullInt = new NullableIntHolder();
     private static final ConvertTo<org.apache.arrow.vector.FieldVector, Integer, Object, DataType> toIntObject = (vector, row, value, type) -> {
         if (value == null) {
-            ArrowConversion.<IntVector>cast(vector).setSafe(row, ArrowConversion.nullInt);
+            TypeConversionHelper.<IntVector>cast(vector).setSafe(row, ArrowConversion.nullInt);
         } else {
-            ArrowConversion.<IntVector>cast(vector).setSafe(row, (value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString()));
+            TypeConversionHelper.<IntVector>cast(vector).setSafe(row, (value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString()));
         }
     };
     //convert LONG to arrow BigIntVector
@@ -386,9 +362,9 @@ public final class ArrowConversion implements Serializable {
     private static final NullableBigIntHolder nullBigInt = new NullableBigIntHolder();
     private static final ConvertTo<org.apache.arrow.vector.FieldVector, Integer, Object, DataType> toBigIntObject = (vector, row, value, type) -> {
         if (value == null) {
-            ArrowConversion.<BigIntVector>cast(vector).setSafe(row, ArrowConversion.nullBigInt);
+            TypeConversionHelper.<BigIntVector>cast(vector).setSafe(row, ArrowConversion.nullBigInt);
         } else {
-            ArrowConversion.<BigIntVector>cast(vector).setSafe(row, (value instanceof Number) ? (Long) value : Long.parseLong(value.toString()));
+            TypeConversionHelper.<BigIntVector>cast(vector).setSafe(row, (value instanceof Number) ? (Long) value : Long.parseLong(value.toString()));
         }
     };
     //convert SHORT to arrow UInt1Vector
@@ -396,9 +372,9 @@ public final class ArrowConversion implements Serializable {
     private static final NullableUInt1Holder nullUInt1 = new NullableUInt1Holder();
     private static final ConvertTo<org.apache.arrow.vector.FieldVector, Integer, Object, DataType> toUInt1Object = (vector, row, value, type) -> {
         if (value == null) {
-            ArrowConversion.<UInt1Vector>cast(vector).setSafe(row, ArrowConversion.nullUInt1);
+            TypeConversionHelper.<UInt1Vector>cast(vector).setSafe(row, ArrowConversion.nullUInt1);
         } else {
-            ArrowConversion.<UInt1Vector>cast(vector).setSafe(row, (value instanceof Number) ? (Short) value : Short.parseShort(value.toString()));
+            TypeConversionHelper.<UInt1Vector>cast(vector).setSafe(row, (value instanceof Number) ? (Short) value : Short.parseShort(value.toString()));
         }
     };
     //convert INT to arrow UInt2Vector
@@ -406,9 +382,9 @@ public final class ArrowConversion implements Serializable {
     private static final NullableUInt2Holder nullUInt2 = new NullableUInt2Holder();
     private static final ConvertTo<org.apache.arrow.vector.FieldVector, Integer, Object, DataType> toUInt2Object = (vector, row, value, type) -> {
         if (value == null) {
-            ArrowConversion.<UInt2Vector>cast(vector).setSafe(row, ArrowConversion.nullUInt2);
+            TypeConversionHelper.<UInt2Vector>cast(vector).setSafe(row, ArrowConversion.nullUInt2);
         } else {
-            ArrowConversion.<UInt2Vector>cast(vector).setSafe(row, (value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString()));
+            TypeConversionHelper.<UInt2Vector>cast(vector).setSafe(row, (value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString()));
         }
     };
     //convert INT to arrow UInt4Vector
@@ -416,9 +392,9 @@ public final class ArrowConversion implements Serializable {
     private static final NullableUInt4Holder nullUInt4 = new NullableUInt4Holder();
     private static final ConvertTo<org.apache.arrow.vector.FieldVector, Integer, Object, DataType> toUInt4Object = (vector, row, value, type) -> {
         if (value == null) {
-            ArrowConversion.<UInt4Vector>cast(vector).setSafe(row, ArrowConversion.nullUInt4);
+            TypeConversionHelper.<UInt4Vector>cast(vector).setSafe(row, ArrowConversion.nullUInt4);
         } else {
-            ArrowConversion.<UInt4Vector>cast(vector).setSafe(row, (value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString()));
+            TypeConversionHelper.<UInt4Vector>cast(vector).setSafe(row, (value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString()));
         }
     };
     //convert LONG to arrow UInt8Vector
@@ -426,9 +402,9 @@ public final class ArrowConversion implements Serializable {
     private static final NullableUInt8Holder nullUInt8 = new NullableUInt8Holder();
     private static final ConvertTo<org.apache.arrow.vector.FieldVector, Integer, Object, DataType> toUInt8Object = (vector, row, value, type) -> {
         if (value == null) {
-            ArrowConversion.<UInt8Vector>cast(vector).setSafe(row, ArrowConversion.nullUInt8);
+            TypeConversionHelper.<UInt8Vector>cast(vector).setSafe(row, ArrowConversion.nullUInt8);
         } else {
-            ArrowConversion.<UInt8Vector>cast(vector).setSafe(row, (value instanceof Number) ? (Long) value : Long.parseLong(value.toString()));
+            TypeConversionHelper.<UInt8Vector>cast(vector).setSafe(row, (value instanceof Number) ? (Long) value : Long.parseLong(value.toString()));
         }
     };
     //convert FLOAT to arrow Float4Vector
@@ -436,9 +412,9 @@ public final class ArrowConversion implements Serializable {
     private static final NullableFloat4Holder nullFloat4 = new NullableFloat4Holder();
     private static final ConvertTo<org.apache.arrow.vector.FieldVector, Integer, Object, DataType> toFloat4Object = (vector, row, value, type) -> {
         if (value == null) {
-            ArrowConversion.<Float4Vector>cast(vector).setSafe(row, ArrowConversion.nullFloat4);
+            TypeConversionHelper.<Float4Vector>cast(vector).setSafe(row, ArrowConversion.nullFloat4);
         } else {
-            ArrowConversion.<Float4Vector>cast(vector).setSafe(row, (value instanceof Number) ? (Float) value : Float.parseFloat(value.toString()));
+            TypeConversionHelper.<Float4Vector>cast(vector).setSafe(row, (value instanceof Number) ? (Float) value : Float.parseFloat(value.toString()));
         }
     };
     //convert DOUBLE to arrow Float8Vector
@@ -446,9 +422,9 @@ public final class ArrowConversion implements Serializable {
     private static final NullableFloat8Holder nullFloat8 = new NullableFloat8Holder();
     private static final ConvertTo<org.apache.arrow.vector.FieldVector, Integer, Object, DataType> toFloat8Object = (vector, row, value, type) -> {
         if (value == null) {
-            ArrowConversion.<Float8Vector>cast(vector).setSafe(row, ArrowConversion.nullFloat8);
+            TypeConversionHelper.<Float8Vector>cast(vector).setSafe(row, ArrowConversion.nullFloat8);
         } else {
-            ArrowConversion.<Float8Vector>cast(vector).setSafe(row, (value instanceof Number) ? (Double) value : Double.parseDouble(value.toString()));
+            TypeConversionHelper.<Float8Vector>cast(vector).setSafe(row, (value instanceof Number) ? (Double) value : Double.parseDouble(value.toString()));
         }
     };
     //convert DECIMAL to arrow DecimalVector
@@ -456,9 +432,9 @@ public final class ArrowConversion implements Serializable {
     private static final NullableDecimalHolder nullDecimal = new NullableDecimalHolder();
     private static final ConvertTo<org.apache.arrow.vector.FieldVector, Integer, Object, DataType> toDecimalObject = (vector, row, value, type) -> {
         if (value == null) {
-            ArrowConversion.<DecimalVector>cast(vector).setSafe(row, ArrowConversion.nullDecimal);
+            TypeConversionHelper.<DecimalVector>cast(vector).setSafe(row, ArrowConversion.nullDecimal);
         } else {
-            ArrowConversion.<DecimalVector>cast(vector).setSafe(row, (value instanceof Decimal) ? ((Decimal) value).toJavaBigDecimal() : BigDecimal.valueOf(Double.parseDouble(value.toString())));
+            TypeConversionHelper.<DecimalVector>cast(vector).setSafe(row, (value instanceof Decimal) ? ((Decimal) value).toJavaBigDecimal() : BigDecimal.valueOf(Double.parseDouble(value.toString())));
         }
     };
     //convert DECIMAL to arrow Decimal256Vector
@@ -466,9 +442,9 @@ public final class ArrowConversion implements Serializable {
     private static final NullableDecimal256Holder nullDecimal256 = new NullableDecimal256Holder();
     private static final ConvertTo<org.apache.arrow.vector.FieldVector, Integer, Object, DataType> toDecimal256Object = (vector, row, value, type) -> {
         if (value == null) {
-            ArrowConversion.<Decimal256Vector>cast(vector).setSafe(row, ArrowConversion.nullDecimal256);
+            TypeConversionHelper.<Decimal256Vector>cast(vector).setSafe(row, ArrowConversion.nullDecimal256);
         } else {
-            ArrowConversion.<Decimal256Vector>cast(vector).setSafe(row, (value instanceof Decimal) ? ((Decimal) value).toJavaBigDecimal() : BigDecimal.valueOf(Double.parseDouble(value.toString())));
+            TypeConversionHelper.<Decimal256Vector>cast(vector).setSafe(row, (value instanceof Decimal) ? ((Decimal) value).toJavaBigDecimal() : BigDecimal.valueOf(Double.parseDouble(value.toString())));
         }
     };
     //convert STRING to arrow VarCharVector
@@ -476,9 +452,9 @@ public final class ArrowConversion implements Serializable {
     private static final NullableVarCharHolder nullVarChar = new NullableVarCharHolder();
     private static final ConvertTo<org.apache.arrow.vector.FieldVector, Integer, Object, DataType> toVarCharObject = (vector, row, value, type) -> {
         if (value == null) {
-            ArrowConversion.<VarCharVector>cast(vector).setSafe(row, ArrowConversion.nullVarChar);
+            TypeConversionHelper.<VarCharVector>cast(vector).setSafe(row, ArrowConversion.nullVarChar);
         } else {
-            ArrowConversion.<VarCharVector>cast(vector).setSafe(row, new org.apache.arrow.vector.util.Text(value.toString()));
+            TypeConversionHelper.<VarCharVector>cast(vector).setSafe(row, new org.apache.arrow.vector.util.Text(value.toString()));
         }
     };
     //convert STRING to arrow LargeVarCharVector
@@ -486,9 +462,9 @@ public final class ArrowConversion implements Serializable {
     private static final NullableLargeVarCharHolder nullLargeVarChar = new NullableLargeVarCharHolder();
     private static final ConvertTo<org.apache.arrow.vector.FieldVector, Integer, Object, DataType> toLargeVarCharObject = (vector, row, value, type) -> {
         if (value == null) {
-            ArrowConversion.<LargeVarCharVector>cast(vector).setSafe(row, ArrowConversion.nullLargeVarChar);
+            TypeConversionHelper.<LargeVarCharVector>cast(vector).setSafe(row, ArrowConversion.nullLargeVarChar);
         } else {
-            ArrowConversion.<LargeVarCharVector>cast(vector).setSafe(row, new org.apache.arrow.vector.util.Text(value.toString()));
+            TypeConversionHelper.<LargeVarCharVector>cast(vector).setSafe(row, new org.apache.arrow.vector.util.Text(value.toString()));
         }
     };
     //convert BOOLEAN to arrow BitVector
@@ -502,9 +478,9 @@ public final class ArrowConversion implements Serializable {
     private static final NullableBitHolder nullBit = new NullableBitHolder();
     private static final ConvertTo<org.apache.arrow.vector.FieldVector, Integer, Object, DataType> toBitObject = (vector, row, value, type) -> {
         if (value == null) {
-            ArrowConversion.<BitVector>cast(vector).setSafe(row, ArrowConversion.nullBit);
+            TypeConversionHelper.<BitVector>cast(vector).setSafe(row, ArrowConversion.nullBit);
         } else {
-            ArrowConversion.<BitVector>cast(vector).setSafe(row, (Boolean) value ? 1 : 0);
+            TypeConversionHelper.<BitVector>cast(vector).setSafe(row, (Boolean) value ? 1 : 0);
         }
     };
     //convert DATE to arrow DateDayVector
@@ -518,11 +494,11 @@ public final class ArrowConversion implements Serializable {
     private static final NullableDateDayHolder nullDateDay = new NullableDateDayHolder();
     private static final ConvertTo<org.apache.arrow.vector.FieldVector, Integer, Object, DataType> toDateDayObject = (vector, row, value, type) -> {
         if (value == null) {
-            ArrowConversion.<DateDayVector>cast(vector).setSafe(row, ArrowConversion.nullDateDay);
+            TypeConversionHelper.<DateDayVector>cast(vector).setSafe(row, ArrowConversion.nullDateDay);
         } else if (type == DataTypes.DateType) {
-            ArrowConversion.<DateDayVector>cast(vector).setSafe(row, (value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString()));
+            TypeConversionHelper.<DateDayVector>cast(vector).setSafe(row, (value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString()));
         } else if (type == DataTypes.TimestampType) {
-            ArrowConversion.<DateDayVector>cast(vector).setSafe(row, DateTimeUtils.microsToDays((value instanceof Number) ? (Long) value : Long.parseLong(value.toString()), ZoneId.systemDefault()));
+            TypeConversionHelper.<DateDayVector>cast(vector).setSafe(row, DateTimeUtils.microsToDays((value instanceof Number) ? (Long) value : Long.parseLong(value.toString()), ZoneId.systemDefault()));
         }
     };
     //convert DATE to arrow DateMilliVector
@@ -536,11 +512,11 @@ public final class ArrowConversion implements Serializable {
     private static final NullableDateMilliHolder nullDateMilli = new NullableDateMilliHolder();
     private static final ConvertTo<org.apache.arrow.vector.FieldVector, Integer, Object, DataType> toDateMilliObject = (vector, row, value, type) -> {
         if (value == null) {
-            ArrowConversion.<DateMilliVector>cast(vector).setSafe(row, ArrowConversion.nullDateMilli);
+            TypeConversionHelper.<DateMilliVector>cast(vector).setSafe(row, ArrowConversion.nullDateMilli);
         } else {
             LocalDateTime ldt = (type == DataTypes.DateType) ? LocalDateTime.of(DateTimeUtils.daysToLocalDate((value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString())), LocalTime.of(0, 0))
                 : (type == DataTypes.TimestampType) ? DateTimeUtils.microsToLocalDateTime((value instanceof Number) ? (Long) value : Long.parseLong(value.toString())) : LocalDateTime.now();
-            ArrowConversion.<DateMilliVector>cast(vector).setSafe(row, Timestamp.valueOf(ldt).getTime());
+            TypeConversionHelper.<DateMilliVector>cast(vector).setSafe(row, Timestamp.valueOf(ldt).getTime());
         }
     };
     //convert TIME to arrow TimeSecVector
@@ -554,11 +530,11 @@ public final class ArrowConversion implements Serializable {
     private static final NullableTimeSecHolder nullTimeSec = new NullableTimeSecHolder();
     private static final ConvertTo<org.apache.arrow.vector.FieldVector, Integer, Object, DataType> toTimeSecObject = (vector, row, value, type) -> {
         if (value == null) {
-            ArrowConversion.<TimeSecVector>cast(vector).setSafe(row, ArrowConversion.nullTimeSec);
+            TypeConversionHelper.<TimeSecVector>cast(vector).setSafe(row, ArrowConversion.nullTimeSec);
         } else if (type == DataTypes.TimestampType) {
-            ArrowConversion.<TimeSecVector>cast(vector).setSafe(row, (int) (ArrowConversion.microsToEpochNanos.apply((value instanceof Number) ? (Long) value : Long.parseLong(value.toString())) / 1000000000L));
+            TypeConversionHelper.<TimeSecVector>cast(vector).setSafe(row, (int) (TypeConversionHelper.microsToEpochNanos.apply((value instanceof Number) ? (Long) value : Long.parseLong(value.toString())) / 1000000000L));
         } else if (type == DataTypes.StringType) {
-            ArrowConversion.<TimeSecVector>cast(vector).setSafe(row, (int) (ArrowConversion.timestrToNanos.apply(value.toString()) / 1000000000L));
+            TypeConversionHelper.<TimeSecVector>cast(vector).setSafe(row, (int) (TypeConversionHelper.timestrToNanos.apply(value.toString()) / 1000000000L));
         }
     };
     //convert TIME to arrow TimeMilliVector
@@ -572,11 +548,11 @@ public final class ArrowConversion implements Serializable {
     private static final NullableTimeMilliHolder nullTimeMilli = new NullableTimeMilliHolder();
     private static final ConvertTo<org.apache.arrow.vector.FieldVector, Integer, Object, DataType> toTimeMilliObject = (vector, row, value, type) -> {
         if (value == null) {
-            ArrowConversion.<TimeMilliVector>cast(vector).setSafe(row, ArrowConversion.nullTimeMilli);
+            TypeConversionHelper.<TimeMilliVector>cast(vector).setSafe(row, ArrowConversion.nullTimeMilli);
         } else if (type == DataTypes.TimestampType) {
-            ArrowConversion.<TimeMilliVector>cast(vector).setSafe(row, (int) (ArrowConversion.microsToEpochNanos.apply((value instanceof Number) ? (Long) value : Long.parseLong(value.toString())) / 1000000L));
+            TypeConversionHelper.<TimeMilliVector>cast(vector).setSafe(row, (int) (TypeConversionHelper.microsToEpochNanos.apply((value instanceof Number) ? (Long) value : Long.parseLong(value.toString())) / 1000000L));
         } else if (type == DataTypes.StringType) {
-            ArrowConversion.<TimeMilliVector>cast(vector).setSafe(row, (int) (ArrowConversion.timestrToNanos.apply(value.toString()) / 1000000L));
+            TypeConversionHelper.<TimeMilliVector>cast(vector).setSafe(row, (int) (TypeConversionHelper.timestrToNanos.apply(value.toString()) / 1000000L));
         }
     };
     //convert TIME arrow TimeMicroVector
@@ -590,11 +566,11 @@ public final class ArrowConversion implements Serializable {
     private static final NullableTimeMicroHolder nullTimeMicro = new NullableTimeMicroHolder();
     private static final ConvertTo<org.apache.arrow.vector.FieldVector, Integer, Object, DataType> toTimeMicroObject = (vector, row, value, type) -> {
         if (value == null) {
-            ArrowConversion.<TimeMicroVector>cast(vector).setSafe(row, ArrowConversion.nullTimeMicro);
+            TypeConversionHelper.<TimeMicroVector>cast(vector).setSafe(row, ArrowConversion.nullTimeMicro);
         } else if (type == DataTypes.TimestampType) {
-           ArrowConversion.<TimeMicroVector>cast(vector).setSafe(row, ArrowConversion.microsToEpochNanos.apply((value instanceof Number) ? (Long) value : Long.parseLong(value.toString())) / 1000L);
+           TypeConversionHelper.<TimeMicroVector>cast(vector).setSafe(row, TypeConversionHelper.microsToEpochNanos.apply((value instanceof Number) ? (Long) value : Long.parseLong(value.toString())) / 1000L);
         } else if (type == DataTypes.StringType) {
-            ArrowConversion.<TimeMicroVector>cast(vector).setSafe(row, ArrowConversion.timestrToNanos.apply(value.toString()) / 1000L);
+            TypeConversionHelper.<TimeMicroVector>cast(vector).setSafe(row, TypeConversionHelper.timestrToNanos.apply(value.toString()) / 1000L);
         }
     };
     //convert TIME to arrow TimeNanoVector
@@ -608,11 +584,11 @@ public final class ArrowConversion implements Serializable {
     private static final NullableTimeNanoHolder nullTimeNano = new NullableTimeNanoHolder();
     private static final ConvertTo<org.apache.arrow.vector.FieldVector, Integer, Object, DataType> toTimeNanoObject = (vector, row, value, type) -> {
         if (value == null) {
-            ArrowConversion.<TimeNanoVector>cast(vector).setSafe(row, ArrowConversion.nullTimeNano);
+            TypeConversionHelper.<TimeNanoVector>cast(vector).setSafe(row, ArrowConversion.nullTimeNano);
         } else if (type == DataTypes.TimestampType) {
-            ArrowConversion.<TimeNanoVector>cast(vector).setSafe(row, ArrowConversion.microsToEpochNanos.apply((value instanceof Number) ? (Long) value : Long.parseLong(value.toString())));
+            TypeConversionHelper.<TimeNanoVector>cast(vector).setSafe(row, TypeConversionHelper.microsToEpochNanos.apply((value instanceof Number) ? (Long) value : Long.parseLong(value.toString())));
         } else if (type == DataTypes.StringType) {
-            ArrowConversion.<TimeNanoVector>cast(vector).setSafe(row, ArrowConversion.timestrToNanos.apply(value.toString()));
+            TypeConversionHelper.<TimeNanoVector>cast(vector).setSafe(row, TypeConversionHelper.timestrToNanos.apply(value.toString()));
         }
     };
     //convert TIMESTAMP to arrow TimeStampMicroVector
@@ -626,11 +602,11 @@ public final class ArrowConversion implements Serializable {
     private static final NullableTimeStampMicroHolder nullTimeStampMicro = new NullableTimeStampMicroHolder();
     private static final ConvertTo<org.apache.arrow.vector.FieldVector, Integer, Object, DataType> toTimeStampMicroObject = (vector, row, value, type) -> {
         if (value == null) {
-            ArrowConversion.<TimeStampMicroVector>cast(vector).setSafe(row, ArrowConversion.nullTimeStampMicro);
+            TypeConversionHelper.<TimeStampMicroVector>cast(vector).setSafe(row, ArrowConversion.nullTimeStampMicro);
         } else if (type == DataTypes.TimestampType) {
-            ArrowConversion.<TimeStampMicroVector>cast(vector).setSafe(row, ((value instanceof Number) ? (Long) value : Long.parseLong(value.toString())));
+            TypeConversionHelper.<TimeStampMicroVector>cast(vector).setSafe(row, ((value instanceof Number) ? (Long) value : Long.parseLong(value.toString())));
         } else if (type == DataTypes.DateType) {
-            ArrowConversion.<TimeStampMicroVector>cast(vector).setSafe(row, ArrowConversion.daysToMicros.apply((value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString()), ZoneId.systemDefault()));
+            TypeConversionHelper.<TimeStampMicroVector>cast(vector).setSafe(row, TypeConversionHelper.daysToMicros.apply((value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString()), ZoneId.systemDefault()));
         }
     };
     //convert TIMESTAMP to arrow TimeStampMicroTZVector
@@ -644,11 +620,11 @@ public final class ArrowConversion implements Serializable {
     private static final NullableTimeStampMicroTZHolder nullTimeStampMicroTZ = new NullableTimeStampMicroTZHolder();
     private static final ConvertTo<org.apache.arrow.vector.FieldVector, Integer, Object, DataType> toTimeStampMicroTZObject = (vector, row, value, type) -> {
         if (value == null) {
-            ArrowConversion.<TimeStampMicroTZVector>cast(vector).setSafe(row, ArrowConversion.nullTimeStampMicroTZ);
+            TypeConversionHelper.<TimeStampMicroTZVector>cast(vector).setSafe(row, ArrowConversion.nullTimeStampMicroTZ);
         } else if (type == DataTypes.TimestampType) {
-            ArrowConversion.<TimeStampMicroTZVector>cast(vector).setSafe(row, DateTimeUtils.convertTz((value instanceof Number) ? (Long) value : Long.parseLong(value.toString()), ZoneId.systemDefault(), ZoneId.of(ArrowConversion.<TimeStampMicroTZVector>cast(vector).getTimeZone())));
+            TypeConversionHelper.<TimeStampMicroTZVector>cast(vector).setSafe(row, DateTimeUtils.convertTz((value instanceof Number) ? (Long) value : Long.parseLong(value.toString()), ZoneId.systemDefault(), ZoneId.of(TypeConversionHelper.<TimeStampMicroTZVector>cast(vector).getTimeZone())));
         } else if (type == DataTypes.DateType) {
-            ArrowConversion.<TimeStampMicroTZVector>cast(vector).setSafe(row, ArrowConversion.daysToMicros.apply((value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString()), ZoneId.of(ArrowConversion.<TimeStampMicroTZVector>cast(vector).getTimeZone())));
+            TypeConversionHelper.<TimeStampMicroTZVector>cast(vector).setSafe(row, TypeConversionHelper.daysToMicros.apply((value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString()), ZoneId.of(TypeConversionHelper.<TimeStampMicroTZVector>cast(vector).getTimeZone())));
         }
     };
     //convert TIMESTAMP to arrow TimeStampMilliVector
@@ -662,11 +638,11 @@ public final class ArrowConversion implements Serializable {
     private static final NullableTimeStampMilliHolder nullTimeStampMilli = new NullableTimeStampMilliHolder();
     private static final ConvertTo<org.apache.arrow.vector.FieldVector, Integer, Object, DataType> toTimeStampMilliObject = (vector, row, value, type) -> {
         if (value == null) {
-            ArrowConversion.<TimeStampMilliVector>cast(vector).setSafe(row, ArrowConversion.nullTimeStampMilli);
+            TypeConversionHelper.<TimeStampMilliVector>cast(vector).setSafe(row, ArrowConversion.nullTimeStampMilli);
         } else if (type == DataTypes.TimestampType) {
-            ArrowConversion.<TimeStampMilliVector>cast(vector).setSafe(row, ArrowConversion.microsToMillis.apply(((value instanceof Number) ? (Long) value : Long.parseLong(value.toString()))));
+            TypeConversionHelper.<TimeStampMilliVector>cast(vector).setSafe(row, TypeConversionHelper.microsToMillis.apply(((value instanceof Number) ? (Long) value : Long.parseLong(value.toString()))));
         } else if (type == DataTypes.DateType) {
-            ArrowConversion.<TimeStampMilliVector>cast(vector).setSafe(row, ArrowConversion.microsToMillis.apply(ArrowConversion.daysToMicros.apply((value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString()), ZoneId.systemDefault())));
+            TypeConversionHelper.<TimeStampMilliVector>cast(vector).setSafe(row, TypeConversionHelper.microsToMillis.apply(TypeConversionHelper.daysToMicros.apply((value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString()), ZoneId.systemDefault())));
         }
     };
     //convert TIMESTAMP to arrow TimeStampMilliTZVector
@@ -680,11 +656,11 @@ public final class ArrowConversion implements Serializable {
     private static final NullableTimeStampMilliTZHolder nullTimeStampMilliTZ = new NullableTimeStampMilliTZHolder();
     private static final ConvertTo<org.apache.arrow.vector.FieldVector, Integer, Object, DataType> toTimeStampMilliTZObject = (vector, row, value, type) -> {
         if (value == null) {
-            ArrowConversion.<TimeStampMilliTZVector>cast(vector).setSafe(row, ArrowConversion.nullTimeStampMilliTZ);
+            TypeConversionHelper.<TimeStampMilliTZVector>cast(vector).setSafe(row, ArrowConversion.nullTimeStampMilliTZ);
         } else if (type == DataTypes.TimestampType) {
-            ArrowConversion.<TimeStampMilliTZVector>cast(vector).setSafe(row, ArrowConversion.microsToMillis.apply(DateTimeUtils.convertTz((value instanceof Number) ? (Long) value : Long.parseLong(value.toString()), ZoneId.systemDefault(), ZoneId.of(ArrowConversion.<TimeStampMilliTZVector>cast(vector).getTimeZone()))));
+            TypeConversionHelper.<TimeStampMilliTZVector>cast(vector).setSafe(row, TypeConversionHelper.microsToMillis.apply(DateTimeUtils.convertTz((value instanceof Number) ? (Long) value : Long.parseLong(value.toString()), ZoneId.systemDefault(), ZoneId.of(TypeConversionHelper.<TimeStampMilliTZVector>cast(vector).getTimeZone()))));
         } else if (type == DataTypes.DateType) {
-            ArrowConversion.<TimeStampMilliTZVector>cast(vector).setSafe(row, ArrowConversion.microsToMillis.apply(ArrowConversion.daysToMicros.apply((value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString()), ZoneId.of(ArrowConversion.<TimeStampMilliTZVector>cast(vector).getTimeZone()))));
+            TypeConversionHelper.<TimeStampMilliTZVector>cast(vector).setSafe(row, TypeConversionHelper.microsToMillis.apply(TypeConversionHelper.daysToMicros.apply((value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString()), ZoneId.of(TypeConversionHelper.<TimeStampMilliTZVector>cast(vector).getTimeZone()))));
         }
     };
     //convert TIMESTAMP to arrow TimeStampSecVector
@@ -698,11 +674,11 @@ public final class ArrowConversion implements Serializable {
     private static final NullableTimeStampSecHolder nullTimeStampSec = new NullableTimeStampSecHolder();
     private static final ConvertTo<org.apache.arrow.vector.FieldVector, Integer, Object, DataType> toTimeStampSecObject = (vector, row, value, type) -> {
         if (value == null) {
-            ArrowConversion.<TimeStampSecVector>cast(vector).setSafe(row, ArrowConversion.nullTimeStampSec);
+            TypeConversionHelper.<TimeStampSecVector>cast(vector).setSafe(row, ArrowConversion.nullTimeStampSec);
         } else if (type == DataTypes.TimestampType) {
-            ArrowConversion.<TimeStampSecVector>cast(vector).setSafe(row, ArrowConversion.microsToSecs.apply(((value instanceof Number) ? (Long) value : Long.parseLong(value.toString()))));
+            TypeConversionHelper.<TimeStampSecVector>cast(vector).setSafe(row, TypeConversionHelper.microsToSecs.apply(((value instanceof Number) ? (Long) value : Long.parseLong(value.toString()))));
         } else if (type == DataTypes.DateType) {
-            ArrowConversion.<TimeStampSecVector>cast(vector).setSafe(row, ArrowConversion.microsToSecs.apply(ArrowConversion.daysToMicros.apply((value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString()), ZoneId.systemDefault())));
+            TypeConversionHelper.<TimeStampSecVector>cast(vector).setSafe(row, TypeConversionHelper.microsToSecs.apply(TypeConversionHelper.daysToMicros.apply((value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString()), ZoneId.systemDefault())));
         }
     };
     //convert TIMESTAMP to arrow TimeStampSecTZVector
@@ -716,11 +692,11 @@ public final class ArrowConversion implements Serializable {
     private static final NullableTimeStampSecTZHolder nullTimeStampSecTZ = new NullableTimeStampSecTZHolder();
     private static final ConvertTo<org.apache.arrow.vector.FieldVector, Integer, Object, DataType> toTimeStampSecTZObject = (vector, row, value, type) -> {
         if (value == null) {
-            ArrowConversion.<TimeStampSecTZVector>cast(vector).setSafe(row, ArrowConversion.nullTimeStampSecTZ);
+            TypeConversionHelper.<TimeStampSecTZVector>cast(vector).setSafe(row, ArrowConversion.nullTimeStampSecTZ);
         } else if (type == DataTypes.TimestampType) {
-            ArrowConversion.<TimeStampSecTZVector>cast(vector).setSafe(row, ArrowConversion.microsToSecs.apply(DateTimeUtils.convertTz((value instanceof Number) ? (Long) value : Long.parseLong(value.toString()), ZoneId.systemDefault(), ZoneId.of(ArrowConversion.<TimeStampSecTZVector>cast(vector).getTimeZone()))));
+            TypeConversionHelper.<TimeStampSecTZVector>cast(vector).setSafe(row, TypeConversionHelper.microsToSecs.apply(DateTimeUtils.convertTz((value instanceof Number) ? (Long) value : Long.parseLong(value.toString()), ZoneId.systemDefault(), ZoneId.of(TypeConversionHelper.<TimeStampSecTZVector>cast(vector).getTimeZone()))));
         } else if (type == DataTypes.DateType) {
-            ArrowConversion.<TimeStampSecTZVector>cast(vector).setSafe(row, ArrowConversion.microsToSecs.apply(ArrowConversion.daysToMicros.apply((value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString()), ZoneId.of(ArrowConversion.<TimeStampSecTZVector>cast(vector).getTimeZone()))));
+            TypeConversionHelper.<TimeStampSecTZVector>cast(vector).setSafe(row, TypeConversionHelper.microsToSecs.apply(TypeConversionHelper.daysToMicros.apply((value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString()), ZoneId.of(TypeConversionHelper.<TimeStampSecTZVector>cast(vector).getTimeZone()))));
         }
     };
     //convert TIMESTAMP to arrow TimeStampNanoVector
@@ -734,11 +710,11 @@ public final class ArrowConversion implements Serializable {
     private static final NullableTimeStampNanoHolder nullTimeStampNano = new NullableTimeStampNanoHolder();
     private static final ConvertTo<org.apache.arrow.vector.FieldVector, Integer, Object, DataType> toTimeStampNanoObject = (vector, row, value, type) -> {
         if (value == null) {
-            ArrowConversion.<TimeStampNanoVector>cast(vector).setSafe(row, ArrowConversion.nullTimeStampNano);
+            TypeConversionHelper.<TimeStampNanoVector>cast(vector).setSafe(row, ArrowConversion.nullTimeStampNano);
         } else if (type == DataTypes.TimestampType) {
-            ArrowConversion.<TimeStampNanoVector>cast(vector).setSafe(row, ArrowConversion.microsToNanos.apply(((value instanceof Number) ? (Long) value : Long.parseLong(value.toString()))));
+            TypeConversionHelper.<TimeStampNanoVector>cast(vector).setSafe(row, TypeConversionHelper.microsToNanos.apply(((value instanceof Number) ? (Long) value : Long.parseLong(value.toString()))));
         } else if (type == DataTypes.DateType) {
-            ArrowConversion.<TimeStampNanoVector>cast(vector).setSafe(row, ArrowConversion.microsToNanos.apply(ArrowConversion.daysToMicros.apply((value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString()), ZoneId.systemDefault())));
+            TypeConversionHelper.<TimeStampNanoVector>cast(vector).setSafe(row, TypeConversionHelper.microsToNanos.apply(TypeConversionHelper.daysToMicros.apply((value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString()), ZoneId.systemDefault())));
         }
     };
     //convert TIMESTAMP to arrow TimeStampNanoTZVector
@@ -752,11 +728,11 @@ public final class ArrowConversion implements Serializable {
     private static final NullableTimeStampNanoTZHolder nullTimeStampNanoTZ = new NullableTimeStampNanoTZHolder();
     private static final ConvertTo<org.apache.arrow.vector.FieldVector, Integer, Object, DataType> toTimeStampNanoTZObject = (vector, row, value, type) -> {
         if (value == null) {
-            ArrowConversion.<TimeStampNanoTZVector>cast(vector).setSafe(row, ArrowConversion.nullTimeStampNanoTZ);
+            TypeConversionHelper.<TimeStampNanoTZVector>cast(vector).setSafe(row, ArrowConversion.nullTimeStampNanoTZ);
         } else if (type == DataTypes.TimestampType) {
-            ArrowConversion.<TimeStampNanoTZVector>cast(vector).setSafe(row, ArrowConversion.microsToNanos.apply(DateTimeUtils.convertTz((value instanceof Number) ? (Long) value : Long.parseLong(value.toString()), ZoneId.systemDefault(), ZoneId.of(ArrowConversion.<TimeStampNanoTZVector>cast(vector).getTimeZone()))));
+            TypeConversionHelper.<TimeStampNanoTZVector>cast(vector).setSafe(row, TypeConversionHelper.microsToNanos.apply(DateTimeUtils.convertTz((value instanceof Number) ? (Long) value : Long.parseLong(value.toString()), ZoneId.systemDefault(), ZoneId.of(TypeConversionHelper.<TimeStampNanoTZVector>cast(vector).getTimeZone()))));
         } else {
-            ArrowConversion.<TimeStampNanoTZVector>cast(vector).setSafe(row, ArrowConversion.microsToNanos.apply(ArrowConversion.daysToMicros.apply((value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString()), ZoneId.of(ArrowConversion.<TimeStampNanoTZVector>cast(vector).getTimeZone()))));
+            TypeConversionHelper.<TimeStampNanoTZVector>cast(vector).setSafe(row, TypeConversionHelper.microsToNanos.apply(TypeConversionHelper.daysToMicros.apply((value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString()), ZoneId.of(TypeConversionHelper.<TimeStampNanoTZVector>cast(vector).getTimeZone()))));
         }
     };
     //convert DURATION_DAY_TIME to arrow DurationVector
@@ -770,9 +746,9 @@ public final class ArrowConversion implements Serializable {
     private static final NullableDurationHolder nullDuration = new NullableDurationHolder();
     private static final ConvertTo<org.apache.arrow.vector.FieldVector, Integer, Object, DataType> toDurationObject = (vector, row, value, type) -> {
         if (value == null) {
-            ArrowConversion.<DurationVector>cast(vector).setSafe(row, ArrowConversion.nullDuration);
+            TypeConversionHelper.<DurationVector>cast(vector).setSafe(row, ArrowConversion.nullDuration);
         } else {
-            ArrowConversion.<DurationVector>cast(vector).setSafe(row, (value instanceof Number) ? (Long) value : Long.parseLong(value.toString()));
+            TypeConversionHelper.<DurationVector>cast(vector).setSafe(row, (value instanceof Number) ? (Long) value : Long.parseLong(value.toString()));
         }
     };
     //convert PERIOD_YEAR_MONTH to arrow IntervalYearVector
@@ -786,9 +762,9 @@ public final class ArrowConversion implements Serializable {
     private static final NullableIntervalYearHolder nullIntervalYear = new NullableIntervalYearHolder();
     private static final ConvertTo<org.apache.arrow.vector.FieldVector, Integer, Object, DataType> toIntervalYearObject = (vector, row, value, type) -> {
         if (value == null) {
-            ArrowConversion.<IntervalYearVector>cast(vector).setSafe(row, ArrowConversion.nullIntervalYear);
+            TypeConversionHelper.<IntervalYearVector>cast(vector).setSafe(row, ArrowConversion.nullIntervalYear);
         } else {
-            ArrowConversion.<IntervalYearVector>cast(vector).setSafe(row, (value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString()));
+            TypeConversionHelper.<IntervalYearVector>cast(vector).setSafe(row, (value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString()));
         }
     };
     //convert DURATION_DAY_TIME to arrow IntervalDayVector
@@ -802,10 +778,10 @@ public final class ArrowConversion implements Serializable {
     private static final NullableIntervalDayHolder nullIntervalDay = new NullableIntervalDayHolder();
     private static final ConvertTo<org.apache.arrow.vector.FieldVector, Integer, Object, DataType> toIntervalDayObject = (vector, row, value, type) -> {
         if (value == null) {
-            ArrowConversion.<IntervalDayVector>cast(vector).setSafe(row, ArrowConversion.nullIntervalDay);
+            TypeConversionHelper.<IntervalDayVector>cast(vector).setSafe(row, ArrowConversion.nullIntervalDay);
         } else {
             long micros = (value instanceof Number) ? (Long) value : Long.parseLong(value.toString());
-            ArrowConversion.<IntervalDayVector>cast(vector).setSafe(row, IntervalUtils.getDays(micros), (int) (micros % 1000L));
+            TypeConversionHelper.<IntervalDayVector>cast(vector).setSafe(row, IntervalUtils.getDays(micros), (int) (micros % 1000L));
         }
     };
     //convert StructType to arrow StructVector
@@ -820,10 +796,10 @@ public final class ArrowConversion implements Serializable {
     };
     private static final ConvertTo<org.apache.arrow.vector.FieldVector, Integer, Object, DataType> toStructObject = (vector, row, value, type) -> {
         if (value == null) {
-            ArrowConversion.<StructVector>cast(vector).setNull(row);
+            TypeConversionHelper.<StructVector>cast(vector).setNull(row);
         } else if (type instanceof StructType) {
-            org.apache.arrow.vector.FieldVector[] vectorChildren = ArrowConversion.<StructVector>cast(vector).getChildrenFromFields().toArray(new org.apache.arrow.vector.FieldVector[0]);
-            DataType[] dataTypes = Arrays.stream(((StructType) type).fields()).map(StructField::dataType).collect(Collectors.toList()).toArray(new DataType[0]);
+            org.apache.arrow.vector.FieldVector[] vectorChildren = TypeConversionHelper.<StructVector>cast(vector).getChildrenFromFields().toArray(new org.apache.arrow.vector.FieldVector[0]);
+            DataType[] dataTypes = Arrays.stream(((StructType) type).fields()).map(StructField::dataType).toList().toArray(new DataType[0]);
             if (vectorChildren.length == dataTypes.length) {
                 UnsafeRow rowsChildren = (UnsafeRow) value;
                 IntStream.range(0, vectorChildren.length).forEach(idx -> ArrowConversion.getOrCreate().populateObject(vectorChildren[idx], 0, rowsChildren.get(idx, dataTypes[idx]), dataTypes[idx]));
@@ -834,15 +810,15 @@ public final class ArrowConversion implements Serializable {
     };
     private static final ConvertTo<org.apache.arrow.vector.FieldVector, Integer, Object, DataType> toStructMap = (vector, row, value, type) -> {
         if (value == null) {
-            ArrowConversion.<StructVector>cast(vector).setNull(row);
+            TypeConversionHelper.<StructVector>cast(vector).setNull(row);
         } else {
             boolean populated = false;
             if (type instanceof MapType) {
-                org.apache.arrow.vector.FieldVector[] vectorChildren = ArrowConversion.<StructVector>cast(vector).getChildrenFromFields().toArray(new org.apache.arrow.vector.FieldVector[0]);
+                org.apache.arrow.vector.FieldVector[] vectorChildren = TypeConversionHelper.<StructVector>cast(vector).getChildrenFromFields().toArray(new org.apache.arrow.vector.FieldVector[0]);
                 if (vectorChildren.length == 1 && vectorChildren[0] instanceof ListVector && vectorChildren[0].getName().equals("map")) {
-                    org.apache.arrow.vector.FieldVector dataVector = ArrowConversion.<ListVector>cast(vectorChildren[0]).getDataVector();
+                    org.apache.arrow.vector.FieldVector dataVector = TypeConversionHelper.<ListVector>cast(vectorChildren[0]).getDataVector();
                     if (dataVector instanceof StructVector) {
-                        org.apache.arrow.vector.FieldVector[] valueChildren = ArrowConversion.<StructVector>cast(dataVector).getChildrenFromFields().toArray(new org.apache.arrow.vector.FieldVector[0]);
+                        org.apache.arrow.vector.FieldVector[] valueChildren = TypeConversionHelper.<StructVector>cast(dataVector).getChildrenFromFields().toArray(new org.apache.arrow.vector.FieldVector[0]);
                         if (valueChildren.length == 2 && valueChildren[0].getName().equals("key") && valueChildren[1].getName().equals("value")) {
                             DataType keyType = ((MapType) type).keyType();
                             DataType valueType = ((MapType) type).valueType();
@@ -873,9 +849,9 @@ public final class ArrowConversion implements Serializable {
     };
     private static final ConvertTo<org.apache.arrow.vector.FieldVector, Integer, Object, DataType> toListObject = (vector, row, value, type) -> {
         if (value == null) {
-            ArrowConversion.<ListVector>cast(vector).setNull(row);
+            TypeConversionHelper.<ListVector>cast(vector).setNull(row);
         } else if (type instanceof ArrayType) {
-            org.apache.arrow.vector.FieldVector dataVector = ArrowConversion.<ListVector>cast(vector).getDataVector();
+            org.apache.arrow.vector.FieldVector dataVector = TypeConversionHelper.<ListVector>cast(vector).getDataVector();
             DataType dataType = ((ArrayType) type).elementType();
             UnsafeArrayData data = (UnsafeArrayData) value;
             IntStream.range(0, data.numElements()).forEach(idx -> ArrowConversion.getOrCreate().populateObject(dataVector, idx, data.get(idx, dataType), dataType));
@@ -893,9 +869,9 @@ public final class ArrowConversion implements Serializable {
     };
     private static final ConvertTo<org.apache.arrow.vector.FieldVector, Integer, Object, DataType> toMapObject = (vector, row, value, type) -> {
         if (value == null) {
-            ArrowConversion.<MapVector>cast(vector).setNull(row);
+            TypeConversionHelper.<MapVector>cast(vector).setNull(row);
         } else if (type instanceof MapType) {
-            org.apache.arrow.vector.FieldVector[] valueChildren = ArrowConversion.<MapVector>cast(vector).getChildrenFromFields().toArray(new org.apache.arrow.vector.FieldVector[0]);
+            org.apache.arrow.vector.FieldVector[] valueChildren = TypeConversionHelper.<MapVector>cast(vector).getChildrenFromFields().toArray(new org.apache.arrow.vector.FieldVector[0]);
             if (valueChildren.length == 2) {
                 DataType keyType = ((MapType) type).keyType();
                 DataType valueType = ((MapType) type).valueType();
@@ -911,160 +887,6 @@ public final class ArrowConversion implements Serializable {
             }
         }
     };
-
-    //base converters
-    static final Function<BigDecimal, Decimal> bigDecimalToDecimal = Decimal::apply;
-    static final Function<String, UTF8String> stringToUtf8String = UTF8String::fromString;
-    static final Function<Integer, Integer> dateDayToInt = (dd) -> DateTimeUtils.fromJavaDate(java.sql.Date.valueOf(LocalDate.ofEpochDay(dd)));
-    private static final Function<LocalDateTime, Integer> localDateTimeToInt = (ldt) -> DateTimeUtils.fromJavaDate(java.sql.Date.valueOf(ldt.toLocalDate()));
-    private static final Function<LocalDateTime, Long> localDateTimeToLong = (ldt) -> DateTimeUtils.fromJavaTimestamp(Timestamp.valueOf(ldt));
-    private static final BiFunction<Long, String, Long> timestampSecTZToLong = (ss, zone) -> DateTimeUtils.fromJavaTimestamp(Timestamp.valueOf(LocalDateTime.from(Instant.ofEpochSecond(ss).atZone(ZoneId.of(zone)))));
-    private static final BiFunction<Long, String, Long> timestampMilliTZToLong = (mss, zone) -> DateTimeUtils.fromJavaTimestamp(Timestamp.valueOf(LocalDateTime.from(Instant.ofEpochMilli(mss).atZone(ZoneId.of(zone)))));
-    private static final BiFunction<Long, String, Long> timestampNanoTZToLong = (ns, zone) -> DateTimeUtils.fromJavaTimestamp(Timestamp.valueOf(LocalDateTime.from(Instant.ofEpochMilli(ns / 1000000L).atZone(ZoneId.of(zone)))));
-    private static final BiFunction<Long, String, Long> timestampMicroTZToLong = (ms, zone) -> DateTimeUtils.fromJavaTimestamp(Timestamp.valueOf(LocalDateTime.from(Instant.ofEpochMilli(ms / 1000L).atZone(ZoneId.of(zone))).plusNanos(ms % 1_000 * 1000L)));
-    private static final Function<Timestamp, Long> timestampToLong = DateTimeUtils::fromJavaTimestamp;
-    static final Function<Integer, UTF8String> timeSecToString = (ts) -> {
-        int hours = ts / 3600;
-        int minutes = (ts - hours * 3600) / 60;
-        int seconds = (ts - hours * 3600 - minutes * 60);
-        return ArrowConversion.stringToUtf8String.apply(String.format("%02d:%02d:%02d", hours, minutes, seconds));
-    };
-    static final Function<LocalDateTime, UTF8String> timeMilliToString = (ldt) -> ArrowConversion.stringToUtf8String.apply(String.format("%02d:%02d:%02d.%03d", ldt.getHour(), ldt.getMinute(), ldt.getSecond(), ldt.getNano() / 1000000L));
-    static final Function<Long, UTF8String> timeMicroToString = (ms) -> {
-        int totalSeconds = (int) (ms / 1000000L);
-        long microSeconds = ms - totalSeconds * 1000000L;
-        int hours = totalSeconds / 3600;
-        int minutes = (totalSeconds - hours * 3600) / 60;
-        int seconds = (totalSeconds - hours * 3600 - minutes * 60);
-        return ArrowConversion.stringToUtf8String.apply(String.format("%02d:%02d:%02d.%06d", hours, minutes, seconds, microSeconds));
-    };
-    static final Function<Long, UTF8String> timeNanoToString = (ns) -> {
-        int totalSeconds = (int) (ns / 1000000000L);
-        long nanoSeconds = totalSeconds * 1000000000L;
-        int hours = totalSeconds / 3600;
-        int minutes = (totalSeconds - hours * 3600) / 60;
-        int seconds = (totalSeconds - hours * 3600 - minutes * 60);
-        return ArrowConversion.stringToUtf8String.apply(String.format("%02d:%02d:%02d.%09d", hours, minutes, seconds, nanoSeconds));
-    };
-    private static final Function<Duration, Long> durationToLong = IntervalUtils::durationToMicros;
-    private static final Function<Period, Integer> periodToInt = IntervalUtils::periodToMonths;
-    private static final Function<PeriodDuration, InternalRow> translatePeriodDuration = (pd) -> InternalRow.fromSeq(JavaConverters.asScalaBuffer(Arrays.asList(new Object[] { ArrowConversion.periodToInt.apply(pd.getPeriod()), ArrowConversion.durationToLong.apply(pd.getDuration()) })));
-    @SuppressWarnings("unchecked")
-    private static final ConvertFrom<FieldType, Object, ValueVector, Object> translate = (t, o, v) -> {
-        switch (t.getTypeID()) {
-            case VARCHAR:
-            case CHAR:
-                return ArrowConversion.stringToUtf8String.apply(o.toString());
-            case TIMESTAMP:
-                return (v instanceof TimeStampMilliVector) ? ArrowConversion.timestampToLong.apply((Timestamp) o)
-                    : (v instanceof TimeStampMicroTZVector) ? ArrowConversion.timestampMicroTZToLong.apply((Long) o, ((TimeStampMicroTZVector) v).getTimeZone())
-                    : (v instanceof TimeStampSecTZVector) ? ArrowConversion.timestampSecTZToLong.apply((Long) o, ((TimeStampSecTZVector) v).getTimeZone())
-                    : (v instanceof TimeStampMilliTZVector) ? ArrowConversion.timestampMilliTZToLong.apply((Long) o, ((TimeStampMilliTZVector) v).getTimeZone())
-                    : (v instanceof TimeStampNanoTZVector) ? ArrowConversion.timestampNanoTZToLong.apply((Long) o, ((TimeStampNanoTZVector) v).getTimeZone())
-                    : (v instanceof TimeStampMicroVector || v instanceof TimeStampSecVector || v instanceof TimeStampNanoVector) ? ArrowConversion.localDateTimeToLong.apply((LocalDateTime) o) : o;
-            case TIME:
-                return (v instanceof TimeSecVector) ? ArrowConversion.timeSecToString.apply((Integer) o)
-                    : (v instanceof TimeMilliVector) ? ArrowConversion.timeMilliToString.apply((LocalDateTime) o)
-                    : (v instanceof TimeMicroVector) ? ArrowConversion.timeMicroToString.apply((Long) o)
-                    : (v instanceof TimeNanoVector) ? ArrowConversion.timeNanoToString.apply((Long) o) : o;
-            case DATE:
-                return (v instanceof DateDayVector) ? ArrowConversion.dateDayToInt.apply((Integer) o) : (v instanceof DateMilliVector) ? ArrowConversion.localDateTimeToInt.apply((LocalDateTime) o) : o;
-            case DECIMAL:
-                return ArrowConversion.bigDecimalToDecimal.apply((BigDecimal) o);
-            case DURATION_DAY_TIME:
-                return (v instanceof IntervalDayVector || v instanceof DurationVector) ? ArrowConversion.durationToLong.apply((Duration) o) : o;
-            case PERIOD_YEAR_MONTH:
-                return (v instanceof IntervalYearVector) ? ArrowConversion.periodToInt.apply((Period) o) : o;
-            case PERIOD_DURATION_MONTH_DAY_TIME:
-                return (v instanceof IntervalMonthDayNanoVector) ? ArrowConversion.translatePeriodDuration.apply((PeriodDuration) o) : o;
-            case LIST:
-                return (v instanceof ListVector) ? ArrowConversion.translateList.apply((List<?>) o, (ListVector) v, (FieldType.ListType) t) : o;
-            case MAP:
-                return (v instanceof MapVector) ? ArrowConversion.translateMap.apply((List<?>) o, (MapVector) v, (FieldType.MapType) t) : o;
-            case STRUCT:
-                return (v instanceof StructVector) ? ArrowConversion.mapElseStruct.apply((Map<String, ?>) o, (StructVector) v, (FieldType.StructType) t) : o;
-            case NULL:
-                return null;
-            default:
-                break;
-        }
-        return o;
-    };
-    @SuppressWarnings("UstableApiUsage")
-    private static final ConvertFrom<Map<String, ?>, StructVector, FieldType.StructType, InternalRow> translateStruct = (m, sv, t) -> {
-        Map<String, FieldType> mt = t.getChildrenType();
-        BiFunction<Map.Entry<String, ?>, Long, Object> setV = (e, i) -> {
-            String k = e.getKey();
-            Object v = e.getValue();
-            return (v != null && mt.containsKey(k)) ? ArrowConversion.translate.apply(mt.get(k), v, sv.getVectorById(i.intValue())) : null;
-        };
-        List<Object> nm = new java.util.ArrayList<>();
-        Streams.mapWithIndex(m.entrySet().stream(), setV::apply).forEach(nm::add);
-        return InternalRow.fromSeq(JavaConverters.asScalaBuffer(Arrays.asList(nm.toArray())).toSeq());
-    };
-    private static final ConvertFrom<Map<String, ?>, StructVector, FieldType.StructType, ArrayBasedMapData> structToMap = (m, sv, t) -> {
-        Map<String, FieldType> mt = t.getChildrenType();
-        if (mt.size() == 1 && mt.containsKey("map") && mt.get("map").getTypeID() == FieldType.IDs.LIST && sv.getVectorById(0) instanceof ListVector) {
-            ListVector lv = (ListVector) sv.getVectorById(0);
-            FieldType.ListType lt = (FieldType.ListType) mt.get("map");
-            if (lt.getChildType().getTypeID() == FieldType.IDs.STRUCT && lv.getDataVector() instanceof StructVector) {
-                StructVector dv = (StructVector) lv.getDataVector();
-                FieldType.StructType st = (FieldType.StructType) lt.getChildType();
-                String[] childKeys = st.getChildrenType().keySet().toArray(new String[0]);
-                if (childKeys.length == 2 && childKeys[0].equals("key") && childKeys[1].equals("value")) {
-                    List<Map.Entry<String, ?>> kvs = new java.util.ArrayList<>(m.entrySet());
-                    if (kvs.size() == 1 && kvs.get(0).getKey().equals("map") && kvs.get(0).getValue() instanceof List<?>) {
-                        FieldType kt = st.getChildrenType().get("key");
-                        FieldType vt = st.getChildrenType().get("value");
-                        List<?> list = (List<?>) kvs.get(0).getValue();
-                        List<Object> keys = new java.util.ArrayList<>();
-                        List<Object> values = new java.util.ArrayList<>();
-                        list.forEach(e -> {
-                            Map<?, ?> mes = (Map<?, ?>) e;
-                            mes.forEach((key, value) -> {
-                                keys.add(ArrowConversion.translate.apply(kt, key, dv.getVectorById(0)));
-                                values.add(ArrowConversion.translate.apply(vt, value, dv.getVectorById(1)));
-                            });
-                        });
-                        return new ArrayBasedMapData(ArrayData.toArrayData(keys.toArray()), ArrayData.toArrayData(values.toArray()));
-                    }
-                }
-            }
-        }
-        return null;
-    };
-    private static final ConvertFrom<Map<String, ?>, StructVector, FieldType.StructType, Object> mapElseStruct = (m, sv, t) -> ArrowConversion.o1ElseO2.apply(ArrowConversion.structToMap.apply(m, sv, t), ArrowConversion.translateStruct.apply(m, sv, t));
-    private static final ConvertFrom<List<?>, MapVector, FieldType.MapType, ArrayBasedMapData> translateMap = (l, mv, mt) -> {
-        List<Object> keys = new java.util.ArrayList<>();
-        List<Object> values = new java.util.ArrayList<>();
-        Function<ValueVector[], Boolean> probe = (vs) -> (vs.length == 2 && vs[0].getField().getName().equalsIgnoreCase("key") && vs[1].getField().getName().equalsIgnoreCase("value"));
-        Consumer<ValueVector[]> populate = (vs) -> {
-            if (probe.apply(vs)) {
-                l.forEach(e -> {
-                    JsonStringHashMap<?, ?> entry = (JsonStringHashMap<?, ?>) e;
-                    keys.add(ArrowConversion.translate.apply(mt.getKeyType(), entry.get("key"), vs[0]));
-                    values.add(ArrowConversion.translate.apply(mt.getValueType(), entry.get("value"), vs[1]));
-                });
-            }
-        };
-        ValueVector[] fields = mv.getChildrenFromFields().toArray(new ValueVector[0]);
-        populate.accept((fields.length == 1 && fields[0] instanceof StructVector) ? ((StructVector) fields[0]).getChildrenFromFields().toArray(new ValueVector[0]) : fields);
-        return new ArrayBasedMapData(ArrayData.toArrayData(keys.toArray()), ArrayData.toArrayData(values.toArray()));
-    };
-    private static final ConvertFrom<List<?>, ListVector, FieldType.ListType, ArrayData> translateList = (l, v, t) -> ArrayData.toArrayData(l.stream().map(e -> ArrowConversion.translate.apply(t.getChildType(), e, v.getDataVector())).toArray());
-    static final Function<Long, Long> microsToNanos = (micros) -> ArrowConversion.microsToMillis.apply(micros) * 1000L;
-    static final Function<Long, Long> microsToMillis = DateTimeUtils::microsToMillis;
-    static final Function<Long, Long> microsToSecs = (micros) -> ArrowConversion.microsToMillis.apply(micros) / 1000L;
-    private static final BiFunction<Integer, ZoneId, Long> daysToMicros = (days, zone) -> DateTimeUtils.daysToMicros(days, ZoneId.systemDefault());
-    private static final Function<Long, Long> microsToEpochNanos = (micros) -> {
-        Instant t = DateTimeUtils.microsToLocalDateTime(micros).withYear(1970).withMonth(1).withDayOfMonth(1).atZone(ZoneId.systemDefault()).toInstant();
-        return t.toEpochMilli() * 1000000L + (long) t.getNano();
-    };
-    static final Function<String, Long> timestrToNanos = (ts) -> {
-        Instant t = LocalDateTime.of(LocalDate.of(1970, 1, 1), LocalTime.parse(ts)).atZone(ZoneId.systemDefault()).toInstant();
-        return t.toEpochMilli() * 1000000L + (long) t.getNano();
-    };
-    static final BiFunction<Object, Object, Object> o1ElseO2 = (o1, o2) -> (o1 != null) ? o1 : o2;
 
     //the singleton instance
     private static ArrowConversion inst = null;
