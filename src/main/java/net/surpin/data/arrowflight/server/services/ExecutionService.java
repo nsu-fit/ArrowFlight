@@ -484,10 +484,9 @@ public final class ExecutionService {
                     listener.start(merged);
                 }
                 if (merged.getRowCount() > 0) {
-                    if (DuckDbAdapter.awaitListenerReady(
-                            listener, appConfig.flightListenerReadyTimeoutMillis())) {
-                        listener.putNext();
-                    }
+                    DuckDbAdapter.awaitListenerReady(
+                            listener, appConfig.flightListenerReadyTimeoutMillis());
+                    listener.putNext();
                 }
             }
         } finally {
@@ -731,10 +730,9 @@ public final class ExecutionService {
                 listener.start(root);
             }
             if (!rows.isEmpty()) {
-                if (DuckDbAdapter.awaitListenerReady(
-                        listener, appConfig.flightListenerReadyTimeoutMillis())) {
-                    listener.putNext();
-                }
+                DuckDbAdapter.awaitListenerReady(
+                        listener, appConfig.flightListenerReadyTimeoutMillis());
+                listener.putNext();
             }
         }
         LogUtil.logTiming(t, "engine:agg.emitRows", "rows=" + rows.size());

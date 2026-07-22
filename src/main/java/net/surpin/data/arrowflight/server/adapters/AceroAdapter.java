@@ -122,15 +122,8 @@ public final class AceroAdapter {
                     continue;
                 }
                 long bpStart = System.nanoTime();
-                if (!DuckDbAdapter.awaitListenerReady(
-                        listener, listenerReadyTimeoutMillis)) {
-                    backpressureNanos += System.nanoTime() - bpStart;
-                    LOGGER.warn("qid={} node={} acero=cancelled batch={} rows={}",
-                            qid, LogUtil.node(), batchesSent, rowsSent);
-                    vsr.clear();
-                    cancelled = true;
-                    break;
-                }
+                DuckDbAdapter.awaitListenerReady(
+                        listener, listenerReadyTimeoutMillis);
                 backpressureNanos += System.nanoTime() - bpStart;
                 listener.putNext();
                 batchesSent++;

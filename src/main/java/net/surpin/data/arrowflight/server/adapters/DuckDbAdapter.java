@@ -1,6 +1,7 @@
 package net.surpin.data.arrowflight.server.adapters;
 
 import org.apache.arrow.memory.BufferAllocator;
+import org.apache.arrow.flight.CallStatus;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.arrow.vector.ipc.ArrowReader;
 import org.apache.parquet.hadoop.ParquetFileReader;
@@ -38,6 +39,8 @@ public final class DuckDbAdapter implements AutoCloseable {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(DuckDbAdapter.class);
     private static final int ARROW_STREAM_SAFE_THREAD_COUNT = 1;
+    private static final long LISTENER_STATE_POLL_NANOS =
+            TimeUnit.MILLISECONDS.toNanos(5);
     private final ThreadLocal<Connection> threadConn;
     private final Set<Connection> allConnections = ConcurrentHashMap.newKeySet();
     private final ExecutorService ioPool;
@@ -188,13 +191,8 @@ public final class DuckDbAdapter implements AutoCloseable {
                             "sql='" + duckSql.substring(0, Math.min(100, duckSql.length())) + "'");
                 }
                 long bpStart = System.nanoTime();
-                if (!awaitListenerReady(
-                        listener, appConfig.flightListenerReadyTimeoutMillis())) {
-                    backpressureNanos += System.nanoTime() - bpStart;
-                    cancelled = true;
-                    root.clear();
-                    break;
-                }
+                awaitListenerReady(
+                        listener, appConfig.flightListenerReadyTimeoutMillis());
                 backpressureNanos += System.nanoTime() - bpStart;
                 listener.putNext();
                 batchesSent++;
@@ -527,11 +525,11 @@ public final class DuckDbAdapter implements AutoCloseable {
      *
      * @param listener      Flight stream listener
      * @param timeoutMillis maximum wait time in milliseconds
-     * @return true if ready, false if cancelled
+     * @throws org.apache.arrow.flight.FlightRuntimeException if cancelled or timed out
      * @throws InterruptedException if waiting is interrupted
      * @throws IllegalArgumentException if timeout is not positive
      */
-    public static boolean awaitListenerReady(
+    public static void awaitListenerReady(
             org.apache.arrow.flight.FlightProducer.ServerStreamListener listener,
             long timeoutMillis)
             throws InterruptedException {
@@ -549,28 +547,46 @@ public final class DuckDbAdapter implements AutoCloseable {
                 + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
         long waitStart = System.nanoTime();
         long t = LogUtil.mark();
-        while (!listener.isCancelled() && !listener.isReady()) {
+        while (true) {
+            if (listener.isCancelled()) {
+                long waitedNanos = System.nanoTime() - waitStart;
+                LOGGER.info("qid={} node={} backpressure=cancelled waited={}",
+                        LogUtil.qid(), LogUtil.node(), LogUtil.elapsedNanos(waitStart));
+                LogUtil.logTiming(t, "duckdb.awaitListenerReadyCancelled",
+                        "waitMs=" + waitedNanos / 1_000_000);
+                throw CallStatus.CANCELLED
+                        .withDescription("Flight client cancelled while waiting for readiness")
+                        .toRuntimeException();
+            }
+            if (listener.isReady()) {
+                break;
+            }
+
             long remainingNanos = deadlineNanos - System.nanoTime();
-            if (remainingNanos <= 0
-                    || !stateChanged.tryAcquire(remainingNanos, TimeUnit.NANOSECONDS)) {
+            if (remainingNanos <= 0) {
                 LOGGER.warn("qid={} node={} backpressure=timeout timeoutMs={} waited={}",
                         LogUtil.qid(), LogUtil.node(), timeoutMillis,
                         LogUtil.elapsedNanos(waitStart));
                 LogUtil.logTiming(t, "duckdb.awaitListenerReadyTimeout", "timeoutMs=" + timeoutMillis);
-                return false;
+                throw CallStatus.TIMED_OUT
+                        .withDescription("Flight listener was not ready within "
+                                + timeoutMillis + " ms")
+                        .toRuntimeException();
+            }
+
+            long waitSliceNanos = Math.min(remainingNanos, LISTENER_STATE_POLL_NANOS);
+            if (stateChanged.tryAcquire(waitSliceNanos, TimeUnit.NANOSECONDS)) {
+                continue;
             }
         }
         long totalWaitNanos = System.nanoTime() - waitStart;
-        boolean ready = !listener.isCancelled() && listener.isReady();
-        if (ready && totalWaitNanos > 10_000) {
+        if (totalWaitNanos > 10_000) {
             LogUtil.logTiming(t, "duckdb.awaitListenerReady", "waitMs=" + totalWaitNanos / 1_000_000);
         }
         if (totalWaitNanos > 100_000_000) { // >100ms
-            LOGGER.debug("qid={} node={} backpressure=waited waitMs={} ready={} cancelled={}",
-                    LogUtil.qid(), LogUtil.node(), totalWaitNanos / 1_000_000,
-                    ready, listener.isCancelled());
+            LOGGER.debug("qid={} node={} backpressure=waited waitMs={} ready=true cancelled=false",
+                    LogUtil.qid(), LogUtil.node(), totalWaitNanos / 1_000_000);
         }
-        return ready;
     }
 
     /**

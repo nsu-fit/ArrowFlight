@@ -1,6 +1,12 @@
 package net.surpin.data.arrowflight.client.model;
 
+import org.apache.spark.sql.connector.expressions.Expression;
+import org.apache.spark.sql.connector.expressions.FieldReference;
+import org.apache.spark.sql.connector.expressions.GeneralScalarExpression;
+import org.apache.spark.sql.connector.expressions.LiteralValue;
+import org.apache.spark.sql.connector.expressions.filter.Predicate;
 import org.apache.spark.sql.sources.*;
+import org.apache.spark.sql.types.DataTypes;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -276,6 +282,42 @@ class TableTest {
         Or f = new Or(new EqualTo("x", 1), new AlwaysTrue());
         assertThrows(IllegalArgumentException.class,
                 () -> newTable().toWhereClause(f));
+    }
+
+    @Test
+    void v2ColumnComparisonPushesQ4DatePredicate() {
+        Predicate predicate = new Predicate("<", new Expression[]{
+                FieldReference.column("l_commitdate"),
+                FieldReference.column("l_receiptdate")
+        });
+
+        assertEquals("\"l_commitdate\" < \"l_receiptdate\"",
+                newTable().toWhereClause(predicate));
+    }
+
+    @Test
+    void v2DateLiteralUsesSqlDateInsteadOfEpochDay() {
+        Predicate predicate = new Predicate(">=", new Expression[]{
+                FieldReference.column("o_orderdate"),
+                new LiteralValue<>(1, DataTypes.DateType)
+        });
+
+        assertEquals("\"o_orderdate\" >= '1970-01-02'",
+                newTable().toWhereClause(predicate));
+    }
+
+    @Test
+    void v2NestedExpressionIsNotAcceptedAsFilterOperand() {
+        GeneralScalarExpression arithmetic = new GeneralScalarExpression(
+                "+", new Expression[]{
+                        FieldReference.column("id"),
+                        new LiteralValue<>(1, DataTypes.IntegerType)
+                });
+        Predicate predicate = new Predicate(">", new Expression[]{
+                arithmetic, new LiteralValue<>(10, DataTypes.IntegerType)
+        });
+
+        assertFalse(newTable().canPushPredicate(predicate));
     }
 
     // ── forTable ────────────────────────────────────────────────────────────

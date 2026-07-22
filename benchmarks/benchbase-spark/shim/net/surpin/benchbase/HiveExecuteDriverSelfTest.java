@@ -35,6 +35,11 @@ public final class HiveExecuteDriverSelfTest {
         assertRewrite(
                 "SELECT DATE '1998-12-01' - INTERVAL '62' day",
                 "SELECT DATE '1998-12-01' - concat('62', ' days')::interval");
+        assertRewrite(
+                "SELECT o_orderkey FROM orders WHERE EXISTS (SELECT 1 FROM lineitem "
+                        + "WHERE l_orderkey = o_orderkey)",
+                "SELECT o_orderkey FROM orders WHERE EXISTS (SELECT * FROM lineitem "
+                        + "WHERE l_orderkey = o_orderkey)");
     }
 
     private static void assertRewrite(String expected, String input) throws Exception {

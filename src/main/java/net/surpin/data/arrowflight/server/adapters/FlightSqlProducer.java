@@ -9,6 +9,7 @@ import org.apache.arrow.flight.FlightDescriptor;
 import org.apache.arrow.flight.FlightEndpoint;
 import org.apache.arrow.flight.FlightInfo;
 import org.apache.arrow.flight.FlightProducer;
+import org.apache.arrow.flight.FlightRuntimeException;
 import org.apache.arrow.flight.Location;
 import org.apache.arrow.flight.SchemaResult;
 import org.apache.arrow.flight.Ticket;
@@ -144,10 +145,14 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
             LOGGER.error("qid={} node={} thread={} execution=failed server={} elapsedMs={} files={} result=failed error='{}'",
                     qid, LogUtil.node(), Thread.currentThread().getName(),
                     serverUri, elapsed, filePaths.length, failure, e);
-            listener.error(CallStatus.INTERNAL
-                    .withDescription(failure)
-                    .withCause(e)
-                    .toRuntimeException());
+            if (e instanceof FlightRuntimeException flightException) {
+                listener.error(flightException);
+            } else {
+                listener.error(CallStatus.INTERNAL
+                        .withDescription(failure)
+                        .withCause(e)
+                        .toRuntimeException());
+            }
         } finally {
             observation.close();
             MDC.remove("qid");

@@ -3,6 +3,8 @@ package net.surpin.data.arrowflight.server.adapters;
 import net.surpin.data.arrowflight.server.model.AppConfig;
 import net.surpin.data.arrowflight.server.services.ParquetQueryParser;
 import org.apache.arrow.flight.FlightProducer;
+import org.apache.arrow.flight.FlightRuntimeException;
+import org.apache.arrow.flight.FlightStatusCode;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -110,8 +112,36 @@ class DuckDbAdapterTest {
         }).when(listener).setOnReadyHandler(any(Runnable.class));
 
         assertTimeoutPreemptively(Duration.ofSeconds(1),
-                () -> assertTrue(DuckDbAdapter.awaitListenerReady(listener, 200)));
+                () -> assertDoesNotThrow(
+                        () -> DuckDbAdapter.awaitListenerReady(listener, 200)));
         verify(listener).setOnReadyHandler(any(Runnable.class));
+    }
+
+    /** Verifies polling observes readiness when Arrow never invokes its callback. */
+    @Test
+    void listenerReadinessWithoutCallbackIsPolled() throws Exception {
+        FlightProducer.ServerStreamListener listener =
+                mock(FlightProducer.ServerStreamListener.class);
+        AtomicBoolean ready = new AtomicBoolean();
+        CountDownLatch handlerRegistered = new CountDownLatch(1);
+        when(listener.isReady()).thenAnswer(invocation -> ready.get());
+        doAnswer(invocation -> {
+            handlerRegistered.countDown();
+            return null;
+        }).when(listener).setOnReadyHandler(any(Runnable.class));
+
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            Future<Void> result = executor.submit(() -> {
+                DuckDbAdapter.awaitListenerReady(listener, 500);
+                return null;
+            });
+            assertTrue(handlerRegistered.await(1, TimeUnit.SECONDS));
+            ready.set(true);
+            assertNull(result.get(1, TimeUnit.SECONDS));
+        } finally {
+            executor.shutdownNow();
+        }
     }
 
     /** Verifies a readiness signal received before waiting remains observable. */
@@ -130,7 +160,8 @@ class DuckDbAdapterTest {
         }).when(listener).setOnReadyHandler(any(Runnable.class));
 
         assertTimeoutPreemptively(Duration.ofSeconds(1), () ->
-                assertTrue(DuckDbAdapter.awaitListenerReady(listener, 200)));
+                assertDoesNotThrow(
+                        () -> DuckDbAdapter.awaitListenerReady(listener, 200)));
     }
 
     /** Verifies a spurious wake-up cannot release a non-ready listener. */
@@ -150,8 +181,10 @@ class DuckDbAdapterTest {
 
         ExecutorService executor = Executors.newSingleThreadExecutor();
         try {
-            Future<Boolean> result = executor.submit(
-                    () -> DuckDbAdapter.awaitListenerReady(listener, 500));
+            Future<Void> result = executor.submit(() -> {
+                DuckDbAdapter.awaitListenerReady(listener, 500);
+                return null;
+            });
             assertTrue(handlerRegistered.await(1, TimeUnit.SECONDS));
             readyHandler.get().run();
             assertThrows(TimeoutException.class,
@@ -159,7 +192,7 @@ class DuckDbAdapterTest {
 
             ready.set(true);
             readyHandler.get().run();
-            assertTrue(result.get(1, TimeUnit.SECONDS));
+            assertNull(result.get(1, TimeUnit.SECONDS));
         } finally {
             executor.shutdownNow();
         }
@@ -182,12 +215,19 @@ class DuckDbAdapterTest {
 
         ExecutorService executor = Executors.newSingleThreadExecutor();
         try {
-            Future<Boolean> result = executor.submit(
-                    () -> DuckDbAdapter.awaitListenerReady(listener, 500));
+            Future<Void> result = executor.submit(() -> {
+                DuckDbAdapter.awaitListenerReady(listener, 500);
+                return null;
+            });
             assertTrue(cancelHandlerRegistered.await(1, TimeUnit.SECONDS));
             cancelled.set(true);
             cancelHandler.get().run();
-            assertFalse(result.get(1, TimeUnit.SECONDS));
+            java.util.concurrent.ExecutionException exception = assertThrows(
+                    java.util.concurrent.ExecutionException.class,
+                    () -> result.get(1, TimeUnit.SECONDS));
+            FlightRuntimeException cause = assertInstanceOf(
+                    FlightRuntimeException.class, exception.getCause());
+            assertEquals(FlightStatusCode.CANCELLED, cause.status().code());
         } finally {
             executor.shutdownNow();
         }
@@ -199,8 +239,10 @@ class DuckDbAdapterTest {
         FlightProducer.ServerStreamListener listener =
                 mock(FlightProducer.ServerStreamListener.class);
 
-        assertTimeoutPreemptively(Duration.ofSeconds(1), () ->
-                assertFalse(DuckDbAdapter.awaitListenerReady(listener, 25)));
+        FlightRuntimeException exception = assertTimeoutPreemptively(
+                Duration.ofSeconds(1), () -> assertThrows(FlightRuntimeException.class,
+                        () -> DuckDbAdapter.awaitListenerReady(listener, 25)));
+        assertEquals(FlightStatusCode.TIMED_OUT, exception.status().code());
     }
 
     /** Verifies non-positive readiness timeouts fail before waiting. */

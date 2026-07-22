@@ -165,6 +165,28 @@ class FilterConverterTest {
         assertFalse(expression.contains("cast {"), expression);
     }
 
+    /** Verifies the TPC-H Q4 column comparison can be converted to Substrait. */
+    @Test
+    void columnToColumnDateComparisonProducesFilter() throws Exception {
+        ByteBuffer buf = FilterConverter.toByteBuffer(
+                "\"l_commitdate\" < \"l_receiptdate\"",
+                List.of("CREATE TABLE lineitem("
+                        + "\"l_commitdate\" DATE, \"l_receiptdate\" DATE)"));
+        assertNotNull(buf);
+        assertTrue(buf.capacity() > 0);
+
+        byte[] bytes = new byte[buf.remaining()];
+        buf.get(bytes);
+        ExtendedExpression expression = ExtendedExpression.parseFrom(bytes);
+        List<FunctionArgument> arguments = expression.getReferredExpr(0)
+                .getExpression().getScalarFunction().getArgumentsList();
+        assertEquals(2, arguments.size());
+        assertEquals(0, arguments.get(0).getValue().getSelection()
+                .getDirectReference().getStructField().getField());
+        assertEquals(1, arguments.get(1).getValue().getSelection()
+                .getDirectReference().getStructField().getField());
+    }
+
     @Test
     void multipleCreateStatements() throws SqlParseException {
         String other = "CREATE TABLE other(\"x\" INTEGER)";
