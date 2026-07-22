@@ -336,6 +336,8 @@ services:
     restart: "no"
 
   duckdb-benchmark-generator:
+    image: "${BENCHMARK_GENERATOR_IMAGE:-arrowflight-duckdb-benchmark-generator:latest}"
+    pull_policy: never
     build:
       context: ./benchmarks/benchbase-spark
       dockerfile: duckdb-generator.Dockerfile
@@ -362,6 +364,7 @@ services:
       - server-node-8-staging:/server-data/server-node-8
       - server-node-9-staging:/server-data/server-node-9
       - server-node-10-staging:/server-data/server-node-10
+      - ./benchmarks/benchbase-spark/generate-duckdb-data.py:/generate-duckdb-data.py:ro
       - ./benchmarks/benchbase-spark/results:/benchbase/results
     restart: "no"
 

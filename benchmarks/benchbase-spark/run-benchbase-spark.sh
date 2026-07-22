@@ -25,6 +25,9 @@ BENCHBASE_DB_SCHEMA="${BENCHBASE_DB_SCHEMA:-}"
 BENCHBASE_UPDATE_PAGES="${BENCHBASE_UPDATE_PAGES:-true}"
 BENCHBASE_CAPTURE_TIMEOUT_SECONDS="${BENCHBASE_CAPTURE_TIMEOUT_SECONDS:-${BENCHBASE_QUERY_TIMEOUT_SECONDS:-0}}"
 BENCHMARK_OBSERVABILITY="${BENCHMARK_OBSERVABILITY:-true}"
+export BENCHMARK_GENERATOR_IMAGE="${BENCHMARK_GENERATOR_IMAGE:-arrowflight-duckdb-benchmark-generator:latest}"
+BENCHMARK_GENERATOR_BUILD_RETRIES="${BENCHMARK_GENERATOR_BUILD_RETRIES:-4}"
+BENCHMARK_REBUILD_GENERATOR="${BENCHMARK_REBUILD_GENERATOR:-false}"
 PYTHON_CMD=()
 
 usage() {
@@ -382,7 +385,28 @@ wait_hdfs_datanodes() {
 }
 
 generate_parquet_data() {
-  compose --profile benchbase build duckdb-benchmark-generator
+  if [[ "${BENCHMARK_REBUILD_GENERATOR,,}" != "true" ]] \
+      && docker image inspect "${BENCHMARK_GENERATOR_IMAGE}" >/dev/null 2>&1; then
+    echo "Using cached benchmark generator image: ${BENCHMARK_GENERATOR_IMAGE}"
+  else
+    if [[ ! "${BENCHMARK_GENERATOR_BUILD_RETRIES}" =~ ^[1-9][0-9]*$ ]]; then
+      echo "BENCHMARK_GENERATOR_BUILD_RETRIES must be a positive integer." >&2
+      exit 2
+    fi
+
+    local attempt
+    for ((attempt = 1; attempt <= BENCHMARK_GENERATOR_BUILD_RETRIES; attempt++)); do
+      echo "Building benchmark generator image (attempt ${attempt}/${BENCHMARK_GENERATOR_BUILD_RETRIES})"
+      if compose --profile benchbase build duckdb-benchmark-generator; then
+        break
+      fi
+      if (( attempt == BENCHMARK_GENERATOR_BUILD_RETRIES )); then
+        echo "Failed to build ${BENCHMARK_GENERATOR_IMAGE} after ${attempt} attempts." >&2
+        return 1
+      fi
+      sleep $((attempt * 5))
+    done
+  fi
   compose --profile benchbase run --rm duckdb-benchmark-generator
 }
 
