@@ -379,26 +379,38 @@ public final class Configuration implements Serializable {
         this.connectTimeoutMs = connectTimeoutMs;
     }
 
+    private static String formatValue(Object value) {
+        return value != null ? value.toString() : "[not set]";
+    }
+
+    private static String formatSensitive(Object value) {
+        return value != null ? "[hidden]" : "[not set]";
+    }
+
+    private static String formatBytes(byte[] bytes) {
+        return bytes != null ? "[hidden, " + bytes.length + " bytes]" : "[not set]";
+    }
+
     @Override
     public String toString() {
         return "Configuration{" +
-                "fsHost='" + fsHost + '\'' +
-                ", fsPort=" + fsPort +
-                ", tlsEnabled=" + tlsEnabled +
-                ", crtVerify=" + crtVerify +
-                ", trustStoreJks='" + trustStoreJks + '\'' +
-                ", trustStorePass='" + (trustStorePass != null ? "[hidden]" : "[not set]") + '\'' +
-                ", user='" + user + '\'' +
-                ", password='" + (password != null ? "[hidden]" : "[not set]") + '\'' +
-                ", bearerToken='" + (bearerToken != null ? "[hidden]" : "[not set]") + '\'' +
-                ", defaultSchema='" + defaultSchema + '\'' +
-                ", routingTag='" + routingTag + '\'' +
-                ", routingQueue='" + routingQueue + '\'' +
-                ", certBytes='" + (certBytes != null ? "[hidden, " + certBytes.length + " bytes]" : "[not set]") + '\'' +
-                ", allocationLimit=" + allocationLimit +
-                ", maxRetries=" + maxRetries +
-                ", retryBackoffMs=" + retryBackoffMs +
-                ", connectTimeoutMs=" + connectTimeoutMs +
-                '}';
+            "fsHost='" + formatValue(fsHost) + '\'' +
+            ", fsPort=" + fsPort +
+            ", tlsEnabled=" + tlsEnabled +
+            ", crtVerify=" + crtVerify +
+            ", trustStoreJks='" + formatValue(trustStoreJks) + '\'' +
+            ", trustStorePass='" + formatSensitive(trustStorePass) + '\'' +
+            ", user='" + formatValue(user) + '\'' +
+            ", password='" + formatSensitive(password) + '\'' +
+            ", bearerToken='" + formatSensitive(bearerToken) + '\'' +
+            ", defaultSchema='" + formatValue(defaultSchema) + '\'' +
+            ", routingTag='" + formatValue(routingTag) + '\'' +
+            ", routingQueue='" + formatValue(routingQueue) + '\'' +
+            ", certBytes='" + formatBytes(certBytes) + '\'' +
+            ", allocationLimit=" + allocationLimit +
+            ", maxRetries=" + maxRetries +
+            ", retryBackoffMs=" + retryBackoffMs +
+            ", connectTimeoutMs=" + connectTimeoutMs +
+            '}';
     }
 }

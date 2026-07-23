@@ -1,0 +1,3 @@
+# Generated artifacts: downloaded DuckDB queries and Java procedure classes.
+queries/
+src/com/oltpbenchmark/benchmarks/tpcds/procedures/Q*.java
