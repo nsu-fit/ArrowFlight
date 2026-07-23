@@ -11,7 +11,6 @@ import java.sql.DriverPropertyInfo;
 import java.sql.SQLException;
 import java.sql.SQLFeatureNotSupportedException;
 import java.sql.Statement;
-import java.util.Locale;
 import java.util.Properties;
 import java.util.logging.Logger;
 
@@ -236,19 +235,23 @@ public final class HiveExecuteDriver implements Driver {
             result = result.replaceAll(
                     "(?is)\\bexists\\s*\\(\\s*select\\s+\\*\\s+from\\b",
                     "EXISTS (SELECT 1 FROM");
-
-            String normalizedSql = result.toLowerCase(Locale.ROOT);
-            result = result.replaceAll("(?i)\\bcreate\\s+view\\b", "CREATE TEMPORARY VIEW");
-            boolean isTpchQ17 = normalizedSql.contains("p_brand")
-                && normalizedSql.contains("p_container")
-                && normalizedSql.contains("l_quantity")
-                && normalizedSql.contains("avg");
-
-            if (isTpchQ17) {
+            result = result.replaceAll(
+                    "(?i)0\\.2\\s*\\*\\s*avg\\s*\\(\\s*l_quantity\\s*\\)",
+                    "0.2 * AVG(CAST(l_quantity AS DOUBLE))");
+            if (result.matches("(?is)^\\s*create\\s+view\\s+revenue0\\b.*")) {
+                result = result.replaceFirst(
+                        "(?i)\\bcreate\\s+view\\s+revenue0\\b",
+                        "CREATE OR REPLACE GLOBAL TEMPORARY VIEW revenue0");
+            } else if (result.matches("(?is)^\\s*drop\\s+view\\s+revenue0\\b.*")) {
+                result = result.replaceFirst(
+                        "(?i)\\bdrop\\s+view\\s+revenue0\\b",
+                        "DROP VIEW IF EXISTS global_temp.revenue0");
+            } else {
                 result = result.replaceAll(
-                    "(?i)AVG\\s*\\(\\s*l_quantity\\s*\\)",
-                    "AVG(CAST(l_quantity AS DECIMAL(28,2)))");
+                        "(?i)(?<![a-z0-9_.])revenue0\\b",
+                        "global_temp.revenue0");
             }
+            result = result.replaceAll("(?i)\\bcreate\\s+view\\b", "CREATE TEMPORARY VIEW");
             return result;
         }
     }
