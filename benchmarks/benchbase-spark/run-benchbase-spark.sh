@@ -21,6 +21,7 @@ COMPARE_PARENT_RUN_ID=""
 BENCHBASE_TIME_SECONDS="${BENCHBASE_TIME_SECONDS:-}"
 BENCHBASE_WARMUP_SECONDS="${BENCHBASE_WARMUP_SECONDS:-}"
 BENCHBASE_TERMINALS="${BENCHBASE_TERMINALS:-}"
+BENCHBASE_QUERY_REPETITIONS="${BENCHBASE_QUERY_REPETITIONS:-1}"
 BENCHBASE_RATE="${BENCHBASE_RATE:-unlimited}"
 BENCHBASE_DB_SCHEMA="${BENCHBASE_DB_SCHEMA:-}"
 BENCHBASE_COMPARE_ORDER="${BENCHBASE_COMPARE_ORDER:-flight-first}"
@@ -62,6 +63,10 @@ Modes:
 Queries:
   TPC-H: q1-q22, comma-separated lists, all
   TPC-DS: q1-q99, comma-separated lists
+
+Serial repetitions:
+  BENCHBASE_QUERY_REPETITIONS=N runs every selected query N measured times.
+  It cannot be combined with BENCHBASE_TIME_SECONDS.
 EOF
 }
 
@@ -297,12 +302,20 @@ prepare_execute_config() {
   EXEC_CONFIG_IN_CONTAINER="/benchbase/config/custom/${BENCHMARK}.xml"
   local db_schema="${BENCHBASE_DB_SCHEMA:-${BENCHMARK}}"
 
+  if [[ ! "${BENCHBASE_QUERY_REPETITIONS}" =~ ^[1-9][0-9]*$ ]]; then
+    echo "BENCHBASE_QUERY_REPETITIONS must be a positive integer: ${BENCHBASE_QUERY_REPETITIONS}" >&2
+    exit 2
+  fi
+  if [[ "${BENCHBASE_QUERY_REPETITIONS}" != "1" && -n "${BENCHBASE_TIME_SECONDS}" ]]; then
+    echo "BENCHBASE_QUERY_REPETITIONS cannot be combined with BENCHBASE_TIME_SECONDS." >&2
+    exit 2
+  fi
   if [[ ! "${BENCHBASE_WARMUP_SECONDS:-0}" =~ ^[0-9]+$ ]]; then
     echo "BENCHBASE_WARMUP_SECONDS must be a non-negative integer: ${BENCHBASE_WARMUP_SECONDS}" >&2
     exit 2
   fi
 
-  if [[ -z "${QUERY_SET}" && -z "${BENCHBASE_TIME_SECONDS}" && -z "${BENCHBASE_WARMUP_SECONDS}" && -z "${BENCHBASE_TERMINALS}" && "${db_schema}" == "${BENCHMARK}" && "${BENCHMARK_SCALE_FACTOR}" == "0.01" ]]; then
+  if [[ -z "${QUERY_SET}" && -z "${BENCHBASE_TIME_SECONDS}" && -z "${BENCHBASE_WARMUP_SECONDS}" && -z "${BENCHBASE_TERMINALS}" && "${BENCHBASE_QUERY_REPETITIONS}" == "1" && "${db_schema}" == "${BENCHMARK}" && "${BENCHMARK_SCALE_FACTOR}" == "0.01" ]]; then
     return
   fi
 
@@ -312,7 +325,7 @@ prepare_execute_config() {
   local safe_selector="${QUERY_SET:-all}"
   safe_selector="${safe_selector,,}"
   safe_selector="${safe_selector//[^a-z0-9,]/-}"
-  GENERATED_CONFIG_LOCAL="${CONFIG_DIR}/.${BENCHMARK}-${safe_schema}-${safe_selector}-${BENCHBASE_TIME_SECONDS:-serial}.xml"
+  GENERATED_CONFIG_LOCAL="${CONFIG_DIR}/.${BENCHMARK}-${safe_schema}-${safe_selector}-${BENCHBASE_TIME_SECONDS:-serial}-r${BENCHBASE_QUERY_REPETITIONS}.xml"
   cp "${base_config}" "${GENERATED_CONFIG_LOCAL}"
   GENERATED_CONFIGS+=("${GENERATED_CONFIG_LOCAL}")
 
@@ -340,6 +353,10 @@ prepare_execute_config() {
     sed -i "s#<serial>.*</serial>#      <serial>false</serial>#" "${GENERATED_CONFIG_LOCAL}"
     sed -i "s#<rate>.*</rate>#      <rate>${BENCHBASE_RATE}</rate>#" "${GENERATED_CONFIG_LOCAL}"
     sed -i "/<serial>false<\/serial>/a\\      <time>${BENCHBASE_TIME_SECONDS}</time>\\n      <warmup>${BENCHBASE_WARMUP_SECONDS:-0}</warmup>" "${GENERATED_CONFIG_LOCAL}"
+  elif [[ "${BENCHBASE_QUERY_REPETITIONS}" != "1" ]]; then
+    run_python "${SCRIPT_DIR}/repeat-work-phases.py" \
+      --config "${GENERATED_CONFIG_LOCAL}" \
+      --repetitions "${BENCHBASE_QUERY_REPETITIONS}"
   fi
 
   EXEC_CONFIG_IN_CONTAINER="/benchbase/config/custom/$(basename "${GENERATED_CONFIG_LOCAL}")"
@@ -701,7 +718,7 @@ benchbase_execute() {
   local db_schema="${BENCHBASE_DB_SCHEMA:-${BENCHMARK}}"
   local log_file="${RESULTS_DIR}/last-${BENCHMARK}-${db_schema}.log"
   local progress_pid=""
-  echo "[BenchBase] Starting schema=${db_schema}, warmup=${BENCHBASE_WARMUP_SECONDS:-0}s, measurement=${BENCHBASE_TIME_SECONDS:-serial}s, terminals=${BENCHBASE_TERMINALS:-config default}"
+  echo "[BenchBase] Starting schema=${db_schema}, warmup=${BENCHBASE_WARMUP_SECONDS:-0}s, measurement=${BENCHBASE_TIME_SECONDS:-serial}s, repetitions=${BENCHBASE_QUERY_REPETITIONS}, terminals=${BENCHBASE_TERMINALS:-config default}"
   if [[ -n "${BENCHBASE_TIME_SECONDS}" ]]; then
     benchbase_progress "${db_schema}" &
     progress_pid="$!"
@@ -773,7 +790,7 @@ compare_execute() {
   if [[ -n "${BENCHBASE_TIME_SECONDS}" ]]; then
     echo "[BenchBase] Compare order=${BENCHBASE_COMPARE_ORDER}; configured measurement time applies to each phase."
   else
-    echo "[BenchBase] Compare order=${BENCHBASE_COMPARE_ORDER}; selected queries run once per phase in serial mode."
+    echo "[BenchBase] Compare order=${BENCHBASE_COMPARE_ORDER}; selected queries run ${BENCHBASE_QUERY_REPETITIONS} measured time(s) per path in serial mode."
   fi
 
   run_compare_path "${parent_run_id}" "${first_path}"
