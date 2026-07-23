@@ -40,6 +40,9 @@ def parse_query_ids(value):
     if not value:
         return []
 
+    if str(value).strip().lower() == "all":
+        return list(range(1, 23))
+
     query_ids = []
     for token in str(value).lower().replace(" ", "").split(","):
         if not token:

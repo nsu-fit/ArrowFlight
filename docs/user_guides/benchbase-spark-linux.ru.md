@@ -56,6 +56,29 @@ BENCHBASE_TERMINALS=1 \
 
 В generated report и reference results попадут только `q1`, `q6`, `q14`. BenchBase может вывести в консоль остальные transaction types с нулевыми counters; они не выполняются и не добавляются в per-query report.
 
+Все 22 TPC-H query по одному разу для каждого пути:
+
+```bash
+bash benchmarks/benchbase-spark/run-benchbase-spark.sh tpch compare all
+```
+
+Selector `all` активирует Q1-Q22 для Flight и Direct. Общий compare report и
+главная страница GitHub Pages показывают grouped bar chart средней measured
+latency по каждому query (`q01`-`q22`). Значения берутся из BenchBase
+`*.raw.csv`.
+
+Если нужны повторные samples каждого query, явно задай общий timed workload:
+
+```bash
+BENCHBASE_TIME_SECONDS=1200 \
+BENCHBASE_WARMUP_SECONDS=120 \
+bash benchmarks/benchbase-spark/run-benchbase-spark.sh tpch compare all
+```
+
+В timed-режиме `BENCHBASE_TIME_SECONDS` задаёт общую длительность каждого пути,
+а не отдельное время для каждого query. Выбирай достаточно большое значение,
+чтобы все тяжёлые TPC-H queries успели выполниться.
+
 Результат:
 
 ```text

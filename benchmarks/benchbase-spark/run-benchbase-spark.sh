@@ -30,6 +30,7 @@ BENCHMARK_OBSERVABILITY="${BENCHMARK_OBSERVABILITY:-true}"
 export BENCHMARK_GENERATOR_IMAGE="${BENCHMARK_GENERATOR_IMAGE:-arrowflight-duckdb-benchmark-generator:latest}"
 BENCHMARK_GENERATOR_BUILD_RETRIES="${BENCHMARK_GENERATOR_BUILD_RETRIES:-4}"
 BENCHMARK_REBUILD_GENERATOR="${BENCHMARK_REBUILD_GENERATOR:-false}"
+BENCHBASE_IMAGE_READY=false
 PYTHON_CMD=()
 
 usage() {
@@ -59,7 +60,7 @@ Modes:
   logs     follow compose logs
 
 Queries:
-  TPC-H only: q6, q1,q6,q14, 1,6,14
+  TPC-H only: q6, q1,q6,q14, 1,6,14, all
 EOF
 }
 
@@ -210,6 +211,10 @@ tpch_query_weights() {
   for _ in $(seq 1 22); do
     weights+=(0)
   done
+
+  if [[ "${normalized}" == "all" ]]; then
+    normalized="$(seq -s, 1 22)"
+  fi
 
   IFS=',' read -ra tokens <<< "${normalized}"
   for token in "${tokens[@]}"; do
@@ -530,6 +535,10 @@ prune_inactive_query_csv() {
 
   local normalized="${QUERY_SET,,}"
   normalized="${normalized// /}"
+  if [[ "${normalized}" == "all" ]]; then
+    return
+  fi
+
   local -A active_queries=()
   local token
   IFS=',' read -ra tokens <<< "${normalized}"
@@ -633,10 +642,18 @@ build_pages_site() {
   run_python "${SCRIPT_DIR}/build-pages-site.py" --results "${RESULTS_ROOT}" --out "${PAGES_DIR}"
 }
 
+ensure_benchbase_image() {
+  if [[ "${BENCHBASE_IMAGE_READY}" == "true" ]]; then
+    return
+  fi
+  compose --profile benchbase build benchbase-spark
+  BENCHBASE_IMAGE_READY=true
+}
+
 benchbase_execute() {
   prepare_execute_config
   prepare_results_dir
-  compose --profile benchbase build benchbase-spark
+  ensure_benchbase_image
 
   local db_schema="${BENCHBASE_DB_SCHEMA:-${BENCHMARK}}"
   local log_file="${RESULTS_DIR}/last-${BENCHMARK}-${db_schema}.log"
@@ -710,7 +727,11 @@ compare_execute() {
       ;;
   esac
 
-  echo "[BenchBase] Compare order=${BENCHBASE_COMPARE_ORDER}; configured measurement time applies to each phase."
+  if [[ -n "${BENCHBASE_TIME_SECONDS}" ]]; then
+    echo "[BenchBase] Compare order=${BENCHBASE_COMPARE_ORDER}; configured measurement time applies to each phase."
+  else
+    echo "[BenchBase] Compare order=${BENCHBASE_COMPARE_ORDER}; selected queries run once per phase in serial mode."
+  fi
 
   run_compare_path "${parent_run_id}" "${first_path}"
   run_compare_path "${parent_run_id}" "${second_path}"
@@ -764,8 +785,12 @@ if [[ "${MODE}" == "graph" || "${MODE}" == "compare" ]]; then
     exit 2
   fi
   QUERY_SET="${QUERY_SET:-q6}"
-  BENCHBASE_TIME_SECONDS="${BENCHBASE_TIME_SECONDS:-60}"
-  BENCHBASE_WARMUP_SECONDS="${BENCHBASE_WARMUP_SECONDS:-30}"
+  if [[ "${QUERY_SET,,}" == "all" && -z "${BENCHBASE_TIME_SECONDS}" ]]; then
+    BENCHBASE_WARMUP_SECONDS="${BENCHBASE_WARMUP_SECONDS:-0}"
+  else
+    BENCHBASE_TIME_SECONDS="${BENCHBASE_TIME_SECONDS:-60}"
+    BENCHBASE_WARMUP_SECONDS="${BENCHBASE_WARMUP_SECONDS:-30}"
+  fi
   BENCHBASE_TERMINALS="${BENCHBASE_TERMINALS:-1}"
 fi
 
