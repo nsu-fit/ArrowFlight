@@ -1,0 +1,128 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  push:
+    branches: [ "main" ]
+
+permissions:
+  contents: write
+  pull-requests: write
+  checks: write
+
+jobs:
+  build-server:
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v4
+        with:
+          java-version: 21
+          distribution: temurin
+          cache: maven
+      - run: mvn compile -P server --batch-mode --errors --fail-at-end
+
+  build-client:
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v4
+        with:
+          java-version: 21
+          distribution: temurin
+          cache: maven
+      - run: mvn compile -P client --batch-mode --errors --fail-at-end
+
+  lint:
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v4
+        with:
+          java-version: 21
+          distribution: temurin
+          cache: maven
+      - run: mvn compile checkstyle:check --batch-mode --errors --fail-at-end
+      - run: mvn spotbugs:check --batch-mode --errors --fail-at-end
+        if: always()
+
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v4
+        with:
+          java-version: 21
+          distribution: temurin
+          cache: maven
+      - run: mvn test -P integration --batch-mode --errors --fail-at-end
+
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - run: mvn --batch-mode clean verify -Dmaven.test.failure.ignore=true
+        continue-on-error: true
+
+      - name: Generate JaCoCo badge SVG
+        uses: cicirello/jacoco-badge-generator@v2
+        with:
+          generate-branches-badge: true
+          badges-directory: target/site/jacoco
+          coverage-label: JaCoCo
+        if: always()
+
+      - name: Upload JaCoCo report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jacoco-report
+          path: target/site/jacoco/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: PR coverage comment
+        uses: madrapps/jacoco-report@v1.7
+        with:
+          paths: target/site/jacoco/jacoco.xml
+          token: ${{ secrets.GITHUB_TOKEN }}
+          min-coverage-overall: 80
+          min-coverage-changed-files: 80
+          title: "📊 JaCoCo Coverage Report — [HTML Report](https://nsu-fit.github.io/ArrowFlight/pr-${{ github.event.number }}/jacoco/)"
+          update-comment: true
+        continue-on-error: true
+        if: github.event_name == 'pull_request'
+
+      - uses: coverallsapp/github-action@v2
+        continue-on-error: true
+        if: always()
+        with:
+          file: target/site/jacoco/jacoco.xml
+          format: jacoco
+          base-path: /src/main/java
+
+      - name: Deploy JaCoCo report to gh-pages (main)
+        uses: peaceiris/actions-gh-pages@v4
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./target/site/jacoco
+          destination_dir: jacoco
+
+      - name: Deploy JaCoCo report to gh-pages (PR)
+        uses: peaceiris/actions-gh-pages@v4
+        if: github.event_name == 'pull_request'
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./target/site/jacoco
+          destination_dir: pr-${{ github.event.number }}
+

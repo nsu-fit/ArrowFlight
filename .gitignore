@@ -1,0 +1,62 @@
+# Build output
+target/
+out/
+build/
+bin/
+!docker/bin/
+!docker/bin/**
+
+# Compiled Java artifacts
+*.class
+*.jar
+*.war
+*.ear
+
+# Maven release/temp files
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+
+# Test and quality tool reports
+surefire-reports/
+failsafe-reports/
+checkstyle-result.xml
+spotbugsXml.xml
+__pycache__/
+*.py[cod]
+
+# Python virtual environment
+venv/
+
+# Logs and runtime dumps
+*.log
+*.pid
+hs_err_pid*
+replay_pid*
+benchmarks/benchbase-spark/results/
+benchmarks/benchbase-spark/config/.*.xml
+
+# Local environment/configuration
+.env
+.env.*
+!.env.example
+
+# Local agent/Codex files
+skills-lock.json
+
+# IDE/editor files
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+*.code-workspace
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+benchmark-results.json

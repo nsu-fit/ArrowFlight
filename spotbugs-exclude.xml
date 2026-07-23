@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FindBugsFilter>
+    <!-- No serialVersionUID needed — these classes are not persisted, only sent over Spark task boundaries -->
+    <Match>
+        <Bug pattern="SE_NO_SERIALVERSIONUID,SE_NO_SERIALVERSIONID"/>
+    </Match>
+
+    <!--
+      EI_EXPOSE_REP / EI_EXPOSE_REP2: These DTO and Spark-connector classes intentionally
+      expose their internal arrays/maps directly for performance in hot Spark paths.
+      Defensive copies would add GC pressure without a real security boundary here.
+    -->
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!--
+      DM_EXIT: System.exit() is intentional in the server main() entry-point.
+    -->
+    <Match>
+        <Bug pattern="DM_EXIT"/>
+        <Class name="net.surpin.data.arrowflight.server.HadoopArrowFlightServer"/>
+    </Match>
+
+    <!--
+      RCN_REDUNDANT_NULLCHECK_OF_NONNULL_VALUE: null guards on schema-query results
+      are intentional — getQuerySchema may return null.
+    -->
+    <Match>
+        <Bug pattern="RCN_REDUNDANT_NULLCHECK_OF_NONNULL_VALUE"/>
+        <Class name="~net\.surpin\.data\.arrowflight\.server\..*"/>
+    </Match>
+
+    <!--
+      MS_EXPOSE_REP: getOrCreate() is the singleton accessor — returning the static instance
+      is correct and intentional.
+      SING_SINGLETON_IMPLEMENTS_SERIALIZABLE: readResolve() is implemented; singleton contract
+      is preserved across serialization.
+    -->
+    <Match>
+        <Bug pattern="MS_EXPOSE_REP,SING_SINGLETON_IMPLEMENTS_SERIALIZABLE"/>
+        <Class name="net.surpin.data.arrowflight.client.model.ArrowConversion"/>
+    </Match>
+
+    <!--
+      CT_CONSTRUCTOR_THROW: ParquetAdapter constructors throw UncheckedIOException when
+      schema/table cache initialization fails. This is a deliberate fail-fast design.
+      finalize() was deprecated in JDK 9 and removed in JDK 21+, so the concern about
+      constructor-thrown exceptions breaking finalization is moot.
+    -->
+    <Match>
+        <Bug pattern="CT_CONSTRUCTOR_THROW"/>
+        <Class name="net.surpin.data.arrowflight.server.adapters.ParquetAdapter"/>
+    </Match>
+
+    <!--
+      DE_MIGHT_IGNORE: Intentional resource cleanup in finally blocks.
+      Close failures are silently swallowed because:
+        - We're already in a finally / on-error path.
+        - An exception from close() would mask the primary failure.
+        - Close failures on read-only resources are harmless.
+      Affects ExecutionService (DROP VIEW cleanup) and
+      SparkArrowClientBenchmark (temp file cleanup).
+    -->
+    <Match>
+        <Bug pattern="DE_MIGHT_IGNORE"/>
+        <Or>
+            <Class name="net.surpin.data.arrowflight.server.services.ExecutionService"/>
+            <Class name="net.surpin.data.arrowflight.debug.SparkArrowClientBenchmark"/>
+        </Or>
+    </Match>
+
+    <!--
+      SF_SWITCH_NO_DEFAULT: Switch expression is exhaustive over the enum constants.
+      Java switch expressions enforce exhaustiveness at compile time; no default
+      needed. SpotBugs does not distinguish switch statements from expressions.
+    -->
+    <Match>
+        <Bug pattern="SF_SWITCH_NO_DEFAULT"/>
+        <Class name="net.surpin.data.arrowflight.server.adapters.SchemaConverter"/>
+    </Match>
+</FindBugsFilter>

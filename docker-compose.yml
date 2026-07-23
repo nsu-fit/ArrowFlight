@@ -1,0 +1,497 @@
+x-arrowflight-image: &arrowflight-image
+  image: arrowflight-test:latest
+  build:
+    context: .
+    dockerfile: docker/Dockerfile
+    args:
+      UBUNTU_MIRROR: "${UBUNTU_MIRROR:-http://mirror.yandex.ru/ubuntu}"
+
+x-server-node-env: &server-node-env
+  FLIGHT_DATA_DIR: "${HDFS_DATA_DIR:-hdfs://hdfs-namenode:8020/bench}"
+  FLIGHT_PORT: "32010"
+  FLIGHT_METRICS_PORT: "9404"
+  FLIGHT_HOSTS: "${FLIGHT_HOSTS:-flight-server-1,flight-server-2,flight-server-3,flight-server-4,flight-server-5,flight-server-6,flight-server-7,flight-server-8,flight-server-9,flight-server-10}"
+  HAZELCAST_PORT: "5701"
+  HDFS_NAMENODE_HOST: hdfs-namenode
+  HDFS_NAMENODE_PORT: "8020"
+  HDFS_READY_PATH: "${HDFS_BENCHMARK_PATH:-/bench}/_READY"
+  HDFS_BLOCK_SIZE_BYTES: "${HDFS_BLOCK_SIZE_BYTES:-1073741824}"
+  SPARK_MASTER_URL: spark://spark-master:7077
+  SPARK_WORKER_CORES: "2"
+  SPARK_WORKER_MEMORY: 2g
+  JAVA_OPTS: -Xmx2g
+  LOGGING_LEVEL: "${FLIGHT_LOG_LEVEL:-INFO}"
+
+x-server-node: &server-node
+  <<: *arrowflight-image
+  command: ["benchmark-node"]
+  depends_on:
+    hdfs-namenode:
+      condition: service_healthy
+    spark-master:
+      condition: service_started
+  healthcheck:
+    test: ["CMD-SHELL", "bash -c '</dev/tcp/$${HOSTNAME}/32010'"]
+    interval: 5s
+    timeout: 3s
+    retries: 60
+    start_period: 30s
+
+services:
+  hdfs-namenode:
+    <<: *arrowflight-image
+    command: ["hdfs-namenode"]
+    hostname: hdfs-namenode
+    environment:
+      HDFS_DATANODE_HOSTNAME: hdfs-namenode
+      HDFS_BLOCK_SIZE_BYTES: "${HDFS_BLOCK_SIZE_BYTES:-1073741824}"
+    volumes:
+      - hdfs-namenode-data:/var/lib/hadoop-hdfs/name
+    ports:
+      - "8020:8020"
+      - "9870:9870"
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/hdfs-namenode/8020'"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+
+  spark-master:
+    <<: *arrowflight-image
+    command: ["spark-master"]
+    hostname: spark-master
+    ports:
+      - "7077:7077"
+      - "8080:8080"
+
+  server-node-1:
+    <<: *server-node
+    hostname: server-node-1
+    environment:
+      <<: *server-node-env
+      HDFS_DATANODE_HOSTNAME: server-node-1
+      FLIGHT_LOCALHOST: flight-server-1
+      FLIGHT_LOCAL_STORAGE_HOST: server-node-1
+      SPARK_LOCAL_HOSTNAME: server-node-1
+      SPARK_WORKER_WEBUI_PORT: "8081"
+    volumes:
+      - server-node-1-staging:/staging:ro
+      - hdfs-datanode-1-data:/var/lib/hadoop-hdfs/data
+      - spark-warehouse:/spark-warehouse
+    ports:
+      - "32010:32010"
+      - "8081:8081"
+      - "9864:9864"
+    networks:
+      default:
+        aliases:
+          - flight-server-1
+          - datanode-1
+          - spark-worker-1
+
+  server-node-2:
+    <<: *server-node
+    hostname: server-node-2
+    environment:
+      <<: *server-node-env
+      HDFS_DATANODE_HOSTNAME: server-node-2
+      FLIGHT_LOCALHOST: flight-server-2
+      FLIGHT_LOCAL_STORAGE_HOST: server-node-2
+      SPARK_LOCAL_HOSTNAME: server-node-2
+      SPARK_WORKER_WEBUI_PORT: "8082"
+    volumes:
+      - server-node-2-staging:/staging:ro
+      - hdfs-datanode-2-data:/var/lib/hadoop-hdfs/data
+      - spark-warehouse:/spark-warehouse
+    ports:
+      - "32011:32010"
+      - "8082:8082"
+      - "9865:9864"
+    networks:
+      default:
+        aliases:
+          - flight-server-2
+          - datanode-2
+          - spark-worker-2
+
+  server-node-3:
+    <<: *server-node
+    hostname: server-node-3
+    environment:
+      <<: *server-node-env
+      HDFS_DATANODE_HOSTNAME: server-node-3
+      FLIGHT_LOCALHOST: flight-server-3
+      FLIGHT_LOCAL_STORAGE_HOST: server-node-3
+      SPARK_LOCAL_HOSTNAME: server-node-3
+      SPARK_WORKER_WEBUI_PORT: "8083"
+    volumes:
+      - server-node-3-staging:/staging:ro
+      - hdfs-datanode-3-data:/var/lib/hadoop-hdfs/data
+      - spark-warehouse:/spark-warehouse
+    ports:
+      - "32012:32010"
+      - "8083:8083"
+      - "9866:9864"
+    networks:
+      default:
+        aliases:
+          - flight-server-3
+          - datanode-3
+          - spark-worker-3
+
+  server-node-4:
+    <<: *server-node
+    hostname: server-node-4
+    environment:
+      <<: *server-node-env
+      HDFS_DATANODE_HOSTNAME: server-node-4
+      FLIGHT_LOCALHOST: flight-server-4
+      FLIGHT_LOCAL_STORAGE_HOST: server-node-4
+      SPARK_LOCAL_HOSTNAME: server-node-4
+      SPARK_WORKER_WEBUI_PORT: "8084"
+    volumes:
+      - server-node-4-staging:/staging:ro
+      - hdfs-datanode-4-data:/var/lib/hadoop-hdfs/data
+      - spark-warehouse:/spark-warehouse
+    ports:
+      - "32013:32010"
+      - "8084:8084"
+      - "9867:9864"
+    networks:
+      default:
+        aliases:
+          - flight-server-4
+          - datanode-4
+          - spark-worker-4
+
+  server-node-5:
+    <<: *server-node
+    hostname: server-node-5
+    environment:
+      <<: *server-node-env
+      HDFS_DATANODE_HOSTNAME: server-node-5
+      FLIGHT_LOCALHOST: flight-server-5
+      FLIGHT_LOCAL_STORAGE_HOST: server-node-5
+      SPARK_LOCAL_HOSTNAME: server-node-5
+      SPARK_WORKER_WEBUI_PORT: "8085"
+    volumes:
+      - server-node-5-staging:/staging:ro
+      - hdfs-datanode-5-data:/var/lib/hadoop-hdfs/data
+      - spark-warehouse:/spark-warehouse
+    ports:
+      - "32014:32010"
+      - "8085:8085"
+      - "9868:9864"
+    networks:
+      default:
+        aliases:
+          - flight-server-5
+          - datanode-5
+          - spark-worker-5
+
+  server-node-6:
+    <<: *server-node
+    hostname: server-node-6
+    environment:
+      <<: *server-node-env
+      HDFS_DATANODE_HOSTNAME: server-node-6
+      FLIGHT_LOCALHOST: flight-server-6
+      FLIGHT_LOCAL_STORAGE_HOST: server-node-6
+      SPARK_LOCAL_HOSTNAME: server-node-6
+      SPARK_WORKER_WEBUI_PORT: "8086"
+    volumes:
+      - server-node-6-staging:/staging:ro
+      - hdfs-datanode-6-data:/var/lib/hadoop-hdfs/data
+      - spark-warehouse:/spark-warehouse
+    ports:
+      - "32015:32010"
+      - "8086:8086"
+      - "9869:9864"
+    networks:
+      default:
+        aliases:
+          - flight-server-6
+          - datanode-6
+          - spark-worker-6
+
+  server-node-7:
+    <<: *server-node
+    hostname: server-node-7
+    environment:
+      <<: *server-node-env
+      HDFS_DATANODE_HOSTNAME: server-node-7
+      FLIGHT_LOCALHOST: flight-server-7
+      FLIGHT_LOCAL_STORAGE_HOST: server-node-7
+      SPARK_LOCAL_HOSTNAME: server-node-7
+      SPARK_WORKER_WEBUI_PORT: "8087"
+    volumes:
+      - server-node-7-staging:/staging:ro
+      - hdfs-datanode-7-data:/var/lib/hadoop-hdfs/data
+      - spark-warehouse:/spark-warehouse
+    ports:
+      - "32016:32010"
+      - "8087:8087"
+      - "9871:9864"
+    networks:
+      default:
+        aliases:
+          - flight-server-7
+          - datanode-7
+          - spark-worker-7
+
+  server-node-8:
+    <<: *server-node
+    hostname: server-node-8
+    environment:
+      <<: *server-node-env
+      HDFS_DATANODE_HOSTNAME: server-node-8
+      FLIGHT_LOCALHOST: flight-server-8
+      FLIGHT_LOCAL_STORAGE_HOST: server-node-8
+      SPARK_LOCAL_HOSTNAME: server-node-8
+      SPARK_WORKER_WEBUI_PORT: "8088"
+    volumes:
+      - server-node-8-staging:/staging:ro
+      - hdfs-datanode-8-data:/var/lib/hadoop-hdfs/data
+      - spark-warehouse:/spark-warehouse
+    ports:
+      - "32017:32010"
+      - "8088:8088"
+      - "9872:9864"
+    networks:
+      default:
+        aliases:
+          - flight-server-8
+          - datanode-8
+          - spark-worker-8
+
+  server-node-9:
+    <<: *server-node
+    hostname: server-node-9
+    environment:
+      <<: *server-node-env
+      HDFS_DATANODE_HOSTNAME: server-node-9
+      FLIGHT_LOCALHOST: flight-server-9
+      FLIGHT_LOCAL_STORAGE_HOST: server-node-9
+      SPARK_LOCAL_HOSTNAME: server-node-9
+      SPARK_WORKER_WEBUI_PORT: "8089"
+    volumes:
+      - server-node-9-staging:/staging:ro
+      - hdfs-datanode-9-data:/var/lib/hadoop-hdfs/data
+      - spark-warehouse:/spark-warehouse
+    ports:
+      - "32018:32010"
+      - "8089:8089"
+      - "9873:9864"
+    networks:
+      default:
+        aliases:
+          - flight-server-9
+          - datanode-9
+          - spark-worker-9
+
+  server-node-10:
+    <<: *server-node
+    hostname: server-node-10
+    environment:
+      <<: *server-node-env
+      HDFS_DATANODE_HOSTNAME: server-node-10
+      FLIGHT_LOCALHOST: flight-server-10
+      FLIGHT_LOCAL_STORAGE_HOST: server-node-10
+      SPARK_LOCAL_HOSTNAME: server-node-10
+      SPARK_WORKER_WEBUI_PORT: "8090"
+    volumes:
+      - server-node-10-staging:/staging:ro
+      - hdfs-datanode-10-data:/var/lib/hadoop-hdfs/data
+      - spark-warehouse:/spark-warehouse
+    ports:
+      - "32019:32010"
+      - "8090:8090"
+      - "9874:9864"
+    networks:
+      default:
+        aliases:
+          - flight-server-10
+          - datanode-10
+          - spark-worker-10
+
+  spark-benchmark-publisher:
+    <<: *arrowflight-image
+    profiles: ["benchbase"]
+    command: ["publish-benchmark-data"]
+    environment:
+      SPARK_MASTER_URL: spark://spark-master:7077
+      SPARK_DRIVER_HOST: spark-benchmark-publisher
+      BENCHMARK_DATASET: "${BENCHMARK_DATASET:-tpch}"
+      BENCHMARK_SCHEMA: "${BENCHMARK_SCHEMA:-tpch}"
+      BENCHMARK_SOURCE_SCHEMA: "${BENCHMARK_SOURCE_SCHEMA:-tpch}"
+      BENCHMARK_PUBLISH_MODE: "${BENCHMARK_PUBLISH_MODE:-flight}"
+      SPARK_PUBLISH_SCHEMA: "${SPARK_PUBLISH_SCHEMA:-}"
+      FLIGHT_PUBLISH_SCHEMA: "${FLIGHT_PUBLISH_SCHEMA:-tpch_flight}"
+      DIRECT_PUBLISH_SCHEMA: "${DIRECT_PUBLISH_SCHEMA:-tpch_direct}"
+      FLIGHT_SOURCE_HOST: "${FLIGHT_SOURCE_HOST:-flight-server-1}"
+      FLIGHT_SOURCE_PORT: "${FLIGHT_SOURCE_PORT:-32010}"
+      HDFS_DATA_DIR: "${HDFS_DATA_DIR:-hdfs://hdfs-namenode:8020/bench}"
+      DIRECT_PARQUET_DIR: "${DIRECT_PARQUET_DIR:-hdfs://hdfs-namenode:8020/bench}"
+      SPARK_WAREHOUSE_DIR: /spark-warehouse
+      SPARK_METASTORE_DB: /spark-warehouse/metastore_db
+      SPARK_SQL_ANSI_ENABLED: "${SPARK_SQL_ANSI_ENABLED:-true}"
+    volumes:
+      - spark-warehouse:/spark-warehouse
+    restart: "no"
+
+  duckdb-benchmark-generator:
+    image: "${BENCHMARK_GENERATOR_IMAGE:-arrowflight-duckdb-benchmark-generator:latest}"
+    pull_policy: never
+    build:
+      context: ./benchmarks/benchbase-spark
+      dockerfile: duckdb-generator.Dockerfile
+    profiles: ["benchbase"]
+    environment:
+      BENCHMARK_DATASET: "${BENCHMARK_DATASET:-tpch}"
+      BENCHMARK_SCHEMA: "${BENCHMARK_SCHEMA:-tpch}"
+      BENCHMARK_SCALE_FACTOR: "${BENCHMARK_SCALE_FACTOR:-0.01}"
+      BENCHMARK_QUERY_SET: "${BENCHMARK_QUERY_SET:-}"
+      BENCHMARK_METADATA_OUT: "${BENCHMARK_METADATA_OUT:-}"
+      FLIGHT_HOSTS: "${FLIGHT_HOSTS:-flight-server-1,flight-server-2,flight-server-3,flight-server-4,flight-server-5,flight-server-6,flight-server-7,flight-server-8,flight-server-9,flight-server-10}"
+      FLIGHT_SERVERS: "${FLIGHT_SERVERS:-flight-server-1:32010,flight-server-2:32010,flight-server-3:32010,flight-server-4:32010,flight-server-5:32010,flight-server-6:32010,flight-server-7:32010,flight-server-8:32010,flight-server-9:32010,flight-server-10:32010}"
+      FLIGHT_SERVER_DATA_DIRS: "${FLIGHT_SERVER_DATA_DIRS:-/server-data/server-node-1,/server-data/server-node-2,/server-data/server-node-3,/server-data/server-node-4,/server-data/server-node-5,/server-data/server-node-6,/server-data/server-node-7,/server-data/server-node-8,/server-data/server-node-9,/server-data/server-node-10}"
+      HDFS_DATA_DIR: "${HDFS_DATA_DIR:-hdfs://hdfs-namenode:8020/bench}"
+      HDFS_BLOCK_SIZE_BYTES: "${HDFS_BLOCK_SIZE_BYTES:-1073741824}"
+    volumes:
+      - server-node-1-staging:/server-data/server-node-1
+      - server-node-2-staging:/server-data/server-node-2
+      - server-node-3-staging:/server-data/server-node-3
+      - server-node-4-staging:/server-data/server-node-4
+      - server-node-5-staging:/server-data/server-node-5
+      - server-node-6-staging:/server-data/server-node-6
+      - server-node-7-staging:/server-data/server-node-7
+      - server-node-8-staging:/server-data/server-node-8
+      - server-node-9-staging:/server-data/server-node-9
+      - server-node-10-staging:/server-data/server-node-10
+      - ./benchmarks/benchbase-spark/generate-duckdb-data.py:/generate-duckdb-data.py:ro
+      - ./benchmarks/benchbase-spark/results:/benchbase/results
+    restart: "no"
+
+  spark-thrift-server:
+    <<: *arrowflight-image
+    profiles: ["benchbase"]
+    command: ["spark-thrift-server"]
+    environment:
+      SPARK_MASTER_URL: spark://spark-master:7077
+      SPARK_DRIVER_HOST: spark-thrift-server
+      SPARK_THRIFT_BIND_HOST: 0.0.0.0
+      SPARK_THRIFT_PORT: "10000"
+      SPARK_WAREHOUSE_DIR: /spark-warehouse
+      SPARK_METASTORE_DB: /spark-warehouse/metastore_db
+      SPARK_SQL_ANSI_ENABLED: "${SPARK_SQL_ANSI_ENABLED:-true}"
+    ports:
+      - "10000:10000"
+      - "4040:4040"
+    volumes:
+      - spark-warehouse:/spark-warehouse
+      - ./benchmarks/benchbase-spark/results:/benchbase/results
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/10000'"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+
+  benchbase-spark:
+    build:
+      context: ./benchmarks/benchbase-spark
+      args:
+        BENCHBASE_IMAGE: "${BENCHBASE_IMAGE:-benchbase.azurecr.io/benchbase:latest}"
+    profiles: ["benchbase"]
+    environment:
+      BENCHBASE_PROFILE: postgres
+      BENCHBASE_QUERY_TIMEOUT_SECONDS: "${BENCHBASE_QUERY_TIMEOUT_SECONDS:-0}"
+    depends_on:
+      spark-thrift-server:
+        condition: service_healthy
+    volumes:
+      - ./benchmarks/benchbase-spark/config:/benchbase/config/custom:ro
+      - ./benchmarks/benchbase-spark/results:/benchbase/results
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    profiles: ["observability"]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-15d}
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.5.2
+    profiles: ["observability"]
+    depends_on:
+      - prometheus
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_AUTH_BASIC_ENABLED: "${GRAFANA_BASIC_AUTH_ENABLED:-false}"
+      GF_AUTH_DISABLE_LOGIN_FORM: "${GRAFANA_DISABLE_LOGIN_FORM:-true}"
+      GF_USERS_DEFAULT_THEME: dark
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    restart: unless-stopped
+
+  node-exporter:
+    image: quay.io/prometheus/node-exporter:v1.8.2
+    profiles: ["observability"]
+    command:
+      - --path.rootfs=/host
+      - --collector.processes
+    pid: host
+    volumes:
+      - /:/host:ro,rslave
+    restart: unless-stopped
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.2
+    profiles: ["observability"]
+    privileged: true
+    devices:
+      - /dev/kmsg:/dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
+    restart: unless-stopped
+
+volumes:
+  hdfs-namenode-data:
+  hdfs-datanode-1-data:
+  hdfs-datanode-2-data:
+  hdfs-datanode-3-data:
+  hdfs-datanode-4-data:
+  hdfs-datanode-5-data:
+  hdfs-datanode-6-data:
+  hdfs-datanode-7-data:
+  hdfs-datanode-8-data:
+  hdfs-datanode-9-data:
+  hdfs-datanode-10-data:
+  server-node-1-staging:
+  server-node-2-staging:
+  server-node-3-staging:
+  server-node-4-staging:
+  server-node-5-staging:
+  server-node-6-staging:
+  server-node-7-staging:
+  server-node-8-staging:
+  server-node-9-staging:
+  server-node-10-staging:
+  spark-warehouse:
+  prometheus-data:
+  grafana-data:
