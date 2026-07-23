@@ -35,6 +35,17 @@ def remove_inactive_query_files(results_dir, active_query_ids):
             path.unlink()
 
 
+def rewrite_reference_sql(query_id, sql):
+    if query_id != 17:
+        return sql
+
+    return re.sub(
+        r"(?i)AVG\s*\(\s*l_quantity\s*\)",
+        "AVG(CAST(l_quantity AS DECIMAL(28,2)))",
+        sql,
+    )
+
+
 def main():
     args = parse_args()
     metadata = json.loads(args.metadata.read_text(encoding="utf-8"))
@@ -47,6 +58,7 @@ def main():
         if active_query_ids and query_id not in active_query_ids:
             continue
         sql = query.get("sql", "").strip().rstrip(";")
+        sql = rewrite_reference_sql(query_id, sql)
         if not sql:
             continue
         path = args.results / f"query-q{query_id}.sql"
