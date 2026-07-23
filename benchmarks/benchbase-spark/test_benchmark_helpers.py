@@ -29,5 +29,23 @@ class AllQuerySelectorTest(unittest.TestCase):
         self.assertEqual(list(range(1, 23)), GENERATE_DATA.parse_query_ids("ALL"))
 
 
+class SparkReferenceSqlTest(unittest.TestCase):
+    def test_q17_uses_double_average_for_spark(self):
+        self.assertEqual(
+            "SELECT 0.2 * AVG(CAST(l_quantity AS DOUBLE)) FROM lineitem",
+            GENERATE_DATA.spark_compatible_reference_sql(
+                17, "SELECT 0.2 * AVG(l_quantity) FROM lineitem"
+            ),
+        )
+
+    def test_other_queries_are_unchanged(self):
+        self.assertEqual(
+            "SELECT AVG(l_quantity) FROM lineitem",
+            GENERATE_DATA.spark_compatible_reference_sql(
+                1, "SELECT AVG(l_quantity) FROM lineitem"
+            ),
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

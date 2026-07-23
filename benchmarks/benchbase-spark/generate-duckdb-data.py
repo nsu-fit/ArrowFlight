@@ -1,5 +1,6 @@
 import os
 import json
+import re
 import shutil
 from pathlib import Path
 
@@ -82,6 +83,17 @@ def parse_query_ids(value, max_id=22):
             if 1 <= query_id <= max_id and query_id not in query_ids:
                 query_ids.append(query_id)
     return query_ids
+
+
+def spark_compatible_reference_sql(query_id, sql):
+    if query_id != 17:
+        return sql
+    return re.sub(
+        r"0\.2\s*\*\s*avg\s*\(\s*l_quantity\s*\)",
+        "0.2 * AVG(CAST(l_quantity AS DOUBLE))",
+        sql,
+        flags=re.IGNORECASE,
+    )
 
 
 def json_safe(value):
@@ -168,7 +180,9 @@ def tpch_reference_queries(connection, query_ids):
             {
                 "query_id": query_id,
                 "name": f"Q{query_id}",
-                "sql": queries.get(query_id, ""),
+                "sql": spark_compatible_reference_sql(
+                    query_id, queries.get(query_id, "")
+                ),
                 "columns": columns,
                 "expected_rows": rows,
                 "expected_row_count": len(rows),
