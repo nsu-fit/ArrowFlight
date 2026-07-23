@@ -22,10 +22,9 @@ Date: 2026-07-10
 
 ## Context
 
-The project serves Flight SQL queries over Parquet files using three execution
-paths: DuckDB (filtered scans, aggregations), Acero (full scans, column
-projections), and a Java Parquet-footer fast path (metadata-only aggregates).
-Performance and correctness must be verified across all three.
+The project serves Flight SQL queries over Parquet files using DuckDB for data
+reads and a Java Parquet-footer fast path for metadata-only aggregates.
+Performance and correctness must be verified across both paths.
 
 A benchmark suite is needed for:
 
@@ -37,8 +36,7 @@ A benchmark suite is needed for:
 TPC-H and TPC-DS are widely recognised for this purpose. BenchBase provides a
 unified driver that loads the schemas, generates data at the desired scale
 factor, executes queries, and collects metrics. It also supports running
-against JDBC-accessible engines — DuckDB qualifies — and can be extended for
-Arrow-native engines like Acero.
+against JDBC-accessible engines such as DuckDB.
 
 ## Decision
 
@@ -53,8 +51,7 @@ Arrow-native engines like Acero.
 - Store BenchBase configuration alongside the project, enabling repeatable
   runs with consistent parameters (scale factor, number of streams, iteration
   count, warm-up rounds).
-- Validate DuckDB results against TPC-H/TPC-DS reference outputs. For Acero,
-  validate against known DuckDB outputs for the same query.
+- Validate DuckDB results against TPC-H/TPC-DS reference outputs.
 - Add BenchBase-driven benchmarks to the CI pipeline so regressions are
   detected automatically on each commit.
 
@@ -96,11 +93,9 @@ executes the queries via the project's own query path.
 Use BenchBase as the off-the-shelf benchmark runner for both TPC suites.
 
 - **Pros**: Proven tool with built-in workload generation, parameter binding,
-  and metric collection. DuckDB JDBC support is direct. Extensible for Acero
-  via a custom engine adapter if needed. Active community.
+  and metric collection. DuckDB JDBC support is direct. Active community.
 - **Cons**: BenchBase is a Java project — adds a dependency and may need
-  configuration to match the project's specific deployment. Acero support
-  requires a custom adapter (not a JDBC engine).
+  configuration to match the project's specific deployment.
 
 ## Consequences
 
@@ -117,9 +112,6 @@ Use BenchBase as the off-the-shelf benchmark runner for both TPC suites.
   query plans, which may slow down initial setup and iterate cycles.
 - **Negative**: BenchBase adds a Java dependency to the benchmark toolchain.
   Version updates must be tracked.
-- **Negative**: Acero is not a JDBC engine — a custom BenchBase adapter is
-  needed to benchmark it through the same framework. Until the adapter is
-  written, Acero benchmarks must rely on separate JMH tests or manual runs.
 - **Future**: If BenchBase's adapter model proves limiting, the project
   could migrate to a custom harness while keeping the TPC-H/TPC-DS query
   sets — the investment in query parameter bindings and data generation is

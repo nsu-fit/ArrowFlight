@@ -9,6 +9,19 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class ParquetQueryParserTest {
 
+    /** Verifies repeated SQL reuses an immutable parsed representation. */
+    @Test
+    void repeatedSqlUsesCachedImmutableParse() {
+        String sql = "SELECT cache_probe FROM s.cache_table WHERE cache_probe > 42";
+
+        ParquetQueryParser first = ParquetQueryParser.parse(sql);
+        ParquetQueryParser second = ParquetQueryParser.parse(sql);
+
+        assertSame(first, second);
+        assertThrows(UnsupportedOperationException.class,
+                () -> first.columns.add("unexpected"));
+    }
+
     @Test
     void selectStarReturnsEmptyColumns() {
         ParquetQueryParser p = ParquetQueryParser.parse("SELECT * FROM my_schema.my_table");

@@ -1,7 +1,8 @@
 FROM python:3.11-slim
 
-RUN pip install --no-cache-dir duckdb
+ARG DUCKDB_PYTHON_VERSION=1.4.1
 
-COPY generate-duckdb-data.py /generate-duckdb-data.py
+RUN pip install --no-cache-dir --retries 10 --timeout 60 \
+    "duckdb==${DUCKDB_PYTHON_VERSION}"
 
 ENTRYPOINT ["python", "/generate-duckdb-data.py"]

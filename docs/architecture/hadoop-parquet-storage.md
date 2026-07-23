@@ -4,7 +4,7 @@ This document describes how the project works with files through Hadoop FileSyst
 
 ## Storage Model
 
-Data is not stored inside the Arrow Flight server. Flight nodes act as the compute layer: they receive assigned Parquet file paths and read those files through Hadoop FileSystem.
+Data is not stored inside the Arrow Flight server. Flight nodes act as the compute layer: they receive assigned Parquet file paths and DuckDB reads those files through its configured filesystem support.
 
 The data root is configured by the `dataDirectory` parameter. Tables are expected under a `schema/table` hierarchy. For each table, the server recursively searches for Parquet files.
 
@@ -12,9 +12,9 @@ The data root is configured by the `dataDirectory` parameter. Tables are expecte
 
 ## Hadoop FileSystem
 
-Hadoop FileSystem is used as a common abstraction for data access. This allows the server to read from HDFS, a local filesystem, or another Hadoop-compatible storage backend, as long as it is available through the Hadoop API.
+Hadoop FileSystem is used for discovery, metadata access, and locality information. DuckDB performs data-page reads and opens `hdfs://` URIs through the configured HDFS extension.
 
-A Flight node does not need to have a Parquet file on its local disk. If the file is stored in a distributed filesystem, the node opens it through Hadoop FileSystem and reads it over the network.
+A Flight node does not need a local Parquet copy. DuckDB reads the assigned Parquet files and exports query results as Arrow batches without materializing the complete file in `/tmp`.
 
 When the server starts, it creates a `FileSystem` instance associated with `dataDirectory`. All file operations then go through that object: listing files, reading metadata, resolving absolute paths, and opening files.
 
@@ -50,19 +50,15 @@ The current implementation distributes work at the whole-file level. Row groups 
 
 ## Projection
 
-Projection means selecting only the columns required by a query. For a regular `SELECT`, the query parser extracts the selected columns and passes them to the Arrow Dataset scanner.
+Projection means selecting only the columns required by a query. For a regular `SELECT`, the query parser extracts the selected columns and includes them in the DuckDB query.
 
-If a query requires only a subset of columns, Acero can read only those columns. This reduces disk I/O and the amount of data that must be converted to Arrow.
+If a query requires only a subset of columns, DuckDB can read only those columns from Parquet. This reduces disk I/O and the amount of data exported to Arrow.
 
-If no projection is specified, the scanner reads all table columns.
+If no projection is specified, DuckDB reads all table columns.
 
 ## Filter Pushdown
 
-If a query contains a filter, the project routes it to DuckDB instead of Acero. DuckDB reads the assigned Parquet files through `read_parquet([...])` and applies SQL predicates in the DuckDB Parquet reader.
-
-For HDFS paths, DuckDB needs the DuckDB HDFS extension to be loaded. The extension path and HDFS options are configured through `arrowflight.properties`, JVM system properties, or environment variables.
-
-This routing is intentional: Acero is used for filter-less full scans and projections, while DuckDB is used for filtered scans because its Parquet reader can use predicate pushdown and row-group pruning.
+Spark V2 predicates and SQL filters are translated into the SQL sent to DuckDB. DuckDB applies supported Parquet predicate and projection pushdown while reading assigned files. HDFS paths require the configured DuckDB HDFS extension.
 
 ## Footer Fast Path
 
@@ -72,13 +68,13 @@ For total row counts, the project can use row count information from the Parquet
 
 If the required statistics are available and the query does not require filtering or grouping, the server reads only metadata. If the statistics are not sufficient, execution falls back to the regular aggregation path.
 
-The current regular aggregation fallback is DuckDB. Acero is not used for grouped or filtered aggregation execution.
+The regular aggregation path is executed by DuckDB and partial results from Flight nodes are merged by the client when required.
 
 ## File Distribution Across Flight Nodes
 
-File distribution starts in `FlightSqlProducer.determineEndpoints`, which delegates to `QueryPlanner.determineEndpoints`. For each Parquet file, the server chooses the Flight server that will read it.
+File distribution is performed in `FlightSqlProducer.determineEndpoints`. For each Parquet file, the server chooses the Flight server that will read it.
 
-Server selection is handled by `QueryPlanner.pickServer`.
+Server selection is handled by `pickServer`.
 
 Selection logic:
 
@@ -90,4 +86,3 @@ After a server is selected, the file is added to the list of files assigned to t
 ## Current Distribution Limitations
 
 The greedy load-aware strategy distributes data volume (file size). However, it operates at the whole-file level and does not split files across nodes. Extremely large single files still pin all their data to one node.
-

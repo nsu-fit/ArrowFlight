@@ -340,13 +340,13 @@ class SchemaConverterTest {
     // Reproduces: SELECT count(*) FROM t1, t2 WHERE t1.id = t2.tinyint_col
     // Root cause: a Parquet file written by an old writer encodes tinyint_col
     // as INT32 + OriginalType.INT_8.  Before the fix, convertPrimitive() ignored
-    // OriginalType and returned ArrowType.Int(32) → Spark IntegerType.  Acero,
-    // however, honours INT_8 and returns TinyIntVector → Byte.  Spark's
+    // OriginalType and returned ArrowType.Int(32) → Spark IntegerType, while the
+    // stream returns TinyIntVector → Byte. Spark's
     // whole-stage codegen called getInt() on a Byte value → ClassCastException.
-    // After the fix the schema must agree with Acero: tinyint_col → Int(8, true).
+    // After the fix the schema must preserve tinyint_col → Int(8, true).
 
     @Test
-    void joinOnTinyintColSchemaAgreesWithAcero() {
+    void joinOnTinyintColSchemaPreservesWidth() {
         MessageType parquetSchema = new MessageType("flight_table",
                 Types.required(PrimitiveType.PrimitiveTypeName.INT32).named("id"),
                 Types.optional(PrimitiveType.PrimitiveTypeName.INT32)
@@ -363,7 +363,7 @@ class SchemaConverterTest {
 
         // tinyint_col carries OriginalType.INT_8 — must be Int(8), not Int(32),
         // so that Spark's codegen calls getByte() rather than getInt() on the
-        // TinyIntVector that Acero returns.
+        // TinyIntVector returned by the server stream.
         assertEquals(new ArrowType.Int(8, true), tinyint.getType(),
                 "INT32+INT_8 must map to Arrow INT8 (ByteType), not INT32 (IntegerType)");
         assertNotEquals(new ArrowType.Int(32, true), tinyint.getType(),

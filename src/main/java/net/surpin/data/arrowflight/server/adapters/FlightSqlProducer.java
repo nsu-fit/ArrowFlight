@@ -9,6 +9,7 @@ import org.apache.arrow.flight.FlightDescriptor;
 import org.apache.arrow.flight.FlightEndpoint;
 import org.apache.arrow.flight.FlightInfo;
 import org.apache.arrow.flight.FlightProducer;
+import org.apache.arrow.flight.FlightRuntimeException;
 import org.apache.arrow.flight.Location;
 import org.apache.arrow.flight.SchemaResult;
 import org.apache.arrow.flight.Ticket;
@@ -27,6 +28,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 import net.surpin.data.arrowflight.server.model.HandleState;
 import net.surpin.data.arrowflight.server.metrics.MetricsService;
@@ -119,8 +121,9 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
         String serverUri = state.serverUri() != null ? state.serverUri() : "local";
         long bytes = state.bytes();
         long tExec = LogUtil.mark();
+        long executionStartNanos = System.nanoTime();
         LogUtil.setQid(qid);
-        LOGGER.info("qid={} node={} thread={} execution=start server={} files={} bytes={} endpoint={} query='{}'",
+        LOGGER.debug("qid={} node={} thread={} execution=start server={} files={} bytes={} endpoint={} query='{}'",
                 qid, LogUtil.node(), Thread.currentThread().getName(),
                 serverUri, filePaths.length, bytes, qid, query);
 
@@ -131,22 +134,28 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
             executionService.readParquet(allocator, query, filePaths, listener, true);
             listener.completed();
             LogUtil.logTiming(tExec, "execution.total", "files=" + filePaths.length);
-            long elapsed = System.currentTimeMillis() - tExec;
-            LOGGER.info("qid={} node={} thread={} execution=completed server={} elapsedMs={} files={} result=completed query='{}'",
+            long elapsed = TimeUnit.NANOSECONDS.toMillis(
+                    System.nanoTime() - executionStartNanos);
+            LOGGER.debug("qid={} node={} thread={} execution=completed server={} elapsedMs={} files={} result=completed query='{}'",
                     qid, LogUtil.node(), Thread.currentThread().getName(),
                     serverUri, elapsed, filePaths.length, query);
         } catch (Exception e) {
             observation.markFailed();
             LogUtil.logTiming(tExec, "execution.failed", "files=" + filePaths.length);
-            long elapsed = System.currentTimeMillis() - tExec;
+            long elapsed = TimeUnit.NANOSECONDS.toMillis(
+                    System.nanoTime() - executionStartNanos);
             String failure = failureDescription(e);
             LOGGER.error("qid={} node={} thread={} execution=failed server={} elapsedMs={} files={} result=failed error='{}'",
                     qid, LogUtil.node(), Thread.currentThread().getName(),
                     serverUri, elapsed, filePaths.length, failure, e);
-            listener.error(CallStatus.INTERNAL
-                    .withDescription(failure)
-                    .withCause(e)
-                    .toRuntimeException());
+            if (e instanceof FlightRuntimeException flightException) {
+                listener.error(flightException);
+            } else {
+                listener.error(CallStatus.INTERNAL
+                        .withDescription(failure)
+                        .withCause(e)
+                        .toRuntimeException());
+            }
         } finally {
             observation.close();
             MDC.remove("qid");
@@ -229,7 +238,7 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
     public SchemaResult getSchemaStatement(FlightSql.CommandStatementQuery command,
             FlightProducer.CallContext context, FlightDescriptor descriptor) {
         String query = command.getQuery();
-        LOGGER.info("getSchemaStatement: {}", query);
+        LOGGER.debug("getSchemaStatement: {}", query);
 
         Schema arrowSchema;
         try {

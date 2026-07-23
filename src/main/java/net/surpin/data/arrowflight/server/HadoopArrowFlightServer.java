@@ -53,15 +53,18 @@ public class HadoopArrowFlightServer {
                 System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", v.trim());
                 return;
             }
-            v = props.getProperty(key);
-            if (v != null && !v.isBlank()) {
-                System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", v.trim());
-                return;
-            }
         }
         String env = System.getenv("LOGGING_LEVEL");
         if (env != null && !env.isBlank()) {
             System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", env.trim());
+            return;
+        }
+        for (String key : new String[]{"logLevel", "arrowflight.log.level"}) {
+            String v = props.getProperty(key);
+            if (v != null && !v.isBlank()) {
+                System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", v.trim());
+                return;
+            }
         }
     }
 
@@ -126,12 +129,17 @@ public class HadoopArrowFlightServer {
         }
 
         try {
+            // Increase HTTP/2 initial flow control window from default 64KB to 1MB.
+            // Allows server to send larger Arrow batches without waiting for WINDOW_UPDATE.
+            System.setProperty("grpc.netty.server.flowControlWindow", "1048576");
+
             Location location = Location.forGrpcInsecure(localhost, port);
             server = FlightServer.builder(
                     component.allocator(),
                     location,
                     component.producer())
                     .maxInboundMessageSize(config.grpcMaxInboundMessageSize())
+                    .backpressureThreshold(config.flightBackpressureThresholdBytes())
                     .build();
             server.start();
 

@@ -39,7 +39,7 @@ public class FlightPartitionReaderFactory implements PartitionReaderFactory {
      */
     @Override
     public PartitionReader<InternalRow> createReader(InputPartition inputPartition) {
-        LOGGER.info("{}.createReader()", this.getClass().getName());
+        LOGGER.debug("{}.createReader()", this.getClass().getName());
         return new FlightPartitionReader(this.configuration, inputPartition);
     }
 
@@ -61,7 +61,7 @@ public class FlightPartitionReaderFactory implements PartitionReaderFactory {
 
     @Override
     public PartitionReader<ColumnarBatch> createColumnarReader(InputPartition inputPartition) {
-        LOGGER.info("{}.createColumnarReader()", this.getClass().getName());
+        LOGGER.debug("{}.createColumnarReader()", this.getClass().getName());
         return new FlightColumnarPartitionReader(this.configuration, inputPartition);
     }
 

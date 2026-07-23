@@ -3,9 +3,9 @@ package net.surpin.data.arrowflight.server.adapters;
 import net.surpin.data.arrowflight.server.model.AppConfig;
 import net.surpin.data.arrowflight.server.services.ParquetQueryParser;
 import org.apache.arrow.flight.FlightProducer;
+import org.apache.arrow.flight.FlightRuntimeException;
+import org.apache.arrow.flight.FlightStatusCode;
 import org.apache.arrow.memory.RootAllocator;
-import org.apache.arrow.vector.IntVector;
-import org.apache.arrow.vector.VarCharVector;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -36,37 +36,6 @@ import static org.mockito.Mockito.when;
 /** Tests DuckDB SQL helpers, connection setup, and Flight backpressure handling. */
 @Tag("unit")
 class DuckDbAdapterTest {
-
-    /** Verifies Flight batches own their buffers after DuckDB reuses its root. */
-    @Test
-    void copyRowsCreatesIndependentBatch() {
-        try (RootAllocator allocator = new RootAllocator();
-                IntVector sourceId = new IntVector("id", allocator);
-                VarCharVector sourceName = new VarCharVector("name", allocator);
-                VectorSchemaRoot source = VectorSchemaRoot.of(sourceId, sourceName);
-                VectorSchemaRoot target = VectorSchemaRoot.create(source.getSchema(), allocator)) {
-            sourceId.allocateNew(3);
-            sourceName.allocateNew();
-            sourceId.setSafe(0, 10);
-            sourceId.setSafe(1, 20);
-            sourceId.setSafe(2, 30);
-            sourceName.setSafe(0, "zero".getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            sourceName.setSafe(1, "one".getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            sourceName.setSafe(2, "two".getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            sourceId.setValueCount(3);
-            sourceName.setValueCount(3);
-            source.setRowCount(3);
-
-            DuckDbAdapter.copyRows(source, target, 1, 2);
-            source.clear();
-
-            assertEquals(2, target.getRowCount());
-            assertEquals(20, ((IntVector) target.getVector("id")).get(0));
-            assertEquals(30, ((IntVector) target.getVector("id")).get(1));
-            assertEquals("one", target.getVector("name").getObject(0).toString());
-            assertEquals("two", target.getVector("name").getObject(1).toString());
-        }
-    }
 
     @Test
     void sqlStringLiteralNormal() {
@@ -125,8 +94,36 @@ class DuckDbAdapterTest {
         }).when(listener).setOnReadyHandler(any(Runnable.class));
 
         assertTimeoutPreemptively(Duration.ofSeconds(1),
-                () -> assertTrue(DuckDbAdapter.awaitListenerReady(listener, 200)));
+                () -> assertDoesNotThrow(
+                        () -> DuckDbAdapter.awaitListenerReady(listener, 200)));
         verify(listener).setOnReadyHandler(any(Runnable.class));
+    }
+
+    /** Verifies polling observes readiness when Arrow never invokes its callback. */
+    @Test
+    void listenerReadinessWithoutCallbackIsPolled() throws Exception {
+        FlightProducer.ServerStreamListener listener =
+                mock(FlightProducer.ServerStreamListener.class);
+        AtomicBoolean ready = new AtomicBoolean();
+        CountDownLatch handlerRegistered = new CountDownLatch(1);
+        when(listener.isReady()).thenAnswer(invocation -> ready.get());
+        doAnswer(invocation -> {
+            handlerRegistered.countDown();
+            return null;
+        }).when(listener).setOnReadyHandler(any(Runnable.class));
+
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+            Future<Void> result = executor.submit(() -> {
+                DuckDbAdapter.awaitListenerReady(listener, 500);
+                return null;
+            });
+            assertTrue(handlerRegistered.await(1, TimeUnit.SECONDS));
+            ready.set(true);
+            assertNull(result.get(1, TimeUnit.SECONDS));
+        } finally {
+            executor.shutdownNow();
+        }
     }
 
     /** Verifies a readiness signal received before waiting remains observable. */
@@ -145,7 +142,8 @@ class DuckDbAdapterTest {
         }).when(listener).setOnReadyHandler(any(Runnable.class));
 
         assertTimeoutPreemptively(Duration.ofSeconds(1), () ->
-                assertTrue(DuckDbAdapter.awaitListenerReady(listener, 200)));
+                assertDoesNotThrow(
+                        () -> DuckDbAdapter.awaitListenerReady(listener, 200)));
     }
 
     /** Verifies a spurious wake-up cannot release a non-ready listener. */
@@ -165,8 +163,10 @@ class DuckDbAdapterTest {
 
         ExecutorService executor = Executors.newSingleThreadExecutor();
         try {
-            Future<Boolean> result = executor.submit(
-                    () -> DuckDbAdapter.awaitListenerReady(listener, 500));
+            Future<Void> result = executor.submit(() -> {
+                DuckDbAdapter.awaitListenerReady(listener, 500);
+                return null;
+            });
             assertTrue(handlerRegistered.await(1, TimeUnit.SECONDS));
             readyHandler.get().run();
             assertThrows(TimeoutException.class,
@@ -174,7 +174,7 @@ class DuckDbAdapterTest {
 
             ready.set(true);
             readyHandler.get().run();
-            assertTrue(result.get(1, TimeUnit.SECONDS));
+            assertNull(result.get(1, TimeUnit.SECONDS));
         } finally {
             executor.shutdownNow();
         }
@@ -197,12 +197,19 @@ class DuckDbAdapterTest {
 
         ExecutorService executor = Executors.newSingleThreadExecutor();
         try {
-            Future<Boolean> result = executor.submit(
-                    () -> DuckDbAdapter.awaitListenerReady(listener, 500));
+            Future<Void> result = executor.submit(() -> {
+                DuckDbAdapter.awaitListenerReady(listener, 500);
+                return null;
+            });
             assertTrue(cancelHandlerRegistered.await(1, TimeUnit.SECONDS));
             cancelled.set(true);
             cancelHandler.get().run();
-            assertFalse(result.get(1, TimeUnit.SECONDS));
+            java.util.concurrent.ExecutionException exception = assertThrows(
+                    java.util.concurrent.ExecutionException.class,
+                    () -> result.get(1, TimeUnit.SECONDS));
+            FlightRuntimeException cause = assertInstanceOf(
+                    FlightRuntimeException.class, exception.getCause());
+            assertEquals(FlightStatusCode.CANCELLED, cause.status().code());
         } finally {
             executor.shutdownNow();
         }
@@ -214,8 +221,10 @@ class DuckDbAdapterTest {
         FlightProducer.ServerStreamListener listener =
                 mock(FlightProducer.ServerStreamListener.class);
 
-        assertTimeoutPreemptively(Duration.ofSeconds(1), () ->
-                assertFalse(DuckDbAdapter.awaitListenerReady(listener, 25)));
+        FlightRuntimeException exception = assertTimeoutPreemptively(
+                Duration.ofSeconds(1), () -> assertThrows(FlightRuntimeException.class,
+                        () -> DuckDbAdapter.awaitListenerReady(listener, 25)));
+        assertEquals(FlightStatusCode.TIMED_OUT, exception.status().code());
     }
 
     /** Verifies non-positive readiness timeouts fail before waiting. */
@@ -235,7 +244,8 @@ class DuckDbAdapterTest {
                 3, 4096, 1, 131072, 1, 1, 1,
                 null, false, null, null,
                 "true", "/var/lib/hadoop-hdfs/socket/dn_socket",
-                false, 1048576, 60000L, "/data/parquet", null, 32010, 5701, 60,
+                false, 1048576, 67108864, 60000L, "/data/parquet", null,
+                32010, 5701, 60,
                 3, 1000, 30000);
 
         try {
@@ -248,26 +258,26 @@ class DuckDbAdapterTest {
         }
     }
 
-    /** Verifies DuckDB results are copied and streamed through the Flight root. */
+    /** Verifies DuckDB results are streamed through the Flight listener. */
     @Test
-    void streamSqlCopiesDuckDbRowsToFlight() throws Exception {
+    void streamSqlDeliversDuckDbRowsToFlight() throws Exception {
         ExecutorService ioPool = Executors.newSingleThreadExecutor();
         AppConfig config = new AppConfig(
                 3, 2, 1, 131072, 1, 1, 1,
                 null, false, null, null,
-                null, null, false, 1048576, 60000L, null, null,
+                null, null, false, 1048576, 67108864, 60000L, null, null,
                 32010, 5701, 60, 3, 1000, 30000);
         FlightProducer.ServerStreamListener listener =
                 mock(FlightProducer.ServerStreamListener.class);
-        AtomicReference<VectorSchemaRoot> flightRoot = new AtomicReference<>();
+        AtomicReference<VectorSchemaRoot> rootRef = new AtomicReference<>();
         AtomicInteger rows = new AtomicInteger();
         doAnswer(invocation -> {
-            flightRoot.set(invocation.getArgument(0));
+            rootRef.set(invocation.getArgument(0));
             return null;
         }).when(listener).start(any(VectorSchemaRoot.class));
         when(listener.isReady()).thenReturn(true);
         doAnswer(invocation -> {
-            rows.addAndGet(flightRoot.get().getRowCount());
+            rows.addAndGet(rootRef.get().getRowCount());
             return null;
         }).when(listener).putNext();
 
@@ -281,6 +291,65 @@ class DuckDbAdapterTest {
 
         assertEquals(5, rows.get());
         verify(listener).start(any(VectorSchemaRoot.class));
+    }
+
+    /** Verifies stream completion is signalled immediately after the final batch. */
+    @Test
+    void streamSqlDoesNotAddPollingDelayAfterFinalBatch() throws Exception {
+        ExecutorService ioPool = Executors.newSingleThreadExecutor();
+        ExecutorService caller = Executors.newSingleThreadExecutor();
+        AppConfig config = new AppConfig(
+                3, 2, 1, 131072, 1, 1, 1,
+                null, false, null, null,
+                null, null, false, 1048576, 67108864, 60000L, null, null,
+                32010, 5701, 60, 3, 1000, 30000);
+        FlightProducer.ServerStreamListener listener =
+                mock(FlightProducer.ServerStreamListener.class);
+        CountDownLatch finalBatchSent = new CountDownLatch(3);
+        when(listener.isReady()).thenReturn(true);
+        doAnswer(invocation -> {
+            finalBatchSent.countDown();
+            return null;
+        }).when(listener).putNext();
+
+        try (RootAllocator allocator = new RootAllocator();
+                DuckDbAdapter adapter = new DuckDbAdapter(config, ioPool)) {
+            Future<Void> result = caller.submit(() -> {
+                adapter.streamSql(allocator,
+                        "SELECT range AS id FROM range(0, 5)", listener, true);
+                return null;
+            });
+            assertTrue(finalBatchSent.await(1, TimeUnit.SECONDS));
+            assertNull(result.get(75, TimeUnit.MILLISECONDS));
+        } finally {
+            caller.shutdownNow();
+            ioPool.shutdownNow();
+        }
+    }
+
+    /** Verifies a stalled Flight consumer aborts the DuckDB producer with timeout status. */
+    @Test
+    void streamSqlPropagatesListenerTimeout() throws Exception {
+        ExecutorService ioPool = Executors.newSingleThreadExecutor();
+        AppConfig config = new AppConfig(
+                3, 2, 1, 131072, 1, 1, 1,
+                null, false, null, null,
+                null, null, false, 1048576, 67108864, 25L, null, null,
+                32010, 5701, 60, 3, 1000, 30000);
+        FlightProducer.ServerStreamListener listener =
+                mock(FlightProducer.ServerStreamListener.class);
+
+        try (RootAllocator allocator = new RootAllocator();
+                DuckDbAdapter adapter = new DuckDbAdapter(config, ioPool)) {
+            FlightRuntimeException exception = assertTimeoutPreemptively(
+                    Duration.ofSeconds(1), () -> assertThrows(FlightRuntimeException.class,
+                            () -> adapter.streamSql(allocator,
+                                    "SELECT range AS id FROM range(0, 5)",
+                                    listener, true)));
+            assertEquals(FlightStatusCode.TIMED_OUT, exception.status().code());
+        } finally {
+            ioPool.shutdownNow();
+        }
     }
 
     // ── buildDuckSql / buildDuckSqlWithFilter ─────────────────────────────
@@ -317,6 +386,19 @@ class DuckDbAdapterTest {
                 "SELECT id FROM s.t WHERE id > 10");
         String sql = DuckDbAdapter.buildDuckSql(pq, "t0");
         assertTrue(sql.contains("WHERE"), "Got: " + sql);
+    }
+
+    /** Verifies the TPC-H Q4 column comparison reaches DuckDB unchanged. */
+    @Test
+    void buildDuckSqlWithQ4ColumnComparison() {
+        ParquetQueryParser pq = ParquetQueryParser.parse(
+                "SELECT l_orderkey FROM tpch.lineitem "
+                        + "WHERE l_commitdate < l_receiptdate");
+
+        String sql = DuckDbAdapter.buildDuckSql(pq, "lineitem_files");
+
+        assertTrue(sql.contains("\"l_commitdate\" < \"l_receiptdate\""),
+                "Got: " + sql);
     }
 
     @Test

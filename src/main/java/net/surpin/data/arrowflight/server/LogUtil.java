@@ -3,6 +3,8 @@ package net.surpin.data.arrowflight.server;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.concurrent.TimeUnit;
+
 /**
  * Utility for formatting log context fields consistently.
  * Every log entry for a query flow includes qid, node, thread, endpoint/ticket,
@@ -171,28 +173,10 @@ public final class LogUtil {
         if (mark < 0) {
             return;
         }
-        long elapsed = System.nanoTime() - mark;
-        TIMING_LOG.debug("timing={} elapsedNs={} elapsed={} node={} qid={}{}",
-                event, elapsed, formatTiming(elapsed), NODE, qid(),
+        long elapsedMicros = TimeUnit.NANOSECONDS.toMicros(System.nanoTime() - mark);
+        TIMING_LOG.debug("qid={} node={} TIMING thread={} durationUs={} tag={}{}",
+                qid(), NODE, Thread.currentThread().getName(), elapsedMicros, event,
                 extra.isEmpty() ? "" : " " + extra);
     }
 
-    /**
-     * Formats nanoseconds as a human-readable duration for timing logs.
-     *
-     * @param nanos elapsed nanoseconds
-     * @return formatted string like "1.23ms" or "1.234s"
-     */
-    private static String formatTiming(long nanos) {
-        if (nanos < 1_000) {
-            return nanos + "ns";
-        }
-        if (nanos < 1_000_000) {
-            return String.format("%.1fµs", nanos / 1000.0);
-        }
-        if (nanos < 1_000_000_000) {
-            return String.format("%.2fms", nanos / 1_000_000.0);
-        }
-        return String.format("%.3fs", nanos / 1_000_000_000.0);
-    }
 }

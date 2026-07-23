@@ -16,24 +16,17 @@ import org.apache.hadoop.fs.Path;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.nio.ByteBuffer;
-import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.function.Function;
 import java.util.concurrent.TimeUnit;
 
 import net.surpin.data.arrowflight.server.LogUtil;
-import net.surpin.data.arrowflight.server.adapters.AceroAdapter;
 import net.surpin.data.arrowflight.server.adapters.ConfigAdapter;
 import net.surpin.data.arrowflight.server.adapters.DuckDbAdapter;
-import net.surpin.data.arrowflight.server.adapters.FilterConverter;
 import net.surpin.data.arrowflight.server.adapters.FlightSqlProducer;
 import net.surpin.data.arrowflight.server.adapters.HazelcastAdapter;
 import net.surpin.data.arrowflight.server.adapters.ParquetAdapter;
-import net.surpin.data.arrowflight.server.services.ParquetQueryParser;
 import net.surpin.data.arrowflight.server.model.AppConfig;
 import net.surpin.data.arrowflight.server.services.ClusterService;
 import net.surpin.data.arrowflight.server.services.ExecutionService;
@@ -239,49 +232,6 @@ public final class ServerModule {
     }
 
     /**
-     * Provide AceroAdapter singleton
-     * @param config application configuration
-     * @return Acero adapter
-     */
-    @Provides
-    @Singleton
-    AceroAdapter acero(AppConfig config) {
-        return new AceroAdapter(config);
-    }
-
-    /**
-     * Provide filter builder singleton
-     * @param parquetAdapter parquet adapter
-     * @return filter builder function
-     */
-    @Provides
-    @Singleton
-    Function<ParquetQueryParser, byte[]> filterBuilder(ParquetAdapter parquetAdapter) {
-        return pq -> {
-            if (pq.filter == null || pq.filter.trim().isEmpty()) {
-                return null;
-            }
-            Map<String, Map<String, String>> ddlCache = parquetAdapter.tableDdlCache();
-            String ddl = ddlCache.getOrDefault(pq.schema, Collections.emptyMap())
-                    .get(pq.table);
-            if (ddl == null) {
-                return null;
-            }
-            String cleanDdl = ddl.replace(pq.schema + ".", "");
-            try {
-                ByteBuffer bb = FilterConverter.toByteBuffer(
-                        pq.filter, Collections.singletonList(cleanDdl));
-                byte[] bytes = new byte[bb.remaining()];
-                bb.get(bytes);
-                return bytes;
-            } catch (Exception e) {
-                LOGGER.warn("Substrait filter conversion failed: {}", e.getMessage());
-                return null;
-            }
-        };
-    }
-
-    /**
      * Provide BufferAllocator singleton
      * @return buffer allocator
      */
@@ -317,20 +267,17 @@ public final class ServerModule {
      * Provide ExecutionService singleton
      * @param parquetAdapter parquet adapter
      * @param duckDbAdapter DuckDB adapter
-     * @param aceroAdapter Acero adapter
      * @param metadataService metadata service
      * @param appConfig application configuration
      * @param ioPool I/O thread pool
-     * @param filterBuilder filter builder function
      * @return execution service
      */
     @Provides
     @Singleton
     ExecutionService execution(ParquetAdapter parquetAdapter, DuckDbAdapter duckDbAdapter,
-            AceroAdapter aceroAdapter, MetadataService metadataService,
-            AppConfig appConfig, ExecutorService ioPool,
-            Function<ParquetQueryParser, byte[]> filterBuilder) {
-        return new ExecutionService(parquetAdapter, duckDbAdapter, aceroAdapter,
-                metadataService, appConfig, ioPool, filterBuilder);
+            MetadataService metadataService,
+            AppConfig appConfig, ExecutorService ioPool) {
+        return new ExecutionService(parquetAdapter, duckDbAdapter,
+                metadataService, appConfig, ioPool);
     }
 }

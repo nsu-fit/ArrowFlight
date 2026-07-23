@@ -19,12 +19,18 @@ EXEC_CONFIG_IN_CONTAINER="/benchbase/config/custom/${BENCHMARK}.xml"
 FLIGHT_SERVER_SERVICES=()
 COMPARE_PARENT_RUN_ID=""
 BENCHBASE_TIME_SECONDS="${BENCHBASE_TIME_SECONDS:-}"
+BENCHBASE_WARMUP_SECONDS="${BENCHBASE_WARMUP_SECONDS:-}"
 BENCHBASE_TERMINALS="${BENCHBASE_TERMINALS:-}"
 BENCHBASE_RATE="${BENCHBASE_RATE:-unlimited}"
 BENCHBASE_DB_SCHEMA="${BENCHBASE_DB_SCHEMA:-}"
+BENCHBASE_COMPARE_ORDER="${BENCHBASE_COMPARE_ORDER:-flight-first}"
 BENCHBASE_UPDATE_PAGES="${BENCHBASE_UPDATE_PAGES:-true}"
 BENCHBASE_CAPTURE_TIMEOUT_SECONDS="${BENCHBASE_CAPTURE_TIMEOUT_SECONDS:-${BENCHBASE_QUERY_TIMEOUT_SECONDS:-0}}"
 BENCHMARK_OBSERVABILITY="${BENCHMARK_OBSERVABILITY:-true}"
+export BENCHMARK_GENERATOR_IMAGE="${BENCHMARK_GENERATOR_IMAGE:-arrowflight-duckdb-benchmark-generator:latest}"
+BENCHMARK_GENERATOR_BUILD_RETRIES="${BENCHMARK_GENERATOR_BUILD_RETRIES:-4}"
+BENCHMARK_REBUILD_GENERATOR="${BENCHMARK_REBUILD_GENERATOR:-false}"
+BENCHBASE_IMAGE_READY=false
 PYTHON_CMD=()
 
 usage() {
@@ -54,9 +60,8 @@ Modes:
   logs     follow compose logs
 
 Queries:
-  q6, q1,q6,q14, 1,6,14
-  TPC-H: q1-q22
-  TPC-DS: q1-q99
+  TPC-H: q1-q22, comma-separated lists, all
+  TPC-DS: q1-q99, comma-separated lists
 EOF
 }
 
@@ -208,6 +213,10 @@ tpch_query_weights() {
     weights+=(0)
   done
 
+  if [[ "${normalized}" == "all" ]]; then
+    normalized="$(seq -s, 1 22)"
+  fi
+
   IFS=',' read -ra tokens <<< "${normalized}"
   for token in "${tokens[@]}"; do
     token="${token#q}"
@@ -288,7 +297,12 @@ prepare_execute_config() {
   EXEC_CONFIG_IN_CONTAINER="/benchbase/config/custom/${BENCHMARK}.xml"
   local db_schema="${BENCHBASE_DB_SCHEMA:-${BENCHMARK}}"
 
-  if [[ -z "${QUERY_SET}" && -z "${BENCHBASE_TIME_SECONDS}" && -z "${BENCHBASE_TERMINALS}" && "${db_schema}" == "${BENCHMARK}" && "${BENCHMARK_SCALE_FACTOR}" == "0.01" ]]; then
+  if [[ ! "${BENCHBASE_WARMUP_SECONDS:-0}" =~ ^[0-9]+$ ]]; then
+    echo "BENCHBASE_WARMUP_SECONDS must be a non-negative integer: ${BENCHBASE_WARMUP_SECONDS}" >&2
+    exit 2
+  fi
+
+  if [[ -z "${QUERY_SET}" && -z "${BENCHBASE_TIME_SECONDS}" && -z "${BENCHBASE_WARMUP_SECONDS}" && -z "${BENCHBASE_TERMINALS}" && "${db_schema}" == "${BENCHMARK}" && "${BENCHMARK_SCALE_FACTOR}" == "0.01" ]]; then
     return
   fi
 
@@ -325,7 +339,7 @@ prepare_execute_config() {
   if [[ -n "${BENCHBASE_TIME_SECONDS}" ]]; then
     sed -i "s#<serial>.*</serial>#      <serial>false</serial>#" "${GENERATED_CONFIG_LOCAL}"
     sed -i "s#<rate>.*</rate>#      <rate>${BENCHBASE_RATE}</rate>#" "${GENERATED_CONFIG_LOCAL}"
-    sed -i "/<serial>false<\/serial>/a\\      <time>${BENCHBASE_TIME_SECONDS}</time>\\n      <warmup>0</warmup>" "${GENERATED_CONFIG_LOCAL}"
+    sed -i "/<serial>false<\/serial>/a\\      <time>${BENCHBASE_TIME_SECONDS}</time>\\n      <warmup>${BENCHBASE_WARMUP_SECONDS:-0}</warmup>" "${GENERATED_CONFIG_LOCAL}"
   fi
 
   EXEC_CONFIG_IN_CONTAINER="/benchbase/config/custom/$(basename "${GENERATED_CONFIG_LOCAL}")"
@@ -360,7 +374,9 @@ wait_service_healthy() {
 }
 
 start_storage_cluster() {
-  compose up --build -d hdfs-namenode spark-master "${FLIGHT_SERVER_SERVICES[@]}"
+  echo "Building shared ArrowFlight image once"
+  compose build hdfs-namenode
+  compose up --no-build -d hdfs-namenode spark-master "${FLIGHT_SERVER_SERVICES[@]}"
   wait_service_healthy hdfs-namenode 180
   start_observability
 }
@@ -374,7 +390,7 @@ start_observability() {
 }
 
 start_thrift() {
-  compose --profile benchbase up --build --force-recreate -d spark-thrift-server
+  compose --profile benchbase up --no-build --force-recreate -d spark-thrift-server
   wait_service_healthy spark-thrift-server 180
 }
 
@@ -424,7 +440,28 @@ wait_hdfs_datanodes() {
 }
 
 generate_parquet_data() {
-  compose --profile benchbase build duckdb-benchmark-generator
+  if [[ "${BENCHMARK_REBUILD_GENERATOR,,}" != "true" ]] \
+      && docker image inspect "${BENCHMARK_GENERATOR_IMAGE}" >/dev/null 2>&1; then
+    echo "Using cached benchmark generator image: ${BENCHMARK_GENERATOR_IMAGE}"
+  else
+    if [[ ! "${BENCHMARK_GENERATOR_BUILD_RETRIES}" =~ ^[1-9][0-9]*$ ]]; then
+      echo "BENCHMARK_GENERATOR_BUILD_RETRIES must be a positive integer." >&2
+      exit 2
+    fi
+
+    local attempt
+    for ((attempt = 1; attempt <= BENCHMARK_GENERATOR_BUILD_RETRIES; attempt++)); do
+      echo "Building benchmark generator image (attempt ${attempt}/${BENCHMARK_GENERATOR_BUILD_RETRIES})"
+      if compose --profile benchbase build duckdb-benchmark-generator; then
+        break
+      fi
+      if (( attempt == BENCHMARK_GENERATOR_BUILD_RETRIES )); then
+        echo "Failed to build ${BENCHMARK_GENERATOR_IMAGE} after ${attempt} attempts." >&2
+        return 1
+      fi
+      sleep $((attempt * 5))
+    done
+  fi
   compose --profile benchbase run --rm duckdb-benchmark-generator
 }
 
@@ -513,6 +550,8 @@ benchbase_progress() {
   local db_schema="$1"
   local interval_seconds="${BENCHBASE_PROGRESS_INTERVAL_SECONDS:-30}"
   local elapsed_seconds=0
+  local warmup_seconds="${BENCHBASE_WARMUP_SECONDS:-0}"
+  local total_seconds=$((warmup_seconds + BENCHBASE_TIME_SECONDS))
 
   if [[ ! "${interval_seconds}" =~ ^[1-9][0-9]*$ ]]; then
     echo "BENCHBASE_PROGRESS_INTERVAL_SECONDS must be a positive integer: ${interval_seconds}" >&2
@@ -521,8 +560,11 @@ benchbase_progress() {
 
   while sleep "${interval_seconds}"; do
     elapsed_seconds=$((elapsed_seconds + interval_seconds))
-    if (( elapsed_seconds < BENCHBASE_TIME_SECONDS )); then
-      echo "[BenchBase] ${db_schema}: ${elapsed_seconds}s elapsed; measurement running, $((BENCHBASE_TIME_SECONDS - elapsed_seconds))s remaining"
+    if (( elapsed_seconds < warmup_seconds )); then
+      echo "[BenchBase] ${db_schema}: ${elapsed_seconds}s elapsed; warmup running, $((warmup_seconds - elapsed_seconds))s remaining"
+    elif (( elapsed_seconds < total_seconds )); then
+      local measured_seconds=$((elapsed_seconds - warmup_seconds))
+      echo "[BenchBase] ${db_schema}: ${elapsed_seconds}s elapsed; measurement running, $((BENCHBASE_TIME_SECONDS - measured_seconds))s remaining"
     else
       echo "[BenchBase] ${db_schema}: measurement window ended; waiting for the current query before phase exit"
     fi
@@ -536,6 +578,10 @@ prune_inactive_query_csv() {
 
   local normalized="${QUERY_SET,,}"
   normalized="${normalized// /}"
+  if [[ "${normalized}" == "all" ]]; then
+    return
+  fi
+
   local -A active_queries=()
   local token
   IFS=',' read -ra tokens <<< "${normalized}"
@@ -639,15 +685,23 @@ build_pages_site() {
   run_python "${SCRIPT_DIR}/build-pages-site.py" --results "${RESULTS_ROOT}" --out "${PAGES_DIR}"
 }
 
+ensure_benchbase_image() {
+  if [[ "${BENCHBASE_IMAGE_READY}" == "true" ]]; then
+    return
+  fi
+  compose --profile benchbase build benchbase-spark
+  BENCHBASE_IMAGE_READY=true
+}
+
 benchbase_execute() {
   prepare_execute_config
   prepare_results_dir
-  compose --profile benchbase build benchbase-spark
+  ensure_benchbase_image
 
   local db_schema="${BENCHBASE_DB_SCHEMA:-${BENCHMARK}}"
   local log_file="${RESULTS_DIR}/last-${BENCHMARK}-${db_schema}.log"
   local progress_pid=""
-  echo "[BenchBase] Starting schema=${db_schema}, measurement=${BENCHBASE_TIME_SECONDS:-serial}s, terminals=${BENCHBASE_TERMINALS:-config default}"
+  echo "[BenchBase] Starting schema=${db_schema}, warmup=${BENCHBASE_WARMUP_SECONDS:-0}s, measurement=${BENCHBASE_TIME_SECONDS:-serial}s, terminals=${BENCHBASE_TERMINALS:-config default}"
   if [[ -n "${BENCHBASE_TIME_SECONDS}" ]]; then
     benchbase_progress "${db_schema}" &
     progress_pid="$!"
@@ -702,16 +756,28 @@ prepare_compare_stack() {
 
 compare_execute() {
   local parent_run_id="${COMPARE_PARENT_RUN_ID}"
+  local first_path
+  local second_path
 
-  echo "[BenchBase] Compare runs Flight and Direct sequentially; configured measurement time applies to each phase."
+  case "${BENCHBASE_COMPARE_ORDER}" in
+    flight-first)
+      first_path="flight"
+      second_path="direct"
+      ;;
+    direct-first)
+      first_path="direct"
+      second_path="flight"
+      ;;
+  esac
 
-  BENCHBASE_DB_SCHEMA="${BENCHMARK}_flight"
-  RESULTS_RUN_ID="${parent_run_id}/flight"
-  benchbase_execute
+  if [[ -n "${BENCHBASE_TIME_SECONDS}" ]]; then
+    echo "[BenchBase] Compare order=${BENCHBASE_COMPARE_ORDER}; configured measurement time applies to each phase."
+  else
+    echo "[BenchBase] Compare order=${BENCHBASE_COMPARE_ORDER}; selected queries run once per phase in serial mode."
+  fi
 
-  BENCHBASE_DB_SCHEMA="${BENCHMARK}_direct"
-  RESULTS_RUN_ID="${parent_run_id}/direct"
-  benchbase_execute
+  run_compare_path "${parent_run_id}" "${first_path}"
+  run_compare_path "${parent_run_id}" "${second_path}"
 
   RESULTS_RUN_ID="${parent_run_id}"
   RESULTS_DIR="${RESULTS_ROOT}/${RESULTS_RUN_ID}"
@@ -719,6 +785,15 @@ compare_execute() {
   build_compare_html_report
 
   echo "Compare results written under ${RESULTS_ROOT}/${parent_run_id}"
+}
+
+run_compare_path() {
+  local parent_run_id="$1"
+  local path="$2"
+
+  BENCHBASE_DB_SCHEMA="${BENCHMARK}_${path}"
+  RESULTS_RUN_ID="${parent_run_id}/${path}"
+  benchbase_execute
 }
 
 init_compare_run() {
@@ -770,8 +845,22 @@ if [[ "${MODE}" == "graph" || "${MODE}" == "compare" ]]; then
   elif [[ "${BENCHMARK}" == "tpcds" ]]; then
     QUERY_SET="${QUERY_SET:-q4}"
   fi
-  BENCHBASE_TIME_SECONDS="${BENCHBASE_TIME_SECONDS:-60}"
+  if [[ "${QUERY_SET,,}" == "all" && -z "${BENCHBASE_TIME_SECONDS}" ]]; then
+    BENCHBASE_WARMUP_SECONDS="${BENCHBASE_WARMUP_SECONDS:-0}"
+  else
+    BENCHBASE_TIME_SECONDS="${BENCHBASE_TIME_SECONDS:-60}"
+    BENCHBASE_WARMUP_SECONDS="${BENCHBASE_WARMUP_SECONDS:-30}"
+  fi
   BENCHBASE_TERMINALS="${BENCHBASE_TERMINALS:-1}"
+fi
+
+if [[ "${MODE}" == "compare" ]]; then
+  BENCHBASE_COMPARE_ORDER="${BENCHBASE_COMPARE_ORDER,,}"
+  if [[ "${BENCHBASE_COMPARE_ORDER}" != "flight-first"
+      && "${BENCHBASE_COMPARE_ORDER}" != "direct-first" ]]; then
+    echo "BENCHBASE_COMPARE_ORDER must be flight-first or direct-first: ${BENCHBASE_COMPARE_ORDER}" >&2
+    exit 2
+  fi
 fi
 
 configure_cluster

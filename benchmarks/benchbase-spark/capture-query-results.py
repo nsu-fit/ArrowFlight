@@ -14,6 +14,9 @@ def parse_args():
 
 
 def parse_query_ids(value):
+    if value.strip().lower() == "all":
+        return set(range(1, 23))
+
     query_ids = set()
     for token in value.lower().replace(" ", "").split(","):
         token = token.removeprefix("q")

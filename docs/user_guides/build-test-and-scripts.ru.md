@@ -26,14 +26,14 @@ git --version
 
 ```bash
 git fetch origin
-git switch feature/adr-0001-hybrid-query-engine
+git switch feature/goto-duckdb
 git pull --ff-only
 ```
 
 Если локальной ветки еще  нет:
 
 ```bash
-git switch --track origin/feature/adr-0001-hybrid-query-engine
+git switch --track origin/feature/goto-duckdb
 ```
 
 Проверить текущую ветку:
@@ -126,7 +126,7 @@ src/main/resources/arrowflight.properties
 
 Ключевые параметры:
 
-- `batchSize` - общий Arrow batch size для Acero и DuckDB export, задаёт максимальный размер Flight batch.
+- `batchSize` - размер Arrow batch для DuckDB export и Flight streaming.
 - `ioParallelism` - явное число worker threads. Если пустой, считается по формуле.
 - `ioParallelismMinThreads` - нижняя граница thread pool.
 - `ioParallelismMaxCores` - максимум CPU cores для расчета; `0` значит без ограничения.
@@ -135,6 +135,7 @@ src/main/resources/arrowflight.properties
 - `duckDbGroups` - сколько групп использовать для старых grouped helper paths.
 - `duckDbThreads` - `SET threads` для DuckDB connection.
 - `grpcMaxInboundMessageSize` - max inbound gRPC message size.
+- `flightBackpressureThresholdBytes` - максимум сериализованных outbound bytes в очереди до включения Flight backpressure.
 - `flightListenerReadyTimeoutMs` - timeout ожидания готовности Flight listener.
 
 Формула `ioParallelism`, если он не задан явно:
@@ -150,27 +151,9 @@ mvn test -Darrowflight.io.parallelism=64
 mvn test -Darrowflight.duckdb.threads=2
 ```
 
-## DuckDB HDFS extension
+## HDFS runtime
 
-Для локальных Parquet-файлов DuckDB HDFS extension не нужен.
-
-Для `hdfs://...` путей DuckDB должен загрузить HDFS extension. Можно задать через config:
-
-```properties
-duckDbHdfsExtension=/path/to/hadoopfs.duckdb_extension
-duckDbAllowUnsignedExtensions=true
-duckDbHdfsDefaultNamenode=hdfs://namenode:8020
-```
-
-Или через environment variables:
-
-```bash
-export DUCKDB_HDFS_EXTENSION=/path/to/hadoopfs.duckdb_extension
-export DUCKDB_ALLOW_UNSIGNED_EXTENSIONS=true
-export HDFS_DEFAULT_NAMENODE=hdfs://namenode:8020
-```
-
-Docker-образ проекта сам скачивает подходящий release `duckdb-hdfs`, проверяет его SHA-256 и выставляет эти переменные окружения.
+HDFS Parquet-файлы открывает DuckDB через настроенный HDFS extension. В Linux runtime должны быть доступны `libhdfs`, Hadoop configuration и Java classpath Hadoop. Docker image и entrypoint проекта задают для этого `LD_LIBRARY_PATH`, `HADOOP_CONF_DIR` и `CLASSPATH`.
 
 ## run.sh
 
@@ -194,9 +177,9 @@ Docker-образ проекта сам скачивает подходящий 
 ```bash
 chmod +x run.sh
 
-./run.sh -b feature/adr-0001-hybrid-query-engine -t all
-./run.sh -b feature/adr-0001-hybrid-query-engine -t ArrowFlightPerfTest
-./run.sh -b feature/adr-0001-hybrid-query-engine -t perf -r 500000 -n 5
+./run.sh -b feature/goto-duckdb -t all
+./run.sh -b feature/goto-duckdb -t ArrowFlightPerfTest
+./run.sh -b feature/goto-duckdb -t perf -r 500000 -n 5
 ./run.sh -b main -t all --force-reset
 ```
 

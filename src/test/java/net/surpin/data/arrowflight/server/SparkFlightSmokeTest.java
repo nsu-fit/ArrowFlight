@@ -131,10 +131,29 @@ class SparkFlightSmokeTest {
         assertEquals(101L, minId, "smallest surviving id must be 101, confirming the filter really ran server-side/pruned rows");
     }
 
-    // ── 4. aggregation pushdown ───────────────────────────────────────────
-
+    /** Verifies Spark routes column comparisons through the V2 Flight filter API. */
     @Test
     @Order(4)
+    void filterPushdown_columnComparisonRunsInFlight() {
+        Dataset<Row> filtered = flightRead()
+                .where("int_col < double_col")
+                .select("id");
+
+        String plan = physicalPlan(filtered);
+        String lower = plan.toLowerCase();
+        assertTrue(lower.contains("int_col") && lower.contains("double_col")
+                        && lower.contains("where"),
+                "expected column comparison pushed into the Flight SQL scan, got:\n" + plan);
+
+        long rows = filtered.count();
+        assertTrue(rows > 0 && rows < 1000,
+                "column comparison must filter the server-side result, rows=" + rows);
+    }
+
+    // ── 5. aggregation pushdown ───────────────────────────────────────────
+
+    @Test
+    @Order(5)
     void aggregationPushdown_groupByTinyintColSendsGroupByCountSql() {
         Dataset<Row> grouped = flightRead().groupBy("tinyint_col").count();
 
@@ -154,10 +173,30 @@ class SparkFlightSmokeTest {
                 + rows.stream().map(Row::toString).collect(Collectors.joining(", ")));
     }
 
-    // ── 5. auth requirement / blocker ─────────────────────────────────────
+    /** Verifies AVG is decomposed remotely and merged to its final value by Spark. */
+    @Test
+    @Order(6)
+    void aggregationPushdown_avgUsesPartialSumAndCountWithSparkFinalMerge() {
+        Dataset<Row> averaged = flightRead().selectExpr("avg(double_col) AS avg_value");
+
+        String plan = physicalPlan(averaged);
+        String lower = plan.toLowerCase();
+        assertTrue(lower.contains("sum("),
+                "expected AVG partial SUM pushed into the Flight scan, got:\n" + plan);
+        assertTrue(lower.contains("count("),
+                "expected AVG partial COUNT pushed into the Flight scan, got:\n" + plan);
+        assertTrue(lower.contains("aggregate"),
+                "expected Spark to retain the final aggregate merge, got:\n" + plan);
+
+        List<Row> values = flightRead().select("double_col").collectAsList();
+        double expected = values.stream().mapToDouble(row -> row.getDouble(0)).average().orElseThrow();
+        assertEquals(expected, averaged.first().getDouble(0), 1.0e-9);
+    }
+
+    // ── 7. auth requirement / blocker ─────────────────────────────────────
 
     @Test
-    @Order(5)
+    @Order(7)
     void missingCredentials_isBlockedByMandatoryUserPasswordCheck() {
         RuntimeException ex = assertThrows(RuntimeException.class, () ->
                 spark.read()

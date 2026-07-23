@@ -10,8 +10,10 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -22,6 +24,10 @@ import java.util.regex.Pattern;
 public class ParquetQueryParser {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ParquetQueryParser.class);
+    private static final int PARSE_CACHE_CAPACITY = 1024;
+    private static final Map<String, ParquetQueryParser> PARSE_CACHE =
+            Collections.synchronizedMap(
+                    new LinkedHashMap<>(PARSE_CACHE_CAPACITY, 0.75f, true));
 
     /**
      * A table reference in a JOIN, with optional schema and alias.
@@ -121,13 +127,13 @@ public class ParquetQueryParser {
             boolean isJoin, List<JoinTable> joinTables, String duckDbSql) {
         this.schema = schema;
         this.table = table;
-        this.columns = columns;
+        this.columns = List.copyOf(columns);
         this.filter = filter;
         this.hasAggregation = hasAggregation;
-        this.groupByColumnNames = Collections.unmodifiableList(groupByColumnNames);
-        this.selectExprs = Collections.unmodifiableList(selectExprs);
+        this.groupByColumnNames = List.copyOf(groupByColumnNames);
+        this.selectExprs = List.copyOf(selectExprs);
         this.isJoin = isJoin;
-        this.joinTables = Collections.unmodifiableList(joinTables);
+        this.joinTables = List.copyOf(joinTables);
         this.duckDbSql = duckDbSql;
     }
 
@@ -141,8 +147,12 @@ public class ParquetQueryParser {
         // Flatten subquery wrappers before jOOQ parsing (regex is more robust)
         String flattened = flattenSubqueryWrapper(query);
         if (!flattened.equals(query)) {
-            LOGGER.info("Flattened subquery wrapper; parsing: {}", flattened);
-            return parse(flattened);
+            LOGGER.debug("Flattened subquery wrapper; parsing: {}", flattened);
+            query = flattened;
+        }
+        ParquetQueryParser cached = PARSE_CACHE.get(query);
+        if (cached != null) {
+            return cached;
         }
 
         Settings settings = new Settings()
@@ -154,9 +164,15 @@ public class ParquetQueryParser {
             Query parsedQuery = ctx.parser().parseQuery(query);
 
             if (parsedQuery instanceof Select<?> select) {
-                LOGGER.info("Parsing SQL query: {}", query);
+                LOGGER.debug("Parsing SQL query: {}", query);
                 ParquetQueryParser parser = parseSelect(select, query);
-                LOGGER.info("Parsed query: {}", parser);
+                synchronized (PARSE_CACHE) {
+                    PARSE_CACHE.put(query, parser);
+                    if (PARSE_CACHE.size() > PARSE_CACHE_CAPACITY) {
+                        PARSE_CACHE.remove(PARSE_CACHE.keySet().iterator().next());
+                    }
+                }
+                LOGGER.debug("Parsed query: {}", parser);
                 return parser;
             } else {
                 throw new IllegalArgumentException("Only SELECT queries are supported: " + query);

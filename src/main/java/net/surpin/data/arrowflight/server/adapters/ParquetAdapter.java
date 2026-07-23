@@ -246,7 +246,6 @@ public class ParquetAdapter {
         });
 
         LOGGER.info("Parsed DDL: {}", ddlBuilder.toString());
-        FilterConverter.warmUp(strippedDdls);
     }
 
     /**

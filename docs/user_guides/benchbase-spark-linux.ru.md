@@ -39,6 +39,7 @@ chmod +x run-benchmark-spark.sh
 
 BENCHMARK_SCALE_FACTOR=0.01 \
 BENCHBASE_TIME_SECONDS=60 \
+BENCHBASE_WARMUP_SECONDS=30 \
 BENCHBASE_TERMINALS=1 \
 ./run-benchmark-spark.sh \
   tpch compare q1,q6,q14
@@ -47,13 +48,36 @@ BENCHBASE_TERMINALS=1 \
 `compare` выполняет полный цикл:
 
 1. удаляет старые benchmark containers и volumes;
-2. запускает HDFS NameNode и три `DataNode + Flight + Spark worker` ноды;
+2. запускает HDFS NameNode и четыре `DataNode + Flight + Spark worker` ноды;
 3. генерирует один TPC-H dataset и загружает его в `hdfs://hdfs-namenode:8020/bench`;
 4. публикует `tpch_flight` и `tpch_direct` поверх тех же HDFS Parquet-файлов;
 5. запускает выбранные queries для обоих путей;
 6. строит общий HTML report и обновляет локальную папку `pages/`.
 
 В generated report и reference results попадут только `q1`, `q6`, `q14`. BenchBase может вывести в консоль остальные transaction types с нулевыми counters; они не выполняются и не добавляются в per-query report.
+
+Все 22 TPC-H query по одному разу для каждого пути:
+
+```bash
+bash benchmarks/benchbase-spark/run-benchbase-spark.sh tpch compare all
+```
+
+Selector `all` активирует Q1-Q22 для Flight и Direct. Общий compare report и
+главная страница GitHub Pages показывают grouped bar chart средней measured
+latency по каждому query (`q01`-`q22`). Значения берутся из BenchBase
+`*.raw.csv`.
+
+Если нужны повторные samples каждого query, явно задай общий timed workload:
+
+```bash
+BENCHBASE_TIME_SECONDS=1200 \
+BENCHBASE_WARMUP_SECONDS=120 \
+bash benchmarks/benchbase-spark/run-benchbase-spark.sh tpch compare all
+```
+
+В timed-режиме `BENCHBASE_TIME_SECONDS` задаёт общую длительность каждого пути,
+а не отдельное время для каждого query. Выбирай достаточно большое значение,
+чтобы все тяжёлые TPC-H queries успели выполниться.
 
 Результат:
 
@@ -73,14 +97,26 @@ direct/*.report.html
 ```bash
 BENCHMARK_SCALE_FACTOR=0.1       # TPC-H scale factor
 BENCHBASE_TIME_SECONDS=120      # длительность каждого пути
+BENCHBASE_WARMUP_SECONDS=30     # отдельный прогрев перед измерением (default для compare/graph)
 BENCHBASE_TERMINALS=2           # параллельные BenchBase workers
 BENCHBASE_RATE=unlimited        # лимит requests/sec
 BENCHBASE_QUERY_TIMEOUT_SECONDS=120   # timeout BenchBase query через JDBC
 BENCHBASE_CAPTURE_TIMEOUT_SECONDS=120 # timeout повторного query для HTML-проверки
+BENCHBASE_COMPARE_ORDER=flight-first  # flight-first или direct-first
 BENCHBASE_UPDATE_PAGES=false    # не обновлять локальную pages/
-BENCHMARK_OBSERVABILITY=true    # переопределить metricsEnabled для Grafana/Prometheus
+BENCHMARK_OBSERVABILITY=true    # автоматически запустить Grafana/Prometheus
 HDFS_BLOCK_SIZE_BYTES=1073741824 # shard обязан помещаться в один HDFS block
 ```
+
+Benchmark Spark запускается с `spark.sql.ansi.enabled=true`. Это необходимо для
+Spark DataSource V2: без ANSI Spark 3.5 не передаёт decimal-выражения Q1
+(`l_extendedprice * (1 - l_discount)`) в aggregation pushdown, и Flight вынужден
+передавать миллионы исходных строк обратно в Spark вместо нескольких partial
+aggregate rows.
+
+Оба пути выполняются последовательно. Для проверки влияния порядка повтори
+сравнение с `BENCHBASE_COMPARE_ORDER=direct-first`; отдельный warmup применяется
+к каждому пути.
 
 После измерения каждый выбранный query повторно выполняется через `beeline`, чтобы
 сохранить фактический результат в HTML report. Если этот запуск превышает
@@ -117,9 +153,8 @@ BENCHBASE_UPDATE_PAGES=false \
 
 ## Grafana и Prometheus
 
-Benchmark script запускает observability stack, когда `metricsEnabled=true` в
-`arrowflight.properties`. Значение можно переопределить через
-`BENCHMARK_OBSERVABILITY=false`. Ручной запуск:
+Benchmark script по умолчанию сам запускает observability stack. Его можно
+отключить через `BENCHMARK_OBSERVABILITY=false`. Ручной запуск:
 
 ```bash
 docker compose --profile observability up -d \
@@ -154,7 +189,7 @@ Dashboard показывает:
 - CPU, working-set RAM и network I/O каждого Docker container;
 - heap, non-heap и потоки каждого Flight JVM;
 - active queries, failures, query rate и p95/mean server execution time;
-- logical Parquet throughput, physical disk throughput и скорость HDFS-to-Acero cache copy.
+- logical Parquet throughput, physical disk throughput и HDFS network I/O.
 
 `Parquet query/read duration` измеряет полный server path: получение файлов,
 scan, filter/aggregation и отправку результата. Это полезное benchmark-время, но

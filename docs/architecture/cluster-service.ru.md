@@ -203,7 +203,7 @@ hazelcast.onStatementExpired((EntryExpiredListener<String, Serializable>) event 
 1. `FlightSqlProducer` вызывает `filterLiveServers()` для получения активных нод.
 2. `ParquetAdapter.locationsForQuery()` определяет, какие файлы относятся к запросу.
 3. `ClusterService.fileLocations()` предоставляет распределённый инвентарь файлов.
-4. `QueryPlanner.pickServer()` выбирает лучшую ноду для каждого файла: предпочитает ноды, на которых есть блоки файла, и выбирает наименее загруженную среди подходящих.
+4. `pickServer()` выбирает лучшую ноду для каждого файла: предпочитает ноды, на которых есть блоки файла, и выбирает наименее загруженную среди подходящих.
 5. Handle сохраняется в `statementCache` с TTL 10 минут.
 6. Каждый endpoint сохраняет свой handle со списком назначенных файлов.
 

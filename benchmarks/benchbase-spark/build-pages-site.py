@@ -54,6 +54,27 @@ def latency_ms(summary, label):
     return number(summary.get("Latency Distribution", {}).get(f"{label} Latency (microseconds)")) / 1000
 
 
+def per_query_latency_rows(run_dir, base):
+    grouped = {}
+    for row in read_csv(run_dir / f"{base}.raw.csv"):
+        name = str(row.get("Transaction Name", "")).strip().upper()
+        if not name.startswith("Q") or not name[1:].isdigit():
+            continue
+        try:
+            latency = float(row.get("Latency (microseconds)", "")) / 1000
+        except (TypeError, ValueError):
+            continue
+        grouped.setdefault(int(name[1:]), []).append(latency)
+    return [
+        {
+            "query": f"Q{query_id}",
+            "avg": sum(values) / len(values),
+            "samples": len(values),
+        }
+        for query_id, values in sorted(grouped.items())
+    ]
+
+
 def first_summary(run_dir):
     summaries = sorted(run_dir.glob("*.summary.json"), key=lambda path: path.stat().st_mtime, reverse=True)
     return summaries[0] if summaries else None
@@ -118,6 +139,7 @@ def load_single_run(results_root, run_dir):
         "avgMs": latency_ms(summary, "Average"),
         "p95Ms": latency_ms(summary, "95th Percentile"),
         "measuredRequests": summary.get("Measured Requests", 0),
+        "queryLatencies": per_query_latency_rows(run_dir, base),
         "report": copied_link(results_root, report) if report.exists() else "",
         "files": copied_link(results_root, run_dir),
     }
@@ -201,8 +223,113 @@ def metric_cell(run, side, field, suffix=""):
     return f"{fmt(value)}{suffix}"
 
 
+def grouped_latency_chart(run):
+    flight_rows = (run.get("flight") or {}).get("queryLatencies", [])
+    direct_rows = (run.get("direct") or {}).get("queryLatencies", [])
+    flight = {int(row["query"][1:]): row for row in flight_rows}
+    direct = {int(row["query"][1:]): row for row in direct_rows}
+    query_ids = (
+        list(range(1, 23))
+        if str(run.get("query", "")).lower() == "all"
+        else sorted(set(flight) | set(direct))
+    )
+    if not query_ids:
+        return ""
+
+    width = 1120
+    height = 430
+    pad_left = 72
+    pad_right = 24
+    pad_top = 46
+    pad_bottom = 62
+    plot_w = width - pad_left - pad_right
+    plot_h = height - pad_top - pad_bottom
+    group_w = plot_w / len(query_ids)
+    bar_w = min(17, group_w * 0.34)
+    max_y = max(
+        [number(row.get("avg")) for row in list(flight.values()) + list(direct.values())]
+        or [1]
+    ) or 1
+
+    def sy(value):
+        return pad_top + plot_h - (value / max_y) * plot_h
+
+    y_labels = []
+    for step in range(5):
+        value = max_y * step / 4
+        y = sy(value)
+        y_labels.append(
+            f'<line x1="{pad_left}" y1="{y:.1f}" x2="{width-pad_right}" '
+            f'y2="{y:.1f}" stroke="#e5e7eb"/>'
+            f'<text x="{pad_left-10}" y="{y+4:.1f}" '
+            f'text-anchor="end">{fmt(value)}</text>'
+        )
+
+    bars = []
+    labels = []
+    for index, query_id in enumerate(query_ids):
+        center = pad_left + group_w * (index + 0.5)
+        labels.append(
+            f'<text x="{center:.1f}" y="{height-pad_bottom+22}" '
+            f'text-anchor="middle">q{query_id:02d}</text>'
+        )
+        for offset, rows, color, label in [
+            (-bar_w, flight, "#2563eb", "Flight"),
+            (0, direct, "#f97316", "Direct"),
+        ]:
+            row = rows.get(query_id)
+            if row is None:
+                continue
+            value = number(row.get("avg"))
+            y = sy(value)
+            tooltip = (
+                f"{label} Q{query_id}: {fmt(value)} ms, "
+                f"{int(number(row.get('samples')))} samples"
+            )
+            bars.append(
+                f'<rect x="{center+offset:.1f}" y="{y:.1f}" width="{bar_w:.1f}" '
+                f'height="{pad_top+plot_h-y:.1f}" fill="{color}">'
+                f'<title>{html.escape(tooltip)}</title></rect>'
+            )
+
+    return f"""
+  <section class="query-chart">
+    <h2>Latest TPC-H Q1-Q22 Average Latency</h2>
+    <p>{html.escape(run["title"])} · average of measured BenchBase samples.</p>
+    <div class="legend">
+      <span><i style="background:#2563eb"></i>Flight (ms)</span>
+      <span><i style="background:#f97316"></i>Direct (ms)</span>
+    </div>
+    <svg viewBox="0 0 {width} {height}" role="img"
+         aria-label="TPC-H per-query average latency comparison">
+      <rect x="0" y="0" width="{width}" height="{height}" fill="#fff"/>
+      {''.join(y_labels)}
+      <line x1="{pad_left}" y1="{height-pad_bottom}" x2="{width-pad_right}"
+            y2="{height-pad_bottom}" stroke="#9ca3af"/>
+      <line x1="{pad_left}" y1="{pad_top}" x2="{pad_left}"
+            y2="{height-pad_bottom}" stroke="#9ca3af"/>
+      {''.join(bars)}
+      {''.join(labels)}
+      <text x="18" y="{height/2:.1f}" text-anchor="middle"
+            transform="rotate(-90 18 {height/2:.1f})">average latency, ms</text>
+    </svg>
+  </section>
+"""
+
+
 def build_index(runs):
     payload = json.dumps(runs, ensure_ascii=False)
+    latest_all_compare = next(
+        (
+            run for run in runs
+            if run.get("kind") == "compare"
+            and str(run.get("query", "")).lower() == "all"
+            and (run.get("flight") or {}).get("queryLatencies")
+            and (run.get("direct") or {}).get("queryLatencies")
+        ),
+        None,
+    )
+    all_query_chart = grouped_latency_chart(latest_all_compare) if latest_all_compare else ""
     rows = []
     for run in runs:
         if run["kind"] == "compare":
@@ -278,6 +405,12 @@ def build_index(runs):
     td span {{ display: block; color: #6b7280; font-size: 12px; margin-top: 2px; }}
     a {{ color: #2563eb; margin-right: 10px; white-space: nowrap; }}
     .empty {{ display: none; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 18px; }}
+    .query-chart {{ background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 18px; margin: 18px 0; }}
+    .query-chart h2 {{ margin: 0 0 4px; }}
+    .query-chart svg {{ width: 100%; height: auto; }}
+    .query-chart svg text {{ fill: #4b5563; font-size: 12px; }}
+    .legend {{ display: flex; gap: 18px; margin: 12px 0; color: #4b5563; }}
+    .legend i {{ display: inline-block; width: 11px; height: 11px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }}
   </style>
 </head>
 <body>
@@ -290,6 +423,8 @@ def build_index(runs):
     <div class="card"><div class="label">Compare Runs</div><div class="value" id="compare-count">0</div></div>
     <div class="card"><div class="label">Latest Run</div><div class="value" id="latest-run">-</div></div>
   </div>
+
+  {all_query_chart}
 
   <div class="toolbar">
     <select id="benchmark-filter">

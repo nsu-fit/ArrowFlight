@@ -135,9 +135,9 @@ public final class Client implements AutoCloseable {
             final FlightDescriptor descriptor = FlightDescriptor.command(Any.pack(builder.build()).toByteArray());
 
             FlightInfo fi = this.client.getInfo(descriptor, callOptions());
-            LOGGER.info("Client.getQueryEndpoints('{}'): got endpoints \n{}", query, fi.getEndpoints());
+            LOGGER.debug("Client.getQueryEndpoints('{}'): got endpoints \n{}", query, fi.getEndpoints());
             Endpoint[] endpoints = fi.getEndpoints().stream().map(ep -> new Endpoint(ep.getLocations().stream().map(Location::getUri).toArray(URI[]::new), ep.getTicket().getBytes())).toArray(Endpoint[]::new);
-            LOGGER.info("Client.getQueryEndpoints('{}'): return endpoints \n{}", query, Arrays.asList(endpoints));
+            LOGGER.debug("Client.getQueryEndpoints('{}'): return endpoints \n{}", query, Arrays.asList(endpoints));
             return new QueryEndpoints(fi.getSchema(), endpoints);
         }, "getQueryEndpoints");
     }
@@ -185,7 +185,7 @@ public final class Client implements AutoCloseable {
                     }
                 }
             }
-            LOGGER.info("node={} client=fetchCompleted batches={} rows={} elapsed={}",
+            LOGGER.debug("node={} client=fetchCompleted batches={} rows={} elapsed={}",
                     NODE, batches, rows, LogUtil.elapsedNanos(startNanos));
             return rs;
         }, "fetch");
@@ -220,7 +220,7 @@ public final class Client implements AutoCloseable {
                     batches++;
                     rows += root.getRowCount();
                     if (batches == 1) {
-                        LOGGER.info("node={} client=ttfB batchRowCount={} elapsed={}",
+                        LOGGER.debug("node={} client=ttfB batchRowCount={} elapsed={}",
                                 NODE, root.getRowCount(), LogUtil.elapsedNanos(startNanos));
                     }
                     boolean shouldContinue = callback.onBatch(root, fields);
@@ -229,7 +229,7 @@ public final class Client implements AutoCloseable {
                     }
                 }
             }
-            LOGGER.info("node={} client=fetchStreamingCompleted batches={} rows={} elapsed={}",
+            LOGGER.debug("node={} client=fetchStreamingCompleted batches={} rows={} elapsed={}",
                     NODE, batches, rows, LogUtil.elapsedNanos(startNanos));
             return null;
         }, "fetchStreaming");
@@ -266,7 +266,7 @@ public final class Client implements AutoCloseable {
         return retryWithBackoff(() -> {
             long startNanos = System.nanoTime();
             FlightInfo fi = this.sqlClient.execute(stmt, callOptions());
-            LOGGER.info("node={} client=execute endpoints={} stmt='{}'",
+            LOGGER.debug("node={} client=execute endpoints={} stmt='{}'",
                     NODE, fi.getEndpoints().size(), stmt);
             long count = 0;
             int endpointIdx = 0;
@@ -282,7 +282,7 @@ public final class Client implements AutoCloseable {
                 LOGGER.debug("node={} client=executeEndpoint idx={} batches={} rows={}",
                         NODE, endpointIdx++, batches, count);
             }
-            LOGGER.info("node={} client=executeCompleted totalRows={} endpoints={} elapsed={}",
+            LOGGER.debug("node={} client=executeCompleted totalRows={} endpoints={} elapsed={}",
                     NODE, count, fi.getEndpoints().size(), LogUtil.elapsedNanos(startNanos));
             return count;
         }, "execute");
@@ -572,7 +572,7 @@ public final class Client implements AutoCloseable {
                 return this.client.getStream(fep.getTicket(), callOptions());
             }
             try {
-                LOGGER.info("node={} client=routeStream ticket={} location={}",
+                LOGGER.debug("node={} client=routeStream ticket={} location={}",
                         NODE, ticketHex, location.getUri());
                 FlightClient routedClient = this.endpointClients.computeIfAbsent(
                         location.getUri(), uri -> create(this.config, this.allocator, location, false));

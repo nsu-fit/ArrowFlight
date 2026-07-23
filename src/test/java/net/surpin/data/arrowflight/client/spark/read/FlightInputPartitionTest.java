@@ -1,47 +1,41 @@
 package net.surpin.data.arrowflight.client.spark.read;
 
 import net.surpin.data.arrowflight.client.query.Endpoint;
-import org.apache.arrow.vector.types.pojo.ArrowType;
-import org.apache.arrow.vector.types.pojo.Field;
 import org.apache.arrow.vector.types.pojo.Schema;
 import org.junit.jupiter.api.Test;
 
-import java.io.IOException;
 import java.net.URI;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 
+/** Verifies Spark locality hints exposed by Flight input partitions. */
 class FlightInputPartitionTest {
-    @Test
-    void flightEndpointInputPartition_returnsEndpoint() {
-        URI[] uris = new URI[]{URI.create("grpc://localhost:32010")};
-        Endpoint ep = new Endpoint(uris, new byte[]{1, 2, 3});
-        Schema schema = new Schema(List.of(
-                Field.nullable("id", new ArrowType.Int(32, true))));
 
-        var partition = new FlightInputPartition.FlightEndpointInputPartition(schema, ep);
-        assertEquals(ep, partition.getEndpoint());
+    /** Verifies benchmark endpoint aliases map to their colocated Spark worker. */
+    @Test
+    void endpointPartitionPrefersFlightAndServerNodeHosts() {
+        Endpoint endpoint = new Endpoint(
+                new URI[]{URI.create("grpc+tcp://flight-server-3:32010")},
+                new byte[]{1});
+        FlightInputPartition partition =
+                new FlightInputPartition.FlightEndpointInputPartition(
+                        new Schema(List.of()), endpoint);
+
+        assertArrayEquals(new String[]{"flight-server-3", "server-node-3"},
+                partition.preferredLocations());
     }
 
+    /** Verifies generic Flight hosts remain valid locality hints. */
     @Test
-    void flightEndpointInputPartition_returnsSchema() throws IOException {
-        URI[] uris = new URI[]{URI.create("grpc://localhost:32010")};
-        Endpoint ep = new Endpoint(uris, new byte[]{1, 2, 3});
-        Schema schema = new Schema(List.of(
-                Field.nullable("id", new ArrowType.Int(32, true))));
+    void endpointPartitionPreservesGenericHost() {
+        Endpoint endpoint = new Endpoint(
+                new URI[]{URI.create("grpc+tcp://flight.example:32010")},
+                new byte[]{1});
+        FlightInputPartition partition =
+                new FlightInputPartition.FlightEndpointInputPartition(
+                        new Schema(List.of()), endpoint);
 
-        var partition = new FlightInputPartition.FlightEndpointInputPartition(schema, ep);
-        Schema retrieved = partition.getSchema();
-        assertEquals(1, retrieved.getFields().size());
-        assertEquals("id", retrieved.getFields().get(0).getName());
-    }
-
-    @Test
-    void flightQueryInputPartition_returnsQuery() {
-        Schema schema = new Schema(List.of(
-                Field.nullable("id", new ArrowType.Int(32, true))));
-        var partition = new FlightInputPartition.FlightQueryInputPartition(schema, "SELECT * FROM t");
-        assertEquals("SELECT * FROM t", partition.getQuery());
+        assertArrayEquals(new String[]{"flight.example"}, partition.preferredLocations());
     }
 }

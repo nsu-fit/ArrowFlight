@@ -1,9 +1,7 @@
 package net.surpin.data.arrowflight.debug;
 
-import net.surpin.data.arrowflight.server.adapters.AceroAdapter;
 import net.surpin.data.arrowflight.server.adapters.ConfigAdapter;
 import net.surpin.data.arrowflight.server.adapters.DuckDbAdapter;
-import net.surpin.data.arrowflight.server.adapters.FilterConverter;
 import net.surpin.data.arrowflight.server.adapters.FlightSqlProducer;
 import net.surpin.data.arrowflight.server.adapters.HazelcastAdapter;
 import net.surpin.data.arrowflight.server.adapters.ParquetAdapter;
@@ -11,7 +9,6 @@ import net.surpin.data.arrowflight.server.model.AppConfig;
 import net.surpin.data.arrowflight.server.services.ClusterService;
 import net.surpin.data.arrowflight.server.services.ExecutionService;
 import net.surpin.data.arrowflight.server.services.MetadataService;
-import net.surpin.data.arrowflight.server.services.ParquetQueryParser;
 import net.surpin.data.arrowflight.server.services.QueryPlanner;
 import org.apache.arrow.flight.*;
 import org.apache.arrow.flight.sql.FlightSqlClient;
@@ -36,7 +33,6 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.ServerSocket;
 import java.net.URI;
-import java.nio.ByteBuffer;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -46,7 +42,6 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.Executors;
-import java.util.function.Function;
 
 import static org.apache.arrow.memory.DefaultAllocationManagerOption.ALLOCATION_MANAGER_TYPE_PROPERTY_NAME;
 
@@ -291,40 +286,13 @@ public class SparkArrowClientBenchmark {
         ParquetAdapter parquetAdapter = new ParquetAdapter(appConfig, fs);
         HazelcastAdapter hazelcastAdapter = new HazelcastAdapter(appConfig);
         DuckDbAdapter duckDbAdapter = new DuckDbAdapter(appConfig, Executors.newCachedThreadPool());
-        AceroAdapter aceroAdapter = new AceroAdapter(appConfig);
         MetadataService metadataService = new MetadataService(parquetAdapter);
         ClusterService clusterService = new ClusterService(hazelcastAdapter, appConfig,
                 loc.getUri().toString());
         QueryPlanner queryPlanner = new QueryPlanner(parquetAdapter, clusterService);
 
-        Function<ParquetQueryParser, byte[]> filterBuilder = (parsedQuery) -> {
-            if (parsedQuery.filter == null || parsedQuery.filter.isEmpty()
-                    || parsedQuery.filter.equals("true") || parsedQuery.filter.equals("1 = 1")) {
-                return null;
-            }
-            try {
-                java.util.Map<String, java.util.Map<String, String>> ddlCache =
-                        parquetAdapter.tableDdlCache();
-                String ddl = ddlCache.getOrDefault(parsedQuery.schema,
-                        java.util.Collections.emptyMap()).get(parsedQuery.table);
-                if (ddl == null) {
-                    return null;
-                }
-                String cleanDdl = ddl.replace(parsedQuery.schema + ".", "");
-                ByteBuffer buf = FilterConverter.toByteBuffer(
-                        parsedQuery.filter,
-                        java.util.Collections.singletonList(cleanDdl));
-                byte[] bytes = new byte[buf.remaining()];
-                buf.get(bytes);
-                return bytes;
-            } catch (Exception e) {
-                return null;
-            }
-        };
-
         ExecutionService executionService = new ExecutionService(parquetAdapter, duckDbAdapter,
-                aceroAdapter, metadataService, appConfig,
-                Executors.newCachedThreadPool(), filterBuilder);
+                metadataService, appConfig, Executors.newCachedThreadPool());
         FlightSqlProducer flightSqlProducer = new FlightSqlProducer(loc, allocator,
                 metadataService, queryPlanner, executionService, clusterService);
 

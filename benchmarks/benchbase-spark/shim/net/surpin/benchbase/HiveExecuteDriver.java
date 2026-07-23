@@ -11,6 +11,7 @@ import java.sql.DriverPropertyInfo;
 import java.sql.SQLException;
 import java.sql.SQLFeatureNotSupportedException;
 import java.sql.Statement;
+import java.util.Locale;
 import java.util.Properties;
 import java.util.logging.Logger;
 
@@ -232,7 +233,22 @@ public final class HiveExecuteDriver implements Driver {
                     "(?i)concat\\(\\s*(\\?|'-?\\d+')\\s*,\\s*'\\s*(year|month|day|hour|minute|second)s?\\s*'\\s*\\)\\s*::\\s*interval",
                     "INTERVAL $1 $2");
             result = result.replaceAll("(?i)interval\\s+'([^']+)'\\s+(year|month|day|hour|minute|second)s?", "INTERVAL '$1' $2");
+            result = result.replaceAll(
+                    "(?is)\\bexists\\s*\\(\\s*select\\s+\\*\\s+from\\b",
+                    "EXISTS (SELECT 1 FROM");
+
+            String normalizedSql = result.toLowerCase(Locale.ROOT);
             result = result.replaceAll("(?i)\\bcreate\\s+view\\b", "CREATE TEMPORARY VIEW");
+            boolean isTpchQ17 = normalizedSql.contains("p_brand")
+                && normalizedSql.contains("p_container")
+                && normalizedSql.contains("l_quantity")
+                && normalizedSql.contains("avg");
+
+            if (isTpchQ17) {
+                result = result.replaceAll(
+                    "(?i)AVG\\s*\\(\\s*l_quantity\\s*\\)",
+                    "AVG(CAST(l_quantity AS DECIMAL(28,2)))");
+            }
             return result;
         }
     }

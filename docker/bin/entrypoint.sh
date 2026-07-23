@@ -79,19 +79,14 @@ flight_server_command() {
   local hadoop_cp
   hadoop_cp="$(hadoop_classpath)"
   local runtime_classpath="${APP_JAR}:${HADOOP_CONF_DIR}:${hadoop_cp}:${SPARK_HOME}/jars/*"
-  # Arrow Dataset's native HDFS implementation loads libhdfs at runtime.
-  # libhdfs reads CLASSPATH from the process environment; java's -cp alone
-  # is not sufficient for native code started from Arrow C++ worker threads.
+  # The DuckDB HDFS extension can load libhdfs at runtime. libhdfs reads
+  # CLASSPATH from the process environment; java's -cp alone is not sufficient.
   export CLASSPATH="${runtime_classpath}${CLASSPATH:+:${CLASSPATH}}"
   local java_opts=("${DEFAULT_SERVER_JAVA_OPTS[@]}")
   if [[ -n "${JAVA_OPTS:-}" ]]; then
     local extra_java_opts=()
     read -r -a extra_java_opts <<< "${JAVA_OPTS}"
     java_opts+=("${extra_java_opts[@]}")
-  fi
-  local metrics_args=()
-  if [[ -n "${FLIGHT_METRICS_ENABLED:-}" ]]; then
-    metrics_args=(--metrics-enabled "${FLIGHT_METRICS_ENABLED}")
   fi
 
   local command=(java "${java_opts[@]}" \
@@ -104,7 +99,6 @@ flight_server_command() {
     --storage-host "${FLIGHT_LOCAL_STORAGE_HOST:-$(hostname -f)}" \
     --hazelcast-port "${HAZELCAST_PORT:-5701}" \
     --metrics-port "${FLIGHT_METRICS_PORT:-9404}" \
-    "${metrics_args[@]}" \
     "$@")
   if [[ "${FLIGHT_SERVER_EXEC:-false}" == "true" ]]; then
     exec "${command[@]}"
@@ -253,7 +247,7 @@ case "${mode}" in
     exec "${SPARK_HOME}/bin/spark-submit" \
       "${spark_common_conf[@]}" \
       --class org.apache.spark.sql.hive.thriftserver.HiveThriftServer2 \
-      "${SPARK_HOME}/jars/spark-hive-thriftserver_2.12-3.5.1.jar" \
+      "${SPARK_HOME}/jars/spark-hive-thriftserver_2.12-3.5.9.jar" \
       --hiveconf "hive.server2.thrift.bind.host=${SPARK_THRIFT_BIND_HOST:-0.0.0.0}" \
       --hiveconf "hive.server2.thrift.port=${SPARK_THRIFT_PORT:-10000}" \
       "$@"

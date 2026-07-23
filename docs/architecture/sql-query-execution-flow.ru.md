@@ -6,11 +6,9 @@
 
 `HadoopArrowFlightServer` запускает сервер и настраивает Hadoop FileSystem, Hazelcast и Arrow Flight.
 
-`FlightSqlProducer` реализует слой Flight SQL. Он принимает запросы, строит `FlightInfo`, создает `Ticket` и восстанавливает состояние запроса во время `DoGet`.
+`FlightSqlProducer` реализует слой Flight SQL. Он принимает запросы, строит `FlightInfo`, создает `Ticket`, распределяет файлы по Flight-нодам и восстанавливает состояние запроса во время `DoGet`.
 
-`QueryPlanner` отвечает за распределение файлов по нодам: получает распарсенный запрос и инвентарь файлов, запускает `pickServer` для locality-чувствительного назначения и строит per-node endpoints.
-
-`ExecutionService`, `MetadataService` и `ParquetAdapter` отвечают за Parquet-часть. `ParquetAdapter` занимается поиском файлов и локальностью блоков. `MetadataService` строит схему результата и реализует Java fast path по footer metadata. `ExecutionService` координирует сканирование через Arrow Dataset / Acero и выполнение SQL через DuckDB.
+`ExecutionService`, `MetadataService` и `ParquetAdapter` отвечают за Parquet-часть. `ParquetAdapter` занимается поиском файлов и локальностью блоков. `MetadataService` строит схему результата и реализует Java fast path по footer metadata. `ExecutionService` координирует выполнение SQL через DuckDB.
 
 `ParquetQueryParser` разбирает SQL и извлекает схему, таблицу, список колонок, фильтр, агрегаты и `GROUP BY`.
 
@@ -56,11 +54,11 @@ Ticket не содержит сами файлы и не является пол
 
 ## Распределение файлов
 
-Распределение начинается в `FlightSqlProducer.determineEndpoints`, который делегирует `QueryPlanner.determineEndpoints`.
+Распределение выполняется в `FlightSqlProducer.determineEndpoints`.
 
 Сервер получает SQL из `statementCache`, затем `ParquetAdapter.locationsForQuery` определяет Parquet-файлы таблицы и Hadoop hosts, на которых лежат блоки этих файлов.
 
-Дальше сервер читает список зарегистрированных Flight-нод из `serverRegistry`. Для каждого файла вызывается `QueryPlanner.pickServer`, который выбирает ноду для чтения.
+Дальше сервер читает список зарегистрированных Flight-нод из `serverRegistry`. Для каждого файла вызывается `pickServer`, который выбирает ноду для чтения.
 
 Если Flight-нода находится на host, где есть блоки файла, такая нода предпочитается. Среди подходящих нод выбирается нода с меньшей накопленной нагрузкой по размеру назначенных файлов.
 
@@ -76,15 +74,14 @@ Ticket не содержит сами файлы и не является пол
 
 ## Выбор query engine
 
-В проекте есть три пути чтения и выполнения Parquet-запросов. Выбор делается в `ExecutionService.readParquet` после разбора SQL.
+В проекте есть два пути чтения и выполнения Parquet-запросов. Выбор делается в `ExecutionService.readParquet` после разбора SQL.
 
 Правила маршрутизации:
 
 1. Metadata-only aggregates -> Java footer path.
-2. Full scan и projection-only scan без `WHERE` -> Arrow Dataset / Acero.
-3. `WHERE`, `GROUP BY`, `SUM`, fallback aggregates и `JOIN` -> DuckDB.
+2. Full scan, projection, `WHERE`, `GROUP BY`, `SUM`, fallback aggregates и `JOIN` -> DuckDB.
 
-Это соответствует ADR 0001: Acero используется там, где он быстрее всего читает Parquet в Arrow; DuckDB используется там, где нужны SQL semantics и predicate pushdown; Java используется там, где результат можно получить из Parquet footer без чтения data pages.
+Java используется там, где результат можно получить из Parquet footer без чтения data pages; все остальные запросы выполняются DuckDB.
 
 ## Java footer path
 
@@ -99,25 +96,13 @@ Java footer path используется для простых агрегато
 
 Для `COUNT(*)` Java суммирует row counts из metadata row group-ов. Для `COUNT(col)` Java вычитает null counts. Для `MIN` и `MAX` Java объединяет статистики по row group-ам.
 
-Этот путь не читает data pages и не запускает Acero или DuckDB для самого запроса. Если нужной статистики нет, запрос безопасно fallback-ится в DuckDB.
-
-## Acero path
-
-Acero используется для чтения без фильтра:
-
-- `SELECT * FROM schema.table`
-- `SELECT col1, col2 FROM schema.table`
-
-`ExecutionService` превращает назначенные относительные пути в абсолютные URI и создает Arrow Dataset scanner на файлы конкретного ticket. Projection передается в scanner как список колонок. Если projection нет, читаются все колонки таблицы.
-
-Arrow Dataset / Acero открывает Parquet-файлы, читает нужные колонки и возвращает Arrow batches. Java не конвертирует значения вручную: результат приходит как `ArrowReader` и `VectorSchemaRoot`.
-
-Каждый batch отправляется клиенту через Flight listener. Перед отправкой сервер проверяет backpressure, чтобы не буферизовать лишние данные, когда клиент не готов.
+Этот путь не читает data pages и не запускает DuckDB для самого запроса. Если нужной статистики нет, запрос безопасно fallback-ится в DuckDB.
 
 ## DuckDB path
 
-DuckDB используется для запросов, где нужен SQL engine:
+DuckDB используется для всех запросов, которые нельзя выполнить из Parquet footer metadata:
 
+- full scan и projection
 - `WHERE`
 - фильтрованные projection
 - `GROUP BY`
@@ -125,28 +110,18 @@ DuckDB используется для запросов, где нужен SQL e
 - агрегаты, которые не удалось выполнить из footer statistics
 - `JOIN`
 
-Для single-table запросов `ExecutionService` строит SQL поверх DuckDB table function `read_parquet([...])`.
+`ExecutionService` строит SQL поверх DuckDB table function `read_parquet([...])`. Alias-ы join-таблиц создаются как временные DuckDB views над соответствующими Parquet inputs.
 
-Для join-запросов `ExecutionService` создает временные DuckDB views для alias-ов таблиц. Каждая view читает свои файлы через `read_parquet([...])`. После этого выполняется переписанный join SQL.
+DuckDB возвращает результат через `DuckDBResultSet.arrowExportStream`. Сервер копирует строки из DuckDB Arrow stream в Flight batches и отправляет клиенту.
 
-DuckDB возвращает результат через `DuckDBResultSet.arrowExportStream`. Сервер копирует строки в отдельный Flight-owned root перед `putNext()`, чтобы переиспользование DuckDB буферов не могло повредить отправляемый batch.
-
-Для локальных файлов DuckDB extension не нужен. Для HDFS `ExecutionService` сохраняет квалифицированный URI `hdfs://authority/path` и DuckDB открывает его через настроенный HDFS extension. Docker-образ устанавливает и проверяет `duckdb-hdfs` автоматически.
-
-Настройки HDFS extension:
-
-- `duckDbHdfsExtension` или `DUCKDB_HDFS_EXTENSION`
-- `duckDbAllowUnsignedExtensions` или `DUCKDB_ALLOW_UNSIGNED_EXTENSIONS`
-- `duckDbHdfsDefaultNamenode` или `HDFS_DEFAULT_NAMENODE`
-- `duckDbHdfsHaNamenodes` или `HDFS_HA_NAMENODES`
-- `duckDbHdfsShortcircuit` или `HDFS_SHORTCIRCUIT`
-- `duckDbHdfsDomainSocketPath` или `HDFS_DOMAIN_SOCKET_PATH`
+Для локальных файлов DuckDB extension не нужен. Для HDFS URI требуется настроенный DuckDB HDFS extension.
 
 ## Runtime tuning
 
 Основной файл настроек: `src/main/resources/arrowflight.properties`.
 
-Главная общая настройка - `batchSize`. Она используется и для Acero scan batch size, и для DuckDB Arrow export batch size. Поэтому изменение `batchSize` влияет на размер batch-ей, которые уходят через Flight.
+Главные streaming-настройки - `batchSize` и `flightBackpressureThresholdBytes`.
+Они задают размер DuckDB Arrow export batch и объём сериализованных данных, который Flight может отправлять конвейером до ожидания клиента.
 
 Параллелизм I/O считается так:
 
@@ -154,7 +129,11 @@ DuckDB возвращает результат через `DuckDBResultSet.arrow
 
 Если `ioParallelism` задан явно, используется он. `ioParallelismMaxCores=0` означает "не ограничивать число ядер".
 
-JVM system properties, такие как `-Darrowflight.io.parallelism=64`, могут переопределять файл конфигурации.
+Пример override через JVM system property:
+
+```bash
+mvn test -Darrowflight.io.parallelism=64
+```
 
 ## Отправка результата клиенту
 
