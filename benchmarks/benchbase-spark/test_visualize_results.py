@@ -56,6 +56,8 @@ class PerQueryLatencyTest(unittest.TestCase):
         self.assertIn("q22", chart)
         self.assertIn("Flight (ms)", chart)
         self.assertIn("Direct (ms)", chart)
+        self.assertIn("Average Query Execution Time", chart)
+        self.assertIn("average query execution time, ms", chart)
 
 
 if __name__ == "__main__":

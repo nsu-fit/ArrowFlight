@@ -41,7 +41,8 @@ class AllQueryChartTest(unittest.TestCase):
 
         page = BUILD_PAGES_SITE.build_index([run])
 
-        self.assertIn("Latest TPC-H Q1-Q22 Average Latency", page)
+        self.assertIn("Latest TPC-H Q1-Q22 Average Query Execution Time", page)
+        self.assertIn("average query execution time, ms", page)
         self.assertIn("q01", page)
         self.assertIn("q22", page)
         self.assertIn("Flight (ms)", page)

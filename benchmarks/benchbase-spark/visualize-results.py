@@ -388,7 +388,7 @@ def svg_query_latency_chart(flight_rows, direct_rows, expected_query_ids=None):
     if not query_ids:
         return """
 <section>
-  <h2>TPC-H Per-Query Average Latency</h2>
+  <h2>TPC-H Per-Query Average Query Execution Time</h2>
   <p>No measured per-query samples.</p>
 </section>
 """
@@ -455,14 +455,14 @@ def svg_query_latency_chart(flight_rows, direct_rows, expected_query_ids=None):
 
     return f"""
 <section>
-  <h2>TPC-H Q1-Q22 Average Latency: Flight vs Direct</h2>
-  <p class="subtle">Average of measured BenchBase samples from each query type.</p>
+  <h2>TPC-H Q1-Q22 Average Query Execution Time: Flight vs Direct</h2>
+  <p class="subtle">Average execution time of measured BenchBase samples from each query type.</p>
   <div class="legend">
     <span><i style="background:#2563eb"></i>Flight (ms)</span>
     <span><i style="background:#f97316"></i>Direct (ms)</span>
   </div>
   <svg viewBox="0 0 {width} {height}" role="img"
-       aria-label="TPC-H per-query average latency comparison">
+       aria-label="TPC-H per-query average execution time comparison">
     <rect x="0" y="0" width="{width}" height="{height}" fill="#fff"/>
     {''.join(y_labels)}
     <line x1="{pad_left}" y1="{height-pad_bottom}" x2="{width-pad_right}"
@@ -472,7 +472,7 @@ def svg_query_latency_chart(flight_rows, direct_rows, expected_query_ids=None):
     {''.join(bars)}
     {''.join(labels)}
     <text x="18" y="{height/2:.1f}" text-anchor="middle"
-          transform="rotate(-90 18 {height/2:.1f})">average latency, ms</text>
+          transform="rotate(-90 18 {height/2:.1f})">average query execution time, ms</text>
   </svg>
 </section>
 """

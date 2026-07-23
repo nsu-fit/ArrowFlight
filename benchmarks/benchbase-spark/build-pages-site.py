@@ -294,14 +294,14 @@ def grouped_latency_chart(run):
 
     return f"""
   <section class="query-chart">
-    <h2>Latest TPC-H Q1-Q22 Average Latency</h2>
-    <p>{html.escape(run["title"])} · average of measured BenchBase samples.</p>
+    <h2>Latest TPC-H Q1-Q22 Average Query Execution Time</h2>
+    <p>{html.escape(run["title"])} · average execution time of measured BenchBase samples.</p>
     <div class="legend">
       <span><i style="background:#2563eb"></i>Flight (ms)</span>
       <span><i style="background:#f97316"></i>Direct (ms)</span>
     </div>
     <svg viewBox="0 0 {width} {height}" role="img"
-         aria-label="TPC-H per-query average latency comparison">
+         aria-label="TPC-H per-query average execution time comparison">
       <rect x="0" y="0" width="{width}" height="{height}" fill="#fff"/>
       {''.join(y_labels)}
       <line x1="{pad_left}" y1="{height-pad_bottom}" x2="{width-pad_right}"
@@ -311,7 +311,7 @@ def grouped_latency_chart(run):
       {''.join(bars)}
       {''.join(labels)}
       <text x="18" y="{height/2:.1f}" text-anchor="middle"
-            transform="rotate(-90 18 {height/2:.1f})">average latency, ms</text>
+            transform="rotate(-90 18 {height/2:.1f})">average query execution time, ms</text>
     </svg>
   </section>
 """
