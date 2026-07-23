@@ -3,6 +3,8 @@
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.concurrent.TimeUnit;
+
 /**
  * Utility for formatting log context fields consistently.
  * Every log entry for a query flow includes qid, node, thread, endpoint/ticket,
@@ -15,18 +17,18 @@ public final class LogUtil {
     /**
      * Thread-local qid propagated across async execution boundaries.
      */
-<span class="fc" id="L18">    private static final ThreadLocal&lt;String&gt; CURRENT_QID = new ThreadLocal&lt;&gt;();</span>
+<span class="fc" id="L20">    private static final ThreadLocal&lt;String&gt; CURRENT_QID = new ThreadLocal&lt;&gt;();</span>
 
     static {
-<span class="fc" id="L21">        String n = System.getenv(&quot;HOSTNAME&quot;);</span>
-<span class="pc bpc" id="L22" title="3 of 4 branches missed.">        if (n == null || n.isBlank()) {</span>
+<span class="fc" id="L23">        String n = System.getenv(&quot;HOSTNAME&quot;);</span>
+<span class="pc bpc" id="L24" title="3 of 4 branches missed.">        if (n == null || n.isBlank()) {</span>
             try {
-<span class="fc" id="L24">                n = java.net.InetAddress.getLocalHost().getHostName();</span>
-<span class="nc" id="L25">            } catch (Exception e) {</span>
-<span class="nc" id="L26">                n = &quot;unknown&quot;;</span>
-<span class="fc" id="L27">            }</span>
+<span class="fc" id="L26">                n = java.net.InetAddress.getLocalHost().getHostName();</span>
+<span class="nc" id="L27">            } catch (Exception e) {</span>
+<span class="nc" id="L28">                n = &quot;unknown&quot;;</span>
+<span class="fc" id="L29">            }</span>
         }
-<span class="fc" id="L29">        NODE = n;</span>
+<span class="fc" id="L31">        NODE = n;</span>
     }
 
     private LogUtil() {
@@ -38,7 +40,7 @@ public final class LogUtil {
      * @return node name
      */
     public static String node() {
-<span class="fc" id="L41">        return NODE;</span>
+<span class="fc" id="L43">        return NODE;</span>
     }
 
     /**
@@ -47,12 +49,12 @@ public final class LogUtil {
      * @param qid query identifier, null to clear
      */
     public static void setQid(String qid) {
-<span class="nc bnc" id="L50" title="All 2 branches missed.">        if (qid != null) {</span>
-<span class="nc" id="L51">            CURRENT_QID.set(qid);</span>
+<span class="fc bfc" id="L52" title="All 2 branches covered.">        if (qid != null) {</span>
+<span class="fc" id="L53">            CURRENT_QID.set(qid);</span>
         } else {
-<span class="nc" id="L53">            CURRENT_QID.remove();</span>
+<span class="fc" id="L55">            CURRENT_QID.remove();</span>
         }
-<span class="nc" id="L55">    }</span>
+<span class="fc" id="L57">    }</span>
 
     /**
      * Returns the current thread's qid, or null.
@@ -60,7 +62,7 @@ public final class LogUtil {
      * @return qid or null
      */
     public static String qid() {
-<span class="fc" id="L63">        return CURRENT_QID.get();</span>
+<span class="fc" id="L65">        return CURRENT_QID.get();</span>
     }
 
     /**
@@ -70,17 +72,17 @@ public final class LogUtil {
      * @return formatted string like &quot;1.234ms&quot; or &quot;0.567s&quot;
      */
     public static String elapsedNanos(long startNanos) {
-<span class="fc" id="L73">        long nanos = System.nanoTime() - startNanos;</span>
-<span class="pc bpc" id="L74" title="1 of 2 branches missed.">        if (nanos &lt; 1_000) {</span>
-<span class="nc" id="L75">            return nanos + &quot;ns&quot;;</span>
+<span class="fc" id="L75">        long nanos = System.nanoTime() - startNanos;</span>
+<span class="pc bpc" id="L76" title="1 of 2 branches missed.">        if (nanos &lt; 1_000) {</span>
+<span class="nc" id="L77">            return nanos + &quot;ns&quot;;</span>
         }
-<span class="pc bpc" id="L77" title="1 of 2 branches missed.">        if (nanos &lt; 1_000_000) {</span>
-<span class="nc" id="L78">            return String.format(&quot;%.1fµs&quot;, nanos / 1000.0);</span>
+<span class="fc bfc" id="L79" title="All 2 branches covered.">        if (nanos &lt; 1_000_000) {</span>
+<span class="fc" id="L80">            return String.format(&quot;%.1fµs&quot;, nanos / 1000.0);</span>
         }
-<span class="fc bfc" id="L80" title="All 2 branches covered.">        if (nanos &lt; 1_000_000_000) {</span>
-<span class="fc" id="L81">            return String.format(&quot;%.2fms&quot;, nanos / 1_000_000.0);</span>
+<span class="pc bpc" id="L82" title="1 of 2 branches missed.">        if (nanos &lt; 1_000_000_000) {</span>
+<span class="fc" id="L83">            return String.format(&quot;%.2fms&quot;, nanos / 1_000_000.0);</span>
         }
-<span class="fc" id="L83">        return String.format(&quot;%.3fs&quot;, nanos / 1_000_000_000.0);</span>
+<span class="nc" id="L85">        return String.format(&quot;%.3fs&quot;, nanos / 1_000_000_000.0);</span>
     }
 
     /**
@@ -90,11 +92,11 @@ public final class LogUtil {
      * @return formatted string like &quot;1234ms&quot; or &quot;1.234s&quot;
      */
     public static String elapsedMs(long startMillis) {
-<span class="nc" id="L93">        long elapsed = System.currentTimeMillis() - startMillis;</span>
-<span class="nc bnc" id="L94" title="All 2 branches missed.">        if (elapsed &lt; 10_000) {</span>
-<span class="nc" id="L95">            return elapsed + &quot;ms&quot;;</span>
+<span class="nc" id="L95">        long elapsed = System.currentTimeMillis() - startMillis;</span>
+<span class="nc bnc" id="L96" title="All 2 branches missed.">        if (elapsed &lt; 10_000) {</span>
+<span class="nc" id="L97">            return elapsed + &quot;ms&quot;;</span>
         }
-<span class="nc" id="L97">        return String.format(&quot;%.3fs&quot;, elapsed / 1000.0);</span>
+<span class="nc" id="L99">        return String.format(&quot;%.3fs&quot;, elapsed / 1000.0);</span>
     }
 
     /**
@@ -104,9 +106,9 @@ public final class LogUtil {
      * @return formatted prefix
      */
     public static String prefix(String qid) {
-<span class="nc" id="L107">        return &quot;node=&quot; + NODE</span>
-<span class="nc" id="L108">                + &quot; thread=&quot; + Thread.currentThread().getName()</span>
-<span class="nc bnc" id="L109" title="All 2 branches missed.">                + (qid != null ? &quot; qid=&quot; + qid : &quot;&quot;);</span>
+<span class="nc" id="L109">        return &quot;node=&quot; + NODE</span>
+<span class="nc" id="L110">                + &quot; thread=&quot; + Thread.currentThread().getName()</span>
+<span class="nc bnc" id="L111" title="All 2 branches missed.">                + (qid != null ? &quot; qid=&quot; + qid : &quot;&quot;);</span>
     }
 
     /**
@@ -116,28 +118,28 @@ public final class LogUtil {
      * @return task with qid context propagated
      */
     public static Runnable withQid(Runnable task) {
-<span class="nc" id="L119">        String captured = CURRENT_QID.get();</span>
-<span class="nc bnc" id="L120" title="All 2 branches missed.">        if (captured == null) {</span>
-<span class="nc" id="L121">            return task;</span>
+<span class="nc" id="L121">        String captured = CURRENT_QID.get();</span>
+<span class="nc bnc" id="L122" title="All 2 branches missed.">        if (captured == null) {</span>
+<span class="nc" id="L123">            return task;</span>
         }
-<span class="nc" id="L123">        return () -&gt; {</span>
-<span class="nc" id="L124">            String previous = CURRENT_QID.get();</span>
-<span class="nc" id="L125">            CURRENT_QID.set(captured);</span>
+<span class="nc" id="L125">        return () -&gt; {</span>
+<span class="nc" id="L126">            String previous = CURRENT_QID.get();</span>
+<span class="nc" id="L127">            CURRENT_QID.set(captured);</span>
             try {
-<span class="nc" id="L127">                task.run();</span>
+<span class="nc" id="L129">                task.run();</span>
             } finally {
-<span class="nc bnc" id="L129" title="All 2 branches missed.">                if (previous != null) {</span>
-<span class="nc" id="L130">                    CURRENT_QID.set(previous);</span>
+<span class="nc bnc" id="L131" title="All 2 branches missed.">                if (previous != null) {</span>
+<span class="nc" id="L132">                    CURRENT_QID.set(previous);</span>
                 } else {
-<span class="nc" id="L132">                    CURRENT_QID.remove();</span>
+<span class="nc" id="L134">                    CURRENT_QID.remove();</span>
                 }
             }
-<span class="nc" id="L135">        };</span>
+<span class="nc" id="L137">        };</span>
     }
 
     // ── Timing (DEBUG-level structured timing events) ─────────────────────
 
-<span class="fc" id="L140">    private static final Logger TIMING_LOG = LoggerFactory.getLogger(&quot;Timing&quot;);</span>
+<span class="fc" id="L142">    private static final Logger TIMING_LOG = LoggerFactory.getLogger(&quot;Timing&quot;);</span>
 
     /**
      * Returns a nanosecond timestamp if timing is enabled, or -1 if disabled.
@@ -146,7 +148,7 @@ public final class LogUtil {
      * @return System.nanoTime() when DEBUG is enabled, -1 otherwise
      */
     public static long mark() {
-<span class="pc bpc" id="L149" title="1 of 2 branches missed.">        return TIMING_LOG.isDebugEnabled() ? System.nanoTime() : -1L;</span>
+<span class="pc bpc" id="L151" title="1 of 2 branches missed.">        return TIMING_LOG.isDebugEnabled() ? System.nanoTime() : -1L;</span>
     }
 
     /**
@@ -156,8 +158,8 @@ public final class LogUtil {
      * @param event event name
      */
     public static void logTiming(long mark, String event) {
-<span class="fc" id="L159">        logTiming(mark, event, &quot;&quot;);</span>
-<span class="fc" id="L160">    }</span>
+<span class="fc" id="L161">        logTiming(mark, event, &quot;&quot;);</span>
+<span class="fc" id="L162">    }</span>
 
     /**
      * Logs a timing event with extra key=value context at DEBUG level.
@@ -168,32 +170,14 @@ public final class LogUtil {
      * @param extra extra context (e.g. &quot;files=12 engine=DuckDB&quot;), empty string to omit
      */
     public static void logTiming(long mark, String event, String extra) {
-<span class="pc bpc" id="L171" title="1 of 2 branches missed.">        if (mark &lt; 0) {</span>
-<span class="fc" id="L172">            return;</span>
+<span class="pc bpc" id="L173" title="1 of 2 branches missed.">        if (mark &lt; 0) {</span>
+<span class="fc" id="L174">            return;</span>
         }
-<span class="nc" id="L174">        long elapsed = System.nanoTime() - mark;</span>
-<span class="nc" id="L175">        TIMING_LOG.debug(&quot;timing={} elapsedNs={} elapsed={} node={} qid={}{}&quot;,</span>
-<span class="nc" id="L176">                event, elapsed, formatTiming(elapsed), NODE, qid(),</span>
-<span class="nc bnc" id="L177" title="All 2 branches missed.">                extra.isEmpty() ? &quot;&quot; : &quot; &quot; + extra);</span>
-<span class="nc" id="L178">    }</span>
+<span class="nc" id="L176">        long elapsedMicros = TimeUnit.NANOSECONDS.toMicros(System.nanoTime() - mark);</span>
+<span class="nc" id="L177">        TIMING_LOG.debug(&quot;qid={} node={} TIMING thread={} durationUs={} tag={}{}&quot;,</span>
+<span class="nc" id="L178">                qid(), NODE, Thread.currentThread().getName(), elapsedMicros, event,</span>
+<span class="nc bnc" id="L179" title="All 2 branches missed.">                extra.isEmpty() ? &quot;&quot; : &quot; &quot; + extra);</span>
+<span class="nc" id="L180">    }</span>
 
-    /**
-     * Formats nanoseconds as a human-readable duration for timing logs.
-     *
-     * @param nanos elapsed nanoseconds
-     * @return formatted string like &quot;1.23ms&quot; or &quot;1.234s&quot;
-     */
-    private static String formatTiming(long nanos) {
-<span class="nc bnc" id="L187" title="All 2 branches missed.">        if (nanos &lt; 1_000) {</span>
-<span class="nc" id="L188">            return nanos + &quot;ns&quot;;</span>
-        }
-<span class="nc bnc" id="L190" title="All 2 branches missed.">        if (nanos &lt; 1_000_000) {</span>
-<span class="nc" id="L191">            return String.format(&quot;%.1fµs&quot;, nanos / 1000.0);</span>
-        }
-<span class="nc bnc" id="L193" title="All 2 branches missed.">        if (nanos &lt; 1_000_000_000) {</span>
-<span class="nc" id="L194">            return String.format(&quot;%.2fms&quot;, nanos / 1_000_000.0);</span>
-        }
-<span class="nc" id="L196">        return String.format(&quot;%.3fs&quot;, nanos / 1_000_000_000.0);</span>
-    }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

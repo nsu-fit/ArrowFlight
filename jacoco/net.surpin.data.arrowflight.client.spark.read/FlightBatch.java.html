@@ -15,7 +15,7 @@ import java.util.Arrays;
  * Describes a flight-batch
  */
 public class FlightBatch implements Batch, Serializable {
-<span class="fc" id="L18">    private static final Logger LOGGER = LoggerFactory.getLogger(Batch.class);</span>
+<span class="nc" id="L18">    private static final Logger LOGGER = LoggerFactory.getLogger(Batch.class);</span>
     private final Configuration configuration;
     private final Table table;
 
@@ -24,11 +24,11 @@ public class FlightBatch implements Batch, Serializable {
      * @param configuration - the configuration of remote flight service
      * @param table - the table object
      */
-<span class="fc" id="L27">    public FlightBatch(Configuration configuration, Table table) {</span>
-<span class="fc" id="L28">        LOGGER.info(&quot;{}()&quot;, this.getClass().getName());</span>
-<span class="fc" id="L29">        this.configuration = configuration;</span>
-<span class="fc" id="L30">        this.table = table;</span>
-<span class="fc" id="L31">    }</span>
+<span class="nc" id="L27">    public FlightBatch(Configuration configuration, Table table) {</span>
+<span class="nc" id="L28">        LOGGER.debug(&quot;{}()&quot;, this.getClass().getName());</span>
+<span class="nc" id="L29">        this.configuration = configuration;</span>
+<span class="nc" id="L30">        this.table = table;</span>
+<span class="nc" id="L31">    }</span>
 
     /**
      * Plan the input-partitions
@@ -36,14 +36,14 @@ public class FlightBatch implements Batch, Serializable {
      */
     @Override
     public InputPartition[] planInputPartitions() {
-<span class="nc" id="L39">        LOGGER.info(&quot;{}.planInputPartitions()&quot;, this.getClass().getName());</span>
+<span class="nc" id="L39">        LOGGER.debug(&quot;{}.planInputPartitions()&quot;, this.getClass().getName());</span>
 <span class="nc" id="L40">        String[] partitionQueries = this.table.getPartitionStatements();</span>
-<span class="nc" id="L41">        LOGGER.info(&quot;{}.planInputPartitions(): partitionQueries = {}&quot;, this.getClass().getName(), Arrays.asList(partitionQueries));</span>
+<span class="nc" id="L41">        LOGGER.debug(&quot;{}.planInputPartitions(): partitionQueries = {}&quot;, this.getClass().getName(), Arrays.asList(partitionQueries));</span>
 <span class="nc bnc" id="L42" title="All 2 branches missed.">        if (partitionQueries.length &gt; 0) {</span>
-<span class="nc" id="L43">            LOGGER.info(&quot;{}.planInputPartitions(): partitionQueries = {}&quot;, this.getClass().getName(), Arrays.asList(partitionQueries));</span>
+<span class="nc" id="L43">            LOGGER.debug(&quot;{}.planInputPartitions(): partitionQueries = {}&quot;, this.getClass().getName(), Arrays.asList(partitionQueries));</span>
 <span class="nc" id="L44">            return Arrays.stream(partitionQueries).map(q -&gt; new FlightInputPartition.FlightQueryInputPartition(this.table.getSchema(), q)).toArray(InputPartition[]::new);</span>
         } else {
-<span class="nc" id="L46">            LOGGER.info(&quot;{}.planInputPartitions(): endpoints = {}&quot;, this.getClass().getName(), Arrays.asList(this.table.getEndpoints()));</span>
+<span class="nc" id="L46">            LOGGER.debug(&quot;{}.planInputPartitions(): endpoints = {}&quot;, this.getClass().getName(), Arrays.asList(this.table.getEndpoints()));</span>
 <span class="nc" id="L47">            return Arrays.stream(this.table.getEndpoints()).map(e -&gt; new FlightInputPartition.FlightEndpointInputPartition(this.table.getSchema(), e)).toArray(InputPartition[]::new);</span>
         }
     }
@@ -54,7 +54,7 @@ public class FlightBatch implements Batch, Serializable {
      */
     @Override
     public PartitionReaderFactory createReaderFactory() {
-<span class="nc" id="L57">        LOGGER.info(&quot;{}.createReaderFactory()&quot;, this.getClass().getName());</span>
+<span class="nc" id="L57">        LOGGER.debug(&quot;{}.createReaderFactory()&quot;, this.getClass().getName());</span>
 <span class="nc" id="L58">        return new FlightPartitionReaderFactory(this.configuration);</span>
     }
 }

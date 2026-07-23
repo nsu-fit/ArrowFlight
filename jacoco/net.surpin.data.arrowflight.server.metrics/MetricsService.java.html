@@ -39,10 +39,6 @@ public final class MetricsService implements AutoCloseable {
 <span class="fc" id="L39">    private static final ConcurrentHashMap&lt;String, QueryMetrics&gt; QUERY_METRICS =</span>
             new ConcurrentHashMap&lt;&gt;();
 <span class="fc" id="L41">    private static final AtomicLong ACTIVE_QUERIES = new AtomicLong();</span>
-<span class="fc" id="L42">    private static final AtomicLong MATERIALIZATION_BYTES = new AtomicLong();</span>
-<span class="fc" id="L43">    private static final AtomicLong MATERIALIZATION_COUNT = new AtomicLong();</span>
-<span class="fc" id="L44">    private static final AtomicLong MATERIALIZATION_FAILURES = new AtomicLong();</span>
-<span class="fc" id="L45">    private static final AtomicLong MATERIALIZATION_NANOS = new AtomicLong();</span>
 
     private final HttpServer server;
     private final ExecutorService executor;
@@ -53,24 +49,24 @@ public final class MetricsService implements AutoCloseable {
      * @param port Prometheus HTTP port, or zero for an ephemeral port
      * @throws IOException if the endpoint cannot be created
      */
-<span class="fc" id="L56">    public MetricsService(int port) throws IOException {</span>
-<span class="fc" id="L57">        server = HttpServer.create(new InetSocketAddress(&quot;0.0.0.0&quot;, port), 0);</span>
-<span class="fc" id="L58">        executor = Executors.newSingleThreadExecutor(runnable -&gt; {</span>
-<span class="fc" id="L59">            Thread thread = new Thread(runnable, &quot;arrowflight-metrics&quot;);</span>
-<span class="fc" id="L60">            thread.setDaemon(true);</span>
-<span class="fc" id="L61">            return thread;</span>
+<span class="fc" id="L52">    public MetricsService(int port) throws IOException {</span>
+<span class="fc" id="L53">        server = HttpServer.create(new InetSocketAddress(&quot;0.0.0.0&quot;, port), 0);</span>
+<span class="fc" id="L54">        executor = Executors.newSingleThreadExecutor(runnable -&gt; {</span>
+<span class="fc" id="L55">            Thread thread = new Thread(runnable, &quot;arrowflight-metrics&quot;);</span>
+<span class="fc" id="L56">            thread.setDaemon(true);</span>
+<span class="fc" id="L57">            return thread;</span>
         });
-<span class="fc" id="L63">        server.setExecutor(executor);</span>
-<span class="fc" id="L64">        server.createContext(&quot;/metrics&quot;, MetricsService::handleMetrics);</span>
-<span class="fc" id="L65">        server.createContext(&quot;/-/healthy&quot;, MetricsService::handleHealth);</span>
-<span class="fc" id="L66">    }</span>
+<span class="fc" id="L59">        server.setExecutor(executor);</span>
+<span class="fc" id="L60">        server.createContext(&quot;/metrics&quot;, MetricsService::handleMetrics);</span>
+<span class="fc" id="L61">        server.createContext(&quot;/-/healthy&quot;, MetricsService::handleHealth);</span>
+<span class="fc" id="L62">    }</span>
 
     /**
      * Starts accepting Prometheus scrape requests.
      */
     public void start() {
-<span class="fc" id="L72">        server.start();</span>
-<span class="fc" id="L73">    }</span>
+<span class="fc" id="L68">        server.start();</span>
+<span class="fc" id="L69">    }</span>
 
     /**
      * Returns the bound HTTP port.
@@ -78,7 +74,7 @@ public final class MetricsService implements AutoCloseable {
      * @return metrics HTTP port
      */
     public int port() {
-<span class="fc" id="L81">        return server.getAddress().getPort();</span>
+<span class="fc" id="L77">        return server.getAddress().getPort();</span>
     }
 
     /**
@@ -89,33 +85,16 @@ public final class MetricsService implements AutoCloseable {
      * @return observation that must be closed when execution finishes
      */
     public static QueryObservation observeQuery(String query, long logicalBytes) {
-<span class="fc" id="L92">        String path = classify(query);</span>
-<span class="fc" id="L93">        ACTIVE_QUERIES.incrementAndGet();</span>
-<span class="fc" id="L94">        return new QueryObservation(path, Math.max(0L, logicalBytes));</span>
+<span class="fc" id="L88">        String path = classify(query);</span>
+<span class="fc" id="L89">        ACTIVE_QUERIES.incrementAndGet();</span>
+<span class="fc" id="L90">        return new QueryObservation(path, Math.max(0L, logicalBytes));</span>
     }
-
-    /**
-     * Records one Hadoop-to-local-cache materialization operation.
-     *
-     * @param bytes copied bytes
-     * @param elapsedNanos copy duration in nanoseconds
-     * @param successful whether the complete file was materialized
-     */
-    public static void recordMaterialization(long bytes, long elapsedNanos,
-            boolean successful) {
-<span class="fc" id="L106">        MATERIALIZATION_COUNT.incrementAndGet();</span>
-<span class="fc" id="L107">        MATERIALIZATION_BYTES.addAndGet(Math.max(0L, bytes));</span>
-<span class="fc" id="L108">        MATERIALIZATION_NANOS.addAndGet(Math.max(0L, elapsedNanos));</span>
-<span class="pc bpc" id="L109" title="1 of 2 branches missed.">        if (!successful) {</span>
-<span class="nc" id="L110">            MATERIALIZATION_FAILURES.incrementAndGet();</span>
-        }
-<span class="fc" id="L112">    }</span>
 
     @Override
     public void close() {
-<span class="fc" id="L116">        server.stop(0);</span>
-<span class="fc" id="L117">        executor.shutdownNow();</span>
-<span class="fc" id="L118">    }</span>
+<span class="fc" id="L95">        server.stop(0);</span>
+<span class="fc" id="L96">        executor.shutdownNow();</span>
+<span class="fc" id="L97">    }</span>
 
     /**
      * Classifies SQL into a bounded query-path label without parsing it again.
@@ -124,21 +103,21 @@ public final class MetricsService implements AutoCloseable {
      * @return bounded query-path label
      */
     private static String classify(String query) {
-<span class="pc bpc" id="L127" title="1 of 2 branches missed.">        String normalized = query == null ? &quot;&quot; : query.toLowerCase(Locale.ROOT);</span>
-<span class="pc bpc" id="L128" title="1 of 2 branches missed.">        if (JOIN_PATTERN.matcher(normalized).find()) {</span>
-<span class="nc" id="L129">            return &quot;join&quot;;</span>
+<span class="pc bpc" id="L106" title="1 of 2 branches missed.">        String normalized = query == null ? &quot;&quot; : query.toLowerCase(Locale.ROOT);</span>
+<span class="pc bpc" id="L107" title="1 of 2 branches missed.">        if (JOIN_PATTERN.matcher(normalized).find()) {</span>
+<span class="nc" id="L108">            return &quot;join&quot;;</span>
         }
-<span class="fc" id="L131">        boolean aggregation = AGGREGATION_PATTERN.matcher(normalized).find();</span>
-<span class="pc bpc" id="L132" title="3 of 4 branches missed.">        if (aggregation &amp;&amp; GROUP_BY_PATTERN.matcher(normalized).find()) {</span>
-<span class="nc" id="L133">            return &quot;aggregation-groupby&quot;;</span>
+<span class="fc" id="L110">        boolean aggregation = AGGREGATION_PATTERN.matcher(normalized).find();</span>
+<span class="pc bpc" id="L111" title="3 of 4 branches missed.">        if (aggregation &amp;&amp; GROUP_BY_PATTERN.matcher(normalized).find()) {</span>
+<span class="nc" id="L112">            return &quot;aggregation-groupby&quot;;</span>
         }
-<span class="pc bpc" id="L135" title="1 of 2 branches missed.">        if (aggregation) {</span>
-<span class="nc" id="L136">            return &quot;aggregation&quot;;</span>
+<span class="pc bpc" id="L114" title="1 of 2 branches missed.">        if (aggregation) {</span>
+<span class="nc" id="L115">            return &quot;aggregation&quot;;</span>
         }
-<span class="pc bpc" id="L138" title="1 of 2 branches missed.">        if (WHERE_PATTERN.matcher(normalized).find()) {</span>
-<span class="fc" id="L139">            return &quot;filtered-scan&quot;;</span>
+<span class="fc bfc" id="L117" title="All 2 branches covered.">        if (WHERE_PATTERN.matcher(normalized).find()) {</span>
+<span class="fc" id="L118">            return &quot;filtered-scan&quot;;</span>
         }
-<span class="nc" id="L141">        return &quot;full-scan&quot;;</span>
+<span class="fc" id="L120">        return &quot;full-scan&quot;;</span>
     }
 
     /**
@@ -148,13 +127,13 @@ public final class MetricsService implements AutoCloseable {
      * @throws IOException if the response cannot be sent
      */
     private static void handleMetrics(HttpExchange exchange) throws IOException {
-<span class="pc bpc" id="L151" title="1 of 2 branches missed.">        if (!&quot;GET&quot;.equals(exchange.getRequestMethod())) {</span>
-<span class="nc" id="L152">            send(exchange, 405, &quot;method not allowed\n&quot;, &quot;text/plain; charset=utf-8&quot;);</span>
-<span class="nc" id="L153">            return;</span>
+<span class="pc bpc" id="L130" title="1 of 2 branches missed.">        if (!&quot;GET&quot;.equals(exchange.getRequestMethod())) {</span>
+<span class="nc" id="L131">            send(exchange, 405, &quot;method not allowed\n&quot;, &quot;text/plain; charset=utf-8&quot;);</span>
+<span class="nc" id="L132">            return;</span>
         }
-<span class="fc" id="L155">        send(exchange, 200, render(),</span>
+<span class="fc" id="L134">        send(exchange, 200, render(),</span>
                 &quot;text/plain; version=0.0.4; charset=utf-8&quot;);
-<span class="fc" id="L157">    }</span>
+<span class="fc" id="L136">    }</span>
 
     /**
      * Handles a metrics health request.
@@ -163,8 +142,8 @@ public final class MetricsService implements AutoCloseable {
      * @throws IOException if the response cannot be sent
      */
     private static void handleHealth(HttpExchange exchange) throws IOException {
-<span class="fc" id="L166">        send(exchange, 200, &quot;ok\n&quot;, &quot;text/plain; charset=utf-8&quot;);</span>
-<span class="fc" id="L167">    }</span>
+<span class="fc" id="L145">        send(exchange, 200, &quot;ok\n&quot;, &quot;text/plain; charset=utf-8&quot;);</span>
+<span class="fc" id="L146">    }</span>
 
     /**
      * Sends one HTTP response.
@@ -177,13 +156,13 @@ public final class MetricsService implements AutoCloseable {
      */
     private static void send(HttpExchange exchange, int status, String body,
             String contentType) throws IOException {
-<span class="fc" id="L180">        byte[] content = body.getBytes(StandardCharsets.UTF_8);</span>
-<span class="fc" id="L181">        exchange.getResponseHeaders().set(&quot;Content-Type&quot;, contentType);</span>
-<span class="fc" id="L182">        exchange.sendResponseHeaders(status, content.length);</span>
-<span class="fc" id="L183">        try (OutputStream output = exchange.getResponseBody()) {</span>
-<span class="fc" id="L184">            output.write(content);</span>
+<span class="fc" id="L159">        byte[] content = body.getBytes(StandardCharsets.UTF_8);</span>
+<span class="fc" id="L160">        exchange.getResponseHeaders().set(&quot;Content-Type&quot;, contentType);</span>
+<span class="fc" id="L161">        exchange.sendResponseHeaders(status, content.length);</span>
+<span class="fc" id="L162">        try (OutputStream output = exchange.getResponseBody()) {</span>
+<span class="fc" id="L163">            output.write(content);</span>
         }
-<span class="fc" id="L186">    }</span>
+<span class="fc" id="L165">    }</span>
 
     /**
      * Renders the current registry in Prometheus text format.
@@ -191,24 +170,13 @@ public final class MetricsService implements AutoCloseable {
      * @return Prometheus text payload
      */
     private static String render() {
-<span class="fc" id="L194">        StringBuilder metrics = new StringBuilder(8192);</span>
-<span class="fc" id="L195">        appendJvmMetrics(metrics);</span>
-<span class="fc" id="L196">        metric(metrics, &quot;arrowflight_parquet_queries_active&quot;, &quot;gauge&quot;,</span>
-<span class="fc" id="L197">                &quot;Currently executing Parquet queries&quot;, ACTIVE_QUERIES.get());</span>
-<span class="fc" id="L198">        appendQueryMetrics(metrics);</span>
-<span class="fc" id="L199">        metric(metrics, &quot;arrowflight_parquet_materialization_bytes_total&quot;, &quot;counter&quot;,</span>
-                &quot;Hadoop bytes copied into the local Acero cache&quot;,
-<span class="fc" id="L201">                MATERIALIZATION_BYTES.get());</span>
-<span class="fc" id="L202">        metric(metrics, &quot;arrowflight_parquet_materializations_total&quot;, &quot;counter&quot;,</span>
-                &quot;Hadoop files copied into the local Acero cache&quot;,
-<span class="fc" id="L204">                MATERIALIZATION_COUNT.get());</span>
-<span class="fc" id="L205">        metric(metrics, &quot;arrowflight_parquet_materialization_failures_total&quot;, &quot;counter&quot;,</span>
-                &quot;Failed Hadoop-to-local-cache file copies&quot;,
-<span class="fc" id="L207">                MATERIALIZATION_FAILURES.get());</span>
-<span class="fc" id="L208">        metric(metrics, &quot;arrowflight_parquet_materialization_duration_seconds_total&quot;, &quot;counter&quot;,</span>
-                &quot;Time spent copying Hadoop files into the local Acero cache&quot;,
-<span class="fc" id="L210">                seconds(MATERIALIZATION_NANOS.get()));</span>
-<span class="fc" id="L211">        return metrics.toString();</span>
+<span class="fc" id="L173">        StringBuilder metrics = new StringBuilder(8192);</span>
+<span class="fc" id="L174">        appendJvmMetrics(metrics);</span>
+<span class="fc" id="L175">        metric(metrics, &quot;arrowflight_parquet_queries_active&quot;, &quot;gauge&quot;,</span>
+<span class="fc" id="L176">                &quot;Currently executing Parquet queries&quot;, ACTIVE_QUERIES.get());</span>
+<span class="fc" id="L177">        appendQueryMetrics(metrics);</span>
+
+<span class="fc" id="L179">        return metrics.toString();</span>
     }
 
     /**
@@ -217,35 +185,35 @@ public final class MetricsService implements AutoCloseable {
      * @param metrics destination payload
      */
     private static void appendJvmMetrics(StringBuilder metrics) {
-<span class="fc" id="L220">        MemoryMXBean memory = ManagementFactory.getMemoryMXBean();</span>
-<span class="fc" id="L221">        ThreadMXBean threads = ManagementFactory.getThreadMXBean();</span>
-<span class="fc" id="L222">        metric(metrics, &quot;arrowflight_jvm_heap_used_bytes&quot;, &quot;gauge&quot;,</span>
-<span class="fc" id="L223">                &quot;Used JVM heap&quot;, memory.getHeapMemoryUsage().getUsed());</span>
-<span class="fc" id="L224">        metric(metrics, &quot;arrowflight_jvm_heap_max_bytes&quot;, &quot;gauge&quot;,</span>
-<span class="fc" id="L225">                &quot;Maximum JVM heap&quot;, memory.getHeapMemoryUsage().getMax());</span>
-<span class="fc" id="L226">        metric(metrics, &quot;arrowflight_jvm_nonheap_used_bytes&quot;, &quot;gauge&quot;,</span>
-<span class="fc" id="L227">                &quot;Used JVM non-heap memory&quot;, memory.getNonHeapMemoryUsage().getUsed());</span>
-<span class="fc" id="L228">        metric(metrics, &quot;arrowflight_jvm_threads_live&quot;, &quot;gauge&quot;,</span>
-<span class="fc" id="L229">                &quot;Live JVM threads&quot;, threads.getThreadCount());</span>
-<span class="fc" id="L230">        metric(metrics, &quot;arrowflight_jvm_threads_daemon&quot;, &quot;gauge&quot;,</span>
-<span class="fc" id="L231">                &quot;Live daemon JVM threads&quot;, threads.getDaemonThreadCount());</span>
-<span class="fc" id="L232">        metric(metrics, &quot;arrowflight_jvm_threads_peak&quot;, &quot;gauge&quot;,</span>
-<span class="fc" id="L233">                &quot;Peak live JVM threads&quot;, threads.getPeakThreadCount());</span>
+<span class="fc" id="L188">        MemoryMXBean memory = ManagementFactory.getMemoryMXBean();</span>
+<span class="fc" id="L189">        ThreadMXBean threads = ManagementFactory.getThreadMXBean();</span>
+<span class="fc" id="L190">        metric(metrics, &quot;arrowflight_jvm_heap_used_bytes&quot;, &quot;gauge&quot;,</span>
+<span class="fc" id="L191">                &quot;Used JVM heap&quot;, memory.getHeapMemoryUsage().getUsed());</span>
+<span class="fc" id="L192">        metric(metrics, &quot;arrowflight_jvm_heap_max_bytes&quot;, &quot;gauge&quot;,</span>
+<span class="fc" id="L193">                &quot;Maximum JVM heap&quot;, memory.getHeapMemoryUsage().getMax());</span>
+<span class="fc" id="L194">        metric(metrics, &quot;arrowflight_jvm_nonheap_used_bytes&quot;, &quot;gauge&quot;,</span>
+<span class="fc" id="L195">                &quot;Used JVM non-heap memory&quot;, memory.getNonHeapMemoryUsage().getUsed());</span>
+<span class="fc" id="L196">        metric(metrics, &quot;arrowflight_jvm_threads_live&quot;, &quot;gauge&quot;,</span>
+<span class="fc" id="L197">                &quot;Live JVM threads&quot;, threads.getThreadCount());</span>
+<span class="fc" id="L198">        metric(metrics, &quot;arrowflight_jvm_threads_daemon&quot;, &quot;gauge&quot;,</span>
+<span class="fc" id="L199">                &quot;Live daemon JVM threads&quot;, threads.getDaemonThreadCount());</span>
+<span class="fc" id="L200">        metric(metrics, &quot;arrowflight_jvm_threads_peak&quot;, &quot;gauge&quot;,</span>
+<span class="fc" id="L201">                &quot;Peak live JVM threads&quot;, threads.getPeakThreadCount());</span>
         java.lang.management.OperatingSystemMXBean operatingSystem =
-<span class="fc" id="L235">                ManagementFactory.getOperatingSystemMXBean();</span>
-<span class="fc" id="L236">        metric(metrics, &quot;arrowflight_process_cpu_available&quot;, &quot;gauge&quot;,</span>
-<span class="fc" id="L237">                &quot;Processors available to the JVM&quot;, operatingSystem.getAvailableProcessors());</span>
-<span class="fc" id="L238">        metric(metrics, &quot;arrowflight_system_load_average&quot;, &quot;gauge&quot;,</span>
-<span class="fc" id="L239">                &quot;Operating system load average&quot;, operatingSystem.getSystemLoadAverage());</span>
-<span class="pc bpc" id="L240" title="1 of 2 branches missed.">        if (operatingSystem instanceof com.sun.management.OperatingSystemMXBean extended) {</span>
-<span class="fc" id="L241">            metric(metrics, &quot;arrowflight_process_cpu_time_seconds_total&quot;, &quot;counter&quot;,</span>
-<span class="fc" id="L242">                    &quot;CPU time used by the Flight JVM&quot;, seconds(extended.getProcessCpuTime()));</span>
+<span class="fc" id="L203">                ManagementFactory.getOperatingSystemMXBean();</span>
+<span class="fc" id="L204">        metric(metrics, &quot;arrowflight_process_cpu_available&quot;, &quot;gauge&quot;,</span>
+<span class="fc" id="L205">                &quot;Processors available to the JVM&quot;, operatingSystem.getAvailableProcessors());</span>
+<span class="fc" id="L206">        metric(metrics, &quot;arrowflight_system_load_average&quot;, &quot;gauge&quot;,</span>
+<span class="fc" id="L207">                &quot;Operating system load average&quot;, operatingSystem.getSystemLoadAverage());</span>
+<span class="pc bpc" id="L208" title="1 of 2 branches missed.">        if (operatingSystem instanceof com.sun.management.OperatingSystemMXBean extended) {</span>
+<span class="fc" id="L209">            metric(metrics, &quot;arrowflight_process_cpu_time_seconds_total&quot;, &quot;counter&quot;,</span>
+<span class="fc" id="L210">                    &quot;CPU time used by the Flight JVM&quot;, seconds(extended.getProcessCpuTime()));</span>
         }
-<span class="pc bpc" id="L244" title="1 of 2 branches missed.">        if (operatingSystem instanceof UnixOperatingSystemMXBean unix) {</span>
-<span class="fc" id="L245">            metric(metrics, &quot;arrowflight_process_open_file_descriptors&quot;, &quot;gauge&quot;,</span>
-<span class="fc" id="L246">                    &quot;Open file descriptors in the Flight JVM&quot;, unix.getOpenFileDescriptorCount());</span>
+<span class="pc bpc" id="L212" title="1 of 2 branches missed.">        if (operatingSystem instanceof UnixOperatingSystemMXBean unix) {</span>
+<span class="fc" id="L213">            metric(metrics, &quot;arrowflight_process_open_file_descriptors&quot;, &quot;gauge&quot;,</span>
+<span class="fc" id="L214">                    &quot;Open file descriptors in the Flight JVM&quot;, unix.getOpenFileDescriptorCount());</span>
         }
-<span class="fc" id="L248">    }</span>
+<span class="fc" id="L216">    }</span>
 
     /**
      * Appends logical Parquet query metrics.
@@ -253,36 +221,36 @@ public final class MetricsService implements AutoCloseable {
      * @param metrics destination payload
      */
     private static void appendQueryMetrics(StringBuilder metrics) {
-<span class="fc" id="L256">        helpType(metrics, &quot;arrowflight_parquet_queries_total&quot;, &quot;counter&quot;,</span>
+<span class="fc" id="L224">        helpType(metrics, &quot;arrowflight_parquet_queries_total&quot;, &quot;counter&quot;,</span>
                 &quot;Completed logical Parquet queries&quot;);
-<span class="fc" id="L258">        helpType(metrics, &quot;arrowflight_parquet_query_failures_total&quot;, &quot;counter&quot;,</span>
+<span class="fc" id="L226">        helpType(metrics, &quot;arrowflight_parquet_query_failures_total&quot;, &quot;counter&quot;,</span>
                 &quot;Failed logical Parquet queries&quot;);
-<span class="fc" id="L260">        helpType(metrics, &quot;arrowflight_parquet_logical_input_bytes_total&quot;, &quot;counter&quot;,</span>
+<span class="fc" id="L228">        helpType(metrics, &quot;arrowflight_parquet_logical_input_bytes_total&quot;, &quot;counter&quot;,</span>
                 &quot;Planned logical Parquet input bytes&quot;);
-<span class="fc" id="L262">        helpType(metrics, &quot;arrowflight_parquet_query_duration_seconds&quot;, &quot;histogram&quot;,</span>
+<span class="fc" id="L230">        helpType(metrics, &quot;arrowflight_parquet_query_duration_seconds&quot;, &quot;histogram&quot;,</span>
                 &quot;End-to-end Parquet scan and execution duration&quot;);
-<span class="fc" id="L264">        QUERY_METRICS.forEach((path, values) -&gt; {</span>
-<span class="fc" id="L265">            String labels = &quot;{path=\&quot;&quot; + path + &quot;\&quot;}&quot;;</span>
-<span class="fc" id="L266">            sample(metrics, &quot;arrowflight_parquet_queries_total&quot; + labels,</span>
-<span class="fc" id="L267">                    values.count.get());</span>
-<span class="fc" id="L268">            sample(metrics, &quot;arrowflight_parquet_query_failures_total&quot; + labels,</span>
-<span class="fc" id="L269">                    values.failures.get());</span>
-<span class="fc" id="L270">            sample(metrics, &quot;arrowflight_parquet_logical_input_bytes_total&quot; + labels,</span>
-<span class="fc" id="L271">                    values.logicalBytes.get());</span>
-<span class="fc bfc" id="L272" title="All 2 branches covered.">            for (int i = 0; i &lt; DURATION_BUCKETS.length; i++) {</span>
-<span class="fc" id="L273">                String bucketLabels = &quot;{path=\&quot;&quot; + path + &quot;\&quot;,le=\&quot;&quot;</span>
-<span class="fc" id="L274">                        + decimal(DURATION_BUCKETS[i]) + &quot;\&quot;}&quot;;</span>
-<span class="fc" id="L275">                sample(metrics, &quot;arrowflight_parquet_query_duration_seconds_bucket&quot;</span>
-<span class="fc" id="L276">                        + bucketLabels, values.durationBuckets.get(i));</span>
+<span class="fc" id="L232">        QUERY_METRICS.forEach((path, values) -&gt; {</span>
+<span class="fc" id="L233">            String labels = &quot;{path=\&quot;&quot; + path + &quot;\&quot;}&quot;;</span>
+<span class="fc" id="L234">            sample(metrics, &quot;arrowflight_parquet_queries_total&quot; + labels,</span>
+<span class="fc" id="L235">                    values.count.get());</span>
+<span class="fc" id="L236">            sample(metrics, &quot;arrowflight_parquet_query_failures_total&quot; + labels,</span>
+<span class="fc" id="L237">                    values.failures.get());</span>
+<span class="fc" id="L238">            sample(metrics, &quot;arrowflight_parquet_logical_input_bytes_total&quot; + labels,</span>
+<span class="fc" id="L239">                    values.logicalBytes.get());</span>
+<span class="fc bfc" id="L240" title="All 2 branches covered.">            for (int i = 0; i &lt; DURATION_BUCKETS.length; i++) {</span>
+<span class="fc" id="L241">                String bucketLabels = &quot;{path=\&quot;&quot; + path + &quot;\&quot;,le=\&quot;&quot;</span>
+<span class="fc" id="L242">                        + decimal(DURATION_BUCKETS[i]) + &quot;\&quot;}&quot;;</span>
+<span class="fc" id="L243">                sample(metrics, &quot;arrowflight_parquet_query_duration_seconds_bucket&quot;</span>
+<span class="fc" id="L244">                        + bucketLabels, values.durationBuckets.get(i));</span>
             }
-<span class="fc" id="L278">            sample(metrics, &quot;arrowflight_parquet_query_duration_seconds_bucket{path=\&quot;&quot;</span>
-<span class="fc" id="L279">                    + path + &quot;\&quot;,le=\&quot;+Inf\&quot;}&quot;, values.count.get());</span>
-<span class="fc" id="L280">            sample(metrics, &quot;arrowflight_parquet_query_duration_seconds_sum&quot; + labels,</span>
-<span class="fc" id="L281">                    seconds(values.durationNanos.get()));</span>
-<span class="fc" id="L282">            sample(metrics, &quot;arrowflight_parquet_query_duration_seconds_count&quot; + labels,</span>
-<span class="fc" id="L283">                    values.count.get());</span>
-<span class="fc" id="L284">        });</span>
-<span class="fc" id="L285">    }</span>
+<span class="fc" id="L246">            sample(metrics, &quot;arrowflight_parquet_query_duration_seconds_bucket{path=\&quot;&quot;</span>
+<span class="fc" id="L247">                    + path + &quot;\&quot;,le=\&quot;+Inf\&quot;}&quot;, values.count.get());</span>
+<span class="fc" id="L248">            sample(metrics, &quot;arrowflight_parquet_query_duration_seconds_sum&quot; + labels,</span>
+<span class="fc" id="L249">                    seconds(values.durationNanos.get()));</span>
+<span class="fc" id="L250">            sample(metrics, &quot;arrowflight_parquet_query_duration_seconds_count&quot; + labels,</span>
+<span class="fc" id="L251">                    values.count.get());</span>
+<span class="fc" id="L252">        });</span>
+<span class="fc" id="L253">    }</span>
 
     /**
      * Appends one metric family containing a single sample.
@@ -295,9 +263,9 @@ public final class MetricsService implements AutoCloseable {
      */
     private static void metric(StringBuilder target, String name, String type,
             String help, double value) {
-<span class="fc" id="L298">        helpType(target, name, type, help);</span>
-<span class="fc" id="L299">        sample(target, name, value);</span>
-<span class="fc" id="L300">    }</span>
+<span class="fc" id="L266">        helpType(target, name, type, help);</span>
+<span class="fc" id="L267">        sample(target, name, value);</span>
+<span class="fc" id="L268">    }</span>
 
     /**
      * Appends Prometheus help and type declarations.
@@ -308,9 +276,9 @@ public final class MetricsService implements AutoCloseable {
      * @param help metric description
      */
     private static void helpType(StringBuilder target, String name, String type, String help) {
-<span class="fc" id="L311">        target.append(&quot;# HELP &quot;).append(name).append(' ').append(help).append('\n');</span>
-<span class="fc" id="L312">        target.append(&quot;# TYPE &quot;).append(name).append(' ').append(type).append('\n');</span>
-<span class="fc" id="L313">    }</span>
+<span class="fc" id="L279">        target.append(&quot;# HELP &quot;).append(name).append(' ').append(help).append('\n');</span>
+<span class="fc" id="L280">        target.append(&quot;# TYPE &quot;).append(name).append(' ').append(type).append('\n');</span>
+<span class="fc" id="L281">    }</span>
 
     /**
      * Appends one Prometheus sample.
@@ -320,8 +288,8 @@ public final class MetricsService implements AutoCloseable {
      * @param value sample value
      */
     private static void sample(StringBuilder target, String name, double value) {
-<span class="fc" id="L323">        target.append(name).append(' ').append(decimal(value)).append('\n');</span>
-<span class="fc" id="L324">    }</span>
+<span class="fc" id="L291">        target.append(name).append(' ').append(decimal(value)).append('\n');</span>
+<span class="fc" id="L292">    }</span>
 
     /**
      * Formats a floating-point value without locale-dependent separators.
@@ -330,13 +298,13 @@ public final class MetricsService implements AutoCloseable {
      * @return Prometheus-compatible decimal
      */
     private static String decimal(double value) {
-<span class="pc bpc" id="L333" title="1 of 2 branches missed.">        if (Double.isNaN(value)) {</span>
-<span class="nc" id="L334">            return &quot;NaN&quot;;</span>
+<span class="pc bpc" id="L301" title="1 of 2 branches missed.">        if (Double.isNaN(value)) {</span>
+<span class="nc" id="L302">            return &quot;NaN&quot;;</span>
         }
-<span class="pc bpc" id="L336" title="1 of 2 branches missed.">        if (Double.isInfinite(value)) {</span>
-<span class="nc bnc" id="L337" title="All 2 branches missed.">            return value &gt; 0 ? &quot;+Inf&quot; : &quot;-Inf&quot;;</span>
+<span class="pc bpc" id="L304" title="1 of 2 branches missed.">        if (Double.isInfinite(value)) {</span>
+<span class="nc bnc" id="L305" title="All 2 branches missed.">            return value &gt; 0 ? &quot;+Inf&quot; : &quot;-Inf&quot;;</span>
         }
-<span class="fc" id="L339">        return String.format(Locale.ROOT, &quot;%.9g&quot;, value);</span>
+<span class="fc" id="L307">        return String.format(Locale.ROOT, &quot;%.9g&quot;, value);</span>
     }
 
     /**
@@ -346,7 +314,7 @@ public final class MetricsService implements AutoCloseable {
      * @return duration in seconds
      */
     private static double seconds(long nanos) {
-<span class="fc" id="L349">        return nanos / 1_000_000_000.0;</span>
+<span class="fc" id="L317">        return nanos / 1_000_000_000.0;</span>
     }
 
     /**
@@ -356,8 +324,8 @@ public final class MetricsService implements AutoCloseable {
 
         private final String path;
         private final long logicalBytes;
-<span class="fc" id="L359">        private final long startedNanos = System.nanoTime();</span>
-<span class="fc" id="L360">        private final AtomicBoolean closed = new AtomicBoolean();</span>
+<span class="fc" id="L327">        private final long startedNanos = System.nanoTime();</span>
+<span class="fc" id="L328">        private final AtomicBoolean closed = new AtomicBoolean();</span>
         private volatile boolean failed;
 
         /**
@@ -366,51 +334,51 @@ public final class MetricsService implements AutoCloseable {
          * @param path bounded query-path label
          * @param logicalBytes planned Parquet input bytes
          */
-<span class="fc" id="L369">        private QueryObservation(String path, long logicalBytes) {</span>
-<span class="fc" id="L370">            this.path = path;</span>
-<span class="fc" id="L371">            this.logicalBytes = logicalBytes;</span>
-<span class="fc" id="L372">        }</span>
+<span class="fc" id="L337">        private QueryObservation(String path, long logicalBytes) {</span>
+<span class="fc" id="L338">            this.path = path;</span>
+<span class="fc" id="L339">            this.logicalBytes = logicalBytes;</span>
+<span class="fc" id="L340">        }</span>
 
         /**
          * Marks this query as failed.
          */
         public void markFailed() {
-<span class="fc" id="L378">            failed = true;</span>
-<span class="fc" id="L379">        }</span>
+<span class="fc" id="L346">            failed = true;</span>
+<span class="fc" id="L347">        }</span>
 
         @Override
         public void close() {
-<span class="pc bpc" id="L383" title="1 of 2 branches missed.">            if (!closed.compareAndSet(false, true)) {</span>
-<span class="nc" id="L384">                return;</span>
+<span class="pc bpc" id="L351" title="1 of 2 branches missed.">            if (!closed.compareAndSet(false, true)) {</span>
+<span class="nc" id="L352">                return;</span>
             }
-<span class="fc" id="L386">            long elapsedNanos = Math.max(0L, System.nanoTime() - startedNanos);</span>
-<span class="fc" id="L387">            QueryMetrics values = QUERY_METRICS.computeIfAbsent(path,</span>
-<span class="fc" id="L388">                    ignored -&gt; new QueryMetrics());</span>
-<span class="fc" id="L389">            values.count.incrementAndGet();</span>
-<span class="fc" id="L390">            values.logicalBytes.addAndGet(logicalBytes);</span>
-<span class="fc" id="L391">            values.durationNanos.addAndGet(elapsedNanos);</span>
-<span class="pc bpc" id="L392" title="1 of 2 branches missed.">            if (failed) {</span>
-<span class="fc" id="L393">                values.failures.incrementAndGet();</span>
+<span class="fc" id="L354">            long elapsedNanos = Math.max(0L, System.nanoTime() - startedNanos);</span>
+<span class="fc" id="L355">            QueryMetrics values = QUERY_METRICS.computeIfAbsent(path,</span>
+<span class="fc" id="L356">                    ignored -&gt; new QueryMetrics());</span>
+<span class="fc" id="L357">            values.count.incrementAndGet();</span>
+<span class="fc" id="L358">            values.logicalBytes.addAndGet(logicalBytes);</span>
+<span class="fc" id="L359">            values.durationNanos.addAndGet(elapsedNanos);</span>
+<span class="pc bpc" id="L360" title="1 of 2 branches missed.">            if (failed) {</span>
+<span class="fc" id="L361">                values.failures.incrementAndGet();</span>
             }
-<span class="fc" id="L395">            double elapsedSeconds = seconds(elapsedNanos);</span>
-<span class="fc bfc" id="L396" title="All 2 branches covered.">            for (int i = 0; i &lt; DURATION_BUCKETS.length; i++) {</span>
-<span class="pc bpc" id="L397" title="1 of 2 branches missed.">                if (elapsedSeconds &lt;= DURATION_BUCKETS[i]) {</span>
-<span class="fc" id="L398">                    values.durationBuckets.incrementAndGet(i);</span>
+<span class="fc" id="L363">            double elapsedSeconds = seconds(elapsedNanos);</span>
+<span class="fc bfc" id="L364" title="All 2 branches covered.">            for (int i = 0; i &lt; DURATION_BUCKETS.length; i++) {</span>
+<span class="pc bpc" id="L365" title="1 of 2 branches missed.">                if (elapsedSeconds &lt;= DURATION_BUCKETS[i]) {</span>
+<span class="fc" id="L366">                    values.durationBuckets.incrementAndGet(i);</span>
                 }
             }
-<span class="fc" id="L401">            ACTIVE_QUERIES.decrementAndGet();</span>
-<span class="fc" id="L402">        }</span>
+<span class="fc" id="L369">            ACTIVE_QUERIES.decrementAndGet();</span>
+<span class="fc" id="L370">        }</span>
     }
 
     /**
      * Stores cumulative metrics for one bounded query path.
      */
-<span class="fc" id="L408">    private static final class QueryMetrics {</span>
-<span class="fc" id="L409">        private final AtomicLong count = new AtomicLong();</span>
-<span class="fc" id="L410">        private final AtomicLong failures = new AtomicLong();</span>
-<span class="fc" id="L411">        private final AtomicLong logicalBytes = new AtomicLong();</span>
-<span class="fc" id="L412">        private final AtomicLong durationNanos = new AtomicLong();</span>
-<span class="fc" id="L413">        private final AtomicLongArray durationBuckets =</span>
+<span class="fc" id="L376">    private static final class QueryMetrics {</span>
+<span class="fc" id="L377">        private final AtomicLong count = new AtomicLong();</span>
+<span class="fc" id="L378">        private final AtomicLong failures = new AtomicLong();</span>
+<span class="fc" id="L379">        private final AtomicLong logicalBytes = new AtomicLong();</span>
+<span class="fc" id="L380">        private final AtomicLong durationNanos = new AtomicLong();</span>
+<span class="fc" id="L381">        private final AtomicLongArray durationBuckets =</span>
                 new AtomicLongArray(DURATION_BUCKETS.length);
     }
 }

@@ -56,9 +56,9 @@ final class FlightArrowColumnVector extends ColumnVector {
     private final FieldVector vector;
 
     FlightArrowColumnVector(FieldVector vector) {
-<span class="fc" id="L59">        super(toSparkType(vector));</span>
-<span class="fc" id="L60">        this.vector = vector;</span>
-<span class="fc" id="L61">    }</span>
+<span class="nc" id="L59">        super(toSparkType(vector));</span>
+<span class="nc" id="L60">        this.vector = vector;</span>
+<span class="nc" id="L61">    }</span>
 
     /**
      * The FlightStream owns the vector and releases it after the batch is consumed.
@@ -66,145 +66,145 @@ final class FlightArrowColumnVector extends ColumnVector {
     @Override
     public void close() {
         // no-op
-<span class="fc" id="L69">    }</span>
+<span class="nc" id="L69">    }</span>
 
     @Override
     public boolean hasNull() {
-<span class="pc bpc" id="L73" title="1 of 2 branches missed.">        return this.vector.getNullCount() &gt; 0;</span>
+<span class="nc bnc" id="L73" title="All 2 branches missed.">        return this.vector.getNullCount() &gt; 0;</span>
     }
 
     @Override
     public int numNulls() {
-<span class="fc" id="L78">        return this.vector.getNullCount();</span>
+<span class="nc" id="L78">        return this.vector.getNullCount();</span>
     }
 
     @Override
     public boolean isNullAt(int rowId) {
-<span class="fc" id="L83">        return this.vector.isNull(rowId);</span>
+<span class="nc" id="L83">        return this.vector.isNull(rowId);</span>
     }
 
     @Override
     public boolean getBoolean(int rowId) {
-<span class="fc bfc" id="L88" title="All 2 branches covered.">        return require(BitVector.class).get(rowId) != 0;</span>
+<span class="nc bnc" id="L88" title="All 2 branches missed.">        return require(BitVector.class).get(rowId) != 0;</span>
     }
 
     @Override
     public byte getByte(int rowId) {
-<span class="fc" id="L93">        return require(TinyIntVector.class).get(rowId);</span>
+<span class="nc" id="L93">        return require(TinyIntVector.class).get(rowId);</span>
     }
 
     @Override
     public short getShort(int rowId) {
-<span class="pc bpc" id="L98" title="1 of 2 branches missed.">        if (this.vector instanceof TinyIntVector v) {</span>
+<span class="nc bnc" id="L98" title="All 2 branches missed.">        if (this.vector instanceof TinyIntVector v) {</span>
 <span class="nc" id="L99">            return v.get(rowId);</span>
         }
-<span class="fc bfc" id="L101" title="All 2 branches covered.">        if (this.vector instanceof UInt1Vector uintVector) {</span>
-<span class="fc" id="L102">            return (short) (uintVector.get(rowId) &amp; 0xFF);</span>
+<span class="nc bnc" id="L101" title="All 2 branches missed.">        if (this.vector instanceof UInt1Vector uintVector) {</span>
+<span class="nc" id="L102">            return (short) (uintVector.get(rowId) &amp; 0xFF);</span>
         }
-<span class="fc" id="L104">        return require(SmallIntVector.class).get(rowId);</span>
+<span class="nc" id="L104">        return require(SmallIntVector.class).get(rowId);</span>
     }
 
     @Override
     public int getInt(int rowId) {
-<span class="fc bfc" id="L109" title="All 2 branches covered.">        if (this.vector instanceof IntVector intVector) {</span>
-<span class="fc" id="L110">            return intVector.get(rowId);</span>
+<span class="nc bnc" id="L109" title="All 2 branches missed.">        if (this.vector instanceof IntVector intVector) {</span>
+<span class="nc" id="L110">            return intVector.get(rowId);</span>
         }
-<span class="fc bfc" id="L112" title="All 2 branches covered.">        if (this.vector instanceof DateDayVector dateVector) {</span>
-<span class="fc" id="L113">            return dateVector.get(rowId);</span>
+<span class="nc bnc" id="L112" title="All 2 branches missed.">        if (this.vector instanceof DateDayVector dateVector) {</span>
+<span class="nc" id="L113">            return dateVector.get(rowId);</span>
         }
-<span class="fc bfc" id="L115" title="All 2 branches covered.">        if (this.vector instanceof DateMilliVector dateVector) {</span>
-<span class="fc" id="L116">            return Math.toIntExact(Math.floorDiv(dateVector.get(rowId), 86_400_000L));</span>
+<span class="nc bnc" id="L115" title="All 2 branches missed.">        if (this.vector instanceof DateMilliVector dateVector) {</span>
+<span class="nc" id="L116">            return Math.toIntExact(Math.floorDiv(dateVector.get(rowId), 86_400_000L));</span>
         }
-<span class="pc bpc" id="L118" title="1 of 2 branches missed.">        if (this.vector instanceof UInt2Vector uintVector) {</span>
-<span class="fc" id="L119">            return uintVector.get(rowId) &amp; 0xFFFF;</span>
+<span class="nc bnc" id="L118" title="All 2 branches missed.">        if (this.vector instanceof UInt2Vector uintVector) {</span>
+<span class="nc" id="L119">            return uintVector.get(rowId) &amp; 0xFFFF;</span>
         }
 <span class="nc" id="L121">        throw unsupported(&quot;getInt&quot;);</span>
     }
 
     @Override
     public long getLong(int rowId) {
-<span class="fc bfc" id="L126" title="All 2 branches covered.">        if (this.vector instanceof BigIntVector longVector) {</span>
-<span class="fc" id="L127">            return longVector.get(rowId);</span>
+<span class="nc bnc" id="L126" title="All 2 branches missed.">        if (this.vector instanceof BigIntVector longVector) {</span>
+<span class="nc" id="L127">            return longVector.get(rowId);</span>
         }
-<span class="fc bfc" id="L129" title="All 2 branches covered.">        if (this.vector instanceof TimeStampMicroTZVector timestampVector) {</span>
-<span class="fc" id="L130">            return timestampVector.get(rowId);</span>
+<span class="nc bnc" id="L129" title="All 2 branches missed.">        if (this.vector instanceof TimeStampMicroTZVector timestampVector) {</span>
+<span class="nc" id="L130">            return timestampVector.get(rowId);</span>
         }
-<span class="fc bfc" id="L132" title="All 2 branches covered.">        if (this.vector instanceof TimeStampMicroVector timestampVector) {</span>
-<span class="fc" id="L133">            return timestampVector.get(rowId);</span>
+<span class="nc bnc" id="L132" title="All 2 branches missed.">        if (this.vector instanceof TimeStampMicroVector timestampVector) {</span>
+<span class="nc" id="L133">            return timestampVector.get(rowId);</span>
         }
-<span class="fc bfc" id="L135" title="All 2 branches covered.">        if (this.vector instanceof TimeStampMilliVector timestampVector) {</span>
-<span class="fc" id="L136">            return Math.multiplyExact(timestampVector.get(rowId), 1_000L);</span>
+<span class="nc bnc" id="L135" title="All 2 branches missed.">        if (this.vector instanceof TimeStampMilliVector timestampVector) {</span>
+<span class="nc" id="L136">            return Math.multiplyExact(timestampVector.get(rowId), 1_000L);</span>
         }
-<span class="fc bfc" id="L138" title="All 2 branches covered.">        if (this.vector instanceof TimeStampMilliTZVector timestampVector) {</span>
-<span class="fc" id="L139">            return Math.multiplyExact(timestampVector.get(rowId), 1_000L);</span>
+<span class="nc bnc" id="L138" title="All 2 branches missed.">        if (this.vector instanceof TimeStampMilliTZVector timestampVector) {</span>
+<span class="nc" id="L139">            return Math.multiplyExact(timestampVector.get(rowId), 1_000L);</span>
         }
-<span class="fc bfc" id="L141" title="All 2 branches covered.">        if (this.vector instanceof TimeStampSecVector timestampVector) {</span>
-<span class="fc" id="L142">            return Math.multiplyExact(timestampVector.get(rowId), 1_000_000L);</span>
+<span class="nc bnc" id="L141" title="All 2 branches missed.">        if (this.vector instanceof TimeStampSecVector timestampVector) {</span>
+<span class="nc" id="L142">            return Math.multiplyExact(timestampVector.get(rowId), 1_000_000L);</span>
         }
-<span class="fc bfc" id="L144" title="All 2 branches covered.">        if (this.vector instanceof TimeStampSecTZVector timestampVector) {</span>
-<span class="fc" id="L145">            return Math.multiplyExact(timestampVector.get(rowId), 1_000_000L);</span>
+<span class="nc bnc" id="L144" title="All 2 branches missed.">        if (this.vector instanceof TimeStampSecTZVector timestampVector) {</span>
+<span class="nc" id="L145">            return Math.multiplyExact(timestampVector.get(rowId), 1_000_000L);</span>
         }
-<span class="fc bfc" id="L147" title="All 2 branches covered.">        if (this.vector instanceof TimeStampNanoVector timestampVector) {</span>
-<span class="fc" id="L148">            return Math.floorDiv(timestampVector.get(rowId), 1_000L);</span>
+<span class="nc bnc" id="L147" title="All 2 branches missed.">        if (this.vector instanceof TimeStampNanoVector timestampVector) {</span>
+<span class="nc" id="L148">            return Math.floorDiv(timestampVector.get(rowId), 1_000L);</span>
         }
-<span class="fc bfc" id="L150" title="All 2 branches covered.">        if (this.vector instanceof TimeStampNanoTZVector timestampVector) {</span>
-<span class="fc" id="L151">            return Math.floorDiv(timestampVector.get(rowId), 1_000L);</span>
+<span class="nc bnc" id="L150" title="All 2 branches missed.">        if (this.vector instanceof TimeStampNanoTZVector timestampVector) {</span>
+<span class="nc" id="L151">            return Math.floorDiv(timestampVector.get(rowId), 1_000L);</span>
         }
-<span class="fc bfc" id="L153" title="All 2 branches covered.">        if (this.vector instanceof UInt4Vector uintVector) {</span>
-<span class="fc" id="L154">            return Integer.toUnsignedLong(uintVector.get(rowId));</span>
+<span class="nc bnc" id="L153" title="All 2 branches missed.">        if (this.vector instanceof UInt4Vector uintVector) {</span>
+<span class="nc" id="L154">            return Integer.toUnsignedLong(uintVector.get(rowId));</span>
         }
-<span class="pc bpc" id="L156" title="1 of 2 branches missed.">        if (this.vector instanceof UInt8Vector uintVector) {</span>
-<span class="fc" id="L157">            return uintVector.get(rowId);</span>
+<span class="nc bnc" id="L156" title="All 2 branches missed.">        if (this.vector instanceof UInt8Vector uintVector) {</span>
+<span class="nc" id="L157">            return uintVector.get(rowId);</span>
         }
 <span class="nc" id="L159">        throw unsupported(&quot;getLong&quot;);</span>
     }
 
     @Override
     public float getFloat(int rowId) {
-<span class="fc" id="L164">        return require(Float4Vector.class).get(rowId);</span>
+<span class="nc" id="L164">        return require(Float4Vector.class).get(rowId);</span>
     }
 
     @Override
     public double getDouble(int rowId) {
-<span class="fc" id="L169">        return require(Float8Vector.class).get(rowId);</span>
+<span class="nc" id="L169">        return require(Float8Vector.class).get(rowId);</span>
     }
 
     @Override
     public Decimal getDecimal(int rowId, int precision, int scale) {
-<span class="pc bpc" id="L174" title="1 of 2 branches missed.">        if (this.isNullAt(rowId)) {</span>
+<span class="nc bnc" id="L174" title="All 2 branches missed.">        if (this.isNullAt(rowId)) {</span>
 <span class="nc" id="L175">            return null;</span>
         }
-<span class="fc" id="L177">        BigDecimal value = require(DecimalVector.class).getObject(rowId);</span>
-<span class="fc" id="L178">        return Decimal.apply(value, precision, scale);</span>
+<span class="nc" id="L177">        BigDecimal value = require(DecimalVector.class).getObject(rowId);</span>
+<span class="nc" id="L178">        return Decimal.apply(value, precision, scale);</span>
     }
 
     @Override
     public UTF8String getUTF8String(int rowId) {
-<span class="pc bpc" id="L183" title="1 of 2 branches missed.">        if (this.isNullAt(rowId)) {</span>
+<span class="nc bnc" id="L183" title="All 2 branches missed.">        if (this.isNullAt(rowId)) {</span>
 <span class="nc" id="L184">            return null;</span>
         }
-<span class="fc bfc" id="L186" title="All 2 branches covered.">        if (this.vector instanceof VarCharVector stringVector) {</span>
-<span class="fc" id="L187">            return UTF8String.fromBytes(stringVector.get(rowId));</span>
+<span class="nc bnc" id="L186" title="All 2 branches missed.">        if (this.vector instanceof VarCharVector stringVector) {</span>
+<span class="nc" id="L187">            return UTF8String.fromBytes(stringVector.get(rowId));</span>
         }
-<span class="pc bpc" id="L189" title="1 of 2 branches missed.">        if (this.vector instanceof LargeVarCharVector stringVector) {</span>
-<span class="fc" id="L190">            return UTF8String.fromBytes(stringVector.get(rowId));</span>
+<span class="nc bnc" id="L189" title="All 2 branches missed.">        if (this.vector instanceof LargeVarCharVector stringVector) {</span>
+<span class="nc" id="L190">            return UTF8String.fromBytes(stringVector.get(rowId));</span>
         }
 <span class="nc" id="L192">        throw unsupported(&quot;getUTF8String&quot;);</span>
     }
 
     @Override
     public byte[] getBinary(int rowId) {
-<span class="pc bpc" id="L197" title="1 of 2 branches missed.">        if (this.isNullAt(rowId)) {</span>
+<span class="nc bnc" id="L197" title="All 2 branches missed.">        if (this.isNullAt(rowId)) {</span>
 <span class="nc" id="L198">            return null;</span>
         }
-<span class="fc bfc" id="L200" title="All 2 branches covered.">        if (this.vector instanceof VarBinaryVector binaryVector) {</span>
-<span class="fc" id="L201">            return binaryVector.get(rowId);</span>
+<span class="nc bnc" id="L200" title="All 2 branches missed.">        if (this.vector instanceof VarBinaryVector binaryVector) {</span>
+<span class="nc" id="L201">            return binaryVector.get(rowId);</span>
         }
-<span class="fc bfc" id="L203" title="All 2 branches covered.">        if (this.vector instanceof LargeVarBinaryVector binaryVector) {</span>
-<span class="fc" id="L204">            return binaryVector.get(rowId);</span>
+<span class="nc bnc" id="L203" title="All 2 branches missed.">        if (this.vector instanceof LargeVarBinaryVector binaryVector) {</span>
+<span class="nc" id="L204">            return binaryVector.get(rowId);</span>
         }
-<span class="pc bpc" id="L206" title="1 of 2 branches missed.">        if (this.vector instanceof FixedSizeBinaryVector binaryVector) {</span>
-<span class="fc" id="L207">            return binaryVector.get(rowId);</span>
+<span class="nc bnc" id="L206" title="All 2 branches missed.">        if (this.vector instanceof FixedSizeBinaryVector binaryVector) {</span>
+<span class="nc" id="L207">            return binaryVector.get(rowId);</span>
         }
 <span class="nc" id="L209">        throw unsupported(&quot;getBinary&quot;);</span>
     }
@@ -225,87 +225,87 @@ final class FlightArrowColumnVector extends ColumnVector {
     }
 
     private static DataType toSparkType(FieldVector vector) {
-<span class="pc bpc" id="L228" title="1 of 4 branches missed.">        if (vector == null || !matchesArrowType(vector)) {</span>
-<span class="pc bpc" id="L229" title="1 of 2 branches missed.">            String actual = vector == null ? &quot;null&quot; : vector.getClass().getName();</span>
-<span class="fc" id="L230">            throw new IllegalArgumentException(&quot;Unsupported Arrow vector for Spark columnar read: &quot;</span>
+<span class="nc bnc" id="L228" title="All 4 branches missed.">        if (vector == null || !matchesArrowType(vector)) {</span>
+<span class="nc bnc" id="L229" title="All 2 branches missed.">            String actual = vector == null ? &quot;null&quot; : vector.getClass().getName();</span>
+<span class="nc" id="L230">            throw new IllegalArgumentException(&quot;Unsupported Arrow vector for Spark columnar read: &quot;</span>
                     + actual);
         }
-<span class="fc" id="L233">        return FieldType.toSpark(FieldType.fromArrow(</span>
-<span class="fc" id="L234">                vector.getField().getType(), vector.getField().getChildren()));</span>
+<span class="nc" id="L233">        return FieldType.toSpark(FieldType.fromArrow(</span>
+<span class="nc" id="L234">                vector.getField().getType(), vector.getField().getChildren()));</span>
     }
 
     private static boolean matchesArrowType(FieldVector vector) {
-<span class="fc" id="L238">        ArrowType type = vector.getField().getType();</span>
-<span class="pc bpc" id="L239" title="1 of 13 branches missed.">        return switch (type.getTypeID()) {</span>
-<span class="fc" id="L240">            case Bool -&gt; vector instanceof BitVector;</span>
-<span class="fc" id="L241">            case Utf8 -&gt; vector instanceof VarCharVector;</span>
-<span class="fc" id="L242">            case LargeUtf8 -&gt; vector instanceof LargeVarCharVector;</span>
-<span class="fc" id="L243">            case Binary -&gt; vector instanceof VarBinaryVector;</span>
-<span class="fc" id="L244">            case LargeBinary -&gt; vector instanceof LargeVarBinaryVector;</span>
-<span class="fc" id="L245">            case FixedSizeBinary -&gt; vector instanceof FixedSizeBinaryVector;</span>
+<span class="nc" id="L238">        ArrowType type = vector.getField().getType();</span>
+<span class="nc bnc" id="L239" title="All 13 branches missed.">        return switch (type.getTypeID()) {</span>
+<span class="nc" id="L240">            case Bool -&gt; vector instanceof BitVector;</span>
+<span class="nc" id="L241">            case Utf8 -&gt; vector instanceof VarCharVector;</span>
+<span class="nc" id="L242">            case LargeUtf8 -&gt; vector instanceof LargeVarCharVector;</span>
+<span class="nc" id="L243">            case Binary -&gt; vector instanceof VarBinaryVector;</span>
+<span class="nc" id="L244">            case LargeBinary -&gt; vector instanceof LargeVarBinaryVector;</span>
+<span class="nc" id="L245">            case FixedSizeBinary -&gt; vector instanceof FixedSizeBinaryVector;</span>
 <span class="nc" id="L246">            case Null -&gt; vector instanceof NullVector;</span>
             case FloatingPoint -&gt; {
-<span class="fc" id="L248">                FloatingPointPrecision precision = ((ArrowType.FloatingPoint) type).getPrecision();</span>
-<span class="pc bpc" id="L249" title="3 of 8 branches missed.">                yield (precision == FloatingPointPrecision.SINGLE &amp;&amp; vector instanceof Float4Vector)</span>
+<span class="nc" id="L248">                FloatingPointPrecision precision = ((ArrowType.FloatingPoint) type).getPrecision();</span>
+<span class="nc bnc" id="L249" title="All 8 branches missed.">                yield (precision == FloatingPointPrecision.SINGLE &amp;&amp; vector instanceof Float4Vector)</span>
                         || (precision == FloatingPointPrecision.DOUBLE
                         &amp;&amp; vector instanceof Float8Vector);
             }
             case Int -&gt; {
-<span class="fc" id="L254">                ArrowType.Int integer = (ArrowType.Int) type;</span>
-<span class="fc bfc" id="L255" title="All 2 branches covered.">                if (integer.getIsSigned()) {</span>
-<span class="pc bpc" id="L256" title="1 of 5 branches missed.">                    yield switch (integer.getBitWidth()) {</span>
-<span class="fc" id="L257">                        case 8 -&gt; vector instanceof TinyIntVector;</span>
-<span class="fc" id="L258">                        case 16 -&gt; vector instanceof SmallIntVector;</span>
-<span class="fc" id="L259">                        case 32 -&gt; vector instanceof IntVector;</span>
-<span class="fc" id="L260">                        case 64 -&gt; vector instanceof BigIntVector;</span>
+<span class="nc" id="L254">                ArrowType.Int integer = (ArrowType.Int) type;</span>
+<span class="nc bnc" id="L255" title="All 2 branches missed.">                if (integer.getIsSigned()) {</span>
+<span class="nc bnc" id="L256" title="All 5 branches missed.">                    yield switch (integer.getBitWidth()) {</span>
+<span class="nc" id="L257">                        case 8 -&gt; vector instanceof TinyIntVector;</span>
+<span class="nc" id="L258">                        case 16 -&gt; vector instanceof SmallIntVector;</span>
+<span class="nc" id="L259">                        case 32 -&gt; vector instanceof IntVector;</span>
+<span class="nc" id="L260">                        case 64 -&gt; vector instanceof BigIntVector;</span>
 <span class="nc" id="L261">                        default -&gt; false;</span>
                     };
                 }
-<span class="pc bpc" id="L264" title="1 of 5 branches missed.">                yield switch (integer.getBitWidth()) {</span>
-<span class="fc" id="L265">                    case 8 -&gt; vector instanceof UInt1Vector;</span>
-<span class="fc" id="L266">                    case 16 -&gt; vector instanceof UInt2Vector;</span>
-<span class="fc" id="L267">                    case 32 -&gt; vector instanceof UInt4Vector;</span>
-<span class="fc" id="L268">                    case 64 -&gt; vector instanceof UInt8Vector;</span>
+<span class="nc bnc" id="L264" title="All 5 branches missed.">                yield switch (integer.getBitWidth()) {</span>
+<span class="nc" id="L265">                    case 8 -&gt; vector instanceof UInt1Vector;</span>
+<span class="nc" id="L266">                    case 16 -&gt; vector instanceof UInt2Vector;</span>
+<span class="nc" id="L267">                    case 32 -&gt; vector instanceof UInt4Vector;</span>
+<span class="nc" id="L268">                    case 64 -&gt; vector instanceof UInt8Vector;</span>
 <span class="nc" id="L269">                    default -&gt; false;</span>
                 };
             }
             case Decimal -&gt; {
-<span class="fc" id="L273">                ArrowType.Decimal decimal = (ArrowType.Decimal) type;</span>
-<span class="fc" id="L274">                int precision = decimal.getPrecision();</span>
-<span class="fc" id="L275">                int scale = decimal.getScale();</span>
-<span class="pc bpc" id="L276" title="6 of 12 branches missed.">                yield decimal.getBitWidth() == 128</span>
+<span class="nc" id="L273">                ArrowType.Decimal decimal = (ArrowType.Decimal) type;</span>
+<span class="nc" id="L274">                int precision = decimal.getPrecision();</span>
+<span class="nc" id="L275">                int scale = decimal.getScale();</span>
+<span class="nc bnc" id="L276" title="All 12 branches missed.">                yield decimal.getBitWidth() == 128</span>
                         &amp;&amp; precision &gt;= 1 &amp;&amp; precision &lt;= 38
                         &amp;&amp; scale &gt;= 0 &amp;&amp; scale &lt;= precision
                         &amp;&amp; vector instanceof DecimalVector;
             }
             case Date -&gt; {
-<span class="fc" id="L282">                DateUnit unit = ((ArrowType.Date) type).getUnit();</span>
-<span class="pc bpc" id="L283" title="3 of 8 branches missed.">                yield (unit == DateUnit.DAY &amp;&amp; vector instanceof DateDayVector)</span>
+<span class="nc" id="L282">                DateUnit unit = ((ArrowType.Date) type).getUnit();</span>
+<span class="nc bnc" id="L283" title="All 8 branches missed.">                yield (unit == DateUnit.DAY &amp;&amp; vector instanceof DateDayVector)</span>
                         || (unit == DateUnit.MILLISECOND &amp;&amp; vector instanceof DateMilliVector);
             }
             case Timestamp -&gt; {
-<span class="fc" id="L287">                ArrowType.Timestamp timestamp = (ArrowType.Timestamp) type;</span>
-<span class="fc" id="L288">                String tz = timestamp.getTimezone();</span>
-<span class="fc bfc" id="L289" title="All 4 branches covered.">                yield switch (timestamp.getUnit()) {</span>
-<span class="fc bfc" id="L290" title="All 2 branches covered.">                    case SECOND -&gt; tz != null ? vector instanceof TimeStampSecTZVector</span>
-<span class="fc" id="L291">                            : vector instanceof TimeStampSecVector;</span>
-<span class="fc bfc" id="L292" title="All 2 branches covered.">                    case MILLISECOND -&gt; tz != null ? vector instanceof TimeStampMilliTZVector</span>
-<span class="fc" id="L293">                            : vector instanceof TimeStampMilliVector;</span>
-<span class="fc bfc" id="L294" title="All 2 branches covered.">                    case MICROSECOND -&gt; tz != null ? vector instanceof TimeStampMicroTZVector</span>
-<span class="fc" id="L295">                            : vector instanceof TimeStampMicroVector;</span>
-<span class="fc bfc" id="L296" title="All 2 branches covered.">                    case NANOSECOND -&gt; tz != null ? vector instanceof TimeStampNanoTZVector</span>
-<span class="fc" id="L297">                            : vector instanceof TimeStampNanoVector;</span>
+<span class="nc" id="L287">                ArrowType.Timestamp timestamp = (ArrowType.Timestamp) type;</span>
+<span class="nc" id="L288">                String tz = timestamp.getTimezone();</span>
+<span class="nc bnc" id="L289" title="All 4 branches missed.">                yield switch (timestamp.getUnit()) {</span>
+<span class="nc bnc" id="L290" title="All 2 branches missed.">                    case SECOND -&gt; tz != null ? vector instanceof TimeStampSecTZVector</span>
+<span class="nc" id="L291">                            : vector instanceof TimeStampSecVector;</span>
+<span class="nc bnc" id="L292" title="All 2 branches missed.">                    case MILLISECOND -&gt; tz != null ? vector instanceof TimeStampMilliTZVector</span>
+<span class="nc" id="L293">                            : vector instanceof TimeStampMilliVector;</span>
+<span class="nc bnc" id="L294" title="All 2 branches missed.">                    case MICROSECOND -&gt; tz != null ? vector instanceof TimeStampMicroTZVector</span>
+<span class="nc" id="L295">                            : vector instanceof TimeStampMicroVector;</span>
+<span class="nc bnc" id="L296" title="All 2 branches missed.">                    case NANOSECOND -&gt; tz != null ? vector instanceof TimeStampNanoTZVector</span>
+<span class="nc" id="L297">                            : vector instanceof TimeStampNanoVector;</span>
                 };
             }
-<span class="fc" id="L300">            default -&gt; false;</span>
+<span class="nc" id="L300">            default -&gt; false;</span>
         };
     }
 
     private &lt;T extends FieldVector&gt; T require(Class&lt;T&gt; expectedType) {
-<span class="pc bpc" id="L305" title="1 of 2 branches missed.">        if (!expectedType.isInstance(this.vector)) {</span>
+<span class="nc bnc" id="L305" title="All 2 branches missed.">        if (!expectedType.isInstance(this.vector)) {</span>
 <span class="nc" id="L306">            throw unsupported(expectedType.getSimpleName());</span>
         }
-<span class="fc" id="L308">        return expectedType.cast(this.vector);</span>
+<span class="nc" id="L308">        return expectedType.cast(this.vector);</span>
     }
 
     private UnsupportedOperationException unsupported(String operation) {

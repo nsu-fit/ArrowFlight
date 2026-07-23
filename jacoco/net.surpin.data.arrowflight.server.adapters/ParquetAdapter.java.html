@@ -246,8 +246,7 @@ public class ParquetAdapter {
 <span class="fc" id="L246">        });</span>
 
 <span class="fc" id="L248">        LOGGER.info(&quot;Parsed DDL: {}&quot;, ddlBuilder.toString());</span>
-<span class="fc" id="L249">        FilterConverter.warmUp(strippedDdls);</span>
-<span class="fc" id="L250">    }</span>
+<span class="fc" id="L249">    }</span>
 
     /**
      * Returns the DDL cache (schema → table → DDL string).
@@ -255,7 +254,7 @@ public class ParquetAdapter {
      * @return DDL map
      */
     public Map&lt;String, Map&lt;String, String&gt;&gt; tableDdlCache() {
-<span class="fc" id="L258">        return tableDdlCache;</span>
+<span class="fc" id="L257">        return tableDdlCache;</span>
     }
 
     /**
@@ -266,55 +265,55 @@ public class ParquetAdapter {
      * @throws IOException on HDFS read failure
      */
     public Map&lt;String, FileAssignment&gt; locationsForQuery(String query) throws IOException {
-<span class="nc" id="L269">        long t = LogUtil.mark();</span>
-<span class="nc" id="L270">        ParquetQueryParser parsedQuery = ParquetQueryParser.parse(query);</span>
-<span class="nc" id="L271">        Map&lt;String, FileAssignment&gt; result = new HashMap&lt;&gt;();</span>
-<span class="nc" id="L272">        URI dataDirectoryURI = fileSystem.getFileStatus(new Path(dataDirectory)).getPath().toUri();</span>
+<span class="nc" id="L268">        long t = LogUtil.mark();</span>
+<span class="nc" id="L269">        ParquetQueryParser parsedQuery = ParquetQueryParser.parse(query);</span>
+<span class="nc" id="L270">        Map&lt;String, FileAssignment&gt; result = new HashMap&lt;&gt;();</span>
+<span class="nc" id="L271">        URI dataDirectoryURI = fileSystem.getFileStatus(new Path(dataDirectory)).getPath().toUri();</span>
 
-<span class="nc" id="L274">        int fileCount = 0;</span>
-<span class="nc" id="L275">        long totalBytes = 0;</span>
+<span class="nc" id="L273">        int fileCount = 0;</span>
+<span class="nc" id="L274">        long totalBytes = 0;</span>
 
-<span class="nc bnc" id="L277" title="All 2 branches missed.">        if (parsedQuery.isJoin) {</span>
-<span class="nc bnc" id="L278" title="All 2 branches missed.">            for (ParquetQueryParser.JoinTable jt : parsedQuery.joinTables) {</span>
-<span class="nc" id="L279">                validateName(jt.schema());</span>
-<span class="nc" id="L280">                validateName(jt.table());</span>
-<span class="nc" id="L281">                Path parquetPath = new Path(dataDirectory, jt.schema() + &quot;/&quot; + jt.table());</span>
-<span class="nc" id="L282">                LOGGER.debug(&quot;node={} parquet=discover table={}.{} path={}&quot;,</span>
-<span class="nc" id="L283">                        LogUtil.node(), jt.schema(), jt.table(), parquetPath);</span>
-<span class="nc" id="L284">                RemoteIterator&lt;LocatedFileStatus&gt; filesIter = fileSystem.listFiles(parquetPath, true);</span>
-<span class="nc bnc" id="L285" title="All 2 branches missed.">                while (filesIter.hasNext()) {</span>
-<span class="nc" id="L286">                    LocatedFileStatus file = filesIter.next();</span>
-<span class="nc bnc" id="L287" title="All 4 branches missed.">                    if (file.isDirectory() || !file.getPath().getName().toLowerCase().endsWith(&quot;.parquet&quot;)) {</span>
-<span class="nc" id="L288">                        continue;</span>
+<span class="nc bnc" id="L276" title="All 2 branches missed.">        if (parsedQuery.isJoin) {</span>
+<span class="nc bnc" id="L277" title="All 2 branches missed.">            for (ParquetQueryParser.JoinTable jt : parsedQuery.joinTables) {</span>
+<span class="nc" id="L278">                validateName(jt.schema());</span>
+<span class="nc" id="L279">                validateName(jt.table());</span>
+<span class="nc" id="L280">                Path parquetPath = new Path(dataDirectory, jt.schema() + &quot;/&quot; + jt.table());</span>
+<span class="nc" id="L281">                LOGGER.debug(&quot;node={} parquet=discover table={}.{} path={}&quot;,</span>
+<span class="nc" id="L282">                        LogUtil.node(), jt.schema(), jt.table(), parquetPath);</span>
+<span class="nc" id="L283">                RemoteIterator&lt;LocatedFileStatus&gt; filesIter = fileSystem.listFiles(parquetPath, true);</span>
+<span class="nc bnc" id="L284" title="All 2 branches missed.">                while (filesIter.hasNext()) {</span>
+<span class="nc" id="L285">                    LocatedFileStatus file = filesIter.next();</span>
+<span class="nc bnc" id="L286" title="All 4 branches missed.">                    if (file.isDirectory() || !file.getPath().getName().toLowerCase().endsWith(&quot;.parquet&quot;)) {</span>
+<span class="nc" id="L287">                        continue;</span>
                     }
-<span class="nc" id="L290">                    String relativePath = dataDirectoryURI.relativize(file.getPath().toUri()).toString();</span>
-<span class="nc" id="L291">                    result.putIfAbsent(relativePath, new FileAssignment(file.getLen(), fileLocality(file).keySet()));</span>
-<span class="nc" id="L292">                    fileCount++;</span>
-<span class="nc" id="L293">                    totalBytes += file.getLen();</span>
-<span class="nc" id="L294">                }</span>
-<span class="nc" id="L295">                LogUtil.logTiming(t, &quot;schema.discoverJoinTable&quot;, &quot;table=&quot; + jt.schema() + &quot;.&quot; + jt.table() + &quot; files=&quot; + fileCount + &quot; bytes=&quot; + totalBytes);</span>
-<span class="nc" id="L296">            }</span>
-<span class="nc" id="L297">            return result;</span>
+<span class="nc" id="L289">                    String relativePath = dataDirectoryURI.relativize(file.getPath().toUri()).toString();</span>
+<span class="nc" id="L290">                    result.putIfAbsent(relativePath, new FileAssignment(file.getLen(), fileLocality(file).keySet()));</span>
+<span class="nc" id="L291">                    fileCount++;</span>
+<span class="nc" id="L292">                    totalBytes += file.getLen();</span>
+<span class="nc" id="L293">                }</span>
+<span class="nc" id="L294">                LogUtil.logTiming(t, &quot;schema.discoverJoinTable&quot;, &quot;table=&quot; + jt.schema() + &quot;.&quot; + jt.table() + &quot; files=&quot; + fileCount + &quot; bytes=&quot; + totalBytes);</span>
+<span class="nc" id="L295">            }</span>
+<span class="nc" id="L296">            return result;</span>
         }
 
-<span class="nc" id="L300">        validateName(parsedQuery.schema);</span>
-<span class="nc" id="L301">        validateName(parsedQuery.table);</span>
-<span class="nc" id="L302">        Path parquetPath = new Path(dataDirectory, parsedQuery.schema + &quot;/&quot; + parsedQuery.table);</span>
-<span class="nc" id="L303">        LOGGER.debug(&quot;node={} parquet=discover table={}.{} path={}&quot;,</span>
-<span class="nc" id="L304">                LogUtil.node(), parsedQuery.schema, parsedQuery.table, parquetPath);</span>
-<span class="nc" id="L305">        RemoteIterator&lt;LocatedFileStatus&gt; filesIter = fileSystem.listFiles(parquetPath, true);</span>
-<span class="nc bnc" id="L306" title="All 2 branches missed.">        while (filesIter.hasNext()) {</span>
-<span class="nc" id="L307">            LocatedFileStatus file = filesIter.next();</span>
-<span class="nc bnc" id="L308" title="All 4 branches missed.">            if (file.isDirectory() || !file.getPath().getName().toLowerCase().endsWith(&quot;.parquet&quot;)) {</span>
-<span class="nc" id="L309">                continue;</span>
+<span class="nc" id="L299">        validateName(parsedQuery.schema);</span>
+<span class="nc" id="L300">        validateName(parsedQuery.table);</span>
+<span class="nc" id="L301">        Path parquetPath = new Path(dataDirectory, parsedQuery.schema + &quot;/&quot; + parsedQuery.table);</span>
+<span class="nc" id="L302">        LOGGER.debug(&quot;node={} parquet=discover table={}.{} path={}&quot;,</span>
+<span class="nc" id="L303">                LogUtil.node(), parsedQuery.schema, parsedQuery.table, parquetPath);</span>
+<span class="nc" id="L304">        RemoteIterator&lt;LocatedFileStatus&gt; filesIter = fileSystem.listFiles(parquetPath, true);</span>
+<span class="nc bnc" id="L305" title="All 2 branches missed.">        while (filesIter.hasNext()) {</span>
+<span class="nc" id="L306">            LocatedFileStatus file = filesIter.next();</span>
+<span class="nc bnc" id="L307" title="All 4 branches missed.">            if (file.isDirectory() || !file.getPath().getName().toLowerCase().endsWith(&quot;.parquet&quot;)) {</span>
+<span class="nc" id="L308">                continue;</span>
             }
-<span class="nc" id="L311">            String relativePath = dataDirectoryURI.relativize(file.getPath().toUri()).toString();</span>
-<span class="nc" id="L312">            result.put(relativePath, new FileAssignment(file.getLen(), fileLocality(file).keySet()));</span>
-<span class="nc" id="L313">            fileCount++;</span>
-<span class="nc" id="L314">            totalBytes += file.getLen();</span>
-<span class="nc" id="L315">        }</span>
-<span class="nc bnc" id="L316" title="All 4 branches missed.">        LogUtil.logTiming(t, &quot;schema.discover&quot;, &quot;table=&quot; + (parsedQuery.schema != null ? parsedQuery.schema + &quot;.&quot; : &quot;&quot;) + (parsedQuery.table != null ? parsedQuery.table : &quot;&quot;) + &quot; files=&quot; + fileCount + &quot; bytes=&quot; + totalBytes);</span>
-<span class="nc" id="L317">        return result;</span>
+<span class="nc" id="L310">            String relativePath = dataDirectoryURI.relativize(file.getPath().toUri()).toString();</span>
+<span class="nc" id="L311">            result.put(relativePath, new FileAssignment(file.getLen(), fileLocality(file).keySet()));</span>
+<span class="nc" id="L312">            fileCount++;</span>
+<span class="nc" id="L313">            totalBytes += file.getLen();</span>
+<span class="nc" id="L314">        }</span>
+<span class="nc bnc" id="L315" title="All 4 branches missed.">        LogUtil.logTiming(t, &quot;schema.discover&quot;, &quot;table=&quot; + (parsedQuery.schema != null ? parsedQuery.schema + &quot;.&quot; : &quot;&quot;) + (parsedQuery.table != null ? parsedQuery.table : &quot;&quot;) + &quot; files=&quot; + fileCount + &quot; bytes=&quot; + totalBytes);</span>
+<span class="nc" id="L316">        return result;</span>
     }
 
     /**
@@ -326,38 +325,38 @@ public class ParquetAdapter {
      * @throws IOException on file-system access failure
      */
     public Map&lt;String, Long&gt; localFileInventory() throws IOException {
-<span class="nc" id="L329">        long t = LogUtil.mark();</span>
-<span class="nc" id="L330">        Map&lt;String, Long&gt; result = new LinkedHashMap&lt;&gt;();</span>
-<span class="nc" id="L331">        Path root = new Path(this.dataDirectory);</span>
-<span class="nc bnc" id="L332" title="All 2 branches missed.">        if (!this.fileSystem.exists(root)) {</span>
-<span class="nc" id="L333">            LOGGER.warn(&quot;node={} parquet=inventoryDataDirNotFound path={}&quot;,</span>
-<span class="nc" id="L334">                    LogUtil.node(), this.dataDirectory);</span>
-<span class="nc" id="L335">            return result;</span>
+<span class="nc" id="L328">        long t = LogUtil.mark();</span>
+<span class="nc" id="L329">        Map&lt;String, Long&gt; result = new LinkedHashMap&lt;&gt;();</span>
+<span class="nc" id="L330">        Path root = new Path(this.dataDirectory);</span>
+<span class="nc bnc" id="L331" title="All 2 branches missed.">        if (!this.fileSystem.exists(root)) {</span>
+<span class="nc" id="L332">            LOGGER.warn(&quot;node={} parquet=inventoryDataDirNotFound path={}&quot;,</span>
+<span class="nc" id="L333">                    LogUtil.node(), this.dataDirectory);</span>
+<span class="nc" id="L334">            return result;</span>
         }
 
-<span class="nc" id="L338">        URI rootUri = this.fileSystem.getFileStatus(root).getPath().toUri();</span>
-<span class="nc" id="L339">        RemoteIterator&lt;LocatedFileStatus&gt; files = this.fileSystem.listFiles(root, true);</span>
-<span class="nc" id="L340">        int scanned = 0;</span>
-<span class="nc bnc" id="L341" title="All 2 branches missed.">        while (files.hasNext()) {</span>
-<span class="nc" id="L342">            LocatedFileStatus file = files.next();</span>
-<span class="nc" id="L343">            scanned++;</span>
-<span class="nc bnc" id="L344" title="All 2 branches missed.">            if (file.isFile()</span>
-<span class="nc bnc" id="L345" title="All 2 branches missed.">                    &amp;&amp; file.getPath().getName().toLowerCase().endsWith(&quot;.parquet&quot;)</span>
-<span class="nc bnc" id="L346" title="All 2 branches missed.">                    &amp;&amp; hasLocalBlock(fileLocality(file).keySet(), localhost)) {</span>
-<span class="nc" id="L347">                String relativePath = rootUri.relativize(file.getPath().toUri()).toString();</span>
-<span class="nc" id="L348">                result.put(relativePath, file.getLen());</span>
+<span class="nc" id="L337">        URI rootUri = this.fileSystem.getFileStatus(root).getPath().toUri();</span>
+<span class="nc" id="L338">        RemoteIterator&lt;LocatedFileStatus&gt; files = this.fileSystem.listFiles(root, true);</span>
+<span class="nc" id="L339">        int scanned = 0;</span>
+<span class="nc bnc" id="L340" title="All 2 branches missed.">        while (files.hasNext()) {</span>
+<span class="nc" id="L341">            LocatedFileStatus file = files.next();</span>
+<span class="nc" id="L342">            scanned++;</span>
+<span class="nc bnc" id="L343" title="All 2 branches missed.">            if (file.isFile()</span>
+<span class="nc bnc" id="L344" title="All 2 branches missed.">                    &amp;&amp; file.getPath().getName().toLowerCase().endsWith(&quot;.parquet&quot;)</span>
+<span class="nc bnc" id="L345" title="All 2 branches missed.">                    &amp;&amp; hasLocalBlock(fileLocality(file).keySet(), localhost)) {</span>
+<span class="nc" id="L346">                String relativePath = rootUri.relativize(file.getPath().toUri()).toString();</span>
+<span class="nc" id="L347">                result.put(relativePath, file.getLen());</span>
             }
-<span class="nc" id="L350">        }</span>
-<span class="nc" id="L351">        long totalBytes = result.values().stream().mapToLong(Long::longValue).sum();</span>
-<span class="nc" id="L352">        LogUtil.logTiming(t, &quot;parquet.localInventory&quot;, &quot;localFiles=&quot; + result.size() + &quot; scanned=&quot; + scanned + &quot; totalBytes=&quot; + totalBytes);</span>
-<span class="nc" id="L353">        return result;</span>
+<span class="nc" id="L349">        }</span>
+<span class="nc" id="L350">        long totalBytes = result.values().stream().mapToLong(Long::longValue).sum();</span>
+<span class="nc" id="L351">        LogUtil.logTiming(t, &quot;parquet.localInventory&quot;, &quot;localFiles=&quot; + result.size() + &quot; scanned=&quot; + scanned + &quot; totalBytes=&quot; + totalBytes);</span>
+<span class="nc" id="L352">        return result;</span>
     }
 
     static boolean hasLocalBlock(java.util.Set&lt;String&gt; blockHosts, String localHost) {
-<span class="fc" id="L357">        String normalizedLocalHost = HostUtils.normalize(localHost);</span>
-<span class="fc" id="L358">        return blockHosts.stream()</span>
-<span class="fc" id="L359">                .map(HostUtils::normalize)</span>
-<span class="fc" id="L360">                .anyMatch(normalizedLocalHost::equals);</span>
+<span class="fc" id="L356">        String normalizedLocalHost = HostUtils.normalize(localHost);</span>
+<span class="fc" id="L357">        return blockHosts.stream()</span>
+<span class="fc" id="L358">                .map(HostUtils::normalize)</span>
+<span class="fc" id="L359">                .anyMatch(normalizedLocalHost::equals);</span>
     }
 
     /**
@@ -367,21 +366,21 @@ public class ParquetAdapter {
      * @return ordered map of host to block count
      */
     public LinkedHashMap&lt;String, Long&gt; fileLocality(LocatedFileStatus locatedFileStatus) {
-<span class="nc" id="L370">        Objects.requireNonNull(locatedFileStatus);</span>
-<span class="nc" id="L371">        return Arrays.stream(locatedFileStatus.getBlockLocations())</span>
-<span class="nc" id="L372">                .flatMap(bl -&gt; {</span>
+<span class="nc" id="L369">        Objects.requireNonNull(locatedFileStatus);</span>
+<span class="nc" id="L370">        return Arrays.stream(locatedFileStatus.getBlockLocations())</span>
+<span class="nc" id="L371">                .flatMap(bl -&gt; {</span>
                     try {
-<span class="nc" id="L374">                        return Stream.of(bl.getHosts())</span>
-<span class="nc bnc" id="L375" title="All 2 branches missed.">                                .map(host -&gt; LOOPBACK_HOSTS.contains(host) ? localhost : host);</span>
-<span class="nc" id="L376">                    } catch (IOException e) {</span>
-<span class="nc" id="L377">                        throw new UncheckedIOException(e);</span>
+<span class="nc" id="L373">                        return Stream.of(bl.getHosts())</span>
+<span class="nc bnc" id="L374" title="All 2 branches missed.">                                .map(host -&gt; LOOPBACK_HOSTS.contains(host) ? localhost : host);</span>
+<span class="nc" id="L375">                    } catch (IOException e) {</span>
+<span class="nc" id="L376">                        throw new UncheckedIOException(e);</span>
                     }
                 })
-<span class="nc" id="L380">                .collect(Collectors.groupingBy(h -&gt; h, Collectors.counting()))</span>
-<span class="nc" id="L381">                .entrySet().stream()</span>
-<span class="nc" id="L382">                .sorted(Map.Entry.&lt;String, Long&gt;comparingByValue().thenComparing(Map.Entry.comparingByKey()))</span>
-<span class="nc" id="L383">                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue,</span>
-<span class="nc" id="L384">                        (e1, e2) -&gt; e1, LinkedHashMap::new));</span>
+<span class="nc" id="L379">                .collect(Collectors.groupingBy(h -&gt; h, Collectors.counting()))</span>
+<span class="nc" id="L380">                .entrySet().stream()</span>
+<span class="nc" id="L381">                .sorted(Map.Entry.&lt;String, Long&gt;comparingByValue().thenComparing(Map.Entry.comparingByKey()))</span>
+<span class="nc" id="L382">                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue,</span>
+<span class="nc" id="L383">                        (e1, e2) -&gt; e1, LinkedHashMap::new));</span>
     }
 
     /**
@@ -390,7 +389,7 @@ public class ParquetAdapter {
      * @return data directory path string
      */
     public String dataDirectory() {
-<span class="nc" id="L393">        return dataDirectory;</span>
+<span class="nc" id="L392">        return dataDirectory;</span>
     }
 
     /**
@@ -398,14 +397,14 @@ public class ParquetAdapter {
      * Prevents path traversal via names like &quot;..&quot; or &quot;./etc&quot;.
      */
     public static String validateName(String name) {
-<span class="fc bfc" id="L401" title="All 2 branches covered.">        if (name == null) {</span>
-<span class="fc" id="L402">            return null;</span>
+<span class="fc bfc" id="L400" title="All 2 branches covered.">        if (name == null) {</span>
+<span class="fc" id="L401">            return null;</span>
         }
-<span class="fc bfc" id="L404" title="All 2 branches covered.">        if (!name.matches(&quot;^[a-zA-Z_][a-zA-Z0-9_]*$&quot;)) {</span>
-<span class="fc" id="L405">            throw new IllegalArgumentException(&quot;Invalid name: '&quot; + name</span>
+<span class="fc bfc" id="L403" title="All 2 branches covered.">        if (!name.matches(&quot;^[a-zA-Z_][a-zA-Z0-9_]*$&quot;)) {</span>
+<span class="fc" id="L404">            throw new IllegalArgumentException(&quot;Invalid name: '&quot; + name</span>
                     + &quot;'. Must match [a-zA-Z_][a-zA-Z0-9_]*&quot;);
         }
-<span class="fc" id="L408">        return name;</span>
+<span class="fc" id="L407">        return name;</span>
     }
 
     /**
@@ -414,7 +413,7 @@ public class ParquetAdapter {
      * @return FileSystem
      */
     public FileSystem fileSystem() {
-<span class="nc" id="L417">        return fileSystem;</span>
+<span class="nc" id="L416">        return fileSystem;</span>
     }
 
     /**
@@ -423,20 +422,20 @@ public class ParquetAdapter {
      * @throws IOException on HDFS read failure
      */
     private Map&lt;String, Path&gt; scanSchemas() throws IOException {
-<span class="fc" id="L426">        LOGGER.info(&quot;Initializing schema cache for data directory: {}&quot;, dataDirectory);</span>
-<span class="fc" id="L427">        Path dirPath = new Path(dataDirectory);</span>
+<span class="fc" id="L425">        LOGGER.info(&quot;Initializing schema cache for data directory: {}&quot;, dataDirectory);</span>
+<span class="fc" id="L426">        Path dirPath = new Path(dataDirectory);</span>
 
-<span class="fc bfc" id="L429" title="All 2 branches covered.">        if (!fileSystem.exists(dirPath)) {</span>
-<span class="fc" id="L430">            LOGGER.info(&quot;Data directory does not exist: {}&quot;, dataDirectory);</span>
-<span class="fc" id="L431">            return Collections.emptyMap();</span>
+<span class="fc bfc" id="L428" title="All 2 branches covered.">        if (!fileSystem.exists(dirPath)) {</span>
+<span class="fc" id="L429">            LOGGER.info(&quot;Data directory does not exist: {}&quot;, dataDirectory);</span>
+<span class="fc" id="L430">            return Collections.emptyMap();</span>
         }
 
-<span class="fc" id="L434">        Map&lt;String, Path&gt; result = Arrays.stream(fileSystem.listStatus(dirPath))</span>
-<span class="fc" id="L435">                .filter(FileStatus::isDirectory)</span>
-<span class="fc" id="L436">                .collect(Collectors.toMap(status -&gt; status.getPath().getName(), FileStatus::getPath));</span>
+<span class="fc" id="L433">        Map&lt;String, Path&gt; result = Arrays.stream(fileSystem.listStatus(dirPath))</span>
+<span class="fc" id="L434">                .filter(FileStatus::isDirectory)</span>
+<span class="fc" id="L435">                .collect(Collectors.toMap(status -&gt; status.getPath().getName(), FileStatus::getPath));</span>
 
-<span class="fc" id="L438">        LOGGER.info(&quot;Collected schemas: {}&quot;, result);</span>
-<span class="fc" id="L439">        return result;</span>
+<span class="fc" id="L437">        LOGGER.info(&quot;Collected schemas: {}&quot;, result);</span>
+<span class="fc" id="L438">        return result;</span>
     }
 
     /**
@@ -445,25 +444,25 @@ public class ParquetAdapter {
      * @throws IOException on HDFS read failure
      */
     private Map&lt;String, Map&lt;String, Path&gt;&gt; scanTables() throws IOException {
-<span class="fc" id="L448">        LOGGER.info(&quot;Initializing table cache for data directory: {}&quot;, dataDirectory);</span>
-<span class="fc" id="L449">        Path schemaPath = new Path(dataDirectory);</span>
+<span class="fc" id="L447">        LOGGER.info(&quot;Initializing table cache for data directory: {}&quot;, dataDirectory);</span>
+<span class="fc" id="L448">        Path schemaPath = new Path(dataDirectory);</span>
 
-<span class="fc bfc" id="L451" title="All 2 branches covered.">        if (!fileSystem.exists(schemaPath)) {</span>
-<span class="fc" id="L452">            LOGGER.info(&quot;Data directory does not exist: {}&quot;, dataDirectory);</span>
-<span class="fc" id="L453">            return Collections.emptyMap();</span>
+<span class="fc bfc" id="L450" title="All 2 branches covered.">        if (!fileSystem.exists(schemaPath)) {</span>
+<span class="fc" id="L451">            LOGGER.info(&quot;Data directory does not exist: {}&quot;, dataDirectory);</span>
+<span class="fc" id="L452">            return Collections.emptyMap();</span>
         }
 
-<span class="fc" id="L456">        Map&lt;String, Map&lt;String, Path&gt;&gt; result = new HashMap&lt;&gt;();</span>
-<span class="fc bfc" id="L457" title="All 2 branches covered.">        for (Map.Entry&lt;String, Path&gt; schema : tableSchemaCache.entrySet()) {</span>
-<span class="fc" id="L458">            LOGGER.info(&quot;Collecting tables for schema: {} at path {}&quot;, schema.getKey(), schema.getValue());</span>
-<span class="fc" id="L459">            Map&lt;String, Path&gt; tables = Arrays.stream(fileSystem.listStatus(schema.getValue()))</span>
-<span class="fc" id="L460">                    .filter(FileStatus::isDirectory)</span>
-<span class="fc" id="L461">                    .collect(Collectors.toMap(status -&gt; status.getPath().getName(), FileStatus::getPath));</span>
-<span class="fc" id="L462">            result.put(schema.getKey(), tables);</span>
-<span class="fc" id="L463">        }</span>
+<span class="fc" id="L455">        Map&lt;String, Map&lt;String, Path&gt;&gt; result = new HashMap&lt;&gt;();</span>
+<span class="fc bfc" id="L456" title="All 2 branches covered.">        for (Map.Entry&lt;String, Path&gt; schema : tableSchemaCache.entrySet()) {</span>
+<span class="fc" id="L457">            LOGGER.info(&quot;Collecting tables for schema: {} at path {}&quot;, schema.getKey(), schema.getValue());</span>
+<span class="fc" id="L458">            Map&lt;String, Path&gt; tables = Arrays.stream(fileSystem.listStatus(schema.getValue()))</span>
+<span class="fc" id="L459">                    .filter(FileStatus::isDirectory)</span>
+<span class="fc" id="L460">                    .collect(Collectors.toMap(status -&gt; status.getPath().getName(), FileStatus::getPath));</span>
+<span class="fc" id="L461">            result.put(schema.getKey(), tables);</span>
+<span class="fc" id="L462">        }</span>
 
-<span class="fc" id="L465">        LOGGER.info(&quot;Collected tables: {}&quot;, result);</span>
-<span class="fc" id="L466">        return result;</span>
+<span class="fc" id="L464">        LOGGER.info(&quot;Collected tables: {}&quot;, result);</span>
+<span class="fc" id="L465">        return result;</span>
     }
 
     /**
@@ -473,17 +472,17 @@ public class ParquetAdapter {
      * @return predicate
      */
     private static java.util.function.Predicate&lt;String&gt; createLikePredicate(String pattern) {
-<span class="pc bpc" id="L476" title="1 of 6 branches missed.">        if (pattern == null || pattern.isEmpty() || pattern.equals(&quot;%&quot;)) {</span>
-<span class="fc" id="L477">            return s -&gt; true;</span>
+<span class="pc bpc" id="L475" title="1 of 6 branches missed.">        if (pattern == null || pattern.isEmpty() || pattern.equals(&quot;%&quot;)) {</span>
+<span class="fc" id="L476">            return s -&gt; true;</span>
         }
-<span class="fc" id="L479">        String regex = pattern</span>
-<span class="fc" id="L480">                .replace(&quot;\\&quot;, &quot;\\\\&quot;)</span>
-<span class="fc" id="L481">                .replace(&quot;.&quot;, &quot;\\.&quot;)</span>
-<span class="fc" id="L482">                .replace(&quot;%&quot;, &quot;.*&quot;)</span>
-<span class="fc" id="L483">                .replace(&quot;_&quot;, &quot;.&quot;);</span>
-<span class="fc" id="L484">        java.util.regex.Pattern p = java.util.regex.Pattern.compile(regex,</span>
+<span class="fc" id="L478">        String regex = pattern</span>
+<span class="fc" id="L479">                .replace(&quot;\\&quot;, &quot;\\\\&quot;)</span>
+<span class="fc" id="L480">                .replace(&quot;.&quot;, &quot;\\.&quot;)</span>
+<span class="fc" id="L481">                .replace(&quot;%&quot;, &quot;.*&quot;)</span>
+<span class="fc" id="L482">                .replace(&quot;_&quot;, &quot;.&quot;);</span>
+<span class="fc" id="L483">        java.util.regex.Pattern p = java.util.regex.Pattern.compile(regex,</span>
                 java.util.regex.Pattern.CASE_INSENSITIVE);
-<span class="fc" id="L486">        return s -&gt; p.matcher(s).matches();</span>
+<span class="fc" id="L485">        return s -&gt; p.matcher(s).matches();</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>
