@@ -49,6 +49,8 @@ public final class DuckDbAdapter implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger(DuckDbAdapter.class);
     private static final long LISTENER_STATE_POLL_NANOS =
             TimeUnit.MILLISECONDS.toNanos(5);
+    private static final long LISTENER_TIMING_LOG_THRESHOLD_NANOS =
+            TimeUnit.MILLISECONDS.toNanos(100);
     private static final long PRODUCER_STOP_TIMEOUT_SECONDS = 5;
     private final ThreadLocal<Connection> threadConn;
     private final Set<Connection> allConnections = ConcurrentHashMap.newKeySet();
@@ -833,11 +835,9 @@ public final class DuckDbAdapter implements AutoCloseable {
                 }
             }
             long totalWaitNanos = System.nanoTime() - waitStart;
-            if (totalWaitNanos > 10_000) {
+            if (totalWaitNanos > LISTENER_TIMING_LOG_THRESHOLD_NANOS) {
                 LogUtil.logTiming(t, "duckdb.awaitListenerReady",
                         "waitMs=" + totalWaitNanos / 1_000_000);
-            }
-            if (totalWaitNanos > 100_000_000) { // >100ms
                 LOGGER.debug("qid={} node={} backpressure=waited waitMs={} ready=true cancelled=false",
                         LogUtil.qid(), LogUtil.node(), totalWaitNanos / 1_000_000);
             }

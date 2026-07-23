@@ -23,6 +23,7 @@ BENCHBASE_WARMUP_SECONDS="${BENCHBASE_WARMUP_SECONDS:-}"
 BENCHBASE_TERMINALS="${BENCHBASE_TERMINALS:-}"
 BENCHBASE_RATE="${BENCHBASE_RATE:-unlimited}"
 BENCHBASE_DB_SCHEMA="${BENCHBASE_DB_SCHEMA:-}"
+BENCHBASE_COMPARE_ORDER="${BENCHBASE_COMPARE_ORDER:-flight-first}"
 BENCHBASE_UPDATE_PAGES="${BENCHBASE_UPDATE_PAGES:-true}"
 BENCHBASE_CAPTURE_TIMEOUT_SECONDS="${BENCHBASE_CAPTURE_TIMEOUT_SECONDS:-${BENCHBASE_QUERY_TIMEOUT_SECONDS:-0}}"
 BENCHMARK_OBSERVABILITY="${BENCHMARK_OBSERVABILITY:-true}"
@@ -695,16 +696,24 @@ prepare_compare_stack() {
 
 compare_execute() {
   local parent_run_id="${COMPARE_PARENT_RUN_ID}"
+  local first_path
+  local second_path
 
-  echo "[BenchBase] Compare runs Flight and Direct sequentially; configured measurement time applies to each phase."
+  case "${BENCHBASE_COMPARE_ORDER}" in
+    flight-first)
+      first_path="flight"
+      second_path="direct"
+      ;;
+    direct-first)
+      first_path="direct"
+      second_path="flight"
+      ;;
+  esac
 
-  BENCHBASE_DB_SCHEMA="${BENCHMARK}_flight"
-  RESULTS_RUN_ID="${parent_run_id}/flight"
-  benchbase_execute
+  echo "[BenchBase] Compare order=${BENCHBASE_COMPARE_ORDER}; configured measurement time applies to each phase."
 
-  BENCHBASE_DB_SCHEMA="${BENCHMARK}_direct"
-  RESULTS_RUN_ID="${parent_run_id}/direct"
-  benchbase_execute
+  run_compare_path "${parent_run_id}" "${first_path}"
+  run_compare_path "${parent_run_id}" "${second_path}"
 
   RESULTS_RUN_ID="${parent_run_id}"
   RESULTS_DIR="${RESULTS_ROOT}/${RESULTS_RUN_ID}"
@@ -712,6 +721,15 @@ compare_execute() {
   build_compare_html_report
 
   echo "Compare results written under ${RESULTS_ROOT}/${parent_run_id}"
+}
+
+run_compare_path() {
+  local parent_run_id="$1"
+  local path="$2"
+
+  BENCHBASE_DB_SCHEMA="${BENCHMARK}_${path}"
+  RESULTS_RUN_ID="${parent_run_id}/${path}"
+  benchbase_execute
 }
 
 init_compare_run() {
@@ -749,6 +767,15 @@ if [[ "${MODE}" == "graph" || "${MODE}" == "compare" ]]; then
   BENCHBASE_TIME_SECONDS="${BENCHBASE_TIME_SECONDS:-60}"
   BENCHBASE_WARMUP_SECONDS="${BENCHBASE_WARMUP_SECONDS:-30}"
   BENCHBASE_TERMINALS="${BENCHBASE_TERMINALS:-1}"
+fi
+
+if [[ "${MODE}" == "compare" ]]; then
+  BENCHBASE_COMPARE_ORDER="${BENCHBASE_COMPARE_ORDER,,}"
+  if [[ "${BENCHBASE_COMPARE_ORDER}" != "flight-first"
+      && "${BENCHBASE_COMPARE_ORDER}" != "direct-first" ]]; then
+    echo "BENCHBASE_COMPARE_ORDER must be flight-first or direct-first: ${BENCHBASE_COMPARE_ORDER}" >&2
+    exit 2
+  fi
 fi
 
 configure_cluster

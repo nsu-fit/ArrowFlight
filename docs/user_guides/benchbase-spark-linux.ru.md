@@ -79,10 +79,21 @@ BENCHBASE_TERMINALS=2           # параллельные BenchBase workers
 BENCHBASE_RATE=unlimited        # лимит requests/sec
 BENCHBASE_QUERY_TIMEOUT_SECONDS=120   # timeout BenchBase query через JDBC
 BENCHBASE_CAPTURE_TIMEOUT_SECONDS=120 # timeout повторного query для HTML-проверки
+BENCHBASE_COMPARE_ORDER=flight-first  # flight-first или direct-first
 BENCHBASE_UPDATE_PAGES=false    # не обновлять локальную pages/
 BENCHMARK_OBSERVABILITY=true    # автоматически запустить Grafana/Prometheus
 HDFS_BLOCK_SIZE_BYTES=1073741824 # shard обязан помещаться в один HDFS block
 ```
+
+Benchmark Spark запускается с `spark.sql.ansi.enabled=true`. Это необходимо для
+Spark DataSource V2: без ANSI Spark 3.5 не передаёт decimal-выражения Q1
+(`l_extendedprice * (1 - l_discount)`) в aggregation pushdown, и Flight вынужден
+передавать миллионы исходных строк обратно в Spark вместо нескольких partial
+aggregate rows.
+
+Оба пути выполняются последовательно. Для проверки влияния порядка повтори
+сравнение с `BENCHBASE_COMPARE_ORDER=direct-first`; отдельный warmup применяется
+к каждому пути.
 
 После измерения каждый выбранный query повторно выполняется через `beeline`, чтобы
 сохранить фактический результат в HTML report. Если этот запуск превышает

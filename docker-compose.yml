@@ -334,6 +334,7 @@ services:
       DIRECT_PARQUET_DIR: "${DIRECT_PARQUET_DIR:-hdfs://hdfs-namenode:8020/bench}"
       SPARK_WAREHOUSE_DIR: /spark-warehouse
       SPARK_METASTORE_DB: /spark-warehouse/metastore_db
+      SPARK_SQL_ANSI_ENABLED: "${SPARK_SQL_ANSI_ENABLED:-true}"
     volumes:
       - spark-warehouse:/spark-warehouse
     restart: "no"
@@ -382,6 +383,7 @@ services:
       SPARK_THRIFT_PORT: "10000"
       SPARK_WAREHOUSE_DIR: /spark-warehouse
       SPARK_METASTORE_DB: /spark-warehouse/metastore_db
+      SPARK_SQL_ANSI_ENABLED: "${SPARK_SQL_ANSI_ENABLED:-true}"
     ports:
       - "10000:10000"
       - "4040:4040"
