@@ -23,8 +23,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.sql.Connection;
-import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -32,10 +30,13 @@ import java.util.LinkedHashMap;
 import java.util.Optional;
 import java.util.List;
 import java.util.Map;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 
 import net.surpin.data.arrowflight.server.adapters.DuckDbAdapter;
+import net.surpin.data.arrowflight.server.adapters.HadoopParquetArrowReader;
 import net.surpin.data.arrowflight.server.adapters.ParquetAdapter;
 import net.surpin.data.arrowflight.server.services.ParquetQueryParser;
 import net.surpin.data.arrowflight.server.model.AppConfig;
@@ -109,24 +110,22 @@ public final class ExecutionService {
             return;
         }
 
-        long tResolve = LogUtil.mark();
-        List<String> resolvedUris = resolveUris(fileUris);
-        LogUtil.logTiming(tResolve, "files.resolveUris", "files=" + resolvedUris.size());
-
         if (parsedQuery.hasAggregation) {
             LOGGER.debug("qid={} node={} execution=engine engine=DuckDB(aggregation) hasGroupBy={} files={}",
                     LogUtil.qid(), LogUtil.node(), !parsedQuery.groupByColumnNames.isEmpty(),
                     parquetFiles.size());
-            executeAggregation(allocator, parsedQuery, parquetFiles, resolvedUris,
-                    fileUris, listener, startListener);
+            executeAggregation(allocator, parsedQuery, parquetFiles,
+                    listener, startListener);
             return;
         }
 
-        LOGGER.debug("qid={} node={} execution=engine engine=DuckDB files={}",
-                LogUtil.qid(), LogUtil.node(), resolvedUris.size());
+        LOGGER.debug("qid={} node={} execution=engine engine=HadoopArrowDuckDB files={}",
+                LogUtil.qid(), LogUtil.node(), parquetFiles.size());
         String duckSql = DuckDbAdapter.buildSelectSql(parsedQuery,
-                DuckDbAdapter.readParquetFromClause(ducksDbPaths(resolvedUris)));
-        duckDbAdapter.streamSql(allocator, duckSql, listener, startListener);
+                DuckDbAdapter.quoteIdentifier("__arrow_input"));
+        executeArrowSql(allocator, parquetFiles, "__arrow_input", duckSql,
+                projectedColumns(parsedQuery),
+                listener, startListener);
     }
 
     /**
@@ -135,14 +134,12 @@ public final class ExecutionService {
      * @param allocator     Arrow buffer allocator
      * @param pq            parsed query
      * @param parquetFiles  resolved Parquet file paths
-     * @param resolvedUris  resolved file URIs
-     * @param fileUris      relative file paths
      * @param listener      Flight stream listener
      * @param startListener whether to call listener.start()
      * @throws Exception on execution failure
      */
     private void executeAggregation(BufferAllocator allocator, ParquetQueryParser pq,
-            List<Path> parquetFiles, List<String> resolvedUris, String[] fileUris,
+            List<Path> parquetFiles,
             FlightProducer.ServerStreamListener listener,
             boolean startListener) throws Exception {
         long t = LogUtil.mark();
@@ -219,8 +216,10 @@ public final class ExecutionService {
         }
 
         String duckSql = DuckDbAdapter.buildDuckSqlWithFilter(pq,
-                DuckDbAdapter.readParquetFromClause(ducksDbPaths(resolvedUris)), false);
-        duckDbAdapter.streamSql(allocator, duckSql, listener, startListener);
+                DuckDbAdapter.quoteIdentifier("__arrow_input"), false);
+        executeArrowSql(allocator, parquetFiles, "__arrow_input", duckSql,
+                projectedColumns(pq),
+                listener, startListener);
     }
 
     // ── DuckDB join execution ────────────────────────────────────────────
@@ -239,10 +238,9 @@ public final class ExecutionService {
             String[] fileUris, FlightProducer.ServerStreamListener listener,
             boolean startListener) throws Exception {
         long t = LogUtil.mark();
-        Connection conn = duckDbAdapter.connection();
-        List<String> registeredAliases = new ArrayList<>();
+        List<DuckDbAdapter.ArrowRegistration> registrations = new ArrayList<>();
         try {
-            Map<String, List<String>> tableFiles = new LinkedHashMap<>();
+            Map<String, List<Path>> tableFiles = new LinkedHashMap<>();
             for (ParquetQueryParser.JoinTable jt : pq.joinTables) {
                 String key = (jt.schema() != null ? jt.schema() + "." : "") + jt.table();
                 tableFiles.computeIfAbsent(key, k -> {
@@ -256,34 +254,28 @@ public final class ExecutionService {
 
             for (ParquetQueryParser.JoinTable jt : pq.joinTables) {
                 String key = (jt.schema() != null ? jt.schema() + "." : "") + jt.table();
-                List<String> duckDbPaths = tableFiles.get(key);
-                if (duckDbPaths.isEmpty()) {
+                List<Path> paths = tableFiles.get(key);
+                if (paths.isEmpty()) {
                     throw new IOException("No Parquet files found for table: " + key);
                 }
                 long tView = LogUtil.mark();
-                try (Statement stmt = conn.createStatement()) {
-                    stmt.execute("CREATE OR REPLACE TEMP VIEW "
-                            + DuckDbAdapter.quoteIdentifier(jt.alias())
-                            + " AS SELECT * FROM "
-                            + DuckDbAdapter.readParquetFromClause(duckDbPaths));
-                }
-                LogUtil.logTiming(tView, "engine:join.createView", "alias=" + jt.alias() + " files=" + duckDbPaths.size());
-                registeredAliases.add(jt.alias());
+                HadoopParquetArrowReader reader = new HadoopParquetArrowReader(
+                        allocator, parquetAdapter.fileSystem(), paths,
+                        duckDbAdapter.batchSize());
+                registrations.add(duckDbAdapter.registerArrowReader(
+                        allocator, jt.alias(), reader));
+                LogUtil.logTiming(tView, "engine:join.registerArrow", "alias="
+                        + jt.alias() + " files=" + paths.size());
             }
 
             duckDbAdapter.streamSql(allocator, pq.duckDbSql, listener, startListener);
         } finally {
             long tDrop = LogUtil.mark();
-            try (Statement stmt = conn.createStatement()) {
-                for (String alias : registeredAliases) {
-                    try {
-                        stmt.execute("DROP VIEW IF EXISTS "
-                                + DuckDbAdapter.quoteIdentifier(alias));
-                    } catch (Exception ignored) {
-                    }
-                }
+            for (int i = registrations.size() - 1; i >= 0; i--) {
+                registrations.get(i).close();
             }
-            LogUtil.logTiming(tDrop, "engine:join.dropViews", "aliases=" + registeredAliases.size());
+            LogUtil.logTiming(tDrop, "engine:join.dropArrowStreams",
+                    "aliases=" + registrations.size());
         }
         LogUtil.logTiming(t, "engine:join", "tables=" + pq.joinTables.size());
     }
@@ -352,10 +344,10 @@ public final class ExecutionService {
      * Recursively lists Parquet files for a schema.table key.
      *
      * @param key schema.table or table name
-     * @return DuckDB-compatible file paths
+     * @return Hadoop Parquet paths
      * @throws IOException on HDFS read failure
      */
-    private List<String> resolveTableFiles(String key) throws IOException {
+    private List<Path> resolveTableFiles(String key) throws IOException {
         long t = LogUtil.mark();
         int dot = key.indexOf('.');
         String schema = dot > 0 ? key.substring(0, dot) : null;
@@ -363,17 +355,62 @@ public final class ExecutionService {
         Path dir = schema != null
                 ? new Path(parquetAdapter.dataDirectory(), schema + "/" + table)
                 : new Path(parquetAdapter.dataDirectory(), table);
-        List<String> uris = new ArrayList<>();
+        List<Path> paths = new ArrayList<>();
         org.apache.hadoop.fs.RemoteIterator<org.apache.hadoop.fs.LocatedFileStatus> it =
                 parquetAdapter.fileSystem().listFiles(dir, true);
         while (it.hasNext()) {
             org.apache.hadoop.fs.LocatedFileStatus f = it.next();
             if (f.isFile() && f.getPath().getName().endsWith(".parquet")) {
-                uris.add(plainDuckDbPath(f.getPath()));
+                paths.add(f.getPath());
             }
         }
-        LogUtil.logTiming(t, "engine:join.resolveTableFiles", "table=" + key + " files=" + uris.size());
-        return uris;
+        LogUtil.logTiming(t, "engine:join.resolveTableFiles", "table=" + key
+                + " files=" + paths.size());
+        return paths;
+    }
+
+    /**
+     * Executes SQL against a Hadoop-backed Arrow C Data stream.
+     *
+     * @param allocator Arrow allocator
+     * @param files Parquet files
+     * @param inputName DuckDB input table name
+     * @param sql DuckDB SQL
+     * @param listener Flight listener
+     * @param startListener whether to start the listener
+     * @throws Exception on read, registration, SQL, or stream failure
+     */
+    private void executeArrowSql(BufferAllocator allocator, List<Path> files,
+            String inputName, String sql,
+            Set<String> projectedColumns,
+            FlightProducer.ServerStreamListener listener,
+            boolean startListener) throws Exception {
+        HadoopParquetArrowReader reader = new HadoopParquetArrowReader(
+                allocator, parquetAdapter.fileSystem(), files, duckDbAdapter.batchSize(),
+                projectedColumns);
+        try (DuckDbAdapter.ArrowRegistration registration =
+                duckDbAdapter.registerArrowReader(allocator, inputName, reader)) {
+            duckDbAdapter.streamSql(allocator, sql, listener, startListener);
+        }
+    }
+
+    /**
+     * Collects safe top-level projection columns for Java Parquet decoding.
+     *
+     * @param query parsed query
+     * @return requested columns, or empty when filter requires full schema
+     */
+    private static Set<String> projectedColumns(ParquetQueryParser query) {
+        if (query.filter != null && !query.filter.isBlank()) {
+            return Set.of();
+        }
+        Set<String> columns = new LinkedHashSet<>(query.columns);
+        for (ParquetQueryParser.SelectExpr expression : query.selectExprs) {
+            columns.addAll(expression.inputColumns);
+        }
+        columns.addAll(query.groupByColumnNames);
+        columns.remove("*");
+        return columns;
     }
 
     /**

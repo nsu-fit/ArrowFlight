@@ -4,7 +4,7 @@ This document describes how the project works with files through Hadoop FileSyst
 
 ## Storage Model
 
-Data is not stored inside the Arrow Flight server. Flight nodes act as the compute layer: they receive assigned Parquet file paths and DuckDB reads those files through its configured filesystem support.
+Data is not stored inside the Arrow Flight server. Flight nodes act as the compute layer: they receive assigned Parquet file paths and read them through Hadoop `FileSystem`.
 
 The data root is configured by the `dataDirectory` parameter. Tables are expected under a `schema/table` hierarchy. For each table, the server recursively searches for Parquet files.
 
@@ -12,9 +12,9 @@ The data root is configured by the `dataDirectory` parameter. Tables are expecte
 
 ## Hadoop FileSystem
 
-Hadoop FileSystem is used for discovery, metadata access, and locality information. DuckDB performs data-page reads and opens `hdfs://` URIs through the configured HDFS extension.
+Hadoop FileSystem is used for discovery, metadata, locality, and data-page reads. Java decodes Parquet into bounded `VectorSchemaRoot` batches and exposes them to DuckDB through Arrow C Data.
 
-A Flight node does not need a local Parquet copy. DuckDB reads the assigned Parquet files and exports query results as Arrow batches without materializing the complete file in `/tmp`.
+A Flight node does not need a local Parquet copy. Hadoop opens assigned files directly; neither HDFS data nor complete files are materialized in `/tmp`.
 
 When the server starts, it creates a `FileSystem` instance associated with `dataDirectory`. All file operations then go through that object: listing files, reading metadata, resolving absolute paths, and opening files.
 
@@ -52,13 +52,11 @@ The current implementation distributes work at the whole-file level. Row groups 
 
 Projection means selecting only the columns required by a query. For a regular `SELECT`, the query parser extracts the selected columns and includes them in the DuckDB query.
 
-If a query requires only a subset of columns, DuckDB can read only those columns from Parquet. This reduces disk I/O and the amount of data exported to Arrow.
-
-If no projection is specified, DuckDB reads all table columns.
+The Java reader pushes safe top-level column projections into Parquet and decodes selected columns directly into Arrow vectors. DuckDB applies the final SQL projection to the registered stream.
 
 ## Filter Pushdown
 
-Spark V2 predicates and SQL filters are translated into the SQL sent to DuckDB. DuckDB applies supported Parquet predicate and projection pushdown while reading assigned files. HDFS paths require the configured DuckDB HDFS extension.
+Spark V2 predicates and SQL filters are translated into the SQL sent to DuckDB. DuckDB applies them to the registered Arrow stream. Parquet predicate pushdown is not yet implemented in the Java reader.
 
 ## Footer Fast Path
 

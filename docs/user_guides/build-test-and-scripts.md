@@ -153,7 +153,7 @@ mvn test -Darrowflight.duckdb.threads=2
 
 ## HDFS runtime
 
-HDFS Parquet files are opened by DuckDB through the configured HDFS extension. The Linux runtime provides `libhdfs`, Hadoop configuration, and the Hadoop Java classpath. The project Docker image and entrypoint configure `LD_LIBRARY_PATH`, `HADOOP_CONF_DIR`, and `CLASSPATH` for this purpose.
+HDFS Parquet files are opened by the native Java Hadoop client. The Linux runtime provides Hadoop configuration and the Hadoop Java classpath. The project Docker image and entrypoint configure `HADOOP_CONF_DIR` and `CLASSPATH` for this purpose.
 
 ## run.sh
 

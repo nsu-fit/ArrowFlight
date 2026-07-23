@@ -79,8 +79,6 @@ flight_server_command() {
   local hadoop_cp
   hadoop_cp="$(hadoop_classpath)"
   local runtime_classpath="${APP_JAR}:${HADOOP_CONF_DIR}:${hadoop_cp}:${SPARK_HOME}/jars/*"
-  # The DuckDB HDFS extension can load libhdfs at runtime. libhdfs reads
-  # CLASSPATH from the process environment; java's -cp alone is not sufficient.
   export CLASSPATH="${runtime_classpath}${CLASSPATH:+:${CLASSPATH}}"
   local java_opts=("${DEFAULT_SERVER_JAVA_OPTS[@]}")
   if [[ -n "${JAVA_OPTS:-}" ]]; then

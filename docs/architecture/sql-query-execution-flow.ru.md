@@ -110,11 +110,11 @@ DuckDB используется для всех запросов, которые
 - агрегаты, которые не удалось выполнить из footer statistics
 - `JOIN`
 
-`ExecutionService` строит SQL поверх DuckDB table function `read_parquet([...])`. Alias-ы join-таблиц создаются как временные DuckDB views над соответствующими Parquet inputs.
+`ExecutionService` открывает Parquet inputs через Hadoop `FileSystem`, декодирует bounded Arrow batches и регистрирует streams как DuckDB tables через Arrow C Data. Join aliases получают независимые streams.
 
 DuckDB возвращает результат через `DuckDBResultSet.arrowExportStream`. Сервер копирует строки из DuckDB Arrow stream в Flight batches и отправляет клиенту.
 
-Для локальных файлов DuckDB extension не нужен. Для HDFS URI требуется настроенный DuckDB HDFS extension.
+Один Java Hadoop path обслуживает local files, HDFS, HA и настроенные Hadoop-compatible filesystems. Unsupported nested, repeated и primitive types завершают запрос ошибкой без DuckDB filesystem fallback.
 
 ## Runtime tuning
 

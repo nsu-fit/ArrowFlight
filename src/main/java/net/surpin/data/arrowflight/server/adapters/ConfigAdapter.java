@@ -36,19 +36,6 @@ public class ConfigAdapter {
         int duckDbGroups = getInt("duckDbGroups",
                 "arrowflight.duckdb.groups", Math.min(8, ioParallelism), props);
         int duckDbThreads = getInt("duckDbThreads", "arrowflight.duckdb.threads", 1, props);
-        String duckDbHdfsExtension = getStringWithEnv("duckDbHdfsExtension",
-                "arrowflight.duckdb.hdfs.extension", "DUCKDB_HDFS_EXTENSION", null, props);
-        boolean duckDbAllowUnsignedExtensions = getBooleanWithEnv("duckDbAllowUnsignedExtensions",
-                "arrowflight.duckdb.allowUnsignedExtensions", "DUCKDB_ALLOW_UNSIGNED_EXTENSIONS",
-                false, props);
-        String duckDbHdfsDefaultNamenode = getStringWithEnv("duckDbHdfsDefaultNamenode",
-                "arrowflight.duckdb.hdfs.defaultNamenode", "HDFS_DEFAULT_NAMENODE", null, props);
-        String duckDbHdfsHaNamenodes = getStringWithEnv("duckDbHdfsHaNamenodes",
-                "arrowflight.duckdb.hdfs.haNamenodes", "HDFS_HA_NAMENODES", null, props);
-        String duckDbHdfsShortcircuit = getStringWithEnv("duckDbHdfsShortcircuit",
-                "arrowflight.duckdb.hdfs.shortcircuit", "HDFS_SHORTCIRCUIT", null, props);
-        String duckDbHdfsDomainSocketPath = getStringWithEnv("duckDbHdfsDomainSocketPath",
-                "arrowflight.duckdb.hdfs.domainSocketPath", "HDFS_DOMAIN_SOCKET_PATH", null, props);
         boolean metricsEnabled = getBooleanWithEnv("metricsEnabled",
                 "arrowflight.metrics.enabled", "FLIGHT_METRICS_ENABLED", false, props);
         int grpcMaxInboundMessageSize = getInt("grpcMaxInboundMessageSize",
@@ -81,9 +68,6 @@ public class ConfigAdapter {
         return new AppConfig(
                 numServers, batchSize, ioParallelism, ioFileBufferSize,
                 duckDbWarmConnections, duckDbGroups, duckDbThreads,
-                duckDbHdfsExtension, duckDbAllowUnsignedExtensions,
-                duckDbHdfsDefaultNamenode, duckDbHdfsHaNamenodes,
-                duckDbHdfsShortcircuit, duckDbHdfsDomainSocketPath,
                 metricsEnabled,
                 grpcMaxInboundMessageSize, flightBackpressureThresholdBytes,
                 flightListenerReadyTimeoutMillis,

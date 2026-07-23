@@ -238,16 +238,12 @@ class DuckDbAdapterTest {
     }
 
     @Test
-    void ignoresHdfsOptionsWhenExtensionIsNotConfigured() throws Exception {
+    void connectionInitializesWithoutExtensions() throws Exception {
         ExecutorService ioPool = Executors.newSingleThreadExecutor();
         AppConfig config = new AppConfig(
                 3, 4096, 1, 131072, 1, 1, 1,
-                null, false, null, null,
-                "true", "/var/lib/hadoop-hdfs/socket/dn_socket",
                 false, 1048576, 67108864, 60000L, "/data/parquet", null,
-                32010, 5701, 60,
-                3, 1000, 30000);
-
+                32010, 5701, 60, 3, 1000, 30000);
         try {
             DuckDbAdapter adapter = new DuckDbAdapter(config, ioPool);
             try (Connection connection = adapter.connection()) {
@@ -264,8 +260,7 @@ class DuckDbAdapterTest {
         ExecutorService ioPool = Executors.newSingleThreadExecutor();
         AppConfig config = new AppConfig(
                 3, 2, 1, 131072, 1, 1, 1,
-                null, false, null, null,
-                null, null, false, 1048576, 67108864, 60000L, null, null,
+                false, 1048576, 67108864, 60000L, null, null,
                 32010, 5701, 60, 3, 1000, 30000);
         FlightProducer.ServerStreamListener listener =
                 mock(FlightProducer.ServerStreamListener.class);
@@ -300,8 +295,7 @@ class DuckDbAdapterTest {
         ExecutorService caller = Executors.newSingleThreadExecutor();
         AppConfig config = new AppConfig(
                 3, 2, 1, 131072, 1, 1, 1,
-                null, false, null, null,
-                null, null, false, 1048576, 67108864, 60000L, null, null,
+                false, 1048576, 67108864, 60000L, null, null,
                 32010, 5701, 60, 3, 1000, 30000);
         FlightProducer.ServerStreamListener listener =
                 mock(FlightProducer.ServerStreamListener.class);
@@ -333,8 +327,7 @@ class DuckDbAdapterTest {
         ExecutorService ioPool = Executors.newSingleThreadExecutor();
         AppConfig config = new AppConfig(
                 3, 2, 1, 131072, 1, 1, 1,
-                null, false, null, null,
-                null, null, false, 1048576, 67108864, 25L, null, null,
+                false, 1048576, 67108864, 25L, null, null,
                 32010, 5701, 60, 3, 1000, 30000);
         FlightProducer.ServerStreamListener listener =
                 mock(FlightProducer.ServerStreamListener.class);

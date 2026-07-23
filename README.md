@@ -152,7 +152,7 @@ Supports exponential backoff retry, connection pooling, TLS, BasicAuth and Beare
 3. Returns `FlightInfo` with endpoints (each containing a `Ticket` and node address).
 4. **Client** calls `DoGet` for each endpoint (passing the Ticket).
 5. On each node, **Flight Adapter** restores the query and file list from the Ticket, initiating a two-phase file acquisition via Hazelcast locks.
-6. **Execution Service** uses a Parquet-footer fast path when possible, otherwise executes through DuckDB and streams results as `VectorSchemaRoot`.
+6. **Execution Service** uses a Parquet-footer fast path when possible. Otherwise Java reads Parquet through Hadoop `FileSystem`, exports Arrow batches through C Data, and DuckDB executes SQL over the registered stream.
 7. **Client** receives and processes data.
 
 ---

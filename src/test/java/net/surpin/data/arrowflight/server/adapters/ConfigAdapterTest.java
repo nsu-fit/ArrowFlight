@@ -46,7 +46,6 @@ class ConfigAdapterTest {
         assertEquals(3, cfg.clientMaxRetries());
         assertEquals(1000, cfg.clientRetryBackoffMs());
         assertEquals(0, cfg.clientConnectTimeoutMs());
-        assertFalse(cfg.duckDbAllowUnsignedExtensions());
         assertTrue(cfg.metricsEnabled());
         assertEquals(Integer.MAX_VALUE, cfg.grpcMaxInboundMessageSize());
         assertEquals(67108864, cfg.flightBackpressureThresholdBytes());
@@ -108,19 +107,6 @@ class ConfigAdapterTest {
 
         AppConfig cfg = ConfigAdapter.getConfig();
         assertEquals(4, cfg.duckDbThreads());
-    }
-
-    /** Verifies DuckDB HDFS extension settings map from system properties. */
-    @Test
-    void getConfigDuckDbHdfsExtension() {
-        setProp("arrowflight.duckdb.hdfs.extension", "/opt/duckdb-hdfs/hadoopfs.duckdb_extension");
-        setProp("arrowflight.duckdb.allowUnsignedExtensions", "true");
-
-        AppConfig cfg = ConfigAdapter.getConfig();
-
-        assertEquals("/opt/duckdb-hdfs/hadoopfs.duckdb_extension",
-                cfg.duckDbHdfsExtension());
-        assertTrue(cfg.duckDbAllowUnsignedExtensions());
     }
 
     @Test

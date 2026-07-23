@@ -23,6 +23,7 @@
         <excludedGroups>integration,spark,perf,smoke</excludedGroups>
         <hadoop.version>3.3.6</hadoop.version>
         <arrow.version>18.0.0</arrow.version>
+        <parquet.version>1.16.0</parquet.version>
         <guava.version>32.1.3-jre</guava.version>
         <jooq.version>3.21.6</jooq.version>
         <duckdb.version>1.4.1.0</duckdb.version>
@@ -164,19 +165,25 @@
         <dependency>
             <groupId>org.apache.parquet</groupId>
             <artifactId>parquet-hadoop</artifactId>
-            <version>1.13.1</version>
+            <version>${parquet.version}</version>
         </dependency>
 
         <dependency>
             <groupId>org.apache.parquet</groupId>
             <artifactId>parquet-common</artifactId>
-            <version>1.13.1</version>
+            <version>${parquet.version}</version>
         </dependency>
 
         <dependency>
             <groupId>org.apache.parquet</groupId>
             <artifactId>parquet-column</artifactId>
-            <version>1.13.1</version>
+            <version>${parquet.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.parquet</groupId>
+            <artifactId>parquet-arrow</artifactId>
+            <version>${parquet.version}</version>
         </dependency>
 
         <!-- Logging -->

@@ -4,7 +4,7 @@
 
 ## Модель хранения
 
-Данные не хранятся внутри Arrow Flight сервера. Flight-ноды являются compute layer: они получают назначенные Parquet-файлы, а DuckDB читает их через настроенную поддержку файловой системы.
+Данные не хранятся внутри Arrow Flight сервера. Flight-ноды являются compute layer: они получают назначенные Parquet-файлы и читают их через Hadoop `FileSystem`.
 
 Корень данных задается параметром `dataDirectory`. Таблицы ожидаются в структуре `schema/table`. Для каждой таблицы сервер рекурсивно ищет Parquet-файлы.
 
@@ -12,9 +12,9 @@
 
 ## Hadoop FileSystem
 
-Hadoop FileSystem используется для discovery, metadata и locality. Data pages читает DuckDB, открывая `hdfs://` URI через настроенный HDFS extension.
+Hadoop FileSystem используется для discovery, metadata, locality и чтения data pages. Java декодирует Parquet в bounded `VectorSchemaRoot` batches и передает их DuckDB через Arrow C Data.
 
-Flight-ноде не нужна локальная копия Parquet. DuckDB читает назначенные файлы и экспортирует результат в Arrow batches без материализации полного файла в `/tmp`.
+Flight-ноде не нужна локальная копия Parquet. Hadoop открывает назначенные файлы напрямую; HDFS data и полные файлы не материализуются в `/tmp`.
 
 При старте сервер создает `FileSystem`, связанный с `dataDirectory`. Все операции с файлами проходят через этот объект: listing, чтение metadata, получение абсолютных путей и открытие потоков.
 
@@ -52,13 +52,11 @@ Parquet-файл также содержит footer с metadata: schema, row cou
 
 Projection означает выбор только нужных колонок. Для обычного `SELECT` parser извлекает список колонок и включает их в запрос DuckDB.
 
-Если запросу нужна только часть колонок, DuckDB читает из Parquet только эти колонки. Это снижает I/O и объем данных, экспортируемых в Arrow batches.
-
-Если projection нет, DuckDB читает все колонки таблицы.
+Java reader передаёт безопасную top-level projection в Parquet и декодирует выбранные columns напрямую в Arrow vectors. DuckDB применяет финальную SQL projection к зарегистрированному stream.
 
 ## Filter pushdown
 
-Spark V2 predicates и SQL-фильтры переводятся в SQL, отправляемый DuckDB. DuckDB применяет доступный Parquet predicate и projection pushdown при чтении назначенных файлов. Для HDFS URI требуется настроенный DuckDB HDFS extension.
+Spark V2 predicates и SQL-фильтры переводятся в SQL, отправляемый DuckDB. DuckDB применяет их к зарегистрированному Arrow stream. Parquet predicate pushdown в Java reader пока не реализован.
 
 ## Footer fast path
 

@@ -1,6 +1,8 @@
 package net.surpin.data.arrowflight.server.adapters;
 
 import org.apache.arrow.memory.BufferAllocator;
+import org.apache.arrow.c.ArrowArrayStream;
+import org.apache.arrow.c.Data;
 import org.apache.arrow.flight.CallStatus;
 import org.apache.arrow.vector.VectorSchemaRoot;
 import org.apache.arrow.vector.ipc.ArrowReader;
@@ -22,7 +24,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
-import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
@@ -73,17 +74,9 @@ public final class DuckDbAdapter implements AutoCloseable {
         this.duckDbGroups = appConfig.duckDbGroups();
 
         String jdbcUrl = "jdbc:duckdb:";
-        Properties connProps = new Properties();
-        if (appConfig.duckDbAllowUnsignedExtensions()) {
-            connProps.setProperty("allow_unsigned_extensions", "true");
-        }
         this.threadConn = ThreadLocal.withInitial(() -> {
             try {
-                Properties props = new Properties();
-                if (appConfig.duckDbAllowUnsignedExtensions()) {
-                    props.setProperty("allow_unsigned_extensions", "true");
-                }
-                Connection conn = DriverManager.getConnection("jdbc:duckdb:", props);
+                Connection conn = DriverManager.getConnection("jdbc:duckdb:");
                 configureConnection(conn);
                 allConnections.add(conn);
                 return conn;
@@ -123,20 +116,6 @@ public final class DuckDbAdapter implements AutoCloseable {
                 setArrayOptionIfPresent(s, "allowed_paths", dataDir);
             } else {
                 s.execute("SET allowed_paths = ARRAY[]");
-            }
-            String hdfsExtension = appConfig.duckDbHdfsExtension();
-            if (hdfsExtension != null) {
-                s.execute("LOAD " + sqlStringLiteral(hdfsExtension));
-                LOGGER.info("node={} duckdb=hdfsExtensionLoaded path={}",
-                        LogUtil.node(), hdfsExtension);
-                setOptionIfPresent(s, "hdfs_default_namenode",
-                        appConfig.duckDbHdfsDefaultNamenode());
-                setOptionIfPresent(s, "hdfs_ha_namenodes",
-                        appConfig.duckDbHdfsHaNamenodes());
-                setOptionIfPresent(s, "hdfs_shortcircuit",
-                        appConfig.duckDbHdfsShortcircuit());
-                setOptionIfPresent(s, "hdfs_domain_socket_path",
-                        appConfig.duckDbHdfsDomainSocketPath());
             }
         }
     }
@@ -211,6 +190,29 @@ public final class DuckDbAdapter implements AutoCloseable {
      */
     public int batchSize() {
         return batchSize;
+    }
+
+    /**
+     * Registers an Arrow reader as a zero-copy DuckDB table.
+     *
+     * @param allocator Arrow allocator
+     * @param name DuckDB table name
+     * @param reader source Arrow reader
+     * @return registration owning the C Data stream
+     */
+    public ArrowRegistration registerArrowReader(BufferAllocator allocator, String name,
+            ArrowReader reader) {
+        ArrowArrayStream stream = ArrowArrayStream.allocateNew(allocator);
+        try {
+            Data.exportArrayStream(allocator, reader, stream);
+            org.duckdb.DuckDBConnection connection =
+                    threadConn.get().unwrap(org.duckdb.DuckDBConnection.class);
+            connection.registerArrowStream(name, stream);
+            return new ArrowRegistration(stream, name, threadConn.get());
+        } catch (RuntimeException | java.sql.SQLException e) {
+            stream.close();
+            throw new IllegalStateException("Failed to register Arrow stream " + name, e);
+        }
     }
 
     /**
@@ -428,6 +430,33 @@ public final class DuckDbAdapter implements AutoCloseable {
      * @param end whether this chunk terminates the stream
      */
     private record StreamChunk(VectorSchemaRoot root, Exception error, boolean end) {
+    }
+
+    /** Owns a registered DuckDB Arrow C Data stream. */
+    public static final class ArrowRegistration implements AutoCloseable {
+
+        private final ArrowArrayStream stream;
+        private final String name;
+        private final Connection connection;
+
+        private ArrowRegistration(ArrowArrayStream stream, String name, Connection connection) {
+            this.stream = stream;
+            this.name = name;
+            this.connection = connection;
+        }
+
+        /** Releases DuckDB view and Arrow C Data stream. */
+        @Override
+        public void close() {
+            try (Statement statement = connection.createStatement()) {
+                statement.execute("DROP VIEW IF EXISTS " + quoteIdentifier(name));
+            } catch (Exception e) {
+                LOGGER.warn("node={} duckdb=arrowUnregisterFailed name={}",
+                        LogUtil.node(), name, e);
+            } finally {
+                stream.close();
+            }
+        }
     }
 
     /**
