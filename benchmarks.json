@@ -1,6 +1,598 @@
 [
   {
     "kind": "compare",
+    "id": "tpch-compare-all-20260723-143629",
+    "title": "tpch-compare-all-20260723-143629",
+    "benchmark": "tpch",
+    "path": "flight vs direct",
+    "query": "all",
+    "scale": 0.5,
+    "timestamp": "2026-07-23T15:01:50",
+    "report": "benchmarks/tpch-compare-all-20260723-143629/compare.report.html",
+    "files": "benchmarks/tpch-compare-all-20260723-143629",
+    "flight": {
+      "kind": "run",
+      "id": "tpch-compare-all-20260723-143629/flight",
+      "title": "flight",
+      "benchmark": "tpch",
+      "path": "flight",
+      "query": "all",
+      "scale": 0.5,
+      "timestamp": "2026-07-23T14:53:15",
+      "throughput": 0.4127578022354271,
+      "lastThroughput": 0.4,
+      "avgMs": 1106.334,
+      "p95Ms": 2391.663,
+      "measuredRequests": 220,
+      "queryLatencies": [
+        {
+          "query": "Q1",
+          "avg": 1632.5997,
+          "samples": 10
+        },
+        {
+          "query": "Q2",
+          "avg": 1463.7243,
+          "samples": 10
+        },
+        {
+          "query": "Q3",
+          "avg": 765.9997000000001,
+          "samples": 10
+        },
+        {
+          "query": "Q4",
+          "avg": 599.4381000000001,
+          "samples": 10
+        },
+        {
+          "query": "Q5",
+          "avg": 1475.2503000000002,
+          "samples": 10
+        },
+        {
+          "query": "Q6",
+          "avg": 203.85790000000003,
+          "samples": 10
+        },
+        {
+          "query": "Q7",
+          "avg": 1388.4316999999999,
+          "samples": 10
+        },
+        {
+          "query": "Q8",
+          "avg": 1601.2025,
+          "samples": 10
+        },
+        {
+          "query": "Q9",
+          "avg": 2169.8936000000003,
+          "samples": 10
+        },
+        {
+          "query": "Q10",
+          "avg": 891.7401,
+          "samples": 10
+        },
+        {
+          "query": "Q11",
+          "avg": 1335.0804,
+          "samples": 10
+        },
+        {
+          "query": "Q12",
+          "avg": 577.7788,
+          "samples": 10
+        },
+        {
+          "query": "Q13",
+          "avg": 736.6650000000001,
+          "samples": 10
+        },
+        {
+          "query": "Q14",
+          "avg": 505.17920000000004,
+          "samples": 10
+        },
+        {
+          "query": "Q15",
+          "avg": 803.3230000000001,
+          "samples": 10
+        },
+        {
+          "query": "Q16",
+          "avg": 868.5899999999999,
+          "samples": 10
+        },
+        {
+          "query": "Q17",
+          "avg": 1172.3934000000002,
+          "samples": 10
+        },
+        {
+          "query": "Q18",
+          "avg": 2411.4357000000005,
+          "samples": 10
+        },
+        {
+          "query": "Q19",
+          "avg": 403.4936,
+          "samples": 10
+        },
+        {
+          "query": "Q20",
+          "avg": 940.3838,
+          "samples": 10
+        },
+        {
+          "query": "Q21",
+          "avg": 1722.0374000000004,
+          "samples": 10
+        },
+        {
+          "query": "Q22",
+          "avg": 670.8619000000001,
+          "samples": 10
+        }
+      ],
+      "report": "benchmarks/tpch-compare-all-20260723-143629/flight/tpch_2026-07-23_14-52-05.report.html",
+      "files": "benchmarks/tpch-compare-all-20260723-143629/flight"
+    },
+    "direct": {
+      "kind": "run",
+      "id": "tpch-compare-all-20260723-143629/direct",
+      "title": "direct",
+      "benchmark": "tpch",
+      "path": "direct",
+      "query": "all",
+      "scale": 0.5,
+      "timestamp": "2026-07-23T15:01:49",
+      "throughput": 0.49661375871490887,
+      "lastThroughput": 0.6,
+      "avgMs": 935.896,
+      "p95Ms": 1596.87,
+      "measuredRequests": 220,
+      "queryLatencies": [
+        {
+          "query": "Q1",
+          "avg": 1344.2722,
+          "samples": 10
+        },
+        {
+          "query": "Q2",
+          "avg": 653.7902000000001,
+          "samples": 10
+        },
+        {
+          "query": "Q3",
+          "avg": 675.6456999999999,
+          "samples": 10
+        },
+        {
+          "query": "Q4",
+          "avg": 1443.5355,
+          "samples": 10
+        },
+        {
+          "query": "Q5",
+          "avg": 1118.4753,
+          "samples": 10
+        },
+        {
+          "query": "Q6",
+          "avg": 237.718,
+          "samples": 10
+        },
+        {
+          "query": "Q7",
+          "avg": 1162.7621000000001,
+          "samples": 10
+        },
+        {
+          "query": "Q8",
+          "avg": 983.0748000000001,
+          "samples": 10
+        },
+        {
+          "query": "Q9",
+          "avg": 1357.1281000000001,
+          "samples": 10
+        },
+        {
+          "query": "Q10",
+          "avg": 1075.9313,
+          "samples": 10
+        },
+        {
+          "query": "Q11",
+          "avg": 607.4968,
+          "samples": 10
+        },
+        {
+          "query": "Q12",
+          "avg": 1000.552,
+          "samples": 10
+        },
+        {
+          "query": "Q13",
+          "avg": 958.7663999999999,
+          "samples": 10
+        },
+        {
+          "query": "Q14",
+          "avg": 423.2526000000001,
+          "samples": 10
+        },
+        {
+          "query": "Q15",
+          "avg": 883.4453,
+          "samples": 10
+        },
+        {
+          "query": "Q16",
+          "avg": 719.2706999999999,
+          "samples": 10
+        },
+        {
+          "query": "Q17",
+          "avg": 841.0444,
+          "samples": 10
+        },
+        {
+          "query": "Q18",
+          "avg": 1843.8797,
+          "samples": 10
+        },
+        {
+          "query": "Q19",
+          "avg": 444.65119999999996,
+          "samples": 10
+        },
+        {
+          "query": "Q20",
+          "avg": 697.3192999999999,
+          "samples": 10
+        },
+        {
+          "query": "Q21",
+          "avg": 1337.0888,
+          "samples": 10
+        },
+        {
+          "query": "Q22",
+          "avg": 780.6255,
+          "samples": 10
+        }
+      ],
+      "report": "benchmarks/tpch-compare-all-20260723-143629/direct/tpch_2026-07-23_15-00-43.report.html",
+      "files": "benchmarks/tpch-compare-all-20260723-143629/direct"
+    },
+    "flightNodes": 6,
+    "flightHosts": "flight-server-1,flight-server-2,flight-server-3,flight-server-4,flight-server-5,flight-server-6"
+  },
+  {
+    "kind": "run",
+    "id": "tpch-compare-all-20260723-140122/direct",
+    "title": "direct",
+    "benchmark": "tpch",
+    "path": "direct",
+    "query": "all",
+    "scale": 1.0,
+    "timestamp": "2026-07-23T14:27:42",
+    "throughput": 0.7357853492426742,
+    "lastThroughput": 26.4,
+    "avgMs": 523.487,
+    "p95Ms": 2073.569,
+    "measuredRequests": 220,
+    "queryLatencies": [
+      {
+        "query": "Q1",
+        "avg": 791.8416,
+        "samples": 10
+      },
+      {
+        "query": "Q2",
+        "avg": 408.2226,
+        "samples": 10
+      },
+      {
+        "query": "Q3",
+        "avg": 424.76000000000005,
+        "samples": 10
+      },
+      {
+        "query": "Q4",
+        "avg": 317.9755,
+        "samples": 10
+      },
+      {
+        "query": "Q5",
+        "avg": 715.788,
+        "samples": 10
+      },
+      {
+        "query": "Q6",
+        "avg": 129.16620000000003,
+        "samples": 10
+      },
+      {
+        "query": "Q7",
+        "avg": 553.8018999999999,
+        "samples": 10
+      },
+      {
+        "query": "Q8",
+        "avg": 493.8411000000001,
+        "samples": 10
+      },
+      {
+        "query": "Q9",
+        "avg": 806.1309000000001,
+        "samples": 10
+      },
+      {
+        "query": "Q10",
+        "avg": 580.5844999999999,
+        "samples": 10
+      },
+      {
+        "query": "Q11",
+        "avg": 323.03880000000004,
+        "samples": 10
+      },
+      {
+        "query": "Q12",
+        "avg": 365.1559000000001,
+        "samples": 10
+      },
+      {
+        "query": "Q13",
+        "avg": 357.9365,
+        "samples": 10
+      },
+      {
+        "query": "Q14",
+        "avg": 240.29249999999996,
+        "samples": 10
+      },
+      {
+        "query": "Q15",
+        "avg": 492.28279999999984,
+        "samples": 10
+      },
+      {
+        "query": "Q16",
+        "avg": 373.0940999999999,
+        "samples": 10
+      },
+      {
+        "query": "Q17",
+        "avg": 570.2648999999999,
+        "samples": 10
+      },
+      {
+        "query": "Q18",
+        "avg": 1122.7436,
+        "samples": 10
+      },
+      {
+        "query": "Q19",
+        "avg": 224.45300000000003,
+        "samples": 10
+      },
+      {
+        "query": "Q20",
+        "avg": 339.2782000000001,
+        "samples": 10
+      },
+      {
+        "query": "Q21",
+        "avg": 922.0099999999999,
+        "samples": 10
+      },
+      {
+        "query": "Q22",
+        "avg": 964.0583000000003,
+        "samples": 10
+      }
+    ],
+    "report": "",
+    "files": "benchmarks/tpch-compare-all-20260723-140122/direct"
+  },
+  {
+    "kind": "run",
+    "id": "tpch-compare-all-20260723-140122/flight",
+    "title": "flight",
+    "benchmark": "tpch",
+    "path": "flight",
+    "query": "all",
+    "scale": 1.0,
+    "timestamp": "2026-07-23T14:22:37",
+    "throughput": 0.2960968106142325,
+    "lastThroughput": 0.2,
+    "avgMs": 1560.503,
+    "p95Ms": 3887.81,
+    "measuredRequests": 220,
+    "queryLatencies": [
+      {
+        "query": "Q1",
+        "avg": 2262.7277000000004,
+        "samples": 10
+      },
+      {
+        "query": "Q2",
+        "avg": 1931.0607,
+        "samples": 10
+      },
+      {
+        "query": "Q3",
+        "avg": 1213.5961999999997,
+        "samples": 10
+      },
+      {
+        "query": "Q4",
+        "avg": 790.6369,
+        "samples": 10
+      },
+      {
+        "query": "Q5",
+        "avg": 2252.7043000000003,
+        "samples": 10
+      },
+      {
+        "query": "Q6",
+        "avg": 237.3402,
+        "samples": 10
+      },
+      {
+        "query": "Q7",
+        "avg": 1927.8785,
+        "samples": 10
+      },
+      {
+        "query": "Q8",
+        "avg": 2291.6110999999996,
+        "samples": 10
+      },
+      {
+        "query": "Q9",
+        "avg": 2955.1697000000004,
+        "samples": 10
+      },
+      {
+        "query": "Q10",
+        "avg": 1175.3586,
+        "samples": 10
+      },
+      {
+        "query": "Q11",
+        "avg": 1646.1455,
+        "samples": 10
+      },
+      {
+        "query": "Q12",
+        "avg": 715.4126,
+        "samples": 10
+      },
+      {
+        "query": "Q13",
+        "avg": 990.3269000000003,
+        "samples": 10
+      },
+      {
+        "query": "Q14",
+        "avg": 669.9422000000001,
+        "samples": 10
+      },
+      {
+        "query": "Q15",
+        "avg": 1047.5446000000002,
+        "samples": 10
+      },
+      {
+        "query": "Q16",
+        "avg": 1098.6398000000002,
+        "samples": 10
+      },
+      {
+        "query": "Q17",
+        "avg": 1908.3777999999998,
+        "samples": 10
+      },
+      {
+        "query": "Q18",
+        "avg": 4376.7434,
+        "samples": 10
+      },
+      {
+        "query": "Q19",
+        "avg": 546.5504,
+        "samples": 10
+      },
+      {
+        "query": "Q20",
+        "avg": 1220.0450999999998,
+        "samples": 10
+      },
+      {
+        "query": "Q21",
+        "avg": 2257.2616,
+        "samples": 10
+      },
+      {
+        "query": "Q22",
+        "avg": 815.9967,
+        "samples": 10
+      }
+    ],
+    "report": "benchmarks/tpch-compare-all-20260723-140122/flight/tpch_2026-07-23_14-21-17.report.html",
+    "files": "benchmarks/tpch-compare-all-20260723-140122/flight"
+  },
+  {
+    "kind": "compare",
+    "id": "tpch-compare-q1-20260723-130318",
+    "title": "tpch-compare-q1-20260723-130318",
+    "benchmark": "tpch",
+    "path": "flight vs direct",
+    "query": "q1",
+    "scale": 2.0,
+    "timestamp": "2026-07-23T13:18:15",
+    "report": "benchmarks/tpch-compare-q1-20260723-130318/compare.report.html",
+    "files": "benchmarks/tpch-compare-q1-20260723-130318",
+    "flight": {
+      "kind": "run",
+      "id": "tpch-compare-q1-20260723-130318/flight",
+      "title": "flight",
+      "benchmark": "tpch",
+      "path": "flight",
+      "query": "all",
+      "scale": 2.0,
+      "timestamp": "2026-07-23T13:13:52",
+      "throughput": 2.059090893273347,
+      "lastThroughput": 1.8,
+      "avgMs": 483.683,
+      "p95Ms": 581.46,
+      "measuredRequests": 453,
+      "queryLatencies": [
+        {
+          "query": "Q1",
+          "avg": 483.6830949227374,
+          "samples": 453
+        }
+      ],
+      "report": "benchmarks/tpch-compare-q1-20260723-130318/flight/tpch_2026-07-23_13-13-48.report.html",
+      "files": "benchmarks/tpch-compare-q1-20260723-130318/flight"
+    },
+    "direct": {
+      "kind": "run",
+      "id": "tpch-compare-q1-20260723-130318/direct",
+      "title": "direct",
+      "benchmark": "tpch",
+      "path": "direct",
+      "query": "all",
+      "scale": 2.0,
+      "timestamp": "2026-07-23T13:18:14",
+      "throughput": 0.38009051787031495,
+      "lastThroughput": 0.2,
+      "avgMs": 2602.802,
+      "p95Ms": 2886.355,
+      "measuredRequests": 84,
+      "queryLatencies": [
+        {
+          "query": "Q1",
+          "avg": 2602.8023928571424,
+          "samples": 84
+        }
+      ],
+      "report": "benchmarks/tpch-compare-q1-20260723-130318/direct/tpch_2026-07-23_13-18-09.report.html",
+      "files": "benchmarks/tpch-compare-q1-20260723-130318/direct"
+    },
+    "flightNodes": 8,
+    "flightHosts": "flight-server-1,flight-server-2,flight-server-3,flight-server-4,flight-server-5,flight-server-6,flight-server-7,flight-server-8"
+  },
+  {
+    "kind": "compare",
     "id": "tpch-compare-all-20260723-123352",
     "title": "tpch-compare-all-20260723-123352",
     "benchmark": "tpch",
