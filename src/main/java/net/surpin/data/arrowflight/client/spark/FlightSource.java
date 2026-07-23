@@ -50,7 +50,7 @@ public class FlightSource implements TableProvider, DataSourceRegister, Relation
     //the service configuration
     private Configuration configuration = null;
     //the name of the table
-    private Table table = null;
+    private Table tableName = null;
 
     /**
      * Infer schema from the options
@@ -60,7 +60,7 @@ public class FlightSource implements TableProvider, DataSourceRegister, Relation
     @Override
     public StructType inferSchema(CaseInsensitiveStringMap options) {
         this.probeOptions(options, true);
-        return this.table.getSparkSchema();
+        return this.tableName.getSparkSchema();
     }
 
     /**
@@ -114,9 +114,9 @@ public class FlightSource implements TableProvider, DataSourceRegister, Relation
             throw new RuntimeException("The table is mandatory.");
         }
         //set up the flight-table with the column quote-character. By default, columns are not quoted
-        this.table = Table.forTable(tableName, options.getOrDefault(FlightSource.COLUMN_QUOTE, ""));
+        this.tableName = Table.forTable(tableName, options.getOrDefault(FlightSource.COLUMN_QUOTE, ""));
         if (initialize) {
-            this.table.initializeSchema(this.configuration);
+            this.tableName.initializeSchema(this.configuration);
         }
     }
 
@@ -129,7 +129,7 @@ public class FlightSource implements TableProvider, DataSourceRegister, Relation
      */
     @Override
     public org.apache.spark.sql.connector.catalog.Table getTable(StructType schema, Transform[] partitioning, Map<String, String> properties) {
-        return new FlightTable(this.configuration, this.table);
+        return new FlightTable(this.configuration, this.tableName);
     }
 
     /**
@@ -139,8 +139,8 @@ public class FlightSource implements TableProvider, DataSourceRegister, Relation
      */
     FlightTable getTableFromCatalog(CaseInsensitiveStringMap options, StructType schema) {
         this.probeOptions(options, false);
-        this.table.setSparkSchema(schema);
-        return new FlightTable(this.configuration, this.table);
+        this.tableName.setSparkSchema(schema);
+        return new FlightTable(this.configuration, this.tableName);
     }
 
     /**
@@ -150,7 +150,7 @@ public class FlightSource implements TableProvider, DataSourceRegister, Relation
     public BaseRelation createRelation(SQLContext sqlContext, scala.collection.immutable.Map<String, String> parameters) {
         Map<String, String> options = new HashMap<>(JavaConverters.mapAsJavaMap(parameters));
         this.probeOptions(new CaseInsensitiveStringMap(options), true);
-        return new FlightRelation(sqlContext, this.configuration, this.table);
+        return new FlightRelation(sqlContext, this.configuration, this.tableName);
     }
 
     /**
