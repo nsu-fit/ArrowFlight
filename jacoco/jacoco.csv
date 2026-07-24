@@ -38,8 +38,9 @@ Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.model,HandleSt
 Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.model,AppConfig,0,78,0,0,0,1,0,1,0,1
 Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.model,FileAssignment,0,9,0,0,0,1,0,1,0,1
 Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.write,WriteProtocol,0,15,0,0,0,3,0,1,0,1
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.write,WriteStatement.ConverterKey,9,0,0,0,1,0,1,0,1,0
 Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.write,PartitionBehavior.Bound,12,91,1,1,0,8,1,5,0,5
-Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.write,WriteStatement,5439,208,165,13,214,51,278,12,195,6
+Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.write,WriteStatement,1935,111,51,9,209,33,114,10,88,6
 Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.write,WriteBehavior,9,49,0,6,3,13,3,7,3,4
 Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.client.write,PartitionBehavior,10,487,15,33,4,46,14,32,0,22
 Hadoop Arrow Flight SQL Server,net.surpin.data.arrowflight.server.services,MetadataService,685,577,52,31,139,134,56,34,25,22
