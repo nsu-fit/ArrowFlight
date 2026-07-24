@@ -37,8 +37,10 @@ public class WriteStatement implements Serializable {
         R apply(X x, Y y, Z z);
     }
     //the values variable
-    private static final String varValues = "${param_Values}";
+    private static final String VAR_VALUES = "${param_Values}";
     private static final String CAST_FORMAT = "cast(%s as %s)";
+    private static final String DECIMAL_TYPE = "decimal";
+    private static final String VARCHAR_TYPE = "varchar";
     private static final DateTimeFormatter DATE_FORMAT =
         DateTimeFormatter.ofPattern("yyyy-MM-dd");
     private static final DateTimeFormatter TIME_SECOND_FORMAT =
@@ -171,7 +173,7 @@ public class WriteStatement implements Serializable {
      */
     public WriteStatement(String tableName, StructType dataSchema, Schema arrowSchema, String columnQuote, Map<String, String> typeMapping) {
         this(dataSchema, arrowSchema, typeMapping);
-        this.stmt = String.format("insert into %s(%s) %s", tableName, String.join(",", WriteStatement.quote.apply(this.params, columnQuote)), WriteStatement.varValues);
+        this.stmt = String.format("insert into %s(%s) %s", tableName, String.join(",", WriteStatement.quote.apply(this.params, columnQuote)), WriteStatement.VAR_VALUES);
     }
 
     /**
@@ -196,7 +198,7 @@ public class WriteStatement implements Serializable {
         String setUpdate = String.join(",", entries.entrySet().stream().filter(e -> e.getValue() == 0).map(e -> String.format("%s = s.%s", e.getKey(), e.getKey())).toArray(String[]::new));
         String varInsert = String.join(",", entries.keySet().toArray(new String[0]));
         String valInsert = String.join(",", entries.keySet().stream().map(integer -> String.format("s.%s", integer)).toArray(String[]::new));
-        this.stmt = String.format("merge into %s t using (%s) s(%s) on %s when matched then update set %s when not matched then insert (%s) values(%s)", tableName, WriteStatement.varValues, varInsert, matchOn, setUpdate, varInsert, valInsert);
+        this.stmt = String.format("merge into %s t using (%s) s(%s) on %s when matched then update set %s when not matched then insert (%s) values(%s)", tableName, WriteStatement.VAR_VALUES, varInsert, matchOn, setUpdate, varInsert, valInsert);
     }
 
     /**
@@ -220,10 +222,10 @@ public class WriteStatement implements Serializable {
         this.mapTimestamp = typeMapping.getOrDefault("timestamp", "timestamp");
         this.mapFloat4 = typeMapping.getOrDefault("float4", "float");
         this.mapFloat8 = typeMapping.getOrDefault("float8", "double");
-        this.mapVarchar = typeMapping.getOrDefault("varchar", "varchar");
-        this.mapLargeVarchar = typeMapping.getOrDefault("largevarchar", "varchar");
-        this.mapDecimal = typeMapping.getOrDefault("decimal", "decimal");
-        this.mapDecimal256 = typeMapping.getOrDefault("decimal256", "decimal");
+        this.mapVarchar = typeMapping.getOrDefault(VARCHAR_TYPE, VARCHAR_TYPE);
+        this.mapLargeVarchar = typeMapping.getOrDefault("largevarchar", VARCHAR_TYPE);
+        this.mapDecimal = typeMapping.getOrDefault(DECIMAL_TYPE, DECIMAL_TYPE);
+        this.mapDecimal256 = typeMapping.getOrDefault("decimal256", DECIMAL_TYPE);
         this.mapUInt1 = typeMapping.getOrDefault("uint1", "int");
         this.mapUInt2 = typeMapping.getOrDefault("uint2", "int");
         this.mapUInt4 = typeMapping.getOrDefault("uint4", "int");
@@ -565,7 +567,7 @@ public class WriteStatement implements Serializable {
      * @return - the merge into or insert into statement
      */
     public String getStatement() {
-        return this.stmt.replace(WriteStatement.varValues, String.format("values(%s)", String.join(",", Arrays.stream(this.params).map(param -> "?").toArray(String[]::new))));
+        return this.stmt.replace(WriteStatement.VAR_VALUES, String.format("values(%s)", String.join(",", Arrays.stream(this.params).map(param -> "?").toArray(String[]::new))));
     }
 
     /**
@@ -586,7 +588,7 @@ public class WriteStatement implements Serializable {
         }).toArray(Object[]::new);
 
         String[] values = IntStream.range(0, rows.length).mapToObj(i -> String.format("(%s)", String.join(",", Arrays.stream(columns).map(column -> ((String[]) column)[i]).toArray(String[]::new)))).toArray(String[]::new);
-        return this.stmt.replace(WriteStatement.varValues, String.format("values%s", String.join(",", values)));
+        return this.stmt.replace(WriteStatement.VAR_VALUES, String.format("values%s", String.join(",", values)));
     }
 
     /**
