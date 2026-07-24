@@ -1,5 +1,7 @@
 package net.surpin.data.arrowflight.server.metrics;
 
+import net.surpin.data.arrowflight.server.adapters.ConfigAdapter;
+import net.surpin.data.arrowflight.server.model.ServerCapacity;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -58,6 +60,38 @@ class MetricsServiceTest {
 
             assertEquals(200, response.statusCode());
             assertEquals("ok\n", response.body());
+        }
+    }
+
+    /**
+     * Verifies execution capacity, queue, and memory budget metrics.
+     *
+     * @throws Exception if the local metrics endpoint cannot be queried
+     */
+    @Test
+    void exposesExecutionAndMemoryMetrics() throws Exception {
+        MetricsService.bindConfiguration(ConfigAdapter.getConfig());
+        MetricsService.bindCapacitySupplier(
+                () -> new ServerCapacity(2, 3, 0, 4, 64, 8L, 4L, 7L));
+        MetricsService.recordQueueRejection();
+        MetricsService.recordQueueWaitMillis(125L);
+
+        try (MetricsService service = new MetricsService(0)) {
+            service.start();
+            String body = get(service.port(), "/metrics").body();
+
+            assertTrue(body.contains("arrowflight_execution_slots_active 2"));
+            assertTrue(body.contains("arrowflight_execution_queue_depth 3"));
+            assertTrue(body.contains(
+                    "arrowflight_execution_queue_rejections_total 1"));
+            assertTrue(body.contains(
+                    "arrowflight_execution_queue_wait_seconds_count 1"));
+            assertTrue(body.contains(
+                    "arrowflight_query_engine_memory_limit_bytes"));
+            assertTrue(body.contains(
+                    "arrowflight_duckdb_query_memory_limit_bytes"));
+            assertTrue(body.contains(
+                    "arrowflight_arrow_shared_reserve_bytes"));
         }
     }
 

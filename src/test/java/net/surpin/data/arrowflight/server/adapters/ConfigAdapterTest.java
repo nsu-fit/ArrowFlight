@@ -33,7 +33,7 @@ class ConfigAdapterTest {
     void getConfigDefaults() {
         AppConfig cfg = ConfigAdapter.getConfig();
 
-        assertEquals(4, cfg.numServers());
+        assertEquals(6, cfg.numServers());
         assertEquals(65536, cfg.batchSize());
         assertEquals(1048576, cfg.ioFileBufferSize());
         assertEquals(32, cfg.ioParallelism());
@@ -51,6 +51,15 @@ class ConfigAdapterTest {
         assertEquals(Integer.MAX_VALUE, cfg.grpcMaxInboundMessageSize());
         assertEquals(67108864, cfg.flightBackpressureThresholdBytes());
         assertEquals(300000, cfg.flightListenerReadyTimeoutMillis());
+        assertEquals(2_147_483_648L, cfg.queryEngineMemoryLimitBytes());
+        assertEquals(4, cfg.maxConcurrentQueries());
+        assertEquals(75, cfg.duckDbMemorySharePercent());
+        assertEquals(64, cfg.maxQueuedQueries());
+        assertEquals(1_610_612_736L, cfg.duckDbMemoryPoolBytes());
+        assertEquals(402_653_184L, cfg.duckDbQueryMemoryLimitBytes());
+        assertEquals(536_870_912L, cfg.arrowMemoryPoolBytes());
+        assertEquals(120_795_955L, cfg.arrowQueryMemoryLimitBytes());
+        assertEquals(53_687_092L, cfg.arrowSharedReserveBytes());
     }
 
     @Test
@@ -65,7 +74,7 @@ class ConfigAdapterTest {
     void getConfigNumServersDefaults() {
         // No explicit property set, should use arrowflight.properties.
         AppConfig cfg = ConfigAdapter.getConfig();
-        assertEquals(4, cfg.numServers());
+        assertEquals(6, cfg.numServers());
     }
 
     @Test
@@ -250,5 +259,31 @@ class ConfigAdapterTest {
         setProp("batchSize", "not-a-number");
 
         assertThrows(IllegalArgumentException.class, ConfigAdapter::getConfig);
+    }
+
+    /** Verifies invalid DuckDB memory shares are rejected. */
+    @Test
+    void getConfigRejectsInvalidDuckDbShare() {
+        setProp("duckDbMemorySharePercent", "100");
+
+        assertThrows(IllegalArgumentException.class, ConfigAdapter::getConfig);
+    }
+
+    /** Verifies a negative bounded queue size is rejected. */
+    @Test
+    void getConfigRejectsNegativeQueueSize() {
+        setProp("maxQueuedQueries", "-1");
+
+        assertThrows(IllegalArgumentException.class, ConfigAdapter::getConfig);
+    }
+
+    /** Verifies Arrow child memory must accommodate outbound backpressure. */
+    @Test
+    void getConfigRejectsInsufficientArrowChildMemory() {
+        setProp("queryEngineMemoryLimitBytes", "1073741824");
+
+        IllegalArgumentException error = assertThrows(
+                IllegalArgumentException.class, ConfigAdapter::getConfig);
+        assertTrue(error.getMessage().contains("Arrow per-query"));
     }
 }

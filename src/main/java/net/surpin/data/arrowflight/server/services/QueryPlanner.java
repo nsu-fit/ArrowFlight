@@ -15,6 +15,7 @@ import java.io.UncheckedIOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -26,9 +27,11 @@ import java.util.stream.Collectors;
 
 import net.surpin.data.arrowflight.server.adapters.HostUtils;
 import net.surpin.data.arrowflight.server.adapters.ParquetAdapter;
-import net.surpin.data.arrowflight.server.services.ParquetQueryParser;
+import net.surpin.data.arrowflight.server.model.CapacityExhaustedException;
+import net.surpin.data.arrowflight.server.model.ExecutionReservationRequest;
 import net.surpin.data.arrowflight.server.model.FileAssignment;
 import net.surpin.data.arrowflight.server.model.HandleState;
+import net.surpin.data.arrowflight.server.model.ServerCapacity;
 
 import static java.util.UUID.randomUUID;
 
@@ -80,6 +83,8 @@ public final class QueryPlanner {
         LogUtil.logTiming(tSv, "planning.validateServers", "servers=" + allServerUris.size());
         long tLoad = LogUtil.mark();
         Map<String, Long> serverLoad = validatedServerLoad(allServerUris);
+        Map<String, ServerCapacity> capacities =
+                clusterService.getCapacities(allServerUris);
         LogUtil.logTiming(tLoad, "planning.serverLoads", "servers=" + serverLoad.size());
         long tPaths = LogUtil.mark();
         Map<String, FileAssignment> pathLocations = validatedPathLocations(parsed, allServerUris);
@@ -87,9 +92,11 @@ public final class QueryPlanner {
 
         List<FlightEndpoint> endpoints;
         if (parsed.isJoin) {
-            endpoints = joinEndpoints(query, pathLocations, allServerUris);
+            endpoints = joinEndpoints(
+                    query, pathLocations, allServerUris, serverLoad, capacities);
         } else {
-            endpoints = distributeEndpoints(query, pathLocations, serverLoad);
+            endpoints = distributeEndpoints(
+                    query, pathLocations, serverLoad, capacities);
         }
         LogUtil.logTiming(t, "planning.determineEndpoints", "endpoints=" + endpoints.size() + " files=" + pathLocations.size());
         return endpoints;
@@ -144,41 +151,47 @@ public final class QueryPlanner {
     }
 
     private List<FlightEndpoint> joinEndpoints(String query,
-            Map<String, FileAssignment> pathLocations, Set<String> allServerUris)
+            Map<String, FileAssignment> pathLocations, Set<String> allServerUris,
+            Map<String, Long> serverLoad,
+            Map<String, ServerCapacity> capacities)
             throws IOException {
-        String allFilesServer = findServerWithAllFiles(pathLocations, allServerUris);
-        if (allFilesServer == null) {
+        Set<String> candidates = findServersWithAllFiles(
+                pathLocations, allServerUris);
+        if (candidates.isEmpty()) {
             throw new IOException(
                     "Server-side joins require all input shards on one Flight node; "
                             + "Spark must execute this distributed join");
         }
+        String allFilesServer = pickAvailableServer(
+                candidates, serverLoad, capacities);
         long addedBytes = pathLocations.values().stream()
                 .mapToLong(FileAssignment::size).sum();
         FlightEndpoint ep = createEndpoint(allFilesServer,
                 new ArrayList<>(pathLocations.keySet()), query, addedBytes);
-        clusterService.addLoad(allFilesServer, addedBytes);
         return List.of(ep);
     }
 
     private List<FlightEndpoint> distributeEndpoints(String query,
-            Map<String, FileAssignment> pathLocations, Map<String, Long> serverLoad) {
+            Map<String, FileAssignment> pathLocations,
+            Map<String, Long> serverLoad,
+            Map<String, ServerCapacity> capacities) {
         Map<String, List<String>> serverToFiles = new LinkedHashMap<>();
         Map<String, Long> serverAdditions = new HashMap<>();
         for (Map.Entry<String, FileAssignment> entry : pathLocations.entrySet()) {
             FileAssignment fa = entry.getValue();
-            String bestServer = pickServer(fa.hosts(), serverLoad);
+            String bestServer = pickServer(fa.hosts(), serverLoad, capacities);
             serverToFiles.computeIfAbsent(bestServer, k -> new ArrayList<>()).add(entry.getKey());
             serverLoad.merge(bestServer, fa.size(), Long::sum);
             serverAdditions.merge(bestServer, fa.size(), Long::sum);
         }
 
-        List<FlightEndpoint> endpoints = new ArrayList<>();
+        List<EndpointPlan> plans = new ArrayList<>();
         for (Map.Entry<String, List<String>> entry : serverToFiles.entrySet()) {
-            long addedBytes = serverAdditions.getOrDefault(entry.getKey(), 0L);
-            endpoints.add(createEndpoint(entry.getKey(), entry.getValue(), query, addedBytes));
-            clusterService.addLoad(entry.getKey(), addedBytes);
+            plans.add(endpointPlan(
+                    entry.getKey(), entry.getValue(), query,
+                    serverAdditions.getOrDefault(entry.getKey(), 0L)));
         }
-        return endpoints;
+        return createEndpoints(plans);
     }
 
     private static Map<String, FileAssignment> filterForQuery(
@@ -250,23 +263,63 @@ public final class QueryPlanner {
      */
     public FlightEndpoint createEndpoint(String serverUri, List<String> filePaths,
             String query, long bytes) {
-        long t = LogUtil.mark();
+        return createEndpoints(List.of(
+                endpointPlan(serverUri, filePaths, query, bytes))).get(0);
+    }
+
+    /**
+     * Validates and prepares endpoint material before reservation.
+     *
+     * @param serverUri target server URI
+     * @param filePaths assigned files
+     * @param query SQL query
+     * @param bytes logical input bytes
+     * @return prepared endpoint plan
+     */
+    private EndpointPlan endpointPlan(String serverUri, List<String> filePaths,
+            String query, long bytes) {
         URI parsedUri = URI.create(serverUri);
-        // Preserve the registered URI (including grpc+tls). Reconstructing every
-        // location as insecure both loses transport information and can cause the
-        // client to send a ticket to the wrong connection.
-        Location serverLoc = new Location(parsedUri);
-        ByteString serverHandle = ByteString.copyFrom(
+        ByteString handle = ByteString.copyFrom(
                 randomUUID().toString().getBytes(StandardCharsets.UTF_8));
-        clusterService.storeHandle(serverHandle.toStringUtf8(),
-                HandleState.forServerFiles(query, filePaths.toArray(new String[0]),
-                        serverUri, bytes));
-        Ticket serverTicket = new Ticket(Any.pack(
-                FlightSql.TicketStatementQuery.newBuilder()
-                        .setStatementHandle(serverHandle).build())
-                .toByteArray());
-        LogUtil.logTiming(t, "planning.createEndpoint", "server=" + serverUri + " files=" + filePaths.size() + " bytes=" + bytes);
-        return new FlightEndpoint(serverTicket, serverLoc);
+        HandleState state = new HandleState(
+                query, filePaths.toArray(new String[0]), serverUri, bytes, null);
+        return new EndpointPlan(
+                serverUri, new Location(parsedUri), handle, state);
+    }
+
+    /**
+     * Reserves and materializes all endpoints atomically.
+     *
+     * @param plans prepared endpoint plans
+     * @return Flight endpoints
+     */
+    private List<FlightEndpoint> createEndpoints(List<EndpointPlan> plans) {
+        long started = LogUtil.mark();
+        List<ExecutionReservationRequest> requests = plans.stream()
+                .map(plan -> new ExecutionReservationRequest(
+                        plan.serverUri(), plan.handle().toStringUtf8(),
+                        plan.state()))
+                .toList();
+        clusterService.reserveExecutions(requests);
+        List<String> reservationIds = requests.stream()
+                .map(ExecutionReservationRequest::handle)
+                .toList();
+        try {
+            List<FlightEndpoint> endpoints = new ArrayList<>(plans.size());
+            for (EndpointPlan plan : plans) {
+                Ticket ticket = new Ticket(Any.pack(
+                        FlightSql.TicketStatementQuery.newBuilder()
+                                .setStatementHandle(plan.handle()).build())
+                        .toByteArray());
+                endpoints.add(new FlightEndpoint(ticket, plan.location()));
+            }
+            LogUtil.logTiming(started, "planning.createEndpoints",
+                    "endpoints=" + endpoints.size());
+            return List.copyOf(endpoints);
+        } catch (RuntimeException failure) {
+            clusterService.releaseExecutions(reservationIds);
+            throw failure;
+        }
     }
 
     /**
@@ -278,6 +331,24 @@ public final class QueryPlanner {
      * @return selected server URI
      */
     public static String pickServer(Set<String> fileHosts, Map<String, Long> serverLoad) {
+        Map<String, ServerCapacity> capacities = new HashMap<>();
+        serverLoad.keySet().forEach(uri -> capacities.put(
+                uri, ServerCapacity.empty(1, Integer.MAX_VALUE)));
+        return pickServer(fileHosts, serverLoad, capacities);
+    }
+
+    /**
+     * Picks a server by locality, free capacity, queue capacity, and logical load.
+     *
+     * @param fileHosts file owners
+     * @param serverLoad logical server loads
+     * @param capacities capacity snapshots
+     * @return selected server URI
+     * @throws CapacityExhaustedException when every candidate queue is full
+     */
+    public static String pickServer(Set<String> fileHosts,
+            Map<String, Long> serverLoad,
+            Map<String, ServerCapacity> capacities) {
         Set<String> normalizedFileHosts = fileHosts.stream()
                 .map(HostUtils::normalize)
                 .collect(Collectors.toSet());
@@ -288,9 +359,55 @@ public final class QueryPlanner {
 
         boolean hasLocality = !localServers.isEmpty() && localServers.size() < serverLoad.size();
         var candidates = hasLocality ? localServers : List.copyOf(serverLoad.keySet());
+        return pickAvailableServer(candidates, serverLoad, capacities);
+    }
+
+    /**
+     * Selects an available candidate by free-slot priority and logical load.
+     *
+     * @param candidates candidate server URIs
+     * @param serverLoad logical loads
+     * @param capacities capacity snapshots
+     * @return selected URI
+     */
+    private static String pickAvailableServer(
+            Collection<String> candidates,
+            Map<String, Long> serverLoad,
+            Map<String, ServerCapacity> capacities) {
         return candidates.stream()
-                .min(Comparator.comparingLong(serverLoad::get))
-                .orElseThrow();
+                .filter(uri -> hasCapacity(capacities.get(uri)))
+                .min(Comparator
+                        .comparingInt((String uri) ->
+                                hasFreeSlot(capacities.get(uri)) ? 0 : 1)
+                        .thenComparingLong(uri ->
+                                serverLoad.getOrDefault(uri, 0L)))
+                .orElseThrow(() -> new CapacityExhaustedException(
+                        "All eligible execution queues are full"));
+    }
+
+    /**
+     * Checks whether a capacity accepts an active or queued reservation.
+     *
+     * @param capacity capacity snapshot
+     * @return whether admission is possible
+     */
+    private static boolean hasCapacity(ServerCapacity capacity) {
+        return capacity != null
+                && (long) capacity.activeSlots() + capacity.queuedQueries()
+                + capacity.pendingQueries()
+                < (long) capacity.maxActiveSlots() + capacity.maxQueuedQueries();
+    }
+
+    /**
+     * Checks whether a capacity has an immediate execution slot.
+     *
+     * @param capacity capacity snapshot
+     * @return whether an active slot is free
+     */
+    private static boolean hasFreeSlot(ServerCapacity capacity) {
+        return capacity != null
+                && (long) capacity.activeSlots() + capacity.pendingQueries()
+                < capacity.maxActiveSlots();
     }
 
     /**
@@ -317,8 +434,9 @@ public final class QueryPlanner {
      * @param allServerUris all registered server URIs
      * @return server URI with all files, or null
      */
-    private String findServerWithAllFiles(
+    private Set<String> findServersWithAllFiles(
             Map<String, FileAssignment> pathLocations, Set<String> allServerUris) {
+        Set<String> result = new LinkedHashSet<>();
         outer:
         for (String serverUri : allServerUris) {
             String normServer = HostUtils.normalize(serverUri);
@@ -334,9 +452,9 @@ public final class QueryPlanner {
                     continue outer;
                 }
             }
-            return serverUri;
+            result.add(serverUri);
         }
-        return null;
+        return result;
     }
 
     /**
@@ -352,5 +470,15 @@ public final class QueryPlanner {
         }
         String parent = path.substring(0, lastSep);
         return parent.replace('\\', '.').replace('/', '.');
+    }
+
+    /**
+     * Immutable endpoint material prepared before the atomic reservation.
+     */
+    private record EndpointPlan(
+            String serverUri,
+            Location location,
+            ByteString handle,
+            HandleState state) {
     }
 }

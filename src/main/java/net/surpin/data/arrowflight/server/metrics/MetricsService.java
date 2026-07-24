@@ -15,10 +15,15 @@ import java.util.Locale;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicLongArray;
+import java.util.function.Supplier;
 import java.util.regex.Pattern;
+import org.apache.arrow.memory.BufferAllocator;
+import net.surpin.data.arrowflight.server.model.AppConfig;
+import net.surpin.data.arrowflight.server.model.ServerCapacity;
 
 /**
  * Exposes low-overhead Prometheus metrics for the Flight server.
@@ -39,6 +44,14 @@ public final class MetricsService implements AutoCloseable {
     private static final ConcurrentHashMap<String, QueryMetrics> QUERY_METRICS =
             new ConcurrentHashMap<>();
     private static final AtomicLong ACTIVE_QUERIES = new AtomicLong();
+    private static final AtomicLong QUEUE_REJECTIONS = new AtomicLong();
+    private static final AtomicLong QUEUE_WAIT_COUNT = new AtomicLong();
+    private static final AtomicLong QUEUE_WAIT_NANOS = new AtomicLong();
+    private static final AtomicLongArray QUEUE_WAIT_BUCKETS =
+            new AtomicLongArray(DURATION_BUCKETS.length);
+    private static volatile BufferAllocator rootAllocator;
+    private static volatile AppConfig configuration;
+    private static volatile Supplier<ServerCapacity> capacitySupplier;
 
     private final HttpServer server;
     private final ExecutorService executor;
@@ -88,6 +101,53 @@ public final class MetricsService implements AutoCloseable {
         String path = classify(query);
         ACTIVE_QUERIES.incrementAndGet();
         return new QueryObservation(path, Math.max(0L, logicalBytes));
+    }
+
+    /** Binds production Arrow allocator for allocation gauges. */
+    public static void bindAllocator(BufferAllocator allocator) {
+        rootAllocator = allocator;
+    }
+
+    /**
+     * Binds the resolved memory and execution configuration.
+     *
+     * @param config application configuration
+     */
+    public static void bindConfiguration(AppConfig config) {
+        configuration = config;
+    }
+
+    /**
+     * Binds a supplier for local distributed execution capacity.
+     *
+     * @param supplier local capacity supplier
+     */
+    public static void bindCapacitySupplier(Supplier<ServerCapacity> supplier) {
+        capacitySupplier = supplier;
+    }
+
+    /**
+     * Records one bounded queue rejection.
+     */
+    public static void recordQueueRejection() {
+        QUEUE_REJECTIONS.incrementAndGet();
+    }
+
+    /**
+     * Records distributed admission wait.
+     *
+     * @param waitMillis queue wait in milliseconds
+     */
+    public static void recordQueueWaitMillis(long waitMillis) {
+        long nanos = TimeUnit.MILLISECONDS.toNanos(Math.max(0L, waitMillis));
+        QUEUE_WAIT_COUNT.incrementAndGet();
+        QUEUE_WAIT_NANOS.addAndGet(nanos);
+        double seconds = nanos / 1_000_000_000.0;
+        for (int i = 0; i < DURATION_BUCKETS.length; i++) {
+            if (seconds <= DURATION_BUCKETS[i]) {
+                QUEUE_WAIT_BUCKETS.incrementAndGet(i);
+            }
+        }
     }
 
     @Override
@@ -172,11 +232,70 @@ public final class MetricsService implements AutoCloseable {
     private static String render() {
         StringBuilder metrics = new StringBuilder(8192);
         appendJvmMetrics(metrics);
+        BufferAllocator allocator = rootAllocator;
+        if (allocator != null) {
+            metric(metrics, "arrowflight_arrow_allocated_bytes", "gauge",
+                    "Current Arrow allocation", allocator.getAllocatedMemory());
+            metric(metrics, "arrowflight_arrow_peak_allocated_bytes", "gauge",
+                    "Peak Arrow allocation", allocator.getPeakMemoryAllocation());
+            metric(metrics, "arrowflight_arrow_limit_bytes", "gauge",
+                    "Arrow allocation limit", allocator.getLimit());
+        }
+        appendExecutionMetrics(metrics);
         metric(metrics, "arrowflight_parquet_queries_active", "gauge",
                 "Currently executing Parquet queries", ACTIVE_QUERIES.get());
         appendQueryMetrics(metrics);
 
         return metrics.toString();
+    }
+
+    /**
+     * Appends execution capacity, queue, and configured memory metrics.
+     *
+     * @param metrics destination payload
+     */
+    private static void appendExecutionMetrics(StringBuilder metrics) {
+        AppConfig config = configuration;
+        if (config != null) {
+            metric(metrics, "arrowflight_query_engine_memory_limit_bytes", "gauge",
+                    "Configured DuckDB and Arrow budget",
+                    config.queryEngineMemoryLimitBytes());
+            metric(metrics, "arrowflight_duckdb_memory_pool_bytes", "gauge",
+                    "Configured DuckDB memory pool", config.duckDbMemoryPoolBytes());
+            metric(metrics, "arrowflight_duckdb_query_memory_limit_bytes", "gauge",
+                    "Configured per-query DuckDB limit",
+                    config.duckDbQueryMemoryLimitBytes());
+            metric(metrics, "arrowflight_arrow_memory_pool_bytes", "gauge",
+                    "Configured Arrow memory pool", config.arrowMemoryPoolBytes());
+            metric(metrics, "arrowflight_arrow_query_memory_limit_bytes", "gauge",
+                    "Configured per-query Arrow limit",
+                    config.arrowQueryMemoryLimitBytes());
+            metric(metrics, "arrowflight_arrow_shared_reserve_bytes", "gauge",
+                    "Configured Arrow shared reserve",
+                    config.arrowSharedReserveBytes());
+        }
+        Supplier<ServerCapacity> supplier = capacitySupplier;
+        ServerCapacity capacity = supplier == null ? null : supplier.get();
+        if (capacity != null) {
+            metric(metrics, "arrowflight_execution_slots_active", "gauge",
+                    "Active execution slots", capacity.activeSlots());
+            metric(metrics, "arrowflight_execution_queue_depth", "gauge",
+                    "Queued executions", capacity.queuedQueries());
+        }
+        metric(metrics, "arrowflight_execution_queue_rejections_total", "counter",
+                "Rejected executions due to full queues", QUEUE_REJECTIONS.get());
+        helpType(metrics, "arrowflight_execution_queue_wait_seconds", "histogram",
+                "Distributed execution admission wait");
+        for (int i = 0; i < DURATION_BUCKETS.length; i++) {
+            sample(metrics, "arrowflight_execution_queue_wait_seconds_bucket{le=\""
+                    + decimal(DURATION_BUCKETS[i]) + "\"}", QUEUE_WAIT_BUCKETS.get(i));
+        }
+        sample(metrics, "arrowflight_execution_queue_wait_seconds_bucket{le=\"+Inf\"}",
+                QUEUE_WAIT_COUNT.get());
+        sample(metrics, "arrowflight_execution_queue_wait_seconds_sum",
+                seconds(QUEUE_WAIT_NANOS.get()));
+        sample(metrics, "arrowflight_execution_queue_wait_seconds_count",
+                QUEUE_WAIT_COUNT.get());
     }
 
     /**

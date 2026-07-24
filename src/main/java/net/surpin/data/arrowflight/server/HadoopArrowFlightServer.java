@@ -145,6 +145,10 @@ public class HadoopArrowFlightServer {
 
             LOGGER.info("Server Arrow Flight SQL started on {}", location);
             if (metricsEnabled) {
+                MetricsService.bindAllocator(component.allocator());
+                MetricsService.bindConfiguration(config);
+                MetricsService.bindCapacitySupplier(
+                        component.clusterService()::localCapacity);
                 metricsService = new MetricsService(metricsPort);
                 metricsService.start();
                 LOGGER.info("Prometheus metrics started on 0.0.0.0:{}", metricsPort);
@@ -178,6 +182,11 @@ public class HadoopArrowFlightServer {
             LOGGER.info("Flight SQL server stopped");
         }
         if (component != null) {
+            try {
+                component.producer().close();
+            } catch (Exception e) {
+                LOGGER.error("Error closing Flight SQL producer", e);
+            }
             try {
                 component.duckDb().close();
             } catch (Exception e) {

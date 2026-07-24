@@ -182,11 +182,25 @@ Key properties (see `AppConfig.java` / `ConfigAdapter.java` for the full list):
 
 | Area | Key Properties |
 | :--- | :--- |
-| DuckDB | `batchSize`, `duckDbThreads`, `duckDbGroups`, `duckDbWarmConnections` |
+| DuckDB | `batchSize`, `duckDbThreads`, `duckDbGroups`, `duckDbWarmConnections`, `duckDbMemorySharePercent` |
+| Query admission | `maxConcurrentQueries`, `maxQueuedQueries` |
+| Native memory | `queryEngineMemoryLimitBytes` |
 | I/O | `ioParallelism`, `ioParallelismMinThreads`, `ioFileBufferSize` |
 | Flight/gRPC | `grpcMaxInboundMessageSize`, `flightBackpressureThresholdBytes`, `flightListenerReadyTimeoutMs` |
 | Client | `client.maxRetries`, `client.retryBackoffMs`, `client.connectTimeoutMs` |
 | Hazelcast | `hazelcastClusterJoinTimeoutSec` |
+
+`queryEngineMemoryLimitBytes` is divided between DuckDB and Arrow according to
+`duckDbMemorySharePercent`. The Arrow portion keeps 10% as shared reserve and
+divides the remaining 90% between active queries. This budget does not include
+JVM heap, Netty buffers, JNI libraries, or other native process memory.
+
+Each node executes at most `maxConcurrentQueries` endpoints and keeps at most
+`maxQueuedQueries` additional endpoints in its distributed FIFO. When both are
+full, planning returns a retryable `RESOURCE_EXHAUSTED` status.
+An unclaimed `GetFlightInfo` ticket reserves bounded admission and logical load,
+but does not consume an active execution slot. Its first `DoGet` atomically
+claims a free slot or appends the request to the FIFO.
 
 ---
 

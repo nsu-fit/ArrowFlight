@@ -74,6 +74,8 @@ class MultiNodeFailoverTest {
         // Simulate the node's registration and heartbeat after recovery.
         registry.put(selfUri, 0L);
         heartbeats.put(selfUri, now);
+        assertNotNull(helper.hazelcastAdapter.serverCapacity().get(selfUri),
+                "Recovered server should restore execution capacity");
     }
 
     @Test @Order(5)

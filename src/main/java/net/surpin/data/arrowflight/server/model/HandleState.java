@@ -5,14 +5,15 @@ import java.io.Serializable;
 /**
  * State associated with a query handle, including query text, file paths, server URI, and byte count.
  */
-public record HandleState(String query, String[] filePaths, String serverUri, long bytes) implements Serializable {
+public record HandleState(String query, String[] filePaths, String serverUri, long bytes,
+        String reservationId) implements Serializable {
 
     /**
      * @param query SQL query text
      * @return handle state with no file paths or server URI
      */
     public static HandleState forQuery(String query) {
-        return new HandleState(query, null, null, 0L);
+        return new HandleState(query, null, null, 0L, null);
     }
 
     /**
@@ -23,6 +24,6 @@ public record HandleState(String query, String[] filePaths, String serverUri, lo
      * @return handle state with all fields populated
      */
     public static HandleState forServerFiles(String query, String[] filePaths, String serverUri, long bytes) {
-        return new HandleState(query, filePaths, serverUri, bytes);
+        return new HandleState(query, filePaths, serverUri, bytes, null);
     }
 }

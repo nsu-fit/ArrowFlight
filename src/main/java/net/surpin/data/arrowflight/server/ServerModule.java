@@ -237,8 +237,8 @@ public final class ServerModule {
      */
     @Provides
     @Singleton
-    BufferAllocator allocator() {
-        return new RootAllocator(Long.MAX_VALUE);
+    BufferAllocator allocator(AppConfig config) {
+        return new RootAllocator(config.arrowMemoryPoolBytes());
     }
 
     /**
@@ -260,7 +260,9 @@ public final class ServerModule {
         String localhost = "0.0.0.0";
         Location location = Location.forGrpcInsecure(localhost, port);
         return new FlightSqlProducer(location, allocator, metadataService,
-                queryPlanner, executionService, clusterService);
+                queryPlanner, executionService, clusterService,
+                config.arrowQueryMemoryLimitBytes(),
+                config.maxConcurrentQueries());
     }
 
     /**

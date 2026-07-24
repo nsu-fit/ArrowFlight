@@ -15,6 +15,10 @@ import java.io.Serializable;
 import java.util.Map;
 
 import net.surpin.data.arrowflight.server.model.AppConfig;
+import net.surpin.data.arrowflight.server.model.QueueKey;
+import net.surpin.data.arrowflight.server.model.QueueNode;
+import net.surpin.data.arrowflight.server.model.ServerCapacity;
+import net.surpin.data.arrowflight.server.model.ReservationState;
 
 /**
  * Wraps HazelcastInstance lifecycle and distributed map access.
@@ -27,12 +31,18 @@ public final class HazelcastAdapter implements AutoCloseable {
     private static final String STATEMENT_CACHE_MAP = "statement-cache";
     private static final String SERVER_HEARTBEAT_MAP = "server-heartbeats";
     private static final String SERVER_FILES_MAP = "server-files";
+    private static final String SERVER_CAPACITY_MAP = "server-capacity";
+    private static final String RESERVATION_MAP = "execution-reservations";
+    private static final String QUEUE_NODE_MAP = "execution-queue-nodes";
 
     private final HazelcastInstance instance;
     private final IMap<String, Long> serverRegistry;
     private final IMap<String, Serializable> statementCache;
     private final IMap<String, Long> serverHeartbeats;
     private final IMap<String, Map<String, Long>> serverFiles;
+    private final IMap<String, ServerCapacity> serverCapacity;
+    private final IMap<String, ReservationState> reservations;
+    private final IMap<QueueKey, QueueNode> queueNodes;
 
     /**
      * Creates a new Hazelcast instance using TCP/IP join on the given hosts.
@@ -58,6 +68,9 @@ public final class HazelcastAdapter implements AutoCloseable {
         this.statementCache = instance.getMap(STATEMENT_CACHE_MAP);
         this.serverHeartbeats = instance.getMap(SERVER_HEARTBEAT_MAP);
         this.serverFiles = instance.getMap(SERVER_FILES_MAP);
+        this.serverCapacity = instance.getMap(SERVER_CAPACITY_MAP);
+        this.reservations = instance.getMap(RESERVATION_MAP);
+        this.queueNodes = instance.getMap(QUEUE_NODE_MAP);
     }
 
     /**
@@ -86,6 +99,70 @@ public final class HazelcastAdapter implements AutoCloseable {
      */
     public IMap<String, Map<String, Long>> serverFiles() {
         return serverFiles;
+    }
+
+    /** Returns distributed execution capacity states. */
+    public IMap<String, ServerCapacity> serverCapacity() {
+        return serverCapacity;
+    }
+
+    /** Returns distributed execution reservations. */
+    public IMap<String, ReservationState> reservations() {
+        return reservations;
+    }
+
+    /**
+     * Returns distributed FIFO nodes.
+     *
+     * @return execution queue nodes
+     */
+    public IMap<QueueKey, QueueNode> queueNodes() {
+        return queueNodes;
+    }
+
+    /**
+     * Returns the server registry map name for transactions.
+     *
+     * @return map name
+     */
+    public String serverRegistryMapName() {
+        return SERVER_REGISTRY_MAP;
+    }
+
+    /**
+     * Returns the statement cache map name for transactions.
+     *
+     * @return map name
+     */
+    public String statementCacheMapName() {
+        return STATEMENT_CACHE_MAP;
+    }
+
+    /**
+     * Returns the capacity map name for transactions.
+     *
+     * @return map name
+     */
+    public String serverCapacityMapName() {
+        return SERVER_CAPACITY_MAP;
+    }
+
+    /**
+     * Returns the reservation map name for transactions.
+     *
+     * @return map name
+     */
+    public String reservationMapName() {
+        return RESERVATION_MAP;
+    }
+
+    /**
+     * Returns the FIFO node map name for transactions.
+     *
+     * @return map name
+     */
+    public String queueNodeMapName() {
+        return QUEUE_NODE_MAP;
     }
 
     /**

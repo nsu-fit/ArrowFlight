@@ -36,6 +36,24 @@ public class ConfigAdapter {
         int duckDbGroups = getInt("duckDbGroups",
                 "arrowflight.duckdb.groups", Math.min(8, ioParallelism), props);
         int duckDbThreads = getInt("duckDbThreads", "arrowflight.duckdb.threads", 1, props);
+        long queryEngineMemoryLimitBytes = getPositiveLong("queryEngineMemoryLimitBytes",
+                "arrowflight.memory.engine.limitBytes", 2_147_483_648L, props);
+        int maxConcurrentQueries = getInt("maxConcurrentQueries",
+                "arrowflight.execution.maxConcurrentQueries", 4, props);
+        int duckDbMemorySharePercent = getInt("duckDbMemorySharePercent",
+                "arrowflight.memory.duckdb.sharePercent", 75, props);
+        int maxQueuedQueries = getInt("maxQueuedQueries",
+                "arrowflight.execution.maxQueuedQueries", 64, props);
+        if (maxConcurrentQueries <= 0) {
+            throw new IllegalArgumentException("maxConcurrentQueries must be positive");
+        }
+        if (duckDbMemorySharePercent < 1 || duckDbMemorySharePercent > 99) {
+            throw new IllegalArgumentException(
+                    "duckDbMemorySharePercent must be between 1 and 99");
+        }
+        if (maxQueuedQueries < 0) {
+            throw new IllegalArgumentException("maxQueuedQueries must not be negative");
+        }
         String duckDbHdfsExtension = getStringWithEnv("duckDbHdfsExtension",
                 "arrowflight.duckdb.hdfs.extension", "DUCKDB_HDFS_EXTENSION", null, props);
         boolean duckDbAllowUnsignedExtensions = getBooleanWithEnv("duckDbAllowUnsignedExtensions",
@@ -78,9 +96,11 @@ public class ConfigAdapter {
         int clientRetryBackoffMs = getInt("client.retryBackoffMs", null, 1000, props);
         int clientConnectTimeoutMs = getInt("client.connectTimeoutMs", null, 0, props);
 
-        return new AppConfig(
+        AppConfig config = new AppConfig(
                 numServers, batchSize, ioParallelism, ioFileBufferSize,
                 duckDbWarmConnections, duckDbGroups, duckDbThreads,
+                queryEngineMemoryLimitBytes, maxConcurrentQueries,
+                duckDbMemorySharePercent, maxQueuedQueries,
                 duckDbHdfsExtension, duckDbAllowUnsignedExtensions,
                 duckDbHdfsDefaultNamenode, duckDbHdfsHaNamenodes,
                 duckDbHdfsShortcircuit, duckDbHdfsDomainSocketPath,
@@ -89,6 +109,16 @@ public class ConfigAdapter {
                 flightListenerReadyTimeoutMillis,
                 dataDir, localDataDir, port, hazelcastPort, hazelcastClusterJoinTimeoutSec,
                 clientMaxRetries, clientRetryBackoffMs, clientConnectTimeoutMs);
+        if (config.duckDbQueryMemoryLimitBytes() <= 0) {
+            throw new IllegalArgumentException(
+                    "queryEngineMemoryLimitBytes is too small for DuckDB query slots");
+        }
+        if (config.arrowQueryMemoryLimitBytes() < flightBackpressureThresholdBytes) {
+            throw new IllegalArgumentException(
+                    "Arrow per-query memory limit must be at least "
+                            + "flightBackpressureThresholdBytes");
+        }
+        return config;
     }
 
     /**
@@ -243,6 +273,15 @@ public class ConfigAdapter {
         } catch (NumberFormatException e) {
             throw new IllegalArgumentException("Invalid long for " + key + ": " + raw, e);
         }
+    }
+
+    /** Reads and validates a positive long configuration value. */
+    private static long getPositiveLong(String key, String sysAlias, long fallback, Properties props) {
+        long value = getLong(key, sysAlias, fallback, props);
+        if (value <= 0) {
+            throw new IllegalArgumentException(key + " must be positive: " + value);
+        }
+        return value;
     }
 
     /**

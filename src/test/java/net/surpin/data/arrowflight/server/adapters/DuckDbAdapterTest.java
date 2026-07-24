@@ -180,20 +180,18 @@ class DuckDbAdapterTest {
         }
     }
 
-    /** Verifies cancellation releases a signalled waiter without sending data. */
+    /** Verifies cancellation is polled without replacing the stream lifecycle handler. */
     @Test
     void listenerCancellationStopsWaiting() throws Exception {
         FlightProducer.ServerStreamListener listener =
                 mock(FlightProducer.ServerStreamListener.class);
         AtomicBoolean cancelled = new AtomicBoolean();
-        AtomicReference<Runnable> cancelHandler = new AtomicReference<>();
-        CountDownLatch cancelHandlerRegistered = new CountDownLatch(1);
+        CountDownLatch readyHandlerRegistered = new CountDownLatch(1);
         when(listener.isCancelled()).thenAnswer(invocation -> cancelled.get());
         doAnswer(invocation -> {
-            cancelHandler.set(invocation.getArgument(0));
-            cancelHandlerRegistered.countDown();
+            readyHandlerRegistered.countDown();
             return null;
-        }).when(listener).setOnCancelHandler(any(Runnable.class));
+        }).when(listener).setOnReadyHandler(any(Runnable.class));
 
         ExecutorService executor = Executors.newSingleThreadExecutor();
         try {
@@ -201,15 +199,16 @@ class DuckDbAdapterTest {
                 DuckDbAdapter.awaitListenerReady(listener, 500);
                 return null;
             });
-            assertTrue(cancelHandlerRegistered.await(1, TimeUnit.SECONDS));
+            assertTrue(readyHandlerRegistered.await(1, TimeUnit.SECONDS));
             cancelled.set(true);
-            cancelHandler.get().run();
             java.util.concurrent.ExecutionException exception = assertThrows(
                     java.util.concurrent.ExecutionException.class,
                     () -> result.get(1, TimeUnit.SECONDS));
             FlightRuntimeException cause = assertInstanceOf(
                     FlightRuntimeException.class, exception.getCause());
             assertEquals(FlightStatusCode.CANCELLED, cause.status().code());
+            verify(listener, org.mockito.Mockito.never())
+                    .setOnCancelHandler(any(Runnable.class));
         } finally {
             executor.shutdownNow();
         }
@@ -242,6 +241,7 @@ class DuckDbAdapterTest {
         ExecutorService ioPool = Executors.newSingleThreadExecutor();
         AppConfig config = new AppConfig(
                 3, 4096, 1, 131072, 1, 1, 1,
+                2_147_483_648L, 4, 75, 64,
                 null, false, null, null,
                 "true", "/var/lib/hadoop-hdfs/socket/dn_socket",
                 false, 1048576, 67108864, 60000L, "/data/parquet", null,
@@ -264,6 +264,7 @@ class DuckDbAdapterTest {
         ExecutorService ioPool = Executors.newSingleThreadExecutor();
         AppConfig config = new AppConfig(
                 3, 2, 1, 131072, 1, 1, 1,
+                2_147_483_648L, 4, 75, 64,
                 null, false, null, null,
                 null, null, false, 1048576, 67108864, 60000L, null, null,
                 32010, 5701, 60, 3, 1000, 30000);
@@ -300,6 +301,7 @@ class DuckDbAdapterTest {
         ExecutorService caller = Executors.newSingleThreadExecutor();
         AppConfig config = new AppConfig(
                 3, 2, 1, 131072, 1, 1, 1,
+                2_147_483_648L, 4, 75, 64,
                 null, false, null, null,
                 null, null, false, 1048576, 67108864, 60000L, null, null,
                 32010, 5701, 60, 3, 1000, 30000);
@@ -333,6 +335,7 @@ class DuckDbAdapterTest {
         ExecutorService ioPool = Executors.newSingleThreadExecutor();
         AppConfig config = new AppConfig(
                 3, 2, 1, 131072, 1, 1, 1,
+                2_147_483_648L, 4, 75, 64,
                 null, false, null, null,
                 null, null, false, 1048576, 67108864, 25L, null, null,
                 32010, 5701, 60, 3, 1000, 30000);

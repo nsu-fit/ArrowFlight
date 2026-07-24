@@ -28,9 +28,21 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 import net.surpin.data.arrowflight.server.model.HandleState;
+import net.surpin.data.arrowflight.server.model.CapacityExhaustedException;
+import net.surpin.data.arrowflight.server.model.ReservationState;
+import net.surpin.data.arrowflight.server.model.ReservationStatus;
 import net.surpin.data.arrowflight.server.metrics.MetricsService;
 import net.surpin.data.arrowflight.server.services.ClusterService;
 import net.surpin.data.arrowflight.server.services.ExecutionService;
@@ -53,6 +65,9 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
     private final QueryPlanner queryPlanner;
     private final ExecutionService executionService;
     private final ClusterService clusterService;
+    private final long queryMemoryLimit;
+    private final ExecutorService queryExecutor;
+    private final Map<String, Runnable> cancellations = new ConcurrentHashMap<>();
     private final SqlInfoBuilder sqlInfoBuilder;
 
     /**
@@ -66,12 +81,39 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
     public FlightSqlProducer(Location location, BufferAllocator allocator,
             MetadataService metadataService, QueryPlanner queryPlanner,
             ExecutionService executionService, ClusterService clusterService) {
+        this(location, allocator, metadataService, queryPlanner, executionService,
+                clusterService, Math.min(268_435_456L, allocator.getLimit()), 4);
+    }
+
+    /**
+     * Creates a producer with explicit per-query Arrow memory and concurrency limits.
+     *
+     * @param location server location for endpoint registration
+     * @param allocator Arrow buffer allocator
+     * @param metadataService metadata lookup service
+     * @param queryPlanner query planner
+     * @param executionService execution service
+     * @param clusterService cluster coordination service
+     * @param queryMemoryLimit per-query Arrow limit
+     * @param maxConcurrentQueries query executor size
+     */
+    public FlightSqlProducer(Location location, BufferAllocator allocator,
+            MetadataService metadataService, QueryPlanner queryPlanner,
+            ExecutionService executionService, ClusterService clusterService,
+            long queryMemoryLimit, int maxConcurrentQueries) {
         this.location = location;
         this.allocator = allocator;
         this.metadataService = metadataService;
         this.queryPlanner = queryPlanner;
         this.executionService = executionService;
         this.clusterService = clusterService;
+        this.queryMemoryLimit = queryMemoryLimit;
+        this.queryExecutor = Executors.newFixedThreadPool(
+                maxConcurrentQueries, runnable -> {
+                    Thread thread = new Thread(runnable, "query-execution");
+                    thread.setDaemon(true);
+                    return thread;
+                });
 
         this.sqlInfoBuilder = new SqlInfoBuilder();
         sqlInfoBuilder
@@ -100,74 +142,249 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
             FlightProducer.CallContext context,
             FlightProducer.ServerStreamListener listener) {
         final ByteString handle = ticket.getStatementHandle();
+        String handleValue = handle.toStringUtf8();
         String qid = qid(handle);
         long tGet = LogUtil.mark();
-        HandleState state = clusterService.getHandle(handle.toStringUtf8());
+        HandleState state = clusterService.getHandle(handleValue);
         LogUtil.logTiming(tGet, "execution.getHandle");
         if (state == null) {
             LOGGER.error("qid={} No HandleState found", qid);
-            listener.error(new IllegalStateException("No HandleState found for qid=" + qid));
+            listener.error(CallStatus.NOT_FOUND.withDescription(
+                    "No HandleState found for qid=" + qid).toRuntimeException());
             return;
         }
-
-        String query = state.query();
-        String[] filePaths = state.filePaths();
-        if (filePaths == null) {
+        if (state.filePaths() == null) {
             LOGGER.error("qid={} No file paths in handle state", qid);
             listener.error(new IllegalStateException("No file paths for qid=" + qid));
             return;
         }
 
+        AtomicBoolean cancelled = new AtomicBoolean();
+        AtomicBoolean submitted = new AtomicBoolean();
+        AtomicReference<Future<?>> executionFuture = new AtomicReference<>();
+        AtomicReference<UUID> reservationListener = new AtomicReference<>();
+        Runnable cancellation = () -> {
+            if (cancelled.compareAndSet(false, true)) {
+                clusterService.removeReservationListener(reservationListener.getAndSet(null));
+                Future<?> future = executionFuture.get();
+                if (future != null) {
+                    future.cancel(true);
+                }
+                if (state.reservationId() != null) {
+                    clusterService.releaseExecution(state.reservationId());
+                } else {
+                    clusterService.removeHandle(handleValue);
+                }
+            }
+            cancellations.remove(handleValue);
+        };
+        cancellations.put(handleValue, cancellation);
+        listener.setOnCancelHandler(cancellation);
+        if (listener.isCancelled()) {
+            cancellation.run();
+            return;
+        }
+
+        Consumer<ReservationState> stateObserver = reservation -> {
+            if (reservation == null) {
+                if (!cancelled.get() && !submitted.get()) {
+                    cancelled.set(true);
+                    listener.error(CallStatus.CANCELLED.withDescription(
+                            "Execution reservation was released").toRuntimeException());
+                    cancellations.remove(handleValue);
+                }
+                return;
+            }
+            if (reservation.status() == ReservationStatus.ACTIVE
+                    && submitted.compareAndSet(false, true)) {
+                MetricsService.recordQueueWaitMillis(Math.max(0L,
+                        clusterService.clusterTimeMillis()
+                                - reservation.createdAtMillis()));
+                clusterService.removeReservationListener(
+                        reservationListener.getAndSet(null));
+                submitExecution(state, handleValue, qid, listener,
+                        cancelled, executionFuture);
+            }
+        };
+
+        if (state.reservationId() == null) {
+            submitted.set(true);
+            submitExecution(state, handleValue, qid, listener,
+                    cancelled, executionFuture);
+            return;
+        }
+        ReservationState claimed = clusterService.claimExecution(
+                handleValue, state.reservationId());
+        if (claimed == null) {
+            cancellations.remove(handleValue);
+            listener.error(CallStatus.NOT_FOUND.withDescription(
+                    "Execution handle expired").toRuntimeException());
+            return;
+        }
+        UUID listenerId = clusterService.watchReservation(
+                state.reservationId(), stateObserver);
+        reservationListener.set(listenerId);
+        if (submitted.get() || cancelled.get()) {
+            clusterService.removeReservationListener(
+                    reservationListener.getAndSet(null));
+        }
+    }
+
+    /**
+     * Submits one active reservation without blocking the Flight worker.
+     *
+     * @param state execution handle state
+     * @param handle handle string
+     * @param qid query identifier
+     * @param listener Flight stream listener
+     * @param cancelled cancellation flag
+     * @param executionFuture submitted future reference
+     */
+    private void submitExecution(
+            HandleState state,
+            String handle,
+            String qid,
+            FlightProducer.ServerStreamListener listener,
+            AtomicBoolean cancelled,
+            AtomicReference<Future<?>> executionFuture) {
+        if (cancelled.get()) {
+            if (state.reservationId() != null) {
+                clusterService.releaseExecution(state.reservationId());
+            }
+            return;
+        }
+        try {
+            Future<?> future = queryExecutor.submit(
+                    () -> runExecution(state, handle, qid, listener, cancelled));
+            executionFuture.set(future);
+            if (cancelled.get()) {
+                future.cancel(true);
+            }
+        } catch (RejectedExecutionException rejected) {
+            cancellations.remove(handle);
+            if (state.reservationId() != null) {
+                clusterService.releaseExecution(state.reservationId());
+            }
+            listener.error(CallStatus.UNAVAILABLE.withDescription(
+                    "Query executor is shutting down")
+                    .withCause(rejected).toRuntimeException());
+        }
+    }
+
+    /**
+     * Executes and terminates one Flight stream on the query executor.
+     *
+     * @param state execution handle state
+     * @param handle handle string
+     * @param qid query identifier
+     * @param listener Flight stream listener
+     * @param cancelled cancellation flag
+     */
+    private void runExecution(
+            HandleState state,
+            String handle,
+            String qid,
+            FlightProducer.ServerStreamListener listener,
+            AtomicBoolean cancelled) {
+        String query = state.query();
+        String[] filePaths = state.filePaths();
         String serverUri = state.serverUri() != null ? state.serverUri() : "local";
-        long bytes = state.bytes();
-        long tExec = LogUtil.mark();
+        long started = LogUtil.mark();
         long executionStartNanos = System.nanoTime();
         LogUtil.setQid(qid);
-        LOGGER.debug("qid={} node={} thread={} execution=start server={} files={} bytes={} endpoint={} query='{}'",
-                qid, LogUtil.node(), Thread.currentThread().getName(),
-                serverUri, filePaths.length, bytes, qid, query);
-
         MDC.put("qid", qid);
         MetricsService.QueryObservation observation =
-                MetricsService.observeQuery(query, bytes);
+                MetricsService.observeQuery(query, state.bytes());
+        BufferAllocator queryAllocator = allocator;
         try {
-            executionService.readParquet(allocator, query, filePaths, listener, true);
-            listener.completed();
-            LogUtil.logTiming(tExec, "execution.total", "files=" + filePaths.length);
-            long elapsed = TimeUnit.NANOSECONDS.toMillis(
-                    System.nanoTime() - executionStartNanos);
-            LOGGER.debug("qid={} node={} thread={} execution=completed server={} elapsedMs={} files={} result=completed query='{}'",
+            if (cancelled.get() || Thread.currentThread().isInterrupted()) {
+                return;
+            }
+            LOGGER.debug("qid={} node={} thread={} execution=start server={} files={} bytes={}",
                     qid, LogUtil.node(), Thread.currentThread().getName(),
-                    serverUri, elapsed, filePaths.length, query);
-        } catch (Exception e) {
+                    serverUri, filePaths.length, state.bytes());
+            queryAllocator = allocator.newChildAllocator(
+                    "query-" + qid, 0, queryMemoryLimit);
+            executionService.readParquet(
+                    queryAllocator, query, filePaths, listener, true);
+            if (!cancelled.get() && !listener.isCancelled()) {
+                listener.completed();
+            }
+            LogUtil.logTiming(started, "execution.total",
+                    "files=" + filePaths.length);
+        } catch (Exception error) {
             observation.markFailed();
-            LogUtil.logTiming(tExec, "execution.failed", "files=" + filePaths.length);
+            String failure = failureDescription(error);
             long elapsed = TimeUnit.NANOSECONDS.toMillis(
                     System.nanoTime() - executionStartNanos);
-            String failure = failureDescription(e);
-            LOGGER.error("qid={} node={} thread={} execution=failed server={} elapsedMs={} files={} result=failed error='{}'",
-                    qid, LogUtil.node(), Thread.currentThread().getName(),
-                    serverUri, elapsed, filePaths.length, failure, e);
-            if (e instanceof FlightRuntimeException flightException) {
-                listener.error(flightException);
-            } else {
-                listener.error(CallStatus.INTERNAL
-                        .withDescription(failure)
-                        .withCause(e)
-                        .toRuntimeException());
+            LOGGER.error("qid={} node={} execution=failed server={} elapsedMs={} error='{}'",
+                    qid, LogUtil.node(), serverUri, elapsed, failure, error);
+            if (!cancelled.get() && !listener.isCancelled()) {
+                reportExecutionError(listener, error, failure);
             }
         } finally {
+            if (queryAllocator != allocator) {
+                queryAllocator.close();
+            }
             observation.close();
             MDC.remove("qid");
             LogUtil.setQid(null);
-            if (state.serverUri() != null) {
-                // Spark may retry a failed task with the same Flight ticket. Keep the
-                // ticket readable until its TTL, but clear its accounted load once.
-                clusterService.storeHandle(handle.toStringUtf8(),
-                        HandleState.forServerFiles(query, filePaths, state.serverUri(), 0L));
-                clusterService.addLoad(state.serverUri(), -state.bytes());
+            cancellations.remove(handle);
+            if (state.reservationId() != null) {
+                clusterService.releaseExecution(state.reservationId());
+            } else {
+                clusterService.removeHandle(handle);
             }
         }
+    }
+
+    /**
+     * Maps execution failures to Flight terminal statuses.
+     *
+     * @param listener Flight stream listener
+     * @param error execution error
+     * @param failure bounded failure description
+     */
+    private static void reportExecutionError(
+            FlightProducer.ServerStreamListener listener,
+            Exception error,
+            String failure) {
+        if (isMemoryExhaustion(error)) {
+            listener.error(CallStatus.RESOURCE_EXHAUSTED
+                    .withDescription("Query memory limit exceeded")
+                    .withCause(error).toRuntimeException());
+        } else if (error instanceof FlightRuntimeException flightException) {
+            listener.error(flightException);
+        } else {
+            listener.error(CallStatus.INTERNAL
+                    .withDescription(failure)
+                    .withCause(error)
+                    .toRuntimeException());
+        }
+    }
+
+    /**
+     * Recognizes Arrow and DuckDB memory exhaustion through cause classes and messages.
+     *
+     * @param error failure to inspect
+     * @return whether memory was exhausted
+     */
+    private static boolean isMemoryExhaustion(Throwable error) {
+        Throwable cause = error;
+        while (cause != null) {
+            String name = cause.getClass().getName().toLowerCase(java.util.Locale.ROOT);
+            String message = cause.getMessage() == null ? ""
+                    : cause.getMessage().toLowerCase(java.util.Locale.ROOT);
+            if (name.contains("outofmemory")
+                    || message.contains("out of memory")
+                    || message.contains("memory limit")
+                    || message.contains("failed to allocate")
+                    || message.contains("allocation failure")) {
+                return true;
+            }
+            cause = cause.getCause();
+        }
+        return false;
     }
 
     private static boolean isFileNotFound(Throwable e) {
@@ -276,12 +493,17 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
                 }
                 String query = state.query();
                 List<FlightEndpoint> endpoints = queryPlanner.determineEndpoints(query);
+                clusterService.removeHandle(handle.toStringUtf8());
                 LogUtil.logTiming(t, "planning.determineEndpoints", "endpoints=" + endpoints.size());
                 return endpoints;
             } else {
                 Ticket ticket = new Ticket(Any.pack(request).toByteArray());
                 return List.of(new FlightEndpoint(ticket, location));
             }
+        } catch (CapacityExhaustedException exhausted) {
+            throw CallStatus.RESOURCE_EXHAUSTED
+                    .withDescription(exhausted.getMessage())
+                    .withCause(exhausted).toRuntimeException();
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
@@ -469,6 +691,12 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
 
     @Override
     public void close() throws Exception {
+        cancellations.values().forEach(Runnable::run);
+        cancellations.clear();
+        queryExecutor.shutdownNow();
+        if (!queryExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+            LOGGER.warn("Query executor did not stop within timeout");
+        }
     }
 
     /**

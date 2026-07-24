@@ -42,6 +42,7 @@ class ClusterServiceTest {
 
     private static final AppConfig APP_CONFIG = new AppConfig(
             3, 4096, 1, 131072, 1, 1, 1,
+            2_147_483_648L, 4, 75, 64,
             null, false, null, null,
             "true", "/var/lib/hadoop-hdfs/socket/dn_socket",
             false, 1048576, 67108864, 60000L, "/data/parquet", null, 32010, 5701, 60,

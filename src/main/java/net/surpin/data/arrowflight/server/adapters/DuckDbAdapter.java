@@ -118,6 +118,8 @@ public final class DuckDbAdapter implements AutoCloseable {
     private void configureConnection(Connection conn) throws Exception {
         try (Statement s = conn.createStatement()) {
             s.execute("SET threads = " + appConfig.duckDbThreads());
+            s.execute("SET memory_limit = '"
+                    + appConfig.duckDbQueryMemoryLimitBytes() + "B'");
             String dataDir = appConfig.dataDir();
             if (dataDir != null) {
                 setArrayOptionIfPresent(s, "allowed_paths", dataDir);
@@ -265,6 +267,7 @@ public final class DuckDbAdapter implements AutoCloseable {
                 producerStarted.set(true);
                 VectorSchemaRoot held = null;
                 Exception terminalError = null;
+                boolean restoreInterrupt = false;
                 try {
                     while (!Thread.currentThread().isInterrupted()) {
                         if (cancelled.get()) {
@@ -297,7 +300,7 @@ public final class DuckDbAdapter implements AutoCloseable {
                         held = null;
                     }
                 } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
+                    restoreInterrupt = true;
                     if (!cancelled.get()) {
                         terminalError = e;
                     }
@@ -310,11 +313,14 @@ public final class DuckDbAdapter implements AutoCloseable {
                     if (!cancelled.get()) {
                         try {
                             readyQueue.put(new StreamChunk(null, terminalError, true));
-                        } catch (InterruptedException e) {
-                            Thread.currentThread().interrupt();
+                        } catch (InterruptedException interrupted) {
+                            restoreInterrupt = true;
                         }
                     }
                     producerStopped.countDown();
+                    if (restoreInterrupt) {
+                        Thread.currentThread().interrupt();
+                    }
                 }
             });
 
@@ -787,7 +793,6 @@ public final class DuckDbAdapter implements AutoCloseable {
             this.timeoutMillis = timeoutMillis;
             Runnable stateChangeHandler = stateChanged::release;
             listener.setOnReadyHandler(stateChangeHandler);
-            listener.setOnCancelHandler(stateChangeHandler);
         }
 
         /**

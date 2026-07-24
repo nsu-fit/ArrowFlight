@@ -85,7 +85,7 @@ class MultiRowGroupGroupByIntegrationTest {
 
         String handle = UUID.randomUUID().toString();
         cache.put(handle,
-                new HandleState("SELECT 1", new String[0], uri, 500L),
+                new HandleState("SELECT 1", new String[0], uri, 500L, null),
                 1, TimeUnit.SECONDS);
 
         long deadline = System.currentTimeMillis() + 5_000;

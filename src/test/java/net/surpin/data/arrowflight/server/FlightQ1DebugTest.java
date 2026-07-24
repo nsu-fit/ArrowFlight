@@ -131,7 +131,7 @@ class FlightQ1DebugTest {
 
         // Print the actual aggregated values
         System.out.println();
-        printResults(info, "Q1 partial aggregate results");
+        printResults(query, "Q1 partial aggregate results");
     }
 
     /**
@@ -180,7 +180,7 @@ class FlightQ1DebugTest {
         double totalTime = (System.nanoTime() - t0) / 1e9;
         System.out.println("RESULT: " + totalRows + " rows in " + String.format("%.3f s", totalTime));
 
-        printResults(info, "Simplified Q1 results");
+        printResults(query, "Simplified Q1 results");
     }
 
     /**
@@ -221,8 +221,9 @@ class FlightQ1DebugTest {
 
     // ── helpers ───────────────────────────────────────────────────────────
 
-    private void printResults(FlightInfo info, String label) throws Exception {
+    private void printResults(String query, String label) throws Exception {
         System.out.println("--- " + label + " ---");
+        FlightInfo info = sqlClient.execute(query);
         List<Map<String, Object>> rows = new ArrayList<>();
         for (FlightEndpoint ep : info.getEndpoints()) {
             try (FlightStream stream = helper.flightClient().getStream(ep.getTicket())) {

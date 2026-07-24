@@ -3,6 +3,8 @@ package net.surpin.data.arrowflight.server.services;
 import net.surpin.data.arrowflight.server.adapters.HostUtils;
 import net.surpin.data.arrowflight.server.adapters.ParquetAdapter;
 import net.surpin.data.arrowflight.server.model.FileAssignment;
+import net.surpin.data.arrowflight.server.model.CapacityExhaustedException;
+import net.surpin.data.arrowflight.server.model.ServerCapacity;
 import org.apache.arrow.flight.FlightEndpoint;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -74,6 +76,33 @@ class QueryPlannerTest {
     void pickServerThrowsOnEmptyLoad() {
         assertThrows(Exception.class, () ->
                 QueryPlanner.pickServer(Set.of(H1), Map.of()));
+    }
+
+    /** Verifies a free execution slot is preferred over lower logical load. */
+    @Test
+    void pickServerPrefersFreeSlotBeforeLoad() {
+        Map<String, Long> load = new LinkedHashMap<>();
+        load.put(S1, 10_000L);
+        load.put(S2, 0L);
+        Map<String, ServerCapacity> capacities = Map.of(
+                S1, ServerCapacity.empty(1, 64),
+                S2, new ServerCapacity(1, 0, 0, 1, 64, 0L, null, null));
+
+        assertEquals(S1, QueryPlanner.pickServer(
+                Set.of(H1, H2), load, capacities));
+    }
+
+    /** Verifies planning rejects candidates whose slots and queues are full. */
+    @Test
+    void pickServerRejectsFullQueues() {
+        Map<String, Long> load = Map.of(S1, 0L, S2, 0L);
+        Map<String, ServerCapacity> capacities = Map.of(
+                S1, new ServerCapacity(1, 2, 0, 1, 2, 2L, 0L, 1L),
+                S2, new ServerCapacity(1, 2, 0, 1, 2, 2L, 0L, 1L));
+
+        assertThrows(CapacityExhaustedException.class,
+                () -> QueryPlanner.pickServer(
+                        Set.of(H1, H2), load, capacities));
     }
 
     // ── groupFilesByServer ──────────────────────────────────────────────────
@@ -230,7 +259,9 @@ class QueryPlannerTest {
         assertEquals(1, ep.getLocations().size());
         assertEquals("grpc://127.0.0.1:32010",
                 ep.getLocations().get(0).getUri().toString());
-        verify(clusterService).storeHandle(anyString(), any());
+        verify(clusterService).reserveExecutions(argThat(requests ->
+                requests.size() == 1
+                        && requests.get(0).handleState().bytes() == 100L));
     }
 
     @Test
