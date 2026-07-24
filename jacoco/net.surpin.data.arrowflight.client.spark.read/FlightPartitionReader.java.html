@@ -118,78 +118,79 @@ public class FlightPartitionReader implements PartitionReader&lt;InternalRow&gt;
 <span class="nc" id="L118">    }</span>
 
     @Override
+    @SuppressWarnings(&quot;java:S3776&quot;) // Row iteration coordinates retry, stream, and batch state atomically.
     public boolean next() throws IOException {
-<span class="nc" id="L122">        LOGGER.debug(&quot;node={} spark=readerNext&quot;, NODE);</span>
-<span class="nc bnc" id="L123" title="All 2 branches missed.">        if (this.columnarMode) {</span>
-<span class="nc" id="L124">            throw new IllegalStateException(&quot;Cannot mix row and columnar iteration&quot;);</span>
+<span class="nc" id="L123">        LOGGER.debug(&quot;node={} spark=readerNext&quot;, NODE);</span>
+<span class="nc bnc" id="L124" title="All 2 branches missed.">        if (this.columnarMode) {</span>
+<span class="nc" id="L125">            throw new IllegalStateException(&quot;Cannot mix row and columnar iteration&quot;);</span>
         }
         try {
-<span class="nc bnc" id="L127" title="All 2 branches missed.">            if (stream == null) {</span>
-<span class="nc" id="L128">                readStartNanos = System.nanoTime();</span>
-<span class="nc" id="L129">                totalBatches = 0;</span>
-<span class="nc" id="L130">                totalRows = 0;</span>
-<span class="nc bnc" id="L131" title="All 2 branches missed.">                if (!openStream()) {</span>
-<span class="nc" id="L132">                    LOGGER.debug(&quot;node={} spark=readerNoData partition={}&quot;, NODE, inputPartition);</span>
-<span class="nc" id="L133">                    return false;</span>
+<span class="nc bnc" id="L128" title="All 2 branches missed.">            if (stream == null) {</span>
+<span class="nc" id="L129">                readStartNanos = System.nanoTime();</span>
+<span class="nc" id="L130">                totalBatches = 0;</span>
+<span class="nc" id="L131">                totalRows = 0;</span>
+<span class="nc bnc" id="L132" title="All 2 branches missed.">                if (!openStream()) {</span>
+<span class="nc" id="L133">                    LOGGER.debug(&quot;node={} spark=readerNoData partition={}&quot;, NODE, inputPartition);</span>
+<span class="nc" id="L134">                    return false;</span>
                 }
-<span class="nc" id="L135">                nextRetryCount = 0;</span>
+<span class="nc" id="L136">                nextRetryCount = 0;</span>
             }
 
             // move to next row in current batch
-<span class="nc" id="L139">            rowIdx++;</span>
-<span class="nc bnc" id="L140" title="All 2 branches missed.">            if (rowIdx &lt; batchRowCount) {</span>
-<span class="nc" id="L141">                hasCurrent = true;</span>
-<span class="nc" id="L142">                return true;</span>
+<span class="nc" id="L140">            rowIdx++;</span>
+<span class="nc bnc" id="L141" title="All 2 branches missed.">            if (rowIdx &lt; batchRowCount) {</span>
+<span class="nc" id="L142">                hasCurrent = true;</span>
+<span class="nc" id="L143">                return true;</span>
             }
 
-<span class="nc" id="L145">            LOGGER.debug(&quot;node={} spark=readerNextBatch&quot;, NODE);</span>
+<span class="nc" id="L146">            LOGGER.debug(&quot;node={} spark=readerNextBatch&quot;, NODE);</span>
             // current batch exhausted, try next batch
             while (true) {
                 try {
-<span class="nc bnc" id="L149" title="All 2 branches missed.">                    if (!stream.next()) {</span>
-<span class="nc" id="L150">                        break;</span>
+<span class="nc bnc" id="L150" title="All 2 branches missed.">                    if (!stream.next()) {</span>
+<span class="nc" id="L151">                        break;</span>
                     }
-<span class="nc" id="L152">                    root = stream.getRoot();</span>
-<span class="nc" id="L153">                    batchRowCount = root.getRowCount();</span>
-<span class="nc" id="L154">                    fields = Field.from(stream.getSchema());</span>
-<span class="nc" id="L155">                    rowIdx = 0;</span>
-<span class="nc" id="L156">                    totalBatches++;</span>
-<span class="nc" id="L157">                    totalRows += batchRowCount;</span>
-<span class="nc bnc" id="L158" title="All 2 branches missed.">                    if (totalBatches == 1) {</span>
-<span class="nc" id="L159">                        LOGGER.debug(&quot;node={} spark=ttfB batchRowCount={} elapsed={}&quot;,</span>
-<span class="nc" id="L160">                                NODE, batchRowCount, elapsedNanos(readStartNanos));</span>
+<span class="nc" id="L153">                    root = stream.getRoot();</span>
+<span class="nc" id="L154">                    batchRowCount = root.getRowCount();</span>
+<span class="nc" id="L155">                    fields = Field.from(stream.getSchema());</span>
+<span class="nc" id="L156">                    rowIdx = 0;</span>
+<span class="nc" id="L157">                    totalBatches++;</span>
+<span class="nc" id="L158">                    totalRows += batchRowCount;</span>
+<span class="nc bnc" id="L159" title="All 2 branches missed.">                    if (totalBatches == 1) {</span>
+<span class="nc" id="L160">                        LOGGER.debug(&quot;node={} spark=ttfB batchRowCount={} elapsed={}&quot;,</span>
+<span class="nc" id="L161">                                NODE, batchRowCount, elapsedNanos(readStartNanos));</span>
                     }
-<span class="nc bnc" id="L162" title="All 2 branches missed.">                    if (totalBatches % 10 == 0) {</span>
-<span class="nc" id="L163">                        LOGGER.debug(&quot;node={} spark=readerProgress batches={} rows={} elapsed={}&quot;,</span>
-<span class="nc" id="L164">                                NODE, totalBatches, totalRows, elapsedNanos(readStartNanos));</span>
+<span class="nc bnc" id="L163" title="All 2 branches missed.">                    if (totalBatches % 10 == 0) {</span>
+<span class="nc" id="L164">                        LOGGER.debug(&quot;node={} spark=readerProgress batches={} rows={} elapsed={}&quot;,</span>
+<span class="nc" id="L165">                                NODE, totalBatches, totalRows, elapsedNanos(readStartNanos));</span>
                     }
-<span class="nc" id="L166">                    nextRetryCount = 0;</span>
+<span class="nc" id="L167">                    nextRetryCount = 0;</span>
 
-<span class="nc bnc" id="L168" title="All 2 branches missed.">                    if (batchRowCount &gt; 0) {</span>
-<span class="nc" id="L169">                        hasCurrent = true;</span>
-<span class="nc" id="L170">                        return true;</span>
+<span class="nc bnc" id="L169" title="All 2 branches missed.">                    if (batchRowCount &gt; 0) {</span>
+<span class="nc" id="L170">                        hasCurrent = true;</span>
+<span class="nc" id="L171">                        return true;</span>
                     }
-<span class="nc" id="L172">                } catch (Exception midStreamError) {</span>
+<span class="nc" id="L173">                } catch (Exception midStreamError) {</span>
                     // Restarting this stream here would replay rows already returned from
                     // the partition. Let Spark retry the whole task with the retained ticket.
-<span class="nc" id="L175">                    LOGGER.warn(&quot;node={} spark=readerMidStreamError batches={} rows={} error='{}'&quot;,</span>
-<span class="nc" id="L176">                            NODE, totalBatches, totalRows, midStreamError.getMessage());</span>
-<span class="nc" id="L177">                    throw midStreamError;</span>
-<span class="nc" id="L178">                }</span>
+<span class="nc" id="L176">                    LOGGER.warn(&quot;node={} spark=readerMidStreamError batches={} rows={} error='{}'&quot;,</span>
+<span class="nc" id="L177">                            NODE, totalBatches, totalRows, midStreamError.getMessage());</span>
+<span class="nc" id="L178">                    throw midStreamError;</span>
+<span class="nc" id="L179">                }</span>
             }
 
-<span class="nc" id="L181">            LOGGER.debug(&quot;node={} spark=readerCompleted batches={} rows={} elapsed={}&quot;,</span>
-<span class="nc" id="L182">                    NODE, totalBatches, totalRows, elapsedNanos(readStartNanos));</span>
+<span class="nc" id="L182">            LOGGER.debug(&quot;node={} spark=readerCompleted batches={} rows={} elapsed={}&quot;,</span>
+<span class="nc" id="L183">                    NODE, totalBatches, totalRows, elapsedNanos(readStartNanos));</span>
             // no more batches
-<span class="nc" id="L184">            hasCurrent = false;</span>
-<span class="nc" id="L185">            closeStream();</span>
-<span class="nc" id="L186">            return false;</span>
+<span class="nc" id="L185">            hasCurrent = false;</span>
+<span class="nc" id="L186">            closeStream();</span>
+<span class="nc" id="L187">            return false;</span>
 
-<span class="nc" id="L188">        } catch (Exception e) {</span>
-<span class="nc" id="L189">            LOGGER.error(&quot;node={} spark=readerFailed batches={} rows={} error='{}'&quot;,</span>
-<span class="nc" id="L190">                    NODE, totalBatches, totalRows, e.getMessage(), e);</span>
-<span class="nc" id="L191">            closeStream();</span>
-<span class="nc" id="L192">            throw new IOException(e);</span>
+<span class="nc" id="L189">        } catch (Exception e) {</span>
+<span class="nc" id="L190">            LOGGER.error(&quot;node={} spark=readerFailed batches={} rows={} error='{}'&quot;,</span>
+<span class="nc" id="L191">                    NODE, totalBatches, totalRows, e.getMessage(), e);</span>
+<span class="nc" id="L192">            closeStream();</span>
+<span class="nc" id="L193">            throw new IOException(e);</span>
         }
     }
 
@@ -201,52 +202,52 @@ public class FlightPartitionReader implements PartitionReader&lt;InternalRow&gt;
      * @throws IOException on Flight stream failure
      */
     public boolean nextBatch() throws IOException {
-<span class="nc" id="L204">        this.columnarMode = true;</span>
+<span class="nc" id="L205">        this.columnarMode = true;</span>
         try {
-<span class="nc bnc" id="L206" title="All 2 branches missed.">            if (this.stream == null) {</span>
-<span class="nc" id="L207">                readStartNanos = System.nanoTime();</span>
-<span class="nc" id="L208">                totalBatches = 0;</span>
-<span class="nc" id="L209">                totalRows = 0;</span>
-<span class="nc bnc" id="L210" title="All 2 branches missed.">                if (!openStream()) {</span>
-<span class="nc" id="L211">                    return false;</span>
+<span class="nc bnc" id="L207" title="All 2 branches missed.">            if (this.stream == null) {</span>
+<span class="nc" id="L208">                readStartNanos = System.nanoTime();</span>
+<span class="nc" id="L209">                totalBatches = 0;</span>
+<span class="nc" id="L210">                totalRows = 0;</span>
+<span class="nc bnc" id="L211" title="All 2 branches missed.">                if (!openStream()) {</span>
+<span class="nc" id="L212">                    return false;</span>
                 }
             }
 
-<span class="nc bnc" id="L215" title="All 2 branches missed.">            if (this.firstColumnarBatch) {</span>
-<span class="nc" id="L216">                this.firstColumnarBatch = false;</span>
-<span class="nc bnc" id="L217" title="All 2 branches missed.">                if (this.batchRowCount &gt; 0) {</span>
-<span class="nc" id="L218">                    totalBatches++;</span>
-<span class="nc" id="L219">                    totalRows += this.batchRowCount;</span>
-<span class="nc" id="L220">                    LOGGER.debug(&quot;node={} spark=ttfB columnarBatchRowCount={} elapsed={}&quot;,</span>
-<span class="nc" id="L221">                            NODE, this.batchRowCount, elapsedNanos(readStartNanos));</span>
-<span class="nc" id="L222">                    return true;</span>
+<span class="nc bnc" id="L216" title="All 2 branches missed.">            if (this.firstColumnarBatch) {</span>
+<span class="nc" id="L217">                this.firstColumnarBatch = false;</span>
+<span class="nc bnc" id="L218" title="All 2 branches missed.">                if (this.batchRowCount &gt; 0) {</span>
+<span class="nc" id="L219">                    totalBatches++;</span>
+<span class="nc" id="L220">                    totalRows += this.batchRowCount;</span>
+<span class="nc" id="L221">                    LOGGER.debug(&quot;node={} spark=ttfB columnarBatchRowCount={} elapsed={}&quot;,</span>
+<span class="nc" id="L222">                            NODE, this.batchRowCount, elapsedNanos(readStartNanos));</span>
+<span class="nc" id="L223">                    return true;</span>
                 }
             }
 
-<span class="nc bnc" id="L226" title="All 2 branches missed.">            while (this.stream.next()) {</span>
-<span class="nc" id="L227">                this.root = this.stream.getRoot();</span>
-<span class="nc" id="L228">                this.batchRowCount = this.root.getRowCount();</span>
-<span class="nc" id="L229">                this.fields = Field.from(this.stream.getSchema());</span>
-<span class="nc" id="L230">                totalBatches++;</span>
-<span class="nc" id="L231">                totalRows += this.batchRowCount;</span>
-<span class="nc bnc" id="L232" title="All 2 branches missed.">                if (totalBatches % 10 == 0) {</span>
-<span class="nc" id="L233">                    LOGGER.debug(&quot;node={} spark=columnarProgress batches={} rows={} elapsed={}&quot;,</span>
-<span class="nc" id="L234">                            NODE, totalBatches, totalRows, elapsedNanos(readStartNanos));</span>
+<span class="nc bnc" id="L227" title="All 2 branches missed.">            while (this.stream.next()) {</span>
+<span class="nc" id="L228">                this.root = this.stream.getRoot();</span>
+<span class="nc" id="L229">                this.batchRowCount = this.root.getRowCount();</span>
+<span class="nc" id="L230">                this.fields = Field.from(this.stream.getSchema());</span>
+<span class="nc" id="L231">                totalBatches++;</span>
+<span class="nc" id="L232">                totalRows += this.batchRowCount;</span>
+<span class="nc bnc" id="L233" title="All 2 branches missed.">                if (totalBatches % 10 == 0) {</span>
+<span class="nc" id="L234">                    LOGGER.debug(&quot;node={} spark=columnarProgress batches={} rows={} elapsed={}&quot;,</span>
+<span class="nc" id="L235">                            NODE, totalBatches, totalRows, elapsedNanos(readStartNanos));</span>
                 }
-<span class="nc bnc" id="L236" title="All 2 branches missed.">                if (this.batchRowCount &gt; 0) {</span>
-<span class="nc" id="L237">                    return true;</span>
+<span class="nc bnc" id="L237" title="All 2 branches missed.">                if (this.batchRowCount &gt; 0) {</span>
+<span class="nc" id="L238">                    return true;</span>
                 }
             }
 
-<span class="nc" id="L241">            LOGGER.debug(&quot;node={} spark=columnarCompleted batches={} rows={} elapsed={}&quot;,</span>
-<span class="nc" id="L242">                    NODE, totalBatches, totalRows, elapsedNanos(readStartNanos));</span>
-<span class="nc" id="L243">            closeStream();</span>
-<span class="nc" id="L244">            return false;</span>
-<span class="nc" id="L245">        } catch (Exception e) {</span>
-<span class="nc" id="L246">            LOGGER.error(&quot;node={} spark=columnarFailed batches={} rows={} error='{}'&quot;,</span>
-<span class="nc" id="L247">                    NODE, totalBatches, totalRows, e.getMessage(), e);</span>
-<span class="nc" id="L248">            closeStream();</span>
-<span class="nc" id="L249">            throw new IOException(&quot;Error reading Arrow batch from Flight stream&quot;, e);</span>
+<span class="nc" id="L242">            LOGGER.debug(&quot;node={} spark=columnarCompleted batches={} rows={} elapsed={}&quot;,</span>
+<span class="nc" id="L243">                    NODE, totalBatches, totalRows, elapsedNanos(readStartNanos));</span>
+<span class="nc" id="L244">            closeStream();</span>
+<span class="nc" id="L245">            return false;</span>
+<span class="nc" id="L246">        } catch (Exception e) {</span>
+<span class="nc" id="L247">            LOGGER.error(&quot;node={} spark=columnarFailed batches={} rows={} error='{}'&quot;,</span>
+<span class="nc" id="L248">                    NODE, totalBatches, totalRows, e.getMessage(), e);</span>
+<span class="nc" id="L249">            closeStream();</span>
+<span class="nc" id="L250">            throw new IOException(&quot;Error reading Arrow batch from Flight stream&quot;, e);</span>
         }
     }
 
@@ -255,36 +256,36 @@ public class FlightPartitionReader implements PartitionReader&lt;InternalRow&gt;
      * to {@link #nextBatch()} or {@link #close()}.
      */
     public VectorSchemaRoot currentBatch() {
-<span class="nc bnc" id="L258" title="All 6 branches missed.">        if (!this.columnarMode || this.root == null || this.batchRowCount &lt;= 0) {</span>
-<span class="nc" id="L259">            throw new IllegalStateException(&quot;No current Arrow batch. Call nextBatch() first.&quot;);</span>
+<span class="nc bnc" id="L259" title="All 6 branches missed.">        if (!this.columnarMode || this.root == null || this.batchRowCount &lt;= 0) {</span>
+<span class="nc" id="L260">            throw new IllegalStateException(&quot;No current Arrow batch. Call nextBatch() first.&quot;);</span>
         }
-<span class="nc" id="L261">        return this.root;</span>
+<span class="nc" id="L262">        return this.root;</span>
     }
 
     @Override
     public InternalRow get() {
-<span class="nc" id="L266">        LOGGER.debug(&quot;FlightPartitionReader.get():&quot;);</span>
+<span class="nc" id="L267">        LOGGER.debug(&quot;FlightPartitionReader.get():&quot;);</span>
 
-<span class="nc bnc" id="L268" title="All 4 branches missed.">        if (!hasCurrent || root == null) {</span>
-<span class="nc" id="L269">            throw new IllegalStateException(&quot;No current row. Call next() first.&quot;);</span>
+<span class="nc bnc" id="L269" title="All 4 branches missed.">        if (!hasCurrent || root == null) {</span>
+<span class="nc" id="L270">            throw new IllegalStateException(&quot;No current row. Call next() first.&quot;);</span>
         }
 
-<span class="nc" id="L272">        List&lt;org.apache.arrow.vector.FieldVector&gt; fieldVectors = root.getFieldVectors();</span>
-<span class="nc" id="L273">        int numCols = fieldVectors.size();</span>
-<span class="nc" id="L274">        Object[] values = new Object[numCols];</span>
+<span class="nc" id="L273">        List&lt;org.apache.arrow.vector.FieldVector&gt; fieldVectors = root.getFieldVectors();</span>
+<span class="nc" id="L274">        int numCols = fieldVectors.size();</span>
+<span class="nc" id="L275">        Object[] values = new Object[numCols];</span>
 
-<span class="nc bnc" id="L276" title="All 4 branches missed.">        Field[] expectedFields = (sparkFields != null &amp;&amp; sparkFields.length == numCols) ? sparkFields : fields;</span>
-<span class="nc bnc" id="L277" title="All 2 branches missed.">        for (int col = 0; col &lt; numCols; col++) {</span>
-<span class="nc" id="L278">            values[col] = getValue(fieldVectors.get(col), rowIdx, expectedFields[col]);</span>
+<span class="nc bnc" id="L277" title="All 4 branches missed.">        Field[] expectedFields = (sparkFields != null &amp;&amp; sparkFields.length == numCols) ? sparkFields : fields;</span>
+<span class="nc bnc" id="L278" title="All 2 branches missed.">        for (int col = 0; col &lt; numCols; col++) {</span>
+<span class="nc" id="L279">            values[col] = getValue(fieldVectors.get(col), rowIdx, expectedFields[col]);</span>
         }
 
-<span class="nc" id="L281">        return new GenericInternalRow(values);</span>
+<span class="nc" id="L282">        return new GenericInternalRow(values);</span>
     }
 
     @Override
     public void close() {
-<span class="nc" id="L286">        closeStream();</span>
-<span class="nc" id="L287">    }</span>
+<span class="nc" id="L287">        closeStream();</span>
+<span class="nc" id="L288">    }</span>
 
     /**
      * Open the appropriate stream based on input partition type
@@ -292,13 +293,13 @@ public class FlightPartitionReader implements PartitionReader&lt;InternalRow&gt;
      * @throws Exception - if stream opening fails
      */
     private boolean openStream() throws Exception {
-<span class="nc bnc" id="L295" title="All 2 branches missed.">        if (this.inputPartition instanceof FlightInputPartition.FlightEndpointInputPartition) {</span>
-<span class="nc" id="L296">            return openEndpointStreamWithRetry((FlightInputPartition.FlightEndpointInputPartition) this.inputPartition);</span>
-<span class="nc bnc" id="L297" title="All 2 branches missed.">        } else if (this.inputPartition instanceof FlightInputPartition.FlightQueryInputPartition) {</span>
-<span class="nc" id="L298">            return openQueryStreamWithRetry((FlightInputPartition.FlightQueryInputPartition) this.inputPartition);</span>
+<span class="nc bnc" id="L296" title="All 2 branches missed.">        if (this.inputPartition instanceof FlightInputPartition.FlightEndpointInputPartition) {</span>
+<span class="nc" id="L297">            return openEndpointStreamWithRetry((FlightInputPartition.FlightEndpointInputPartition) this.inputPartition);</span>
+<span class="nc bnc" id="L298" title="All 2 branches missed.">        } else if (this.inputPartition instanceof FlightInputPartition.FlightQueryInputPartition) {</span>
+<span class="nc" id="L299">            return openQueryStreamWithRetry((FlightInputPartition.FlightQueryInputPartition) this.inputPartition);</span>
         } else {
-<span class="nc" id="L300">            LOGGER.error(&quot;FlightPartitionReader.openStream(): Unsupported partition, no data read: {}&quot;, this.inputPartition);</span>
-<span class="nc" id="L301">            return false;</span>
+<span class="nc" id="L301">            LOGGER.error(&quot;FlightPartitionReader.openStream(): Unsupported partition, no data read: {}&quot;, this.inputPartition);</span>
+<span class="nc" id="L302">            return false;</span>
         }
     }
 
@@ -309,24 +310,24 @@ public class FlightPartitionReader implements PartitionReader&lt;InternalRow&gt;
      * @throws Exception - if all retries fail
      */
     private boolean openEndpointStreamWithRetry(FlightInputPartition.FlightEndpointInputPartition dePartition) throws Exception {
-<span class="nc" id="L312">        int maxRetries = this.configuration.getMaxRetries();</span>
-<span class="nc" id="L313">        long backoffMs = this.configuration.getRetryBackoffMs();</span>
+<span class="nc" id="L313">        int maxRetries = this.configuration.getMaxRetries();</span>
+<span class="nc" id="L314">        long backoffMs = this.configuration.getRetryBackoffMs();</span>
 
-<span class="nc bnc" id="L315" title="All 2 branches missed.">        for (int attempt = 0; attempt &lt;= maxRetries; attempt++) {</span>
+<span class="nc bnc" id="L316" title="All 2 branches missed.">        for (int attempt = 0; attempt &lt;= maxRetries; attempt++) {</span>
             try {
-<span class="nc" id="L317">                closeStream();</span>
-<span class="nc" id="L318">                return openEndpointStream(dePartition);</span>
-<span class="nc" id="L319">            } catch (Exception e) {</span>
-<span class="nc" id="L320">                LOGGER.warn(&quot;Failed to open endpoint stream (attempt {} of {}): {}&quot;, attempt, maxRetries + 1, e.getMessage());</span>
-<span class="nc bnc" id="L321" title="All 2 branches missed.">                if (attempt &gt;= maxRetries) {</span>
-<span class="nc" id="L322">                    throw e;</span>
+<span class="nc" id="L318">                closeStream();</span>
+<span class="nc" id="L319">                return openEndpointStream(dePartition);</span>
+<span class="nc" id="L320">            } catch (Exception e) {</span>
+<span class="nc" id="L321">                LOGGER.warn(&quot;Failed to open endpoint stream (attempt {} of {}): {}&quot;, attempt, maxRetries + 1, e.getMessage());</span>
+<span class="nc bnc" id="L322" title="All 2 branches missed.">                if (attempt &gt;= maxRetries) {</span>
+<span class="nc" id="L323">                    throw e;</span>
                 }
-<span class="nc" id="L324">                long delay = backoffMs * (1L &lt;&lt; attempt);</span>
-<span class="nc" id="L325">                LOGGER.info(&quot;Retrying in {}ms&quot;, delay);</span>
-<span class="nc" id="L326">                Thread.sleep(delay);</span>
+<span class="nc" id="L325">                long delay = backoffMs * (1L &lt;&lt; attempt);</span>
+<span class="nc" id="L326">                LOGGER.info(&quot;Retrying in {}ms&quot;, delay);</span>
+<span class="nc" id="L327">                Thread.sleep(delay);</span>
             }
         }
-<span class="nc" id="L329">        return false;</span>
+<span class="nc" id="L330">        return false;</span>
     }
 
     /**
@@ -335,50 +336,51 @@ public class FlightPartitionReader implements PartitionReader&lt;InternalRow&gt;
      * @return - true if stream opened successfully
      * @throws Exception - if all retries and endpoints fail
      */
+    @SuppressWarnings(&quot;java:S3776&quot;) // Retry decisions intentionally remain beside endpoint failover state.
     private boolean openQueryStreamWithRetry(FlightInputPartition.FlightQueryInputPartition dqPartition) throws Exception {
-<span class="nc" id="L339">        int maxRetries = this.configuration.getMaxRetries();</span>
-<span class="nc" id="L340">        long backoffMs = this.configuration.getRetryBackoffMs();</span>
+<span class="nc" id="L341">        int maxRetries = this.configuration.getMaxRetries();</span>
+<span class="nc" id="L342">        long backoffMs = this.configuration.getRetryBackoffMs();</span>
 
-<span class="nc bnc" id="L342" title="All 2 branches missed.">        for (int attempt = 0; attempt &lt;= maxRetries; attempt++) {</span>
+<span class="nc bnc" id="L344" title="All 2 branches missed.">        for (int attempt = 0; attempt &lt;= maxRetries; attempt++) {</span>
             try {
-<span class="nc" id="L344">                closeStream();</span>
-<span class="nc" id="L345">                QueryEndpoints qeps = this.client.getQueryEndpoints(dqPartition.getQuery());</span>
-<span class="nc" id="L346">                LOGGER.debug(&quot;FlightPartitionReader.openQueryStream(): endpoints: {}&quot;, qeps);</span>
-<span class="nc bnc" id="L347" title="All 2 branches missed.">                if (qeps.getEndpoints().length == 0) {</span>
-<span class="nc" id="L348">                    return false;</span>
+<span class="nc" id="L346">                closeStream();</span>
+<span class="nc" id="L347">                QueryEndpoints qeps = this.client.getQueryEndpoints(dqPartition.getQuery());</span>
+<span class="nc" id="L348">                LOGGER.debug(&quot;FlightPartitionReader.openQueryStream(): endpoints: {}&quot;, qeps);</span>
+<span class="nc bnc" id="L349" title="All 2 branches missed.">                if (qeps.getEndpoints().length == 0) {</span>
+<span class="nc" id="L350">                    return false;</span>
                 }
 
                 // try each endpoint in sequence
-<span class="nc" id="L352">                Exception lastEpError = null;</span>
-<span class="nc bnc" id="L353" title="All 2 branches missed.">                for (int epIdx = 0; epIdx &lt; qeps.getEndpoints().length; epIdx++) {</span>
-<span class="nc" id="L354">                    Endpoint endpoint = qeps.getEndpoints()[epIdx];</span>
+<span class="nc" id="L354">                Exception lastEpError = null;</span>
+<span class="nc bnc" id="L355" title="All 2 branches missed.">                for (int epIdx = 0; epIdx &lt; qeps.getEndpoints().length; epIdx++) {</span>
+<span class="nc" id="L356">                    Endpoint endpoint = qeps.getEndpoints()[epIdx];</span>
                     try {
-<span class="nc bnc" id="L356" title="All 2 branches missed.">                        if (openSingleEndpoint(endpoint, qeps.getSchema())) {</span>
-<span class="nc" id="L357">                            return true;</span>
+<span class="nc bnc" id="L358" title="All 2 branches missed.">                        if (openSingleEndpoint(endpoint, qeps.getSchema())) {</span>
+<span class="nc" id="L359">                            return true;</span>
                         }
-<span class="nc" id="L359">                    } catch (Exception epErr) {</span>
-<span class="nc" id="L360">                        lastEpError = epErr;</span>
-<span class="nc" id="L361">                        LOGGER.warn(&quot;Failed to open query endpoint {} of {}: {}&quot;, epIdx + 1, qeps.getEndpoints().length, epErr.getMessage());</span>
-<span class="nc" id="L362">                    }</span>
+<span class="nc" id="L361">                    } catch (Exception epErr) {</span>
+<span class="nc" id="L362">                        lastEpError = epErr;</span>
+<span class="nc" id="L363">                        LOGGER.warn(&quot;Failed to open query endpoint {} of {}: {}&quot;, epIdx + 1, qeps.getEndpoints().length, epErr.getMessage());</span>
+<span class="nc" id="L364">                    }</span>
                 }
 
-<span class="nc bnc" id="L365" title="All 2 branches missed.">                if (lastEpError instanceof RuntimeException) {</span>
-<span class="nc" id="L366">                    throw lastEpError;</span>
+<span class="nc bnc" id="L367" title="All 2 branches missed.">                if (lastEpError instanceof RuntimeException) {</span>
+<span class="nc" id="L368">                    throw lastEpError;</span>
                 }
-<span class="nc bnc" id="L368" title="All 2 branches missed.">                if (lastEpError != null) {</span>
-<span class="nc" id="L369">                    throw lastEpError;</span>
+<span class="nc bnc" id="L370" title="All 2 branches missed.">                if (lastEpError != null) {</span>
+<span class="nc" id="L371">                    throw lastEpError;</span>
                 }
-<span class="nc" id="L371">            } catch (Exception e) {</span>
-<span class="nc" id="L372">                LOGGER.warn(&quot;Failed to open query stream (attempt {} of {}): {}&quot;, attempt, maxRetries + 1, e.getMessage());</span>
-<span class="nc bnc" id="L373" title="All 2 branches missed.">                if (attempt &gt;= maxRetries) {</span>
-<span class="nc" id="L374">                    throw e;</span>
+<span class="nc" id="L373">            } catch (Exception e) {</span>
+<span class="nc" id="L374">                LOGGER.warn(&quot;Failed to open query stream (attempt {} of {}): {}&quot;, attempt, maxRetries + 1, e.getMessage());</span>
+<span class="nc bnc" id="L375" title="All 2 branches missed.">                if (attempt &gt;= maxRetries) {</span>
+<span class="nc" id="L376">                    throw e;</span>
                 }
-<span class="nc" id="L376">                long delay = backoffMs * (1L &lt;&lt; attempt);</span>
-<span class="nc" id="L377">                LOGGER.info(&quot;Retrying in {}ms&quot;, delay);</span>
-<span class="nc" id="L378">                Thread.sleep(delay);</span>
-<span class="nc" id="L379">            }</span>
+<span class="nc" id="L378">                long delay = backoffMs * (1L &lt;&lt; attempt);</span>
+<span class="nc" id="L379">                LOGGER.info(&quot;Retrying in {}ms&quot;, delay);</span>
+<span class="nc" id="L380">                Thread.sleep(delay);</span>
+<span class="nc" id="L381">            }</span>
         }
-<span class="nc" id="L381">        return false;</span>
+<span class="nc" id="L383">        return false;</span>
     }
 
     /**
@@ -389,24 +391,24 @@ public class FlightPartitionReader implements PartitionReader&lt;InternalRow&gt;
      * @throws Exception - if connection fails
      */
     private boolean openSingleEndpoint(Endpoint endpoint, Schema schema) throws Exception {
-<span class="nc" id="L392">        org.apache.arrow.flight.FlightEndpoint fep = new org.apache.arrow.flight.FlightEndpoint(</span>
-<span class="nc" id="L393">                new org.apache.arrow.flight.Ticket(endpoint.getTicket()),</span>
-<span class="nc" id="L394">                Arrays.stream(endpoint.getURIs())</span>
-<span class="nc" id="L395">                        .map(org.apache.arrow.flight.Location::new)</span>
-<span class="nc" id="L396">                        .toArray(org.apache.arrow.flight.Location[]::new)</span>
+<span class="nc" id="L394">        org.apache.arrow.flight.FlightEndpoint fep = new org.apache.arrow.flight.FlightEndpoint(</span>
+<span class="nc" id="L395">                new org.apache.arrow.flight.Ticket(endpoint.getTicket()),</span>
+<span class="nc" id="L396">                Arrays.stream(endpoint.getURIs())</span>
+<span class="nc" id="L397">                        .map(org.apache.arrow.flight.Location::new)</span>
+<span class="nc" id="L398">                        .toArray(org.apache.arrow.flight.Location[]::new)</span>
         );
 
-<span class="nc" id="L399">        this.stream = this.client.openStream(fep);</span>
-<span class="nc" id="L400">        this.root = stream.getRoot();</span>
-<span class="nc" id="L401">        this.fields = Field.from(schema);</span>
-<span class="nc" id="L402">        this.sparkFields = this.fields;</span>
-<span class="nc" id="L403">        this.rowIdx = -1;</span>
-<span class="nc" id="L404">        this.batchRowCount = 0;</span>
+<span class="nc" id="L401">        this.stream = this.client.openStream(fep);</span>
+<span class="nc" id="L402">        this.root = stream.getRoot();</span>
+<span class="nc" id="L403">        this.fields = Field.from(schema);</span>
+<span class="nc" id="L404">        this.sparkFields = this.fields;</span>
+<span class="nc" id="L405">        this.rowIdx = -1;</span>
+<span class="nc" id="L406">        this.batchRowCount = 0;</span>
 
-<span class="nc bnc" id="L406" title="All 2 branches missed.">        if (stream.next()) {</span>
-<span class="nc" id="L407">            batchRowCount = root.getRowCount();</span>
+<span class="nc bnc" id="L408" title="All 2 branches missed.">        if (stream.next()) {</span>
+<span class="nc" id="L409">            batchRowCount = root.getRowCount();</span>
         }
-<span class="nc bnc" id="L409" title="All 2 branches missed.">        return batchRowCount &gt; 0;</span>
+<span class="nc bnc" id="L411" title="All 2 branches missed.">        return batchRowCount &gt; 0;</span>
     }
 
     /**
@@ -414,26 +416,26 @@ public class FlightPartitionReader implements PartitionReader&lt;InternalRow&gt;
      * Reconnects from the beginning of the partition.
      */
     private boolean reopenStream() {
-<span class="nc bnc" id="L417" title="All 2 branches missed.">        if (nextRetryCount &gt;= MAX_NEXT_RETRIES) {</span>
-<span class="nc" id="L418">            LOGGER.error(&quot;Max mid-stream retries ({}) exceeded&quot;, MAX_NEXT_RETRIES);</span>
-<span class="nc" id="L419">            return false;</span>
+<span class="nc bnc" id="L419" title="All 2 branches missed.">        if (nextRetryCount &gt;= MAX_NEXT_RETRIES) {</span>
+<span class="nc" id="L420">            LOGGER.error(&quot;Max mid-stream retries ({}) exceeded&quot;, MAX_NEXT_RETRIES);</span>
+<span class="nc" id="L421">            return false;</span>
         }
-<span class="nc" id="L421">        nextRetryCount++;</span>
-<span class="nc" id="L422">        long delay = BACKOFF_BASE_MS * (1L &lt;&lt; (nextRetryCount - 1));</span>
-<span class="nc" id="L423">        LOGGER.info(&quot;Reopening stream after mid-stream failure, retry {}/{}, waiting {}ms&quot;,</span>
-<span class="nc" id="L424">                nextRetryCount, MAX_NEXT_RETRIES, delay);</span>
+<span class="nc" id="L423">        nextRetryCount++;</span>
+<span class="nc" id="L424">        long delay = BACKOFF_BASE_MS * (1L &lt;&lt; (nextRetryCount - 1));</span>
+<span class="nc" id="L425">        LOGGER.info(&quot;Reopening stream after mid-stream failure, retry {}/{}, waiting {}ms&quot;,</span>
+<span class="nc" id="L426">                nextRetryCount, MAX_NEXT_RETRIES, delay);</span>
         try {
-<span class="nc" id="L426">            Thread.sleep(delay);</span>
-<span class="nc" id="L427">        } catch (InterruptedException e) {</span>
-<span class="nc" id="L428">            Thread.currentThread().interrupt();</span>
-<span class="nc" id="L429">            return false;</span>
-<span class="nc" id="L430">        }</span>
-<span class="nc" id="L431">        closeStream();</span>
+<span class="nc" id="L428">            Thread.sleep(delay);</span>
+<span class="nc" id="L429">        } catch (InterruptedException e) {</span>
+<span class="nc" id="L430">            Thread.currentThread().interrupt();</span>
+<span class="nc" id="L431">            return false;</span>
+<span class="nc" id="L432">        }</span>
+<span class="nc" id="L433">        closeStream();</span>
         try {
-<span class="nc" id="L433">            return openStream();</span>
-<span class="nc" id="L434">        } catch (Exception e) {</span>
-<span class="nc" id="L435">            LOGGER.error(&quot;Reopen stream failed: {}&quot;, e.getMessage());</span>
-<span class="nc" id="L436">            return false;</span>
+<span class="nc" id="L435">            return openStream();</span>
+<span class="nc" id="L436">        } catch (Exception e) {</span>
+<span class="nc" id="L437">            LOGGER.error(&quot;Reopen stream failed: {}&quot;, e.getMessage());</span>
+<span class="nc" id="L438">            return false;</span>
         }
     }
 
@@ -444,35 +446,35 @@ public class FlightPartitionReader implements PartitionReader&lt;InternalRow&gt;
      * @throws Exception - if stream opening fails
      */
     private boolean openEndpointStream(FlightInputPartition.FlightEndpointInputPartition dePartition) throws Exception {
-<span class="nc" id="L447">        Endpoint endpoint = dePartition.getEndpoint();</span>
-<span class="nc" id="L448">        Schema schema = dePartition.getSchema();</span>
-<span class="nc" id="L449">        String ticketHex = bytesToHex(endpoint.getTicket());</span>
-<span class="nc" id="L450">        String uris = Arrays.toString(endpoint.getURIs());</span>
-<span class="nc" id="L451">        LOGGER.debug(&quot;node={} spark=openEndpointStream ticket={} uris={}&quot;,</span>
+<span class="nc" id="L449">        Endpoint endpoint = dePartition.getEndpoint();</span>
+<span class="nc" id="L450">        Schema schema = dePartition.getSchema();</span>
+<span class="nc" id="L451">        String ticketHex = bytesToHex(endpoint.getTicket());</span>
+<span class="nc" id="L452">        String uris = Arrays.toString(endpoint.getURIs());</span>
+<span class="nc" id="L453">        LOGGER.debug(&quot;node={} spark=openEndpointStream ticket={} uris={}&quot;,</span>
                 NODE, ticketHex, uris);
 
-<span class="nc" id="L454">        org.apache.arrow.flight.FlightEndpoint fep = new org.apache.arrow.flight.FlightEndpoint(</span>
-<span class="nc" id="L455">                new org.apache.arrow.flight.Ticket(endpoint.getTicket()),</span>
-<span class="nc" id="L456">                Arrays.stream(endpoint.getURIs())</span>
-<span class="nc" id="L457">                        .map(org.apache.arrow.flight.Location::new)</span>
-<span class="nc" id="L458">                        .toArray(org.apache.arrow.flight.Location[]::new)</span>
+<span class="nc" id="L456">        org.apache.arrow.flight.FlightEndpoint fep = new org.apache.arrow.flight.FlightEndpoint(</span>
+<span class="nc" id="L457">                new org.apache.arrow.flight.Ticket(endpoint.getTicket()),</span>
+<span class="nc" id="L458">                Arrays.stream(endpoint.getURIs())</span>
+<span class="nc" id="L459">                        .map(org.apache.arrow.flight.Location::new)</span>
+<span class="nc" id="L460">                        .toArray(org.apache.arrow.flight.Location[]::new)</span>
         );
 
-<span class="nc" id="L461">        this.stream = this.client.openStream(fep);</span>
-<span class="nc" id="L462">        this.root = stream.getRoot();</span>
-<span class="nc" id="L463">        this.fields = Field.from(schema);</span>
-<span class="nc" id="L464">        this.sparkFields = this.fields;  // FlightInfo schema = what Spark's codegen expects</span>
-<span class="nc" id="L465">        this.rowIdx = -1;</span>
-<span class="nc" id="L466">        this.batchRowCount = 0;</span>
+<span class="nc" id="L463">        this.stream = this.client.openStream(fep);</span>
+<span class="nc" id="L464">        this.root = stream.getRoot();</span>
+<span class="nc" id="L465">        this.fields = Field.from(schema);</span>
+<span class="nc" id="L466">        this.sparkFields = this.fields;  // FlightInfo schema = what Spark's codegen expects</span>
+<span class="nc" id="L467">        this.rowIdx = -1;</span>
+<span class="nc" id="L468">        this.batchRowCount = 0;</span>
 
         // try first batch
-<span class="nc bnc" id="L469" title="All 2 branches missed.">        if (stream.next()) {</span>
-<span class="nc" id="L470">            batchRowCount = root.getRowCount();</span>
+<span class="nc bnc" id="L471" title="All 2 branches missed.">        if (stream.next()) {</span>
+<span class="nc" id="L472">            batchRowCount = root.getRowCount();</span>
         }
 
-<span class="nc" id="L473">        LOGGER.debug(&quot;node={} spark=endpointStreamOpened ticket={} firstBatchRowCount={}&quot;,</span>
-<span class="nc" id="L474">                NODE, ticketHex, batchRowCount);</span>
-<span class="nc" id="L475">        return true;</span>
+<span class="nc" id="L475">        LOGGER.debug(&quot;node={} spark=endpointStreamOpened ticket={} firstBatchRowCount={}&quot;,</span>
+<span class="nc" id="L476">                NODE, ticketHex, batchRowCount);</span>
+<span class="nc" id="L477">        return true;</span>
     }
 
     /**
@@ -480,21 +482,21 @@ public class FlightPartitionReader implements PartitionReader&lt;InternalRow&gt;
      */
     private void closeStream() {
         try {
-<span class="nc bnc" id="L483" title="All 2 branches missed.">            if (stream != null) {</span>
-<span class="nc" id="L484">                stream.close();</span>
+<span class="nc bnc" id="L485" title="All 2 branches missed.">            if (stream != null) {</span>
+<span class="nc" id="L486">                stream.close();</span>
             }
-<span class="nc" id="L486">        } catch (Exception e) {</span>
-<span class="nc" id="L487">            LoggerFactory.getLogger(this.getClass()).warn(&quot;Error closing Flight stream: &quot; + e.getMessage());</span>
+<span class="nc" id="L488">        } catch (Exception e) {</span>
+<span class="nc" id="L489">            LoggerFactory.getLogger(this.getClass()).warn(&quot;Error closing Flight stream: &quot; + e.getMessage());</span>
         } finally {
-<span class="nc" id="L489">            stream = null;</span>
-<span class="nc" id="L490">            root = null;</span>
-<span class="nc" id="L491">            fields = null;</span>
-<span class="nc" id="L492">            sparkFields = null;</span>
-<span class="nc" id="L493">            batchRowCount = 0;</span>
-<span class="nc" id="L494">            rowIdx = 0;</span>
-<span class="nc" id="L495">            hasCurrent = false;</span>
+<span class="nc" id="L491">            stream = null;</span>
+<span class="nc" id="L492">            root = null;</span>
+<span class="nc" id="L493">            fields = null;</span>
+<span class="nc" id="L494">            sparkFields = null;</span>
+<span class="nc" id="L495">            batchRowCount = 0;</span>
+<span class="nc" id="L496">            rowIdx = 0;</span>
+<span class="nc" id="L497">            hasCurrent = false;</span>
         }
-<span class="nc" id="L497">    }</span>
+<span class="nc" id="L499">    }</span>
 
     /**
      * Extract a single value from a FieldVector at the given row index,
@@ -505,271 +507,272 @@ public class FlightPartitionReader implements PartitionReader&lt;InternalRow&gt;
      * @return - the Spark-compatible value, or null if the field is null
      */
     private static Object getValue(org.apache.arrow.vector.FieldVector vector, int rowIndex, Field field) {
-<span class="nc bnc" id="L508" title="All 2 branches missed.">        if (vector.isNull(rowIndex)) {</span>
-<span class="nc" id="L509">            return null;</span>
+<span class="nc bnc" id="L510" title="All 2 branches missed.">        if (vector.isNull(rowIndex)) {</span>
+<span class="nc" id="L511">            return null;</span>
         }
 
         Object result;
-<span class="nc" id="L513">        result = extractInt(vector, rowIndex, field);</span>
-<span class="nc bnc" id="L514" title="All 2 branches missed.">        if (result != null) {</span>
-<span class="nc" id="L515">            return result;</span>
+<span class="nc" id="L515">        result = extractInt(vector, rowIndex, field);</span>
+<span class="nc bnc" id="L516" title="All 2 branches missed.">        if (result != null) {</span>
+<span class="nc" id="L517">            return result;</span>
         }
-<span class="nc" id="L517">        result = extractFloat(vector, rowIndex);</span>
-<span class="nc bnc" id="L518" title="All 2 branches missed.">        if (result != null) {</span>
-<span class="nc" id="L519">            return result;</span>
+<span class="nc" id="L519">        result = extractFloat(vector, rowIndex);</span>
+<span class="nc bnc" id="L520" title="All 2 branches missed.">        if (result != null) {</span>
+<span class="nc" id="L521">            return result;</span>
         }
-<span class="nc" id="L521">        result = extractDecimal(vector, rowIndex, field);</span>
-<span class="nc bnc" id="L522" title="All 2 branches missed.">        if (result != null) {</span>
-<span class="nc" id="L523">            return result;</span>
+<span class="nc" id="L523">        result = extractDecimal(vector, rowIndex, field);</span>
+<span class="nc bnc" id="L524" title="All 2 branches missed.">        if (result != null) {</span>
+<span class="nc" id="L525">            return result;</span>
         }
-<span class="nc" id="L525">        result = extractString(vector, rowIndex);</span>
-<span class="nc bnc" id="L526" title="All 2 branches missed.">        if (result != null) {</span>
-<span class="nc" id="L527">            return result;</span>
+<span class="nc" id="L527">        result = extractString(vector, rowIndex);</span>
+<span class="nc bnc" id="L528" title="All 2 branches missed.">        if (result != null) {</span>
+<span class="nc" id="L529">            return result;</span>
         }
-<span class="nc bnc" id="L529" title="All 2 branches missed.">        if (vector instanceof BitVector bitVector) {</span>
-<span class="nc bnc" id="L530" title="All 2 branches missed.">            return bitVector.get(rowIndex) != 0;</span>
+<span class="nc bnc" id="L531" title="All 2 branches missed.">        if (vector instanceof BitVector bitVector) {</span>
+<span class="nc bnc" id="L532" title="All 2 branches missed.">            return bitVector.get(rowIndex) != 0;</span>
         }
-<span class="nc" id="L532">        result = extractDate(vector, rowIndex);</span>
-<span class="nc bnc" id="L533" title="All 2 branches missed.">        if (result != null) {</span>
-<span class="nc" id="L534">            return result;</span>
+<span class="nc" id="L534">        result = extractDate(vector, rowIndex);</span>
+<span class="nc bnc" id="L535" title="All 2 branches missed.">        if (result != null) {</span>
+<span class="nc" id="L536">            return result;</span>
         }
-<span class="nc" id="L536">        result = extractTime(vector, rowIndex);</span>
-<span class="nc bnc" id="L537" title="All 2 branches missed.">        if (result != null) {</span>
-<span class="nc" id="L538">            return result;</span>
+<span class="nc" id="L538">        result = extractTime(vector, rowIndex);</span>
+<span class="nc bnc" id="L539" title="All 2 branches missed.">        if (result != null) {</span>
+<span class="nc" id="L540">            return result;</span>
         }
-<span class="nc" id="L540">        result = extractTimestamp(vector, rowIndex);</span>
-<span class="nc bnc" id="L541" title="All 2 branches missed.">        if (result != null) {</span>
-<span class="nc" id="L542">            return result;</span>
+<span class="nc" id="L542">        result = extractTimestamp(vector, rowIndex);</span>
+<span class="nc bnc" id="L543" title="All 2 branches missed.">        if (result != null) {</span>
+<span class="nc" id="L544">            return result;</span>
         }
-<span class="nc" id="L544">        result = extractBinary(vector, rowIndex);</span>
-<span class="nc bnc" id="L545" title="All 2 branches missed.">        if (result != null) {</span>
-<span class="nc" id="L546">            return result;</span>
+<span class="nc" id="L546">        result = extractBinary(vector, rowIndex);</span>
+<span class="nc bnc" id="L547" title="All 2 branches missed.">        if (result != null) {</span>
+<span class="nc" id="L548">            return result;</span>
         }
-<span class="nc" id="L548">        result = extractUInt(vector, rowIndex);</span>
-<span class="nc bnc" id="L549" title="All 2 branches missed.">        if (result != null) {</span>
-<span class="nc" id="L550">            return result;</span>
+<span class="nc" id="L550">        result = extractUInt(vector, rowIndex);</span>
+<span class="nc bnc" id="L551" title="All 2 branches missed.">        if (result != null) {</span>
+<span class="nc" id="L552">            return result;</span>
         }
-<span class="nc" id="L552">        result = extractInterval(vector, rowIndex);</span>
-<span class="nc bnc" id="L553" title="All 2 branches missed.">        if (result != null) {</span>
-<span class="nc" id="L554">            return result;</span>
+<span class="nc" id="L554">        result = extractInterval(vector, rowIndex);</span>
+<span class="nc bnc" id="L555" title="All 2 branches missed.">        if (result != null) {</span>
+<span class="nc" id="L556">            return result;</span>
         }
-<span class="nc bnc" id="L556" title="All 2 branches missed.">        if (vector instanceof NullVector) {</span>
-<span class="nc" id="L557">            return null;</span>
+<span class="nc bnc" id="L558" title="All 2 branches missed.">        if (vector instanceof NullVector) {</span>
+<span class="nc" id="L559">            return null;</span>
         }
-<span class="nc" id="L559">        return vector.getObject(rowIndex);</span>
+<span class="nc" id="L561">        return vector.getObject(rowIndex);</span>
     }
 
+    @SuppressWarnings(&quot;java:S3776&quot;) // Exact-width Arrow integer vectors require explicit conversions.
     private static Object extractInt(
             org.apache.arrow.vector.FieldVector vector, int rowIndex, Field field) {
-<span class="nc bnc" id="L564" title="All 2 branches missed.">        if (vector instanceof TinyIntVector vec) {</span>
-<span class="nc" id="L565">            byte b = vec.get(rowIndex);</span>
-<span class="nc bnc" id="L566" title="All 2 branches missed.">            if (field != null) {</span>
-<span class="nc bnc" id="L567" title="All 4 branches missed.">                switch (field.getType().getTypeID()) {</span>
-<span class="nc" id="L568">                    case INT:   return (int) b;</span>
-<span class="nc" id="L569">                    case SHORT: return (short) b;</span>
-<span class="nc" id="L570">                    case LONG: case BIGINT: return (long) b;</span>
+<span class="nc bnc" id="L567" title="All 2 branches missed.">        if (vector instanceof TinyIntVector vec) {</span>
+<span class="nc" id="L568">            byte b = vec.get(rowIndex);</span>
+<span class="nc bnc" id="L569" title="All 2 branches missed.">            if (field != null) {</span>
+<span class="nc bnc" id="L570" title="All 4 branches missed.">                switch (field.getType().getTypeID()) {</span>
+<span class="nc" id="L571">                    case INT:   return (int) b;</span>
+<span class="nc" id="L572">                    case SHORT: return (short) b;</span>
+<span class="nc" id="L573">                    case LONG: case BIGINT: return (long) b;</span>
                     default: break;
                 }
             }
-<span class="nc" id="L574">            return b;</span>
+<span class="nc" id="L577">            return b;</span>
         }
-<span class="nc bnc" id="L576" title="All 2 branches missed.">        if (vector instanceof SmallIntVector vec) {</span>
-<span class="nc" id="L577">            short s = vec.get(rowIndex);</span>
-<span class="nc bnc" id="L578" title="All 2 branches missed.">            if (field != null) {</span>
-<span class="nc bnc" id="L579" title="All 3 branches missed.">                switch (field.getType().getTypeID()) {</span>
-<span class="nc" id="L580">                    case INT:   return (int) s;</span>
-<span class="nc" id="L581">                    case LONG: case BIGINT: return (long) s;</span>
+<span class="nc bnc" id="L579" title="All 2 branches missed.">        if (vector instanceof SmallIntVector vec) {</span>
+<span class="nc" id="L580">            short s = vec.get(rowIndex);</span>
+<span class="nc bnc" id="L581" title="All 2 branches missed.">            if (field != null) {</span>
+<span class="nc bnc" id="L582" title="All 3 branches missed.">                switch (field.getType().getTypeID()) {</span>
+<span class="nc" id="L583">                    case INT:   return (int) s;</span>
+<span class="nc" id="L584">                    case LONG: case BIGINT: return (long) s;</span>
                     default: break;
                 }
             }
-<span class="nc" id="L585">            return s;</span>
+<span class="nc" id="L588">            return s;</span>
         }
-<span class="nc bnc" id="L587" title="All 2 branches missed.">        if (vector instanceof IntVector vec) {</span>
-<span class="nc" id="L588">            int i = vec.get(rowIndex);</span>
-<span class="nc bnc" id="L589" title="All 2 branches missed.">            if (field != null) {</span>
-<span class="nc bnc" id="L590" title="All 4 branches missed.">                switch (field.getType().getTypeID()) {</span>
-<span class="nc" id="L591">                    case LONG: case BIGINT: return (long) i;</span>
-<span class="nc" id="L592">                    case SHORT: return (short) i;</span>
-<span class="nc" id="L593">                    case BYTE:  return (byte) i;</span>
+<span class="nc bnc" id="L590" title="All 2 branches missed.">        if (vector instanceof IntVector vec) {</span>
+<span class="nc" id="L591">            int i = vec.get(rowIndex);</span>
+<span class="nc bnc" id="L592" title="All 2 branches missed.">            if (field != null) {</span>
+<span class="nc bnc" id="L593" title="All 4 branches missed.">                switch (field.getType().getTypeID()) {</span>
+<span class="nc" id="L594">                    case LONG: case BIGINT: return (long) i;</span>
+<span class="nc" id="L595">                    case SHORT: return (short) i;</span>
+<span class="nc" id="L596">                    case BYTE:  return (byte) i;</span>
                     default: break;
                 }
             }
-<span class="nc" id="L597">            return i;</span>
+<span class="nc" id="L600">            return i;</span>
         }
-<span class="nc bnc" id="L599" title="All 2 branches missed.">        if (vector instanceof BigIntVector vec) {</span>
-<span class="nc" id="L600">            return vec.get(rowIndex);</span>
+<span class="nc bnc" id="L602" title="All 2 branches missed.">        if (vector instanceof BigIntVector vec) {</span>
+<span class="nc" id="L603">            return vec.get(rowIndex);</span>
         }
-<span class="nc" id="L602">        return null;</span>
+<span class="nc" id="L605">        return null;</span>
     }
 
     private static Object extractFloat(
             org.apache.arrow.vector.FieldVector vector, int rowIndex) {
-<span class="nc bnc" id="L607" title="All 2 branches missed.">        if (vector instanceof Float4Vector vec) {</span>
-<span class="nc" id="L608">            return vec.get(rowIndex);</span>
-        }
-<span class="nc bnc" id="L610" title="All 2 branches missed.">        if (vector instanceof Float8Vector vec) {</span>
+<span class="nc bnc" id="L610" title="All 2 branches missed.">        if (vector instanceof Float4Vector vec) {</span>
 <span class="nc" id="L611">            return vec.get(rowIndex);</span>
         }
-<span class="nc" id="L613">        return null;</span>
+<span class="nc bnc" id="L613" title="All 2 branches missed.">        if (vector instanceof Float8Vector vec) {</span>
+<span class="nc" id="L614">            return vec.get(rowIndex);</span>
+        }
+<span class="nc" id="L616">        return null;</span>
     }
 
     private static Object extractDecimal(
             org.apache.arrow.vector.FieldVector vector, int rowIndex, Field field) {
-<span class="nc bnc" id="L618" title="All 2 branches missed.">        if (vector instanceof DecimalVector vec) {</span>
-<span class="nc" id="L619">            return toSparkDecimal(vec.getObject(rowIndex), field);</span>
-        }
-<span class="nc bnc" id="L621" title="All 2 branches missed.">        if (vector instanceof Decimal256Vector vec) {</span>
+<span class="nc bnc" id="L621" title="All 2 branches missed.">        if (vector instanceof DecimalVector vec) {</span>
 <span class="nc" id="L622">            return toSparkDecimal(vec.getObject(rowIndex), field);</span>
         }
-<span class="nc" id="L624">        return null;</span>
+<span class="nc bnc" id="L624" title="All 2 branches missed.">        if (vector instanceof Decimal256Vector vec) {</span>
+<span class="nc" id="L625">            return toSparkDecimal(vec.getObject(rowIndex), field);</span>
+        }
+<span class="nc" id="L627">        return null;</span>
     }
 
     private static Object extractString(
             org.apache.arrow.vector.FieldVector vector, int rowIndex) {
-<span class="nc bnc" id="L629" title="All 2 branches missed.">        if (vector instanceof VarCharVector vec) {</span>
-<span class="nc" id="L630">            return UTF8String.fromString(vec.getObject(rowIndex).toString());</span>
-        }
-<span class="nc bnc" id="L632" title="All 2 branches missed.">        if (vector instanceof LargeVarCharVector vec) {</span>
+<span class="nc bnc" id="L632" title="All 2 branches missed.">        if (vector instanceof VarCharVector vec) {</span>
 <span class="nc" id="L633">            return UTF8String.fromString(vec.getObject(rowIndex).toString());</span>
         }
-<span class="nc" id="L635">        return null;</span>
+<span class="nc bnc" id="L635" title="All 2 branches missed.">        if (vector instanceof LargeVarCharVector vec) {</span>
+<span class="nc" id="L636">            return UTF8String.fromString(vec.getObject(rowIndex).toString());</span>
+        }
+<span class="nc" id="L638">        return null;</span>
     }
 
     private static Object extractDate(
             org.apache.arrow.vector.FieldVector vector, int rowIndex) {
-<span class="nc bnc" id="L640" title="All 2 branches missed.">        if (vector instanceof DateDayVector vec) {</span>
-<span class="nc" id="L641">            return vec.get(rowIndex);</span>
+<span class="nc bnc" id="L643" title="All 2 branches missed.">        if (vector instanceof DateDayVector vec) {</span>
+<span class="nc" id="L644">            return vec.get(rowIndex);</span>
         }
-<span class="nc bnc" id="L643" title="All 2 branches missed.">        if (vector instanceof DateMilliVector vec) {</span>
-<span class="nc" id="L644">            return Math.toIntExact(Math.floorDiv(vec.get(rowIndex), 86_400_000L));</span>
+<span class="nc bnc" id="L646" title="All 2 branches missed.">        if (vector instanceof DateMilliVector vec) {</span>
+<span class="nc" id="L647">            return Math.toIntExact(Math.floorDiv(vec.get(rowIndex), 86_400_000L));</span>
         }
-<span class="nc" id="L646">        return null;</span>
+<span class="nc" id="L649">        return null;</span>
     }
 
     private static Object extractTime(
             org.apache.arrow.vector.FieldVector vector, int rowIndex) {
-<span class="nc bnc" id="L651" title="All 2 branches missed.">        if (vector instanceof TimeSecVector vec) {</span>
-<span class="nc" id="L652">            return vec.getObject(rowIndex).toString();</span>
-        }
-<span class="nc bnc" id="L654" title="All 2 branches missed.">        if (vector instanceof TimeMilliVector vec) {</span>
+<span class="nc bnc" id="L654" title="All 2 branches missed.">        if (vector instanceof TimeSecVector vec) {</span>
 <span class="nc" id="L655">            return vec.getObject(rowIndex).toString();</span>
         }
-<span class="nc bnc" id="L657" title="All 2 branches missed.">        if (vector instanceof TimeMicroVector vec) {</span>
+<span class="nc bnc" id="L657" title="All 2 branches missed.">        if (vector instanceof TimeMilliVector vec) {</span>
 <span class="nc" id="L658">            return vec.getObject(rowIndex).toString();</span>
         }
-<span class="nc bnc" id="L660" title="All 2 branches missed.">        if (vector instanceof TimeNanoVector vec) {</span>
+<span class="nc bnc" id="L660" title="All 2 branches missed.">        if (vector instanceof TimeMicroVector vec) {</span>
 <span class="nc" id="L661">            return vec.getObject(rowIndex).toString();</span>
         }
-<span class="nc" id="L663">        return null;</span>
+<span class="nc bnc" id="L663" title="All 2 branches missed.">        if (vector instanceof TimeNanoVector vec) {</span>
+<span class="nc" id="L664">            return vec.getObject(rowIndex).toString();</span>
+        }
+<span class="nc" id="L666">        return null;</span>
     }
 
     private static Object extractTimestamp(
             org.apache.arrow.vector.FieldVector vector, int rowIndex) {
-<span class="nc bnc" id="L668" title="All 2 branches missed.">        if (vector instanceof TimeStampSecVector vec) {</span>
-<span class="nc" id="L669">            return Math.multiplyExact(vec.get(rowIndex), 1_000_000L);</span>
-        }
-<span class="nc bnc" id="L671" title="All 2 branches missed.">        if (vector instanceof TimeStampSecTZVector vec) {</span>
+<span class="nc bnc" id="L671" title="All 2 branches missed.">        if (vector instanceof TimeStampSecVector vec) {</span>
 <span class="nc" id="L672">            return Math.multiplyExact(vec.get(rowIndex), 1_000_000L);</span>
         }
-<span class="nc bnc" id="L674" title="All 2 branches missed.">        if (vector instanceof TimeStampMilliVector vec) {</span>
-<span class="nc" id="L675">            return Math.multiplyExact(vec.get(rowIndex), 1_000L);</span>
+<span class="nc bnc" id="L674" title="All 2 branches missed.">        if (vector instanceof TimeStampSecTZVector vec) {</span>
+<span class="nc" id="L675">            return Math.multiplyExact(vec.get(rowIndex), 1_000_000L);</span>
         }
-<span class="nc bnc" id="L677" title="All 2 branches missed.">        if (vector instanceof TimeStampMilliTZVector vec) {</span>
+<span class="nc bnc" id="L677" title="All 2 branches missed.">        if (vector instanceof TimeStampMilliVector vec) {</span>
 <span class="nc" id="L678">            return Math.multiplyExact(vec.get(rowIndex), 1_000L);</span>
         }
-<span class="nc bnc" id="L680" title="All 2 branches missed.">        if (vector instanceof TimeStampMicroVector vec) {</span>
-<span class="nc" id="L681">            return vec.get(rowIndex);</span>
+<span class="nc bnc" id="L680" title="All 2 branches missed.">        if (vector instanceof TimeStampMilliTZVector vec) {</span>
+<span class="nc" id="L681">            return Math.multiplyExact(vec.get(rowIndex), 1_000L);</span>
         }
-<span class="nc bnc" id="L683" title="All 2 branches missed.">        if (vector instanceof TimeStampMicroTZVector vec) {</span>
+<span class="nc bnc" id="L683" title="All 2 branches missed.">        if (vector instanceof TimeStampMicroVector vec) {</span>
 <span class="nc" id="L684">            return vec.get(rowIndex);</span>
         }
-<span class="nc bnc" id="L686" title="All 2 branches missed.">        if (vector instanceof TimeStampNanoVector vec) {</span>
-<span class="nc" id="L687">            return Math.floorDiv(vec.get(rowIndex), 1_000L);</span>
+<span class="nc bnc" id="L686" title="All 2 branches missed.">        if (vector instanceof TimeStampMicroTZVector vec) {</span>
+<span class="nc" id="L687">            return vec.get(rowIndex);</span>
         }
-<span class="nc bnc" id="L689" title="All 2 branches missed.">        if (vector instanceof TimeStampNanoTZVector vec) {</span>
+<span class="nc bnc" id="L689" title="All 2 branches missed.">        if (vector instanceof TimeStampNanoVector vec) {</span>
 <span class="nc" id="L690">            return Math.floorDiv(vec.get(rowIndex), 1_000L);</span>
         }
-<span class="nc" id="L692">        return null;</span>
+<span class="nc bnc" id="L692" title="All 2 branches missed.">        if (vector instanceof TimeStampNanoTZVector vec) {</span>
+<span class="nc" id="L693">            return Math.floorDiv(vec.get(rowIndex), 1_000L);</span>
+        }
+<span class="nc" id="L695">        return null;</span>
     }
 
     private static Object extractBinary(
             org.apache.arrow.vector.FieldVector vector, int rowIndex) {
-<span class="nc bnc" id="L697" title="All 2 branches missed.">        if (vector instanceof VarBinaryVector vec) {</span>
-<span class="nc" id="L698">            return vec.getObject(rowIndex);</span>
-        }
-<span class="nc bnc" id="L700" title="All 2 branches missed.">        if (vector instanceof LargeVarBinaryVector vec) {</span>
+<span class="nc bnc" id="L700" title="All 2 branches missed.">        if (vector instanceof VarBinaryVector vec) {</span>
 <span class="nc" id="L701">            return vec.getObject(rowIndex);</span>
         }
-<span class="nc bnc" id="L703" title="All 2 branches missed.">        if (vector instanceof FixedSizeBinaryVector vec) {</span>
+<span class="nc bnc" id="L703" title="All 2 branches missed.">        if (vector instanceof LargeVarBinaryVector vec) {</span>
 <span class="nc" id="L704">            return vec.getObject(rowIndex);</span>
         }
-<span class="nc" id="L706">        return null;</span>
+<span class="nc bnc" id="L706" title="All 2 branches missed.">        if (vector instanceof FixedSizeBinaryVector vec) {</span>
+<span class="nc" id="L707">            return vec.getObject(rowIndex);</span>
+        }
+<span class="nc" id="L709">        return null;</span>
     }
 
     private static Object extractUInt(
             org.apache.arrow.vector.FieldVector vector, int rowIndex) {
-<span class="nc bnc" id="L711" title="All 2 branches missed.">        if (vector instanceof UInt1Vector vec) {</span>
-<span class="nc" id="L712">            return (int) vec.get(rowIndex);</span>
-        }
-<span class="nc bnc" id="L714" title="All 2 branches missed.">        if (vector instanceof UInt2Vector vec) {</span>
+<span class="nc bnc" id="L714" title="All 2 branches missed.">        if (vector instanceof UInt1Vector vec) {</span>
 <span class="nc" id="L715">            return (int) vec.get(rowIndex);</span>
         }
-<span class="nc bnc" id="L717" title="All 2 branches missed.">        if (vector instanceof UInt4Vector vec) {</span>
+<span class="nc bnc" id="L717" title="All 2 branches missed.">        if (vector instanceof UInt2Vector vec) {</span>
 <span class="nc" id="L718">            return (int) vec.get(rowIndex);</span>
         }
-<span class="nc bnc" id="L720" title="All 2 branches missed.">        if (vector instanceof UInt8Vector vec) {</span>
-<span class="nc" id="L721">            return vec.get(rowIndex);</span>
+<span class="nc bnc" id="L720" title="All 2 branches missed.">        if (vector instanceof UInt4Vector vec) {</span>
+<span class="nc" id="L721">            return (int) vec.get(rowIndex);</span>
         }
-<span class="nc" id="L723">        return null;</span>
+<span class="nc bnc" id="L723" title="All 2 branches missed.">        if (vector instanceof UInt8Vector vec) {</span>
+<span class="nc" id="L724">            return vec.get(rowIndex);</span>
+        }
+<span class="nc" id="L726">        return null;</span>
     }
 
     private static Object extractInterval(
             org.apache.arrow.vector.FieldVector vector, int rowIndex) {
-<span class="nc bnc" id="L728" title="All 2 branches missed.">        if (vector instanceof DurationVector vec) {</span>
-<span class="nc" id="L729">            return vec.getObject(rowIndex);</span>
+<span class="nc bnc" id="L731" title="All 2 branches missed.">        if (vector instanceof DurationVector vec) {</span>
+<span class="nc" id="L732">            return vec.getObject(rowIndex);</span>
         }
-<span class="nc bnc" id="L731" title="All 2 branches missed.">        if (vector instanceof IntervalYearVector vec) {</span>
-<span class="nc" id="L732">            return vec.get(rowIndex);</span>
+<span class="nc bnc" id="L734" title="All 2 branches missed.">        if (vector instanceof IntervalYearVector vec) {</span>
+<span class="nc" id="L735">            return vec.get(rowIndex);</span>
         }
-<span class="nc bnc" id="L734" title="All 2 branches missed.">        if (vector instanceof IntervalDayVector vec) {</span>
-<span class="nc" id="L735">            return vec.getObject(rowIndex);</span>
+<span class="nc bnc" id="L737" title="All 2 branches missed.">        if (vector instanceof IntervalDayVector vec) {</span>
+<span class="nc" id="L738">            return vec.getObject(rowIndex);</span>
         }
-<span class="nc" id="L737">        return null;</span>
+<span class="nc" id="L740">        return null;</span>
     }
 
     private static Decimal toSparkDecimal(BigDecimal value, Field field) {
-<span class="nc bnc" id="L741" title="All 2 branches missed.">        if (value == null) {</span>
-<span class="nc" id="L742">            return null;</span>
+<span class="nc bnc" id="L744" title="All 2 branches missed.">        if (value == null) {</span>
+<span class="nc" id="L745">            return null;</span>
         }
-<span class="nc bnc" id="L744" title="All 4 branches missed.">        if (field != null &amp;&amp; field.getType() instanceof FieldType.DecimalType decimalType) {</span>
-<span class="nc" id="L745">            return Decimal.apply(value, decimalType.getPrecision(), decimalType.getScale());</span>
+<span class="nc bnc" id="L747" title="All 4 branches missed.">        if (field != null &amp;&amp; field.getType() instanceof FieldType.DecimalType decimalType) {</span>
+<span class="nc" id="L748">            return Decimal.apply(value, decimalType.getPrecision(), decimalType.getScale());</span>
         }
-<span class="nc" id="L747">        return Decimal.apply(value);</span>
+<span class="nc" id="L750">        return Decimal.apply(value);</span>
     }
 
     /**
      * Formats elapsed nanoseconds as a human-readable duration.
      */
     private static String elapsedNanos(long startNanos) {
-<span class="nc" id="L754">        return LogUtil.elapsedNanos(startNanos);</span>
+<span class="nc" id="L757">        return LogUtil.elapsedNanos(startNanos);</span>
     }
 
     /**
      * Converts byte array to hex string for ticket logging.
      */
     private static String bytesToHex(byte[] bytes) {
-<span class="nc bnc" id="L761" title="All 4 branches missed.">        if (bytes == null || bytes.length == 0) {</span>
-<span class="nc" id="L762">            return &quot;empty&quot;;</span>
+<span class="nc bnc" id="L764" title="All 4 branches missed.">        if (bytes == null || bytes.length == 0) {</span>
+<span class="nc" id="L765">            return &quot;empty&quot;;</span>
         }
-<span class="nc" id="L764">        int len = Math.min(bytes.length, 8);</span>
-<span class="nc" id="L765">        StringBuilder sb = new StringBuilder(len * 2);</span>
-<span class="nc bnc" id="L766" title="All 2 branches missed.">        for (int i = 0; i &lt; len; i++) {</span>
-<span class="nc" id="L767">            sb.append(String.format(&quot;%02x&quot;, bytes[i]));</span>
+<span class="nc" id="L767">        int len = Math.min(bytes.length, 8);</span>
+<span class="nc" id="L768">        StringBuilder sb = new StringBuilder(len * 2);</span>
+<span class="nc bnc" id="L769" title="All 2 branches missed.">        for (int i = 0; i &lt; len; i++) {</span>
+<span class="nc" id="L770">            sb.append(String.format(&quot;%02x&quot;, bytes[i]));</span>
         }
-<span class="nc bnc" id="L769" title="All 2 branches missed.">        if (bytes.length &gt; 8) {</span>
-<span class="nc" id="L770">            sb.append(&quot;..&quot;);</span>
+<span class="nc bnc" id="L772" title="All 2 branches missed.">        if (bytes.length &gt; 8) {</span>
+<span class="nc" id="L773">            sb.append(&quot;..&quot;);</span>
         }
-<span class="nc" id="L772">        return sb.toString();</span>
+<span class="nc" id="L775">        return sb.toString();</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

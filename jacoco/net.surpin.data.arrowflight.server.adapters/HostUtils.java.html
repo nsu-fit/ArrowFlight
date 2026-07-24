@@ -11,10 +11,11 @@ import java.util.concurrent.ConcurrentHashMap;
  * Accepts server URIs, domain names, and raw IPs.
  */
 public final class HostUtils {
+    private static final String IPV4_LOOPBACK = &quot;127.0.0.1&quot;;
 
-<span class="fc" id="L15">    public static final Set&lt;String&gt; LOOPBACK_HOSTS = Set.of(&quot;localhost&quot;, &quot;127.0.0.1&quot;, &quot;::1&quot;);</span>
+<span class="fc" id="L16">    public static final Set&lt;String&gt; LOOPBACK_HOSTS = Set.of(&quot;localhost&quot;, IPV4_LOOPBACK, &quot;::1&quot;);</span>
 
-<span class="fc" id="L17">    private static final Map&lt;String, String&gt; CACHE = new ConcurrentHashMap&lt;&gt;();</span>
+<span class="fc" id="L18">    private static final Map&lt;String, String&gt; CACHE = new ConcurrentHashMap&lt;&gt;();</span>
 
     private HostUtils() {
     }
@@ -27,43 +28,43 @@ public final class HostUtils {
      * @return resolved IP address, or original input on failure
      */
     public static String normalize(String input) {
-<span class="fc bfc" id="L30" title="All 4 branches covered.">        if (input == null || input.isEmpty()) {</span>
-<span class="fc" id="L31">            return input;</span>
+<span class="fc bfc" id="L31" title="All 4 branches covered.">        if (input == null || input.isEmpty()) {</span>
+<span class="fc" id="L32">            return input;</span>
         }
 
-<span class="fc" id="L34">        String cached = CACHE.get(input);</span>
-<span class="fc bfc" id="L35" title="All 2 branches covered.">        if (cached != null) {</span>
-<span class="fc" id="L36">            return cached;</span>
+<span class="fc" id="L35">        String cached = CACHE.get(input);</span>
+<span class="fc bfc" id="L36" title="All 2 branches covered.">        if (cached != null) {</span>
+<span class="fc" id="L37">            return cached;</span>
         }
 
         // Short-circuit for known loopback addresses
-<span class="fc bfc" id="L40" title="All 2 branches covered.">        String hostOnly = input.contains(&quot;://&quot;) ? URI.create(input).getHost() : input;</span>
-<span class="pc bpc" id="L41" title="1 of 4 branches missed.">        if (hostOnly != null &amp;&amp; LOOPBACK_HOSTS.contains(hostOnly)) {</span>
-<span class="fc" id="L42">            CACHE.put(input, &quot;127.0.0.1&quot;);</span>
-<span class="fc" id="L43">            return &quot;127.0.0.1&quot;;</span>
+<span class="fc bfc" id="L41" title="All 2 branches covered.">        String hostOnly = input.contains(&quot;://&quot;) ? URI.create(input).getHost() : input;</span>
+<span class="pc bpc" id="L42" title="1 of 4 branches missed.">        if (hostOnly != null &amp;&amp; LOOPBACK_HOSTS.contains(hostOnly)) {</span>
+<span class="fc" id="L43">            CACHE.put(input, IPV4_LOOPBACK);</span>
+<span class="fc" id="L44">            return IPV4_LOOPBACK;</span>
         }
 
         String resolved;
         try {
-<span class="fc" id="L48">            String host = input;</span>
+<span class="fc" id="L49">            String host = input;</span>
 
-<span class="fc bfc" id="L50" title="All 2 branches covered.">            if (input.contains(&quot;://&quot;)) {</span>
-<span class="fc" id="L51">                URI uri = URI.create(input);</span>
-<span class="pc bpc" id="L52" title="1 of 2 branches missed.">                if (uri.getHost() != null) {</span>
-<span class="fc" id="L53">                    host = uri.getHost();</span>
+<span class="fc bfc" id="L51" title="All 2 branches covered.">            if (input.contains(&quot;://&quot;)) {</span>
+<span class="fc" id="L52">                URI uri = URI.create(input);</span>
+<span class="pc bpc" id="L53" title="1 of 2 branches missed.">                if (uri.getHost() != null) {</span>
+<span class="fc" id="L54">                    host = uri.getHost();</span>
                 }
             }
 
-<span class="fc" id="L57">            resolved = InetAddress.getByName(host).getHostAddress();</span>
-<span class="fc" id="L58">        } catch (Exception e) {</span>
-<span class="pc bpc" id="L59" title="1 of 2 branches missed.">            if (e instanceof InterruptedException) {</span>
-<span class="nc" id="L60">                Thread.currentThread().interrupt();</span>
+<span class="fc" id="L58">            resolved = InetAddress.getByName(host).getHostAddress();</span>
+<span class="fc" id="L59">        } catch (Exception e) {</span>
+<span class="pc bpc" id="L60" title="1 of 2 branches missed.">            if (e instanceof InterruptedException) {</span>
+<span class="nc" id="L61">                Thread.currentThread().interrupt();</span>
             }
-<span class="fc" id="L62">            resolved = input;</span>
-<span class="fc" id="L63">        }</span>
+<span class="fc" id="L63">            resolved = input;</span>
+<span class="fc" id="L64">        }</span>
 
-<span class="fc" id="L65">        CACHE.put(input, resolved);</span>
-<span class="fc" id="L66">        return resolved;</span>
+<span class="fc" id="L66">        CACHE.put(input, resolved);</span>
+<span class="fc" id="L67">        return resolved;</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>
