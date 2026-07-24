@@ -216,6 +216,9 @@ public class FieldType implements Serializable {
     //the type value
     private final IDs typeId;
 
+    private static final String KEY_FIELD_NAME = "key";
+    private static final String VALUE_FIELD_NAME = "value";
+
     /**
      * Construct a FieldType object
      * @param typeId - the id of the type
@@ -304,9 +307,9 @@ public class FieldType implements Serializable {
                         if (mcType.getTypeID() == IDs.STRUCT)  {
                             Map<String, FieldType> cldType = ((StructType) mcType).getChildrenType();
                             String[] keys = cldType.keySet().toArray(new String[0]);
-                            if (keys.length == 2 && keys[0].equalsIgnoreCase("Key") && keys[1].equalsIgnoreCase("value")) {
-                                keyType = cldType.get("key");
-                                valueType = cldType.get("value");
+                            if (keys.length == 2 && keys[0].equalsIgnoreCase(KEY_FIELD_NAME) && keys[1].equalsIgnoreCase(VALUE_FIELD_NAME)) {
+                                keyType = cldType.get(KEY_FIELD_NAME);
+                                valueType = cldType.get(VALUE_FIELD_NAME);
                             }
                         }
                     } else if (children.size() == 2) {
@@ -349,7 +352,7 @@ public class FieldType implements Serializable {
                 StructType st = (StructType) lt.getChildType();
                 if (st.getTypeID() == IDs.STRUCT) {
                     java.util.List<Map.Entry<String, FieldType>> children = new java.util.ArrayList<>(st.getChildrenType().entrySet());
-                    if (children.size() == 2 && children.get(0).getKey().equals("key") && children.get(1).getKey().equals("value")) {
+                    if (children.size() == 2 && children.get(0).getKey().equals(KEY_FIELD_NAME) && children.get(1).getKey().equals(VALUE_FIELD_NAME)) {
                         mt = new org.apache.spark.sql.types.MapType(FieldType.toSpark(children.get(0).getValue()), FieldType.toSpark(children.get(1).getValue()), true);
                     }
                 }

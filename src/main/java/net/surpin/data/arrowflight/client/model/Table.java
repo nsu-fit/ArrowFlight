@@ -41,6 +41,9 @@ import java.util.function.Function;
 public final class Table implements Serializable {
     private static final Logger LOGGER = LoggerFactory.getLogger(Table.class);
 
+    private static final String IS_NULL = " is null";
+    private static final String IS_NOT_NULL = " is not null";
+
     //the name of a flight table whose data will be queried/updated
     private final String name;
     //the character for quoting columns in sql statements
@@ -336,7 +339,7 @@ public final class Table implements Serializable {
         if (("IS_NULL".equals(name) || "IS_NOT_NULL".equals(name))
                 && children.length == 1) {
             return predicateOperand(children[0]).map(sql -> sql
-                    + ("IS_NULL".equals(name) ? " is null" : " is not null"));
+                    + ("IS_NULL".equals(name) ? IS_NULL : IS_NOT_NULL));
         }
         if (isComparisonPredicate(name) && children.length == 2) {
             Optional<String> left = predicateOperand(children[0]);
@@ -345,10 +348,10 @@ public final class Table implements Serializable {
                 return Optional.empty();
             }
             if ("<=>".equals(name)) {
-                return Optional.of("((" + left.get() + " is not null and "
-                        + right.get() + " is not null and " + left.get() + " = "
-                        + right.get() + ") or (" + left.get() + " is null and "
-                        + right.get() + " is null))");
+                return Optional.of("((" + left.get() + IS_NOT_NULL + " and "
+                        + right.get() + IS_NOT_NULL + " and " + left.get() + " = "
+                        + right.get() + ") or (" + left.get() + IS_NULL + " and "
+                        + right.get() + IS_NULL + "))");
             }
             return Optional.of(left.get() + " " + name + " " + right.get());
         }
@@ -490,14 +493,14 @@ public final class Table implements Serializable {
         }
         if (filter instanceof EqualNullSafe equalNullSafe) {
             if (equalNullSafe.value() == null) {
-                return Optional.of(quoteIdentifier(equalNullSafe.attribute()) + " is null");
+                return Optional.of(quoteIdentifier(equalNullSafe.attribute()) + IS_NULL);
             }
             Optional<String> equality = comparison(
                     equalNullSafe.attribute(), "=", equalNullSafe.value());
             String identifier = quoteIdentifier(equalNullSafe.attribute());
             // Spark's null-safe equality is a two-valued predicate. Preserve that
             // property inside NOT/OR as well as in a top-level WHERE clause.
-            return equality.map(sql -> "(" + identifier + " is not null and " + sql + ")");
+            return equality.map(sql -> "(" + identifier + IS_NOT_NULL + " and " + sql + ")");
         }
         if (filter instanceof LessThan lessThan) {
             return comparison(lessThan.attribute(), "<", lessThan.value());
@@ -521,10 +524,10 @@ public final class Table implements Serializable {
             return toWhereClauseIfSupported(not.child()).map(sql -> "not (" + sql + ")");
         }
         if (filter instanceof IsNull isNull) {
-            return Optional.of(quoteIdentifier(isNull.attribute()) + " is null");
+            return Optional.of(quoteIdentifier(isNull.attribute()) + IS_NULL);
         }
         if (filter instanceof IsNotNull isNotNull) {
-            return Optional.of(quoteIdentifier(isNotNull.attribute()) + " is not null");
+            return Optional.of(quoteIdentifier(isNotNull.attribute()) + IS_NOT_NULL);
         }
         if (filter instanceof StringStartsWith startsWith) {
             return Optional.of(like(startsWith.attribute(), escapeLike(startsWith.value()) + "%"));

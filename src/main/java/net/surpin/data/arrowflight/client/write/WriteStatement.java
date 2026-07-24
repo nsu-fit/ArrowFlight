@@ -13,6 +13,7 @@ import org.apache.spark.sql.types.*;
 import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.io.ObjectInputStream;
+import java.io.Serial;
 import java.io.Serializable;
 import java.time.LocalTime;
 import java.time.ZoneId;
@@ -35,17 +36,30 @@ public class WriteStatement implements Serializable {
     private interface Execute<X, Y, Z, R> {
         R apply(X x, Y y, Z z);
     }
-    /**
-     * Convert function with four arguments
-     */
-    @FunctionalInterface
-    interface Convert<A, B, C, D, R> {
-        R apply(A a, B b, C c, D d);
-    }
     //the values variable
     private static final String varValues = "${param_Values}";
+    private static final String CAST_FORMAT = "cast(%s as %s)";
+    private static final DateTimeFormatter DATE_FORMAT =
+        DateTimeFormatter.ofPattern("yyyy-MM-dd");
+    private static final DateTimeFormatter TIME_SECOND_FORMAT =
+        DateTimeFormatter.ofPattern("HH:mm:ss");
+    private static final DateTimeFormatter TIME_MILLI_FORMAT =
+        DateTimeFormatter.ofPattern("HH:mm:ss.SSS");
+    private static final DateTimeFormatter TIME_MICRO_FORMAT =
+        DateTimeFormatter.ofPattern("HH:mm:ss.SSSSSS");
+    private static final DateTimeFormatter TIME_NANO_FORMAT =
+        DateTimeFormatter.ofPattern("HH:mm:ss.SSSSSSSSS");
+    private static final DateTimeFormatter TIMESTAMP_SECOND_FORMAT =
+        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final DateTimeFormatter TIMESTAMP_MILLI_FORMAT =
+        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS");
+    private static final DateTimeFormatter TIMESTAMP_MICRO_FORMAT =
+        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSSSSS");
+    private static final DateTimeFormatter TIMESTAMP_NANO_FORMAT =
+        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSSSSSSSS");
     //the to-object-converter container (transient — re-initialized lazily after deserialization)
-    private transient Map<String, Execute<Object, Field, DataType, String>> converters;
+    private transient Map<ConverterKey,
+        Execute<Object, Field, DataType, String>> converters;
 
     //data schema
     private final StructType dataSchema;
@@ -58,35 +72,95 @@ public class WriteStatement implements Serializable {
     private String stmt;
 
     /**
+     * Identifies a converter by Spark and Arrow types.
+     *
+     * @param sparkType Spark type name
+     * @param arrowType Arrow minor type
+     */
+    private record ConverterKey(
+        String sparkType,
+        Types.MinorType arrowType) {
+    }
+
+    /**
+     * Creates a converter key.
+     *
+     * @param dataType Spark data type
+     * @param arrowType Arrow minor type
+     * @return converter key
+     */
+    private static ConverterKey converterKey(
+        DataType dataType,
+        Types.MinorType arrowType) {
+        return new ConverterKey(
+            dataType.getClass().getTypeName().replaceAll("\\$$", ""),
+            arrowType);
+    }
+
+    /**
+     * Registers a converter for the supplied Spark types.
+     *
+     * @param arrowType Arrow type
+     * @param converter value converter
+     * @param sparkTypes supported Spark types
+     */
+    private void register(
+        Types.MinorType arrowType,
+        Execute<Object, Field, DataType, String> converter,
+        Class<?>... sparkTypes) {
+        for (Class<?> sparkType : sparkTypes) {
+            converters.put(
+                new ConverterKey(sparkType.getTypeName(), arrowType),
+                converter);
+        }
+    }
+
+    /** Registers timestamp and date converters for one Arrow timestamp type. */
+    private void registerTimestamp(
+        Types.MinorType arrowType,
+        DateTimeFormatter formatter,
+        boolean timezoneAware) {
+        register(arrowType,
+            (value, field, type) -> formatTimestamp(
+                value, field, formatter, mapTimestamp, timezoneAware),
+            TimestampType.class);
+        register(arrowType,
+            (value, field, type) -> formatDateTimestamp(
+                value, field, formatter, mapTimestamp, timezoneAware),
+            DateType.class);
+    }
+
+    /**
      * Deserialize and reinitialize transient converters
      * @param in object input stream
      * @throws IOException on deserialization failure
      * @throws ClassNotFoundException on missing class
      */
+    @Serial
     private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
         in.defaultReadObject();
         this.converters = new java.util.HashMap<>();
     }
 
     //the following is the mapping between arrow-types to data-types that the target flight end-point supports
-    private String mapTinyInt = "int";
-    private String mapSmallInt = "int";
-    private String mapInt = "int";
-    private String mapBigInt = "bigint";
-    private String mapDate = "date";
-    private String mapTime = "time";
-    private String mapTimestamp = "timestamp";
-    private String mapFloat4 = "float";
-    private String mapFloat8 = "double";
-    private String mapVarchar = "varchar";
-    private String mapLargeVarchar = "varchar";
-    private String mapDecimal = "decimal";
-    private String mapDecimal256 = "decimal";
-    private String mapUInt1 = "int";
-    private String mapUInt2 = "int";
-    private String mapUInt4 = "int";
-    private String mapUInt8 = "int";
-    private String mapBit = "boolean";
+    private final String mapTinyInt;
+    private final String mapSmallInt;
+    private final String mapInt;
+    private final String mapBigInt;
+    private final String mapDate;
+    private final String mapTime;
+    private final String mapTimestamp;
+    private final String mapFloat4;
+    private final String mapFloat8;
+    private final String mapVarchar;
+    private final String mapLargeVarchar;
+    private final String mapDecimal;
+    private final String mapDecimal256;
+    private final String mapUInt1;
+    private final String mapUInt2;
+    private final String mapUInt4;
+    private final String mapUInt8;
+    private final String mapBit;
 
     /**
      * Construct a WriteStatement
@@ -157,6 +231,318 @@ public class WriteStatement implements Serializable {
         this.mapBit = typeMapping.getOrDefault("bit", "boolean");
     }
 
+    private void initialize() {
+        register(Types.MinorType.DATEDAY,
+            (value, field, type) -> formatTimestampDate(value, mapDate),
+            TimestampType.class);
+        register(Types.MinorType.DATEDAY,
+            (value, field, type) -> formatDate(value, mapDate),
+            DateType.class);
+        register(Types.MinorType.DATEMILLI,
+            (value, field, type) -> formatTimestampDate(value, mapDate),
+            TimestampType.class);
+        register(Types.MinorType.DATEMILLI,
+            (value, field, type) -> formatDate(value, mapDate),
+            DateType.class);
+        registerTimestamp(Types.MinorType.TIMESTAMPNANOTZ,
+            TIMESTAMP_NANO_FORMAT, true);
+        registerTimestamp(Types.MinorType.TIMESTAMPMICROTZ,
+            TIMESTAMP_MICRO_FORMAT, true);
+        registerTimestamp(Types.MinorType.TIMESTAMPSECTZ,
+            TIMESTAMP_SECOND_FORMAT, true);
+        registerTimestamp(Types.MinorType.TIMESTAMPMILLITZ,
+            TIMESTAMP_MILLI_FORMAT, true);
+        registerTimestamp(Types.MinorType.TIMESTAMPNANO,
+            TIMESTAMP_NANO_FORMAT, false);
+        registerTimestamp(Types.MinorType.TIMESTAMPMICRO,
+            TIMESTAMP_MICRO_FORMAT, false);
+        registerTimestamp(Types.MinorType.TIMESTAMPSEC,
+            TIMESTAMP_SECOND_FORMAT, false);
+        registerTimestamp(Types.MinorType.TIMESTAMPMILLI,
+            TIMESTAMP_MILLI_FORMAT, false);
+        register(Types.MinorType.TIMEMICRO,
+            (value, field, type) -> formatStringTime(value, TIME_MICRO_FORMAT, mapTime),
+            StringType.class);
+        register(Types.MinorType.TIMEMICRO,
+            (value, field, type) -> formatTimestampTime(value, TIME_MICRO_FORMAT, mapTime),
+            TimestampType.class);
+        register(Types.MinorType.TIMESEC,
+            (value, field, type) -> formatStringTime(value, TIME_SECOND_FORMAT, mapTime),
+            StringType.class);
+        register(Types.MinorType.TIMESEC,
+            (value, field, type) -> formatTimestampTime(value, TIME_SECOND_FORMAT, mapTime),
+            TimestampType.class);
+        register(Types.MinorType.TIMENANO,
+            (value, field, type) -> formatStringTime(value, TIME_NANO_FORMAT, mapTime),
+            StringType.class);
+        register(Types.MinorType.TIMENANO,
+            (value, field, type) -> formatTimestampTime(value, TIME_NANO_FORMAT, mapTime),
+            TimestampType.class);
+        register(Types.MinorType.TIMEMILLI,
+            (value, field, type) -> formatStringTime(value, TIME_MILLI_FORMAT, mapTime),
+            StringType.class);
+        register(Types.MinorType.TIMEMILLI,
+            (value, field, type) -> formatTimestampTime(value, TIME_MILLI_FORMAT, mapTime),
+            TimestampType.class);
+
+        register(
+            Types.MinorType.BIGINT,
+            (value, field, type) ->
+                castNumber(value, mapBigInt),
+            ByteType.class,
+            ShortType.class,
+            IntegerType.class,
+            LongType.class);
+
+        register(
+            Types.MinorType.FLOAT8,
+            (value, field, type) ->
+                castNumber(value, mapFloat8),
+            ByteType.class,
+            ShortType.class,
+            IntegerType.class,
+            LongType.class,
+            FloatType.class,
+            DoubleType.class);
+
+        register(
+            Types.MinorType.INT,
+            (value, field, type) -> castNumber(value, mapInt),
+            ByteType.class, ShortType.class, IntegerType.class);
+        register(
+            Types.MinorType.SMALLINT,
+            (value, field, type) -> castNumber(value, mapSmallInt),
+            ByteType.class, ShortType.class);
+        register(
+            Types.MinorType.TINYINT,
+            (value, field, type) -> castNumber(value, mapTinyInt),
+            ByteType.class);
+        register(
+            Types.MinorType.UINT1,
+            (value, field, type) -> castNumber(value, mapUInt1),
+            ByteType.class, ShortType.class);
+        register(
+            Types.MinorType.UINT2,
+            (value, field, type) -> castNumber(value, mapUInt2),
+            ByteType.class, ShortType.class);
+        register(
+            Types.MinorType.UINT4,
+            (value, field, type) -> castNumber(value, mapUInt4),
+            ByteType.class, ShortType.class, IntegerType.class);
+        register(
+            Types.MinorType.UINT8,
+            (value, field, type) -> castNumber(value, mapUInt8),
+            ByteType.class, ShortType.class, IntegerType.class, LongType.class);
+        register(
+            Types.MinorType.FLOAT4,
+            (value, field, type) -> castNumber(value, mapFloat4),
+            ByteType.class, ShortType.class, IntegerType.class,
+            LongType.class, FloatType.class, DoubleType.class);
+        register(
+            Types.MinorType.DECIMAL,
+            (value, field, type) -> castNumber(value, mapDecimal),
+            ByteType.class, ShortType.class, IntegerType.class,
+            LongType.class, FloatType.class, DoubleType.class, DecimalType.class);
+        register(
+            Types.MinorType.DECIMAL256,
+            (value, field, type) -> castNumber(value, mapDecimal256),
+            ByteType.class, ShortType.class, IntegerType.class,
+            LongType.class, FloatType.class, DoubleType.class, DecimalType.class);
+
+        register(
+            Types.MinorType.VARCHAR,
+            (value, field, type) ->
+                primitiveToVarchar(value, mapVarchar),
+            StringType.class,
+            BooleanType.class,
+            ByteType.class,
+            ShortType.class,
+            IntegerType.class,
+            LongType.class,
+            FloatType.class,
+            DoubleType.class,
+            DateType.class,
+            TimestampType.class);
+
+        register(
+            Types.MinorType.LARGEVARCHAR,
+            (value, field, type) ->
+                primitiveToVarchar(value, mapLargeVarchar),
+            StringType.class, BooleanType.class, ByteType.class, ShortType.class,
+            IntegerType.class, LongType.class, FloatType.class, DoubleType.class,
+            DateType.class, TimestampType.class, DecimalType.class);
+        register(
+            Types.MinorType.VARCHAR,
+            (value, field, type) -> complexToVarchar(value, type, mapVarchar),
+            MapType.class, ArrayType.class, StructType.class);
+        register(
+            Types.MinorType.LARGEVARCHAR,
+            (value, field, type) -> complexToVarchar(value, type, mapLargeVarchar),
+            MapType.class, ArrayType.class, StructType.class);
+        register(
+            Types.MinorType.BIT,
+            (value, field, type) -> booleanToBit(value, mapBit),
+            BooleanType.class);
+        register(
+            Types.MinorType.BIT,
+            (value, field, type) -> stringToBit(value, mapBit),
+            StringType.class);
+        register(
+            Types.MinorType.BIT,
+            (value, field, type) -> numberToBit(value, mapBit),
+            ByteType.class, ShortType.class, IntegerType.class, LongType.class,
+            FloatType.class, DoubleType.class, DecimalType.class);
+    }
+
+    /**
+     * Converts a numeric value to a typed SQL literal.
+     *
+     * @param value source value
+     * @param targetType target SQL type
+     * @return SQL literal
+     */
+    static String castNumber(
+        Object value,
+        String targetType) {
+        return String.format(
+            CAST_FORMAT,
+            value == null ? "null" : value,
+            targetType);
+    }
+
+    /** Converts a primitive value to a SQL string literal. */
+    static String primitiveToVarchar(Object value, String targetType) {
+        if (value == null) {
+            return String.format(CAST_FORMAT, "null", targetType);
+        }
+        return String.format("'%s'", value.toString().replace("'", "''"));
+    }
+
+    /** Converts a complex Spark value to a SQL string literal. */
+    private static String complexToVarchar(
+        Object value,
+        DataType dataType,
+        String targetType) {
+        if (value == null) {
+            return String.format(CAST_FORMAT, "null", targetType);
+        }
+        return String.format("'%s'", toJson.apply(value, dataType).replace("'", "''"));
+    }
+
+    /** Converts a boolean value to a typed SQL literal. */
+    static String booleanToBit(Object value, String targetType) {
+        return castNumber(value, targetType);
+    }
+
+    /** Converts a numeric value to a typed boolean SQL literal. */
+    static String numberToBit(Object value, String targetType) {
+        Object literal = value == null
+            ? null
+            : ((Number) value).doubleValue() != 0;
+        return castNumber(literal, targetType);
+    }
+
+    /** Converts a string value to a typed boolean SQL literal. */
+    static String stringToBit(Object value, String targetType) {
+        Object literal = value == null
+            ? null
+            : Boolean.parseBoolean(value.toString());
+        return castNumber(literal, targetType);
+    }
+
+    /** Formats a textual time value as a typed SQL literal. */
+    private static String formatStringTime(
+        Object value,
+        DateTimeFormatter formatter,
+        String targetType) {
+        String formatted = value == null
+            ? "null"
+            : LocalTime.parse(value.toString()).format(formatter);
+        return castQuoted(formatted, targetType);
+    }
+
+    /** Formats a Spark timestamp value as a typed time SQL literal. */
+    private static String formatTimestampTime(
+        Object value,
+        DateTimeFormatter formatter,
+        String targetType) {
+        String formatted = value == null
+            ? "null"
+            : DateTimeUtils.microsToLocalDateTime(longValue(value)).format(formatter);
+        return castQuoted(formatted, targetType);
+    }
+
+    /** Formats a Spark timestamp value as a typed date SQL literal. */
+    private static String formatTimestampDate(Object value, String targetType) {
+        String formatted = value == null
+            ? "null"
+            : DateTimeUtils.microsToLocalDateTime(longValue(value)).format(DATE_FORMAT);
+        return castQuoted(formatted, targetType);
+    }
+
+    /** Formats a Spark date value as a typed date SQL literal. */
+    private static String formatDate(Object value, String targetType) {
+        String formatted = value == null
+            ? "null"
+            : DateTimeUtils.daysToLocalDate(intValue(value)).format(DATE_FORMAT);
+        return castQuoted(formatted, targetType);
+    }
+
+    /** Formats a Spark timestamp value as a typed timestamp SQL literal. */
+    private static String formatTimestamp(
+        Object value,
+        Field field,
+        DateTimeFormatter formatter,
+        String targetType,
+        boolean timezoneAware) {
+        if (value == null) {
+            return castQuoted("null", targetType);
+        }
+        long micros = longValue(value);
+        if (timezoneAware) {
+            micros = microsToMicrosTz(micros, field);
+        }
+        String formatted = DateTimeUtils.microsToLocalDateTime(micros).format(formatter);
+        return castQuoted(formatted, targetType);
+    }
+
+    /** Formats a Spark date value as a typed timestamp SQL literal. */
+    private static String formatDateTimestamp(
+        Object value,
+        Field field,
+        DateTimeFormatter formatter,
+        String targetType,
+        boolean timezoneAware) {
+        if (value == null) {
+            return castQuoted("null", targetType);
+        }
+        int days = intValue(value);
+        String formatted = timezoneAware
+            ? DateTimeUtils.microsToLocalDateTime(
+                daysToMicrosTz(days, field)).format(formatter)
+            : DateTimeUtils.daysToLocalDate(days).atStartOfDay().format(formatter);
+        return castQuoted(formatted, targetType);
+    }
+
+    /** Wraps a quoted value in a typed SQL cast. */
+    private static String castQuoted(String value, String targetType) {
+        return String.format("cast('%s' as %s)", value, targetType);
+    }
+
+    /** Converts an object to a long value. */
+    private static long longValue(Object value) {
+        return value instanceof Number
+            ? ((Number) value).longValue()
+            : Long.parseLong(value.toString());
+    }
+
+    /** Converts an object to an integer value. */
+    private static int intValue(Object value) {
+        return value instanceof Number
+            ? ((Number) value).intValue()
+            : Integer.parseInt(value.toString());
+    }
+
     /**
      * Get the data schema
      * @return - the data schema
@@ -193,7 +579,7 @@ public class WriteStatement implements Serializable {
         StructField[] dataFields = this.dataSchema.fields();
         Object[] columns = IntStream.range(0, dataFields.length).mapToObj(idx -> {
             Optional<Field> arrowField = find.apply(dataFields[idx].name());
-            if (!arrowField.isPresent()) {
+            if (arrowField.isEmpty()) {
                 throw new RuntimeException("The arrow field is not available.");
             }
             return this.fillColumns(rows, idx, dataFields[idx].dataType(), arrowField.get());
@@ -212,251 +598,48 @@ public class WriteStatement implements Serializable {
      * @return array of SQL string values
      */
     private String[] fillColumns(InternalRow[] rows, int idxColumn, DataType dataType, Field arrowField) {
-        String key = String.format("%s-%s", dataType.getClass().getTypeName().replaceAll("\\$$", ""), Types.getMinorTypeForArrowType(arrowField.getType()).getClass().getTypeName());
+        ConverterKey key = converterKey(
+            dataType,
+            Types.getMinorTypeForArrowType(arrowField.getType()));
         if (!this.converters.containsKey(key)) {
             this.initialize();
         }
-        return Arrays.stream(rows).map(row -> this.converters.get(key).apply(row.get(idxColumn, dataType), arrowField, dataType)).toArray(String[]::new);
+        Execute<Object, Field, DataType, String> converter = this.converters.get(key);
+        if (converter == null) {
+            throw new IllegalArgumentException(
+                "Unsupported Spark/Arrow type combination: " + key);
+        }
+        return Arrays.stream(rows)
+            .map(row -> converter.apply(row.get(idxColumn, dataType), arrowField, dataType))
+            .toArray(String[]::new);
     }
 
-    /**
-     * Initialize all type converter mappings
-     */
-    private void initialize() {
-        this.converters.put(String.format("%s-%s", TimestampType.class.getTypeName(), Types.MinorType.DATEDAY.getClass().getTypeName()), (o, f, t) -> WriteStatement.timestampToDateDay.apply(o, f, t, this.mapDate));
-        this.converters.put(String.format("%s-%s", DateType.class.getTypeName(), Types.MinorType.DATEDAY.getClass().getTypeName()), (o, f, t) -> WriteStatement.dateToDateDay.apply(o, f, t, this.mapDate));
-        this.converters.put(String.format("%s-%s", TimestampType.class.getTypeName(), Types.MinorType.TIMESTAMPNANOTZ.getClass().getTypeName()), (o, f, t) -> WriteStatement.timestampToTimestampNanoTZ.apply(o, f, t, this.mapTimestamp));
-        this.converters.put(String.format("%s-%s", DateType.class.getTypeName(), Types.MinorType.TIMESTAMPNANOTZ.getClass().getTypeName()), (o, f, t) -> WriteStatement.dateToTimestampNanoTZ.apply(o, f, t, this.mapTimestamp));
-        this.converters.put(String.format("%s-%s", TimestampType.class.getTypeName(), Types.MinorType.TIMESTAMPMICROTZ.getClass().getTypeName()), (o, f, t) -> WriteStatement.timestampToTimestampMicroTZ.apply(o, f, t, this.mapTimestamp));
-        this.converters.put(String.format("%s-%s", DateType.class.getTypeName(), Types.MinorType.TIMESTAMPMICROTZ.getClass().getTypeName()), (o, f, t) -> WriteStatement.dateToTimestampMicroTZ.apply(o, f, t, this.mapTimestamp));
-        this.converters.put(String.format("%s-%s", TimestampType.class.getTypeName(), Types.MinorType.TIMESTAMPSECTZ.getClass().getTypeName()), (o, f, t) -> WriteStatement.timestampToTimestampSecTZ.apply(o, f, t, this.mapTimestamp));
-        this.converters.put(String.format("%s-%s", DateType.class.getTypeName(), Types.MinorType.TIMESTAMPSECTZ.getClass().getTypeName()), (o, f, t) -> WriteStatement.dateToTimestampSecTZ.apply(o, f, t, this.mapTimestamp));
-        this.converters.put(String.format("%s-%s", TimestampType.class.getTypeName(), Types.MinorType.TIMESTAMPMILLITZ.getClass().getTypeName()), (o, f, t) -> WriteStatement.timestampToTimestampMilliTZ.apply(o, f, t, this.mapTimestamp));
-        this.converters.put(String.format("%s-%s", DateType.class.getTypeName(), Types.MinorType.TIMESTAMPMILLITZ.getClass().getTypeName()), (o, f, t) -> WriteStatement.dateToTimestampMilliTZ.apply(o, f, t, this.mapTimestamp));
-        this.converters.put(String.format("%s-%s", TimestampType.class.getTypeName(), Types.MinorType.TIMESTAMPNANO.getClass().getTypeName()), (o, f, t) -> WriteStatement.timestampToTimestampNano.apply(o, f, t, this.mapTimestamp));
-        this.converters.put(String.format("%s-%s", DateType.class.getTypeName(), Types.MinorType.TIMESTAMPNANO.getClass().getTypeName()), (o, f, t) -> WriteStatement.dateToTimestampNano.apply(o, f, t, this.mapTimestamp));
-        this.converters.put(String.format("%s-%s", TimestampType.class.getTypeName(), Types.MinorType.TIMESTAMPMICRO.getClass().getTypeName()), (o, f, t) -> WriteStatement.timestampToTimestampMicro.apply(o, f, t, this.mapTimestamp));
-        this.converters.put(String.format("%s-%s", DateType.class.getTypeName(), Types.MinorType.TIMESTAMPMICRO.getClass().getTypeName()), (o, f, t) -> WriteStatement.dateToTimestampMicro.apply(o, f, t, this.mapTimestamp));
-        this.converters.put(String.format("%s-%s", TimestampType.class.getTypeName(), Types.MinorType.TIMESTAMPSEC.getClass().getTypeName()), (o, f, t) -> WriteStatement.timestampToTimestampSec.apply(o, f, t, this.mapTimestamp));
-        this.converters.put(String.format("%s-%s", DateType.class.getTypeName(), Types.MinorType.TIMESTAMPSEC.getClass().getTypeName()), (o, f, t) -> WriteStatement.dateToTimestampSec.apply(o, f, t, this.mapTimestamp));
-        this.converters.put(String.format("%s-%s", TimestampType.class.getTypeName(), Types.MinorType.TIMESTAMPMILLI.getClass().getTypeName()), (o, f, t) -> WriteStatement.timestampToTimestampMilli.apply(o, f, t, this.mapTimestamp));
-        this.converters.put(String.format("%s-%s", DateType.class.getTypeName(), Types.MinorType.TIMESTAMPMILLI.getClass().getTypeName()), (o, f, t) -> WriteStatement.dateToTimestampMilli.apply(o, f, t, this.mapTimestamp));
-        this.converters.put(String.format("%s-%s", StringType.class.getTypeName(), Types.MinorType.TIMEMICRO.getClass().getTypeName()), (o, f, t) -> WriteStatement.stringToTimeMicro.apply(o, f, t, this.mapTime));
-        this.converters.put(String.format("%s-%s", TimestampType.class.getTypeName(), Types.MinorType.TIMEMICRO.getClass().getTypeName()), (o, f, t) -> WriteStatement.timestampToTimeMicro.apply(o, f, t, this.mapTime));
-        this.converters.put(String.format("%s-%s", StringType.class.getTypeName(), Types.MinorType.TIMESEC.getClass().getTypeName()), (o, f, t) -> WriteStatement.stringToTimeSec.apply(o, f, t, this.mapTime));
-        this.converters.put(String.format("%s-%s", TimestampType.class.getTypeName(), Types.MinorType.TIMESEC.getClass().getTypeName()), (o, f, t) -> WriteStatement.timestampToTimeSec.apply(o, f, t, this.mapTime));
-        this.converters.put(String.format("%s-%s", StringType.class.getTypeName(), Types.MinorType.TIMENANO.getClass().getTypeName()), (o, f, t) -> WriteStatement.stringToTimeNano.apply(o, f, t, this.mapTime));
-        this.converters.put(String.format("%s-%s", TimestampType.class.getTypeName(), Types.MinorType.TIMENANO.getClass().getTypeName()), (o, f, t) -> WriteStatement.timestampToTimeNano.apply(o, f, t, this.mapTime));
-        this.converters.put(String.format("%s-%s", StringType.class.getTypeName(), Types.MinorType.TIMEMILLI.getClass().getTypeName()), (o, f, t) -> WriteStatement.stringToTimeMilli.apply(o, f, t, this.mapTime));
-        this.converters.put(String.format("%s-%s", TimestampType.class.getTypeName(), Types.MinorType.TIMEMILLI.getClass().getTypeName()), (o, f, t) -> WriteStatement.timestampToTimeMilli.apply(o, f, t, this.mapTime));
-        this.converters.put(String.format("%s-%s", DateType.class.getTypeName(), Types.MinorType.DATEMILLI.getClass().getTypeName()), (o, f, t) -> WriteStatement.dateToDateMilli.apply(o, f, t, this.mapDate));
-        this.converters.put(String.format("%s-%s", TimestampType.class.getTypeName(), Types.MinorType.DATEMILLI.getClass().getTypeName()), (o, f, t) -> WriteStatement.timestampToDateMilli.apply(o, f, t, this.mapDate));
-        this.converters.put(String.format("%s-%s", DecimalType.class.getTypeName(), Types.MinorType.DECIMAL256.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToDecimal256.apply(o, f, t, this.mapDecimal256));
-        this.converters.put(String.format("%s-%s", DoubleType.class.getTypeName(), Types.MinorType.DECIMAL256.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToDecimal256.apply(o, f, t, this.mapDecimal256));
-        this.converters.put(String.format("%s-%s", FloatType.class.getTypeName(), Types.MinorType.DECIMAL256.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToDecimal256.apply(o, f, t, this.mapDecimal256));
-        this.converters.put(String.format("%s-%s", ByteType.class.getTypeName(), Types.MinorType.DECIMAL256.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToDecimal256.apply(o, f, t, this.mapDecimal256));
-        this.converters.put(String.format("%s-%s", ShortType.class.getTypeName(), Types.MinorType.DECIMAL256.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToDecimal256.apply(o, f, t, this.mapDecimal256));
-        this.converters.put(String.format("%s-%s", IntegerType.class.getTypeName(), Types.MinorType.DECIMAL256.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToDecimal256.apply(o, f, t, this.mapDecimal256));
-        this.converters.put(String.format("%s-%s", LongType.class.getTypeName(), Types.MinorType.DECIMAL256.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToDecimal256.apply(o, f, t, this.mapDecimal256));
-        this.converters.put(String.format("%s-%s", DecimalType.class.getTypeName(), Types.MinorType.DECIMAL.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToDecimal.apply(o, f, t, this.mapDecimal));
-        this.converters.put(String.format("%s-%s", DoubleType.class.getTypeName(), Types.MinorType.DECIMAL.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToDecimal.apply(o, f, t, this.mapDecimal));
-        this.converters.put(String.format("%s-%s", FloatType.class.getTypeName(), Types.MinorType.DECIMAL.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToDecimal.apply(o, f, t, this.mapDecimal));
-        this.converters.put(String.format("%s-%s", ByteType.class.getTypeName(), Types.MinorType.DECIMAL.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToDecimal.apply(o, f, t, this.mapDecimal));
-        this.converters.put(String.format("%s-%s", ShortType.class.getTypeName(), Types.MinorType.DECIMAL.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToDecimal.apply(o, f, t, this.mapDecimal));
-        this.converters.put(String.format("%s-%s", IntegerType.class.getTypeName(), Types.MinorType.DECIMAL.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToDecimal.apply(o, f, t, this.mapDecimal));
-        this.converters.put(String.format("%s-%s", LongType.class.getTypeName(), Types.MinorType.DECIMAL.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToDecimal.apply(o, f, t, this.mapDecimal));
-        this.converters.put(String.format("%s-%s", DoubleType.class.getTypeName(), Types.MinorType.FLOAT8.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToFloat8.apply(o, f, t, this.mapFloat8));
-        this.converters.put(String.format("%s-%s", FloatType.class.getTypeName(), Types.MinorType.FLOAT8.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToFloat8.apply(o, f, t, this.mapFloat8));
-        this.converters.put(String.format("%s-%s", ByteType.class.getTypeName(), Types.MinorType.FLOAT8.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToFloat8.apply(o, f, t, this.mapFloat8));
-        this.converters.put(String.format("%s-%s", ShortType.class.getTypeName(), Types.MinorType.FLOAT8.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToFloat8.apply(o, f, t, this.mapFloat8));
-        this.converters.put(String.format("%s-%s", IntegerType.class.getTypeName(), Types.MinorType.FLOAT8.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToFloat8.apply(o, f, t, this.mapFloat8));
-        this.converters.put(String.format("%s-%s", LongType.class.getTypeName(), Types.MinorType.FLOAT8.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToFloat8.apply(o, f, t, this.mapFloat8));
-        this.converters.put(String.format("%s-%s", DoubleType.class.getTypeName(), Types.MinorType.FLOAT4.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToFloat4.apply(o, f, t, this.mapFloat4));
-        this.converters.put(String.format("%s-%s", FloatType.class.getTypeName(), Types.MinorType.FLOAT4.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToFloat4.apply(o, f, t, this.mapFloat4));
-        this.converters.put(String.format("%s-%s", ByteType.class.getTypeName(), Types.MinorType.FLOAT4.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToFloat4.apply(o, f, t, this.mapFloat4));
-        this.converters.put(String.format("%s-%s", ShortType.class.getTypeName(), Types.MinorType.FLOAT4.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToFloat4.apply(o, f, t, this.mapFloat4));
-        this.converters.put(String.format("%s-%s", IntegerType.class.getTypeName(), Types.MinorType.FLOAT4.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToFloat4.apply(o, f, t, this.mapFloat4));
-        this.converters.put(String.format("%s-%s", LongType.class.getTypeName(), Types.MinorType.FLOAT4.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToFloat4.apply(o, f, t, this.mapFloat4));
-        this.converters.put(String.format("%s-%s", ByteType.class.getTypeName(), Types.MinorType.BIGINT.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToBigint.apply(o, f, t, this.mapBigInt));
-        this.converters.put(String.format("%s-%s", ShortType.class.getTypeName(), Types.MinorType.BIGINT.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToBigint.apply(o, f, t, this.mapBigInt));
-        this.converters.put(String.format("%s-%s", IntegerType.class.getTypeName(), Types.MinorType.BIGINT.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToBigint.apply(o, f, t, this.mapBigInt));
-        this.converters.put(String.format("%s-%s", LongType.class.getTypeName(), Types.MinorType.BIGINT.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToBigint.apply(o, f, t, this.mapBigInt));
-        this.converters.put(String.format("%s-%s", ByteType.class.getTypeName(), Types.MinorType.UINT8.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToUint8.apply(o, f, t, this.mapUInt8));
-        this.converters.put(String.format("%s-%s", ShortType.class.getTypeName(), Types.MinorType.UINT8.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToUint8.apply(o, f, t, this.mapUInt8));
-        this.converters.put(String.format("%s-%s", IntegerType.class.getTypeName(), Types.MinorType.UINT8.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToUint8.apply(o, f, t, this.mapUInt8));
-        this.converters.put(String.format("%s-%s", LongType.class.getTypeName(), Types.MinorType.UINT8.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToUint8.apply(o, f, t, this.mapUInt8));
-        this.converters.put(String.format("%s-%s", ByteType.class.getTypeName(), Types.MinorType.UINT4.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToUint4.apply(o, f, t, this.mapUInt4));
-        this.converters.put(String.format("%s-%s", ShortType.class.getTypeName(), Types.MinorType.UINT4.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToUint4.apply(o, f, t, this.mapUInt4));
-        this.converters.put(String.format("%s-%s", IntegerType.class.getTypeName(), Types.MinorType.UINT4.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToUint4.apply(o, f, t, this.mapUInt4));
-        this.converters.put(String.format("%s-%s", ByteType.class.getTypeName(), Types.MinorType.INT.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToInt.apply(o, f, t, this.mapInt));
-        this.converters.put(String.format("%s-%s", ShortType.class.getTypeName(), Types.MinorType.INT.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToInt.apply(o, f, t, this.mapInt));
-        this.converters.put(String.format("%s-%s", IntegerType.class.getTypeName(), Types.MinorType.INT.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToInt.apply(o, f, t, this.mapInt));
-        this.converters.put(String.format("%s-%s", ByteType.class.getTypeName(), Types.MinorType.UINT2.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToUint2.apply(o, f, t, this.mapUInt2));
-        this.converters.put(String.format("%s-%s", ShortType.class.getTypeName(), Types.MinorType.UINT2.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToUint2.apply(o, f, t, this.mapUInt2));
-        this.converters.put(String.format("%s-%s", ByteType.class.getTypeName(), Types.MinorType.UINT1.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToUint1.apply(o, f, t, this.mapUInt1));
-        this.converters.put(String.format("%s-%s", ShortType.class.getTypeName(), Types.MinorType.SMALLINT.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToSmallint.apply(o, f, t, this.mapSmallInt));
-        this.converters.put(String.format("%s-%s", ByteType.class.getTypeName(), Types.MinorType.SMALLINT.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToSmallint.apply(o, f, t, this.mapSmallInt));
-        this.converters.put(String.format("%s-%s", ByteType.class.getTypeName(), Types.MinorType.TINYINT.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToTinyint.apply(o, f, t, this.mapTinyInt));
-        this.converters.put(String.format("%s-%s", StringType.class.getTypeName(), Types.MinorType.VARCHAR.getClass().getTypeName()), (o, f, t) -> WriteStatement.primitiveToVarchar.apply(o, f, t, this.mapVarchar));
-        this.converters.put(String.format("%s-%s", BooleanType.class.getTypeName(), Types.MinorType.VARCHAR.getClass().getTypeName()), (o, f, t) -> WriteStatement.primitiveToVarchar.apply(o, f, t, this.mapVarchar));
-        this.converters.put(String.format("%s-%s", DoubleType.class.getTypeName(), Types.MinorType.VARCHAR.getClass().getTypeName()), (o, f, t) -> WriteStatement.primitiveToVarchar.apply(o, f, t, this.mapVarchar));
-        this.converters.put(String.format("%s-%s", FloatType.class.getTypeName(), Types.MinorType.VARCHAR.getClass().getTypeName()), (o, f, t) -> WriteStatement.primitiveToVarchar.apply(o, f, t, this.mapVarchar));
-        this.converters.put(String.format("%s-%s", ByteType.class.getTypeName(), Types.MinorType.VARCHAR.getClass().getTypeName()), (o, f, t) -> WriteStatement.primitiveToVarchar.apply(o, f, t, this.mapVarchar));
-        this.converters.put(String.format("%s-%s", IntegerType.class.getTypeName(), Types.MinorType.VARCHAR.getClass().getTypeName()), (o, f, t) -> WriteStatement.primitiveToVarchar.apply(o, f, t, this.mapVarchar));
-        this.converters.put(String.format("%s-%s", LongType.class.getTypeName(), Types.MinorType.VARCHAR.getClass().getTypeName()), (o, f, t) -> WriteStatement.primitiveToVarchar.apply(o, f, t, this.mapVarchar));
-        this.converters.put(String.format("%s-%s", ShortType.class.getTypeName(), Types.MinorType.VARCHAR.getClass().getTypeName()), (o, f, t) -> WriteStatement.primitiveToVarchar.apply(o, f, t, this.mapVarchar));
-        this.converters.put(String.format("%s-%s", DateType.class.getTypeName(), Types.MinorType.VARCHAR.getClass().getTypeName()), (o, f, t) -> WriteStatement.primitiveToVarchar.apply(o, f, t, this.mapVarchar));
-        this.converters.put(String.format("%s-%s", TimestampType.class.getTypeName(), Types.MinorType.VARCHAR.getClass().getTypeName()), (o, f, t) -> WriteStatement.primitiveToVarchar.apply(o, f, t, this.mapVarchar));
-        this.converters.put(String.format("%s-%s", DecimalType.class.getTypeName(), Types.MinorType.VARCHAR.getClass().getTypeName()), (o, f, t) -> WriteStatement.primitiveToVarchar.apply(o, f, t, this.mapVarchar));
-        this.converters.put(String.format("%s-%s", StringType.class.getTypeName(), Types.MinorType.LARGEVARCHAR.getClass().getTypeName()), (o, f, t) -> WriteStatement.primitiveToLargevarchar.apply(o, f, t, this.mapLargeVarchar));
-        this.converters.put(String.format("%s-%s", BooleanType.class.getTypeName(), Types.MinorType.LARGEVARCHAR.getClass().getTypeName()), (o, f, t) -> WriteStatement.primitiveToLargevarchar.apply(o, f, t, this.mapLargeVarchar));
-        this.converters.put(String.format("%s-%s", DoubleType.class.getTypeName(), Types.MinorType.LARGEVARCHAR.getClass().getTypeName()), (o, f, t) -> WriteStatement.primitiveToLargevarchar.apply(o, f, t, this.mapLargeVarchar));
-        this.converters.put(String.format("%s-%s", FloatType.class.getTypeName(), Types.MinorType.LARGEVARCHAR.getClass().getTypeName()), (o, f, t) -> WriteStatement.primitiveToLargevarchar.apply(o, f, t, this.mapLargeVarchar));
-        this.converters.put(String.format("%s-%s", ByteType.class.getTypeName(), Types.MinorType.LARGEVARCHAR.getClass().getTypeName()), (o, f, t) -> WriteStatement.primitiveToLargevarchar.apply(o, f, t, this.mapLargeVarchar));
-        this.converters.put(String.format("%s-%s", IntegerType.class.getTypeName(), Types.MinorType.LARGEVARCHAR.getClass().getTypeName()), (o, f, t) -> WriteStatement.primitiveToLargevarchar.apply(o, f, t, this.mapLargeVarchar));
-        this.converters.put(String.format("%s-%s", LongType.class.getTypeName(), Types.MinorType.LARGEVARCHAR.getClass().getTypeName()), (o, f, t) -> WriteStatement.primitiveToLargevarchar.apply(o, f, t, this.mapLargeVarchar));
-        this.converters.put(String.format("%s-%s", ShortType.class.getTypeName(), Types.MinorType.LARGEVARCHAR.getClass().getTypeName()), (o, f, t) -> WriteStatement.primitiveToLargevarchar.apply(o, f, t, this.mapLargeVarchar));
-        this.converters.put(String.format("%s-%s", DateType.class.getTypeName(), Types.MinorType.LARGEVARCHAR.getClass().getTypeName()), (o, f, t) -> WriteStatement.primitiveToLargevarchar.apply(o, f, t, this.mapLargeVarchar));
-        this.converters.put(String.format("%s-%s", TimestampType.class.getTypeName(), Types.MinorType.LARGEVARCHAR.getClass().getTypeName()), (o, f, t) -> WriteStatement.primitiveToLargevarchar.apply(o, f, t, this.mapLargeVarchar));
-        this.converters.put(String.format("%s-%s", DecimalType.class.getTypeName(), Types.MinorType.LARGEVARCHAR.getClass().getTypeName()), (o, f, t) -> WriteStatement.primitiveToLargevarchar.apply(o, f, t, this.mapLargeVarchar));
-        this.converters.put(String.format("%s-%s", MapType.class.getTypeName(), Types.MinorType.VARCHAR.getClass().getTypeName()), (o, f, t) -> WriteStatement.complexToVarchar.apply(o, f, t, this.mapVarchar));
-        this.converters.put(String.format("%s-%s", ArrayType.class.getTypeName(), Types.MinorType.VARCHAR.getClass().getTypeName()), (o, f, t) -> WriteStatement.complexToVarchar.apply(o, f, t, this.mapVarchar));
-        this.converters.put(String.format("%s-%s", StructType.class.getTypeName(), Types.MinorType.VARCHAR.getClass().getTypeName()), (o, f, t) -> WriteStatement.complexToVarchar.apply(o, f, t, this.mapVarchar));
-        this.converters.put(String.format("%s-%s", MapType.class.getTypeName(), Types.MinorType.LARGEVARCHAR.getClass().getTypeName()), (o, f, t) -> WriteStatement.complexToLargevarchar.apply(o, f, t, this.mapLargeVarchar));
-        this.converters.put(String.format("%s-%s", ArrayType.class.getTypeName(), Types.MinorType.LARGEVARCHAR.getClass().getTypeName()), (o, f, t) -> WriteStatement.complexToLargevarchar.apply(o, f, t, this.mapLargeVarchar));
-        this.converters.put(String.format("%s-%s", StructType.class.getTypeName(), Types.MinorType.LARGEVARCHAR.getClass().getTypeName()), (o, f, t) -> WriteStatement.complexToLargevarchar.apply(o, f, t, this.mapLargeVarchar));
-        this.converters.put(String.format("%s-%s", BooleanType.class.getTypeName(), Types.MinorType.BIT.getClass().getTypeName()), (o, f, t) -> WriteStatement.booleanToBit.apply(o, f, t, this.mapBit));
-        this.converters.put(String.format("%s-%s", StringType.class.getTypeName(), Types.MinorType.BIT.getClass().getTypeName()), (o, f, t) -> WriteStatement.stringToBit.apply(o, f, t, this.mapBit));
-        this.converters.put(String.format("%s-%s", DecimalType.class.getTypeName(), Types.MinorType.BIT.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToBit.apply(o, f, t, this.mapBit));
-        this.converters.put(String.format("%s-%s", DoubleType.class.getTypeName(), Types.MinorType.BIT.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToBit.apply(o, f, t, this.mapBit));
-        this.converters.put(String.format("%s-%s", FloatType.class.getTypeName(), Types.MinorType.BIT.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToBit.apply(o, f, t, this.mapBit));
-        this.converters.put(String.format("%s-%s", ByteType.class.getTypeName(), Types.MinorType.BIT.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToBit.apply(o, f, t, this.mapBit));
-        this.converters.put(String.format("%s-%s", ShortType.class.getTypeName(), Types.MinorType.BIT.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToBit.apply(o, f, t, this.mapBit));
-        this.converters.put(String.format("%s-%s", IntegerType.class.getTypeName(), Types.MinorType.BIT.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToBit.apply(o, f, t, this.mapBit));
-        this.converters.put(String.format("%s-%s", LongType.class.getTypeName(), Types.MinorType.BIT.getClass().getTypeName()), (o, f, t) -> WriteStatement.numberToBit.apply(o, f, t, this.mapBit));
+    /** Converts timestamp microseconds to the Arrow field timezone. */
+    private static long microsToMicrosTz(long micros, Field arrowField) {
+        return DateTimeUtils.convertTz(
+            micros,
+            ZoneId.systemDefault(),
+            ZoneId.of(((ArrowType.Timestamp) arrowField.getFieldType().getType()).getTimezone()));
     }
 
-    //conversion - Number to DECIMAL256
-    static final Convert<Object, Field, DataType, String, String> numberToDecimal256 = (o, f, t, n) -> String.format("cast(%s as %s)", (o == null) ? "null" : o.toString(), n);
-    //conversion - Number to DECIMAL
-    private static final Convert<Object, Field, DataType, String, String> numberToDecimal = (o, f, t, n) -> String.format("cast(%s as %s)", (o == null) ? "null" : o.toString(), n);
-    //conversion - Number to FLOAT8
-    private static final Convert<Object, Field, DataType, String, String> numberToFloat8 = (o, f, t, n) -> String.format("cast(%s as %s)", (o == null) ? "null" : o.toString(), n);
-    //conversion - Number to FLOAT4
-    private static final Convert<Object, Field, DataType, String, String> numberToFloat4 = (o, f, t, n) -> String.format("cast(%s as %s)", (o == null) ? "null" : o.toString(), n);
-    //conversion - Number to BIGINT
-    private static final Convert<Object, Field, DataType, String, String> numberToBigint = (o, f, t, n) -> String.format("cast(%s as %s)", (o == null) ? "null" : o.toString(), n);
-    //conversion - Number to UINT8
-    private static final Convert<Object, Field, DataType, String, String> numberToUint8 = (o, f, t, n) -> String.format("cast(%s as %s)", (o == null) ? "null" : o.toString(), n);
-    //conversion - Number to UINT4
-    private static final Convert<Object, Field, DataType, String, String> numberToUint4 = (o, f, t, n) -> String.format("cast(%s as %s)", (o == null) ? "null" : o.toString(), n);
-    //conversion - Number to INT
-    private static final Convert<Object, Field, DataType, String, String> numberToInt = (o, f, t, n) -> String.format("cast(%s as %s)", (o == null) ? "null" : o.toString(), n);
-    //conversion - Number to UINT2
-    private static final Convert<Object, Field, DataType, String, String> numberToUint2 = (o, f, t, n) -> String.format("cast(%s as %s)", (o == null) ? "null" : o.toString(), n);
-    //conversion - Number to UINT1
-    private static final Convert<Object, Field, DataType, String, String> numberToUint1 = (o, f, t, n) -> String.format("cast(%s as %s)", (o == null) ? "null" : o.toString(), n);
-    //conversion - Number to SMALLINT
-    private static final Convert<Object, Field, DataType, String, String> numberToSmallint = (o, f, t, n) -> String.format("cast(%s as %s)", (o == null) ? "null" : o.toString(), n);
-    //conversion - Number to TINYINT
-    private static final Convert<Object, Field, DataType, String, String> numberToTinyint = (o, f, t, n) -> String.format("cast(%s as %s)", (o == null) ? "null" : o.toString(), n);
-    //conversion - Primitive to VARCHAR
-    static final Convert<Object, Field, DataType, String, String> primitiveToVarchar = (o, f, t, n) -> (o == null) ? String.format("cast(null as %s)", n) : String.format("'%s'", o.toString().replace("'", "''"));
-    //conversion - Primitive to LARGEVARCHAR
-    private static final Convert<Object, Field, DataType, String, String> primitiveToLargevarchar = (o, f, t, n) -> (o == null) ? String.format("cast(null as %s)", n) : String.format("'%s'", o.toString().replace("'", "''"));
-    //conversion - Complex to VARCHAR
-    private static final Convert<Object, Field, DataType, String, String> complexToVarchar = (o, f, t, n) -> (o == null) ? String.format("cast(null as %s)", n) : String.format("'%s'", WriteStatement.toJson.apply(o, t).replace("'", "''"));
-    //conversion - Complex to LARGEVARCHAR
-    private static final Convert<Object, Field, DataType, String, String> complexToLargevarchar = (o, f, t, n) -> (o == null) ? String.format("cast(null as %s)", n) : String.format("'%s'", WriteStatement.toJson.apply(o, t).replace("'", "''"));
-    //conversion - String to TIMESEC
-    static final Convert<Object, Field, DataType, String, String> stringToTimeSec = (o, f, t, n) -> String.format("cast('%s' as %s)", (o == null) ? "null" : LocalTime.parse((o instanceof String) ? (String) o : o.toString()).format(DateTimeFormatter.ofPattern("HH:mm:ss")), n);
-    //conversion - Timestamp to TIMESEC
-    private static final Convert<Object, Field, DataType, String, String> timestampToTimeSec = (o, f, t, n) -> String.format("cast('%s' as %s)", (o == null) ? "null" : DateTimeUtils.microsToLocalDateTime((o instanceof Number) ? (long) o : Long.parseLong(o.toString())).format(DateTimeFormatter.ofPattern("HH:mm:ss")), n);
-    //conversion - String to TIMENANO
-    private static final Convert<Object, Field, DataType, String, String> stringToTimeNano = (o, f, t, n) -> String.format("cast('%s' as %s)", (o == null) ? "null" : LocalTime.parse((o instanceof String) ? (String) o : o.toString()).format(DateTimeFormatter.ofPattern("HH:mm:ss.SSSSSSSSS")), n);
-    //conversion - Timestamp to TIMENANO
-    private static final Convert<Object, Field, DataType, String, String> timestampToTimeNano = (o, f, t, n) -> String.format("cast('%s' as %s)", (o == null) ? "null" : DateTimeUtils.microsToLocalDateTime((o instanceof Number) ? (long) o : Long.parseLong(o.toString())).format(DateTimeFormatter.ofPattern("HH:mm:ss.SSSSSSSSS")), n);
-    //conversion - String to TIMEMICRO
-    private static final Convert<Object, Field, DataType, String, String> stringToTimeMicro = (o, f, t, n) -> String.format("cast('%s' as %s)", (o == null) ? "null" : LocalTime.parse((o instanceof String) ? (String) o : o.toString()).format(DateTimeFormatter.ofPattern("HH:mm:ss.SSSSSS")), n);
-    //conversion - Timestamp to TIMEMICRO
-    private static final Convert<Object, Field, DataType, String, String> timestampToTimeMicro = (o, f, t, n) -> String.format("cast('%s' as %s)", (o == null) ? "null" : DateTimeUtils.microsToLocalDateTime((o instanceof Number) ? (long) o : Long.parseLong(o.toString())).format(DateTimeFormatter.ofPattern("HH:mm:ss.SSSSSS")), n);
-    //conversion - String to TIMEMILLI
-    private static final Convert<Object, Field, DataType, String, String> stringToTimeMilli = (o, f, t, n) -> String.format("cast('%s' as %s)", (o == null) ? "null" : LocalTime.parse((o instanceof String) ? (String) o : o.toString()).format(DateTimeFormatter.ofPattern("HH:mm:ss.SSS")), n);
-    //conversion - Timestamp to TIMEMILLI
-    private static final Convert<Object, Field, DataType, String, String> timestampToTimeMilli = (o, f, t, n) -> String.format("cast('%s' as %s)", (o == null) ? "null" : DateTimeUtils.microsToLocalDateTime((o instanceof Number) ? (long) o : Long.parseLong(o.toString())).format(DateTimeFormatter.ofPattern("HH:mm:ss.SSS")), n);
-    //conversion - Date to DATEMILLI
-    private static final Convert<Object, Field, DataType, String, String> dateToDateMilli = (o, f, t, n) -> String.format("cast('%s' as %s)", (o == null) ? "null" : DateTimeUtils.daysToLocalDate((o instanceof Number) ? (int) o : Integer.parseInt(o.toString())).format(DateTimeFormatter.ofPattern("yyyy-MM-dd")), n);
-    //conversion - Timestamp to DATEMILLI
-    private static final Convert<Object, Field, DataType, String, String> timestampToDateMilli = (o, f, t, n) -> String.format("cast('%s' as %s)", (o == null) ? "null" : DateTimeUtils.microsToLocalDateTime(DateTimeUtils.daysToMicros((o instanceof Number) ? (int) o : Integer.parseInt(o.toString()), ZoneId.systemDefault())).format(DateTimeFormatter.ofPattern("yyyy-MM-dd")), n);
-    //conversion - Timestamp to DateDay
-    private static final Convert<Object, Field, DataType, String, String> timestampToDateDay = (o, f, t, n) -> String.format("cast('%s' as %s)", (o == null) ? "null" : DateTimeUtils.microsToLocalDateTime((o instanceof Number) ? (long) o : Long.parseLong(o.toString())).format(DateTimeFormatter.ofPattern("yyyy-MM-dd")), n);
-    //conversion - Date to DateDay
-    private static final Convert<Object, Field, DataType, String, String> dateToDateDay = (o, f, t, n) -> String.format("cast('%s' as %s)", (o == null) ? "null" : DateTimeUtils.daysToLocalDate((o instanceof Number) ? (int) o : Integer.parseInt(o.toString())).format(DateTimeFormatter.ofPattern("yyyy-MM-dd")), n);
-    //conversion - Boolean to BIT
-    static final Convert<Object, Field, DataType, String, String> booleanToBit = (o, f, t, n) -> String.format("cast(%s as %s)", (o == null) ? "null" : o.toString(), n);
-    //conversion - Number to BIT
-    static final Convert<Object, Field, DataType, String, String> numberToBit = (o, f, t, n) -> String.format("cast(%s as %s)", (o == null) ? "null" : (((int) o) != 0) ? "true" : "false", n);
-    //conversion - String to BIT
-    static final Convert<Object, Field, DataType, String, String> stringToBit = (o, f, t, n) -> String.format("cast(%s as %s)", (o == null) ? "null" : o.toString().equalsIgnoreCase("true") ? "true" : "false", n);
-    //conversion - Timestamp to TIMESTAMPMILLI
-    private static final Convert<Object, Field, DataType, String, String> timestampToTimestampMilli = (o, f, t, n) -> String.format("cast('%s' as %s)", (o == null) ? "null" : DateTimeUtils.microsToLocalDateTime((o instanceof Number) ? (long) o : Long.parseLong(o.toString())).format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS")), n);
-    //conversion - Date to TIMESTAMPMILLI
-    private static final Convert<Object, Field, DataType, String, String> dateToTimestampMilli = (o, f, t, n) -> String.format("cast('%s' as %s)", (o == null) ? "null" : DateTimeUtils.daysToLocalDate((o instanceof Number) ? (int) o : Integer.parseInt(o.toString())).format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS")), n);
-    //conversion - Timestamp to TIMESTAMPSEC
-    private static final Convert<Object, Field, DataType, String, String> timestampToTimestampSec = (o, f, t, n) -> String.format("cast('%s' as %s)", (o == null) ? "null" : DateTimeUtils.microsToLocalDateTime((o instanceof Number) ? (long) o : Long.parseLong(o.toString())).format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")), n);
-    //conversion - Date to TIMESTAMPSEC
-    private static final Convert<Object, Field, DataType, String, String> dateToTimestampSec = (o, f, t, n) -> String.format("cast('%s' as %s)", (o == null) ? "null" : DateTimeUtils.daysToLocalDate((o instanceof Number) ? (int) o : Integer.parseInt(o.toString())).format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")), n);
-    //conversion - Timestamp to TIMESTAMPNANO
-    private static final Convert<Object, Field, DataType, String, String> timestampToTimestampNano = (o, f, t, n) -> String.format("cast('%s' as %s)", (o == null) ? "null" : DateTimeUtils.microsToLocalDateTime((o instanceof Number) ? (long) o : Long.parseLong(o.toString())).format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSSSSSSSS")), n);
-    //conversion - Date to TIMESTAMPNANO
-    private static final Convert<Object, Field, DataType, String, String> dateToTimestampNano = (o, f, t, n) -> String.format("cast('%s' as %s)", (o == null) ? "null" : DateTimeUtils.daysToLocalDate((o instanceof Number) ? (int) o : Integer.parseInt(o.toString())).format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSSSSSSSS")), n);
-    //conversion - Timestamp to TIMESTAMPMICRO
-    private static final Convert<Object, Field, DataType, String, String> timestampToTimestampMicro = (o, f, t, n) -> String.format("cast('%s' as %s)", (o == null) ? "null" : DateTimeUtils.microsToLocalDateTime((o instanceof Number) ? (long) o : Long.parseLong(o.toString())).format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSSSSS")), n);
-    //conversion - Date to TIMESTAMPMICRO
-    private static final Convert<Object, Field, DataType, String, String> dateToTimestampMicro = (o, f, t, n) -> String.format("cast('%s' as %s)", (o == null) ? "null" : DateTimeUtils.daysToLocalDate((o instanceof Number) ? (int) o : Integer.parseInt(o.toString())).format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSSSSS")), n);
-    //conversion - Timestamp to TIMESTAMPMILLITZ
-    private static final Convert<Object, Field, DataType, String, String> timestampToTimestampMilliTZ = (o, f, t, n) -> String.format("cast('%s' as %s)", (o == null) ? "null" : DateTimeUtils.microsToLocalDateTime(WriteStatement.microsToMicrosTZ.apply((o instanceof Number) ? (long) o : Long.parseLong(o.toString()), f, LongType$.MODULE$)).format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS")), n);
-    //conversion - Date to TIMESTAMPMILLITZ
-    private static final Convert<Object, Field, DataType, String, String> dateToTimestampMilliTZ = (o, f, t, n) -> String.format("cast('%s' as %s)", (o == null) ? "null" : DateTimeUtils.microsToLocalDateTime(WriteStatement.daysToMicrosTZ.apply((o instanceof Number) ? (int) o : Integer.parseInt(o.toString()), f, IntegerType$.MODULE$)).format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS")), n);
-    //conversion - Timestamp to TIMESTAMPSEC
-    private static final Convert<Object, Field, DataType, String, String> timestampToTimestampSecTZ = (o, f, t, n) -> String.format("cast('%s' as %s)", (o == null) ? "null" : DateTimeUtils.microsToLocalDateTime(WriteStatement.microsToMicrosTZ.apply((o instanceof Number) ? (long) o : Long.parseLong(o.toString()), f, LongType$.MODULE$)).format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")), n);
-    //conversion - Date to TIMESTAMPSEC
-    private static final Convert<Object, Field, DataType, String, String> dateToTimestampSecTZ = (o, f, t, n) -> String.format("cast('%s' as %s)", (o == null) ? "null" : DateTimeUtils.microsToLocalDateTime(WriteStatement.daysToMicrosTZ.apply((o instanceof Number) ? (int) o : Integer.parseInt(o.toString()), f, IntegerType$.MODULE$)).format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")), n);
-    //conversion - Timestamp to TIMESTAMPNANO
-    private static final Convert<Object, Field, DataType, String, String> timestampToTimestampNanoTZ = (o, f, t, n) -> String.format("cast('%s' as %s)", (o == null) ? "null" : DateTimeUtils.microsToLocalDateTime(WriteStatement.microsToMicrosTZ.apply((o instanceof Number) ? (long) o : Long.parseLong(o.toString()), f, LongType$.MODULE$)).format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSSSSSSSS")), n);
-    //conversion - Date to TIMESTAMPNANO
-    private static final Convert<Object, Field, DataType, String, String> dateToTimestampNanoTZ = (o, f, t, n) -> String.format("cast('%s' as %s)", (o == null) ? "null" : DateTimeUtils.microsToLocalDateTime(WriteStatement.daysToMicrosTZ.apply((o instanceof Number) ? (int) o : Integer.parseInt(o.toString()), f, IntegerType$.MODULE$)).format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSSSSSSSS")), n);
-    //conversion - Timestamp to TIMESTAMPMICRO
-    private static final Convert<Object, Field, DataType, String, String> timestampToTimestampMicroTZ = (o, f, t, n) -> String.format("cast('%s' as %s)", (o == null) ? "null" : DateTimeUtils.microsToLocalDateTime(WriteStatement.microsToMicrosTZ.apply((o instanceof Number) ? (long) o : Long.parseLong(o.toString()), f, LongType$.MODULE$)).format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSSSSS")), n);
-    //conversion - Date to TIMESTAMPMICRO
-    private static final Convert<Object, Field, DataType, String, String> dateToTimestampMicroTZ = (o, f, t, n) -> String.format("cast('%s' as %s)", (o == null) ? "null" : DateTimeUtils.microsToLocalDateTime(WriteStatement.daysToMicrosTZ.apply((o instanceof Number) ? (int) o : Integer.parseInt(o.toString()), f, IntegerType$.MODULE$)).format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSSSSS")), n);
-    //micros to micros-TZ
-    private static final Execute<Long, Field, DataType, Long> microsToMicrosTZ = (micros, field, dataType) -> {
-        ArrowType.Timestamp arrowType = (ArrowType.Timestamp) field.getFieldType().getType();
-        return DateTimeUtils.convertTz(micros, ZoneId.systemDefault(), ZoneId.of(arrowType.getTimezone()));
-    };
-    //days to micros-TZ
-    private static final Execute<Integer, Field, DataType, Long> daysToMicrosTZ = (days, field, dataType) -> {
-        ArrowType.Timestamp arrowType = (ArrowType.Timestamp) field.getFieldType().getType();
-        return DateTimeUtils.daysToMicros(days, ZoneId.of(arrowType.getTimezone()));
-    };
+    /** Converts date days to microseconds in the Arrow field timezone. */
+    private static long daysToMicrosTz(int days, Field arrowField) {
+        return DateTimeUtils.daysToMicros(
+            days,
+            ZoneId.of(((ArrowType.Timestamp) arrowField.getFieldType().getType()).getTimezone()));
+    }
     //to-json
     private static final BiFunction<Object, DataType, String> toJson = (o, dt) -> {
         StringBuilder sb = new StringBuilder();
         try {
-            if (dt instanceof StructType && o instanceof UnsafeRow) {
-                StructField[] fields = ((StructType) dt).fields();
-                UnsafeRow data = (UnsafeRow) o;
+            if (dt instanceof StructType structType && o instanceof UnsafeRow data) {
+                StructField[] fields = structType.fields();
                 sb.append(String.format("{ %s }", String.join(", ", IntStream.range(0, fields.length).mapToObj(idx -> String.format("\"%s\": %s", fields[idx].name(), WriteStatement.toJson.apply(data.get(idx, fields[idx].dataType()), fields[idx].dataType()))).toArray(String[]::new))));
-            } else if (dt instanceof MapType && o instanceof UnsafeMapData) {
-                MapType mt = (MapType) dt;
-                UnsafeMapData data = (UnsafeMapData) o;
+            } else if (dt instanceof MapType mt && o instanceof UnsafeMapData data) {
                 UnsafeArrayData keys = data.keyArray();
                 UnsafeArrayData values = data.valueArray();
                 sb.append(String.format("{ \"map\": [%s] }", String.join(", ", IntStream.range(0, data.numElements()).mapToObj(idx -> String.format("{ \"key\": %s, \"value\": %s }", WriteStatement.toJson.apply(keys.get(idx, mt.keyType()), mt.keyType()), WriteStatement.toJson.apply(values.get(idx, mt.valueType()), mt.valueType()))).toArray(String[]::new))));
-            } else if (dt instanceof ArrayType && o instanceof UnsafeArrayData) {
-                ArrayType at = (ArrayType) dt;
-                UnsafeArrayData data = (UnsafeArrayData) o;
+            } else if (dt instanceof ArrayType at && o instanceof UnsafeArrayData data) {
                 sb.append(String.format("[%s]", String.join(", ", IntStream.range(0, data.numElements()).mapToObj(idx -> WriteStatement.toJson.apply(data.get(idx, at.elementType()), at.elementType())).toArray(String[]::new))));
             } else {
                 sb.append(String.format("\"%s\"", o));
