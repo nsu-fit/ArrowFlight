@@ -120,7 +120,7 @@ public final class DuckDbAdapter implements AutoCloseable {
             s.execute("SET threads = " + appConfig.duckDbThreads());
             String dataDir = appConfig.dataDir();
             if (dataDir != null) {
-                setArrayOptionIfPresent(s, "allowed_paths", dataDir);
+                setArrayOptionIfPresent(s, dataDir);
             } else {
                 s.execute("SET allowed_paths = ARRAY[]");
             }
@@ -162,19 +162,19 @@ public final class DuckDbAdapter implements AutoCloseable {
 
     /**
      * Set DuckDB array option if value is non-null
+     *
      * @param statement JDBC statement
-     * @param optionName option name
-     * @param value option value
+     * @param value     option value
      * @throws Exception on SQL failure
      */
-    private static void setArrayOptionIfPresent(Statement statement, String optionName, String value)
+    private static void setArrayOptionIfPresent(Statement statement, String value)
             throws Exception {
         if (value == null) {
             return;
         }
         // DuckDB expects VARCHAR[] e.g. SET allowed_paths = ['/path']
         String escaped = sqlStringLiteral(value);
-        statement.execute("SET " + optionName + " = " + "ARRAY[" + escaped + "]");
+        statement.execute("SET " + "allowed_paths" + " = " + "ARRAY[" + escaped + "]");
     }
 
     /**
@@ -224,6 +224,7 @@ public final class DuckDbAdapter implements AutoCloseable {
      * @param startListener whether to call listener.start()
      * @throws Exception on query or stream failure
      */
+    @SuppressWarnings("java:S3776") // Streaming lifecycle is kept in one scope for deterministic resource cleanup.
     public void streamSql(BufferAllocator allocator, String duckSql,
             org.apache.arrow.flight.FlightProducer.ServerStreamListener listener,
             boolean startListener) throws Exception {
@@ -484,6 +485,7 @@ public final class DuckDbAdapter implements AutoCloseable {
      * @return optional array of aggregated stats values, empty if any stats are missing
      * @throws IOException on read failure
      */
+    @SuppressWarnings("java:S3776") // Footer aggregation handles every supported statistic in one pass.
     public static Optional<Object[]> footerStats(org.apache.hadoop.fs.FileSystem fileSystem,
             org.apache.hadoop.fs.Path full, ParquetQueryParser pq) throws IOException {
         long t = LogUtil.mark();
@@ -568,6 +570,7 @@ public final class DuckDbAdapter implements AutoCloseable {
      * @param filterApplied   whether filter was already applied upstream
      * @return DuckDB SQL string
      */
+    @SuppressWarnings("java:S3776") // SQL rendering branches directly over the supported expression model.
     public static String buildDuckSqlWithFilter(ParquetQueryParser pq, String fromClause,
             boolean filterApplied) {
         StringBuilder sql = new StringBuilder("SELECT ");

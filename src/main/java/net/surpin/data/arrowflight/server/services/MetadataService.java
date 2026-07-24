@@ -60,6 +60,10 @@ public final class MetadataService {
 
     public static final String CATALOG_NAME = "PARQUET_ARROW_FLIGHT_CATALOG";
     public static final String TABLE_TYPE = "TABLE";
+    private static final String COLUMN_TABLE_CATALOG = "TABLE_CATALOG";
+    private static final String VECTOR_CATALOG_NAME = "catalog_name";
+    private static final String COLUMN_TABLE_SCHEMA = "TABLE_SCHEM";
+    private static final String COLUMN_TABLE_TYPE = "TABLE_TYPE";
 
     private final ParquetAdapter parquetAdapter;
 
@@ -159,8 +163,8 @@ public final class MetadataService {
      */
     public VectorSchemaRoot getCatalogsRoot(BufferAllocator allocator) {
         List<Map<String, Object>> data = List.of(
-                Map.of("TABLE_CATALOG", CATALOG_NAME));
-        return getRoot(data, allocator, "catalog_name", "TABLE_CATALOG");
+                Map.of(COLUMN_TABLE_CATALOG, CATALOG_NAME));
+        return getRoot(data, allocator, VECTOR_CATALOG_NAME, COLUMN_TABLE_CATALOG);
     }
 
     /**
@@ -171,7 +175,7 @@ public final class MetadataService {
      * @return schemas VSR
      */
     public VectorSchemaRoot getSchemasRoot(Collection<String> schemas, BufferAllocator allocator) {
-        final VarCharVector catalogsVector = new VarCharVector("catalog_name", allocator);
+        final VarCharVector catalogsVector = new VarCharVector(VECTOR_CATALOG_NAME, allocator);
         final VarCharVector schemasVector = new VarCharVector("db_schema_name",
                 FieldType.notNullable(Types.MinorType.VARCHAR.getType()), allocator);
 
@@ -179,12 +183,12 @@ public final class MetadataService {
         vectors.forEach(FieldVector::allocateNew);
 
         final Map<FieldVector, String> vectorToColumnName = ImmutableMap.of(
-                catalogsVector, "TABLE_CATALOG",
-                schemasVector, "TABLE_SCHEM");
+                catalogsVector, COLUMN_TABLE_CATALOG,
+                schemasVector, COLUMN_TABLE_SCHEMA);
 
         List<? extends Map<String, ?>> data = schemas.stream().map(schema -> Map.of(
-                "TABLE_CATALOG", CATALOG_NAME,
-                "TABLE_SCHEM", schema)).toList();
+                COLUMN_TABLE_CATALOG, CATALOG_NAME,
+                COLUMN_TABLE_SCHEMA, schema)).toList();
 
         saveToVectors(vectorToColumnName, data);
         final int rows = vectors.stream()
@@ -203,8 +207,8 @@ public final class MetadataService {
      */
     public VectorSchemaRoot getTableTypesRoot(BufferAllocator allocator) {
         List<Map<String, Object>> data = List.of(
-                Map.of("TABLE_TYPE", TABLE_TYPE));
-        return getRoot(data, allocator, "table_type", "TABLE_TYPE");
+                Map.of(COLUMN_TABLE_TYPE, TABLE_TYPE));
+        return getRoot(data, allocator, "table_type", COLUMN_TABLE_TYPE);
     }
 
     /**
@@ -228,7 +232,7 @@ public final class MetadataService {
         Predicate<String> schemaNamePredicate = createLikePredicate(schemaFilterPattern);
         Predicate<String> tableNamePredicate = createLikePredicate(tableFilterPattern);
 
-        final VarCharVector catalogNameVector = new VarCharVector("catalog_name", allocator);
+        final VarCharVector catalogNameVector = new VarCharVector(VECTOR_CATALOG_NAME, allocator);
         final VarCharVector schemaNameVector = new VarCharVector("db_schema_name", allocator);
         final VarCharVector tableNameVector = new VarCharVector("table_name",
                 FieldType.notNullable(Types.MinorType.VARCHAR.getType()), allocator);
@@ -251,9 +255,9 @@ public final class MetadataService {
 
         final Map<FieldVector, String> vectorToColumnName = ImmutableMap.of(
                 catalogNameVector, "TABLE_CAT",
-                schemaNameVector, "TABLE_SCHEM",
+                schemaNameVector, COLUMN_TABLE_SCHEMA,
                 tableNameVector, "TABLE_NAME",
-                tableTypeVector, "TABLE_TYPE");
+                tableTypeVector, COLUMN_TABLE_TYPE);
 
         List<Map<String, ?>> data = new LinkedList<>();
         for (Map.Entry<String, Map<String, Schema>> schemaEntry : tables.entrySet()) {
@@ -268,9 +272,9 @@ public final class MetadataService {
                 }
                 data.add(Map.of(
                         "TABLE_CAT", CATALOG_NAME,
-                        "TABLE_SCHEM", schemaName,
+                        COLUMN_TABLE_SCHEMA, schemaName,
                         "TABLE_NAME", tableName,
-                        "TABLE_TYPE", TABLE_TYPE));
+                        COLUMN_TABLE_TYPE, TABLE_TYPE));
                 if (tableSchemaVector != null) {
                     java.nio.ByteBuffer buf = serializeMetadata(
                             tableEntry.getValue(), IpcOption.DEFAULT);
@@ -355,6 +359,7 @@ public final class MetadataService {
      * @param pq parsed join query
      * @return Arrow schema
      */
+    @SuppressWarnings("java:S3776")
     private Schema buildJoinSchema(ParquetQueryParser pq) {
         long t = LogUtil.mark();
         Map<String, Schema> aliasSchemas = new LinkedHashMap<>();
@@ -505,7 +510,7 @@ public final class MetadataService {
      * @param rowPredicate       filter for rows to include
      * @return number of rows written
      */
-    @SuppressWarnings("StringSplitter")
+    @SuppressWarnings({"StringSplitter", "java:S3776"})
     private static <T extends FieldVector> int saveToVectors(
             Map<T, String> vectorToColumnName,
             List<? extends Map<String, ?>> data,

@@ -26,6 +26,8 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 
 public class TypeConversionHelper {
+    private static final String KEY_FIELD_NAME = "key";
+    private static final String VALUE_FIELD_NAME = "value";
     static final Function<Long, Long> microsToNanos = (micros) -> TypeConversionHelper.microsToMillis.apply(micros) * 1000L;
     static final Function<Long, Long> microsToMillis = DateTimeUtils::microsToMillis;
     static final Function<Long, Long> microsToSecs = (micros) -> TypeConversionHelper.microsToMillis.apply(micros) / 1000L;
@@ -98,11 +100,12 @@ public class TypeConversionHelper {
             if (lt.getChildType().getTypeID() == FieldType.IDs.STRUCT && lv.getDataVector() instanceof StructVector dv) {
                 FieldType.StructType st = (FieldType.StructType) lt.getChildType();
                 String[] childKeys = st.getChildrenType().keySet().toArray(new String[0]);
-                if (childKeys.length == 2 && childKeys[0].equals("key") && childKeys[1].equals("value")) {
+                if (childKeys.length == 2 && childKeys[0].equals(KEY_FIELD_NAME)
+                        && childKeys[1].equals(VALUE_FIELD_NAME)) {
                     List<Map.Entry<String, ?>> kvs = new java.util.ArrayList<>(m.entrySet());
                     if (kvs.size() == 1 && kvs.getFirst().getKey().equals("map") && kvs.getFirst().getValue() instanceof List<?> list) {
-                        FieldType kt = st.getChildrenType().get("key");
-                        FieldType vt = st.getChildrenType().get("value");
+                        FieldType kt = st.getChildrenType().get(KEY_FIELD_NAME);
+                        FieldType vt = st.getChildrenType().get(VALUE_FIELD_NAME);
                         List<Object> keys = new java.util.ArrayList<>();
                         List<Object> values = new java.util.ArrayList<>();
                         list.forEach(e -> {
@@ -175,13 +178,15 @@ public class TypeConversionHelper {
     static final ArrowConversion.ConvertFrom<List<?>, MapVector, FieldType.MapType, ArrayBasedMapData> translateMap = (l, mv, mt) -> {
         List<Object> keys = new java.util.ArrayList<>();
         List<Object> values = new java.util.ArrayList<>();
-        Function<ValueVector[], Boolean> probe = (vs) -> (vs.length == 2 && vs[0].getField().getName().equalsIgnoreCase("key") && vs[1].getField().getName().equalsIgnoreCase("value"));
+        Function<ValueVector[], Boolean> probe = (vs) -> (vs.length == 2
+                && vs[0].getField().getName().equalsIgnoreCase(KEY_FIELD_NAME)
+                && vs[1].getField().getName().equalsIgnoreCase(VALUE_FIELD_NAME));
         Consumer<ValueVector[]> populate = (vs) -> {
             if (probe.apply(vs)) {
                 l.forEach(e -> {
                     JsonStringHashMap<?, ?> entry = (JsonStringHashMap<?, ?>) e;
-                    keys.add(translate.apply(mt.getKeyType(), entry.get("key"), vs[0]));
-                    values.add(translate.apply(mt.getValueType(), entry.get("value"), vs[1]));
+                    keys.add(translate.apply(mt.getKeyType(), entry.get(KEY_FIELD_NAME), vs[0]));
+                    values.add(translate.apply(mt.getValueType(), entry.get(VALUE_FIELD_NAME), vs[1]));
                 });
             }
         };
