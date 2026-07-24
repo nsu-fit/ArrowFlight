@@ -348,10 +348,10 @@ public final class Table implements Serializable {
                 return Optional.empty();
             }
             if ("<=>".equals(name)) {
-                return Optional.of("((" + left.get() + IS_NOT_NULL+" and "
-                        + right.get() + IS_NOT_NULL+" and " + left.get() + " = "
-                        + right.get() + ") or (" + left.get() + IS_NULL +" and "
-                        + right.get() + " is null))");
+                return Optional.of("((" + left.get() + IS_NOT_NULL + " and "
+                        + right.get() + IS_NOT_NULL + " and " + left.get() + " = "
+                        + right.get() + ") or (" + left.get() + IS_NULL + " and "
+                        + right.get() + IS_NULL + "))");
             }
             return Optional.of(left.get() + " " + name + " " + right.get());
         }
@@ -500,7 +500,7 @@ public final class Table implements Serializable {
             String identifier = quoteIdentifier(equalNullSafe.attribute());
             // Spark's null-safe equality is a two-valued predicate. Preserve that
             // property inside NOT/OR as well as in a top-level WHERE clause.
-            return equality.map(sql -> "(" + identifier + IS_NOT_NULL +" and " + sql + ")");
+            return equality.map(sql -> "(" + identifier + IS_NOT_NULL + " and " + sql + ")");
         }
         if (filter instanceof LessThan lessThan) {
             return comparison(lessThan.attribute(), "<", lessThan.value());
