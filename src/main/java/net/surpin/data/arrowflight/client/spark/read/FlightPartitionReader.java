@@ -118,6 +118,7 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
     }
 
     @Override
+    @SuppressWarnings("java:S3776") // Row iteration coordinates retry, stream, and batch state atomically.
     public boolean next() throws IOException {
         LOGGER.debug("node={} spark=readerNext", NODE);
         if (this.columnarMode) {
@@ -335,6 +336,7 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
      * @return - true if stream opened successfully
      * @throws Exception - if all retries and endpoints fail
      */
+    @SuppressWarnings("java:S3776") // Retry decisions intentionally remain beside endpoint failover state.
     private boolean openQueryStreamWithRetry(FlightInputPartition.FlightQueryInputPartition dqPartition) throws Exception {
         int maxRetries = this.configuration.getMaxRetries();
         long backoffMs = this.configuration.getRetryBackoffMs();
@@ -559,6 +561,7 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
         return vector.getObject(rowIndex);
     }
 
+    @SuppressWarnings("java:S3776") // Exact-width Arrow integer vectors require explicit conversions.
     private static Object extractInt(
             org.apache.arrow.vector.FieldVector vector, int rowIndex, Field field) {
         if (vector instanceof TinyIntVector vec) {

@@ -25,6 +25,8 @@ import java.util.regex.Pattern;
  */
 public final class MetricsService implements AutoCloseable {
 
+    private static final String METRIC_TYPE_GAUGE = "gauge";
+    private static final String METRIC_TYPE_COUNTER = "counter";
     private static final double[] DURATION_BUCKETS = {
         0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0
     };
@@ -172,7 +174,7 @@ public final class MetricsService implements AutoCloseable {
     private static String render() {
         StringBuilder metrics = new StringBuilder(8192);
         appendJvmMetrics(metrics);
-        metric(metrics, "arrowflight_parquet_queries_active", "gauge",
+        metric(metrics, "arrowflight_parquet_queries_active", METRIC_TYPE_GAUGE,
                 "Currently executing Parquet queries", ACTIVE_QUERIES.get());
         appendQueryMetrics(metrics);
 
@@ -187,30 +189,30 @@ public final class MetricsService implements AutoCloseable {
     private static void appendJvmMetrics(StringBuilder metrics) {
         MemoryMXBean memory = ManagementFactory.getMemoryMXBean();
         ThreadMXBean threads = ManagementFactory.getThreadMXBean();
-        metric(metrics, "arrowflight_jvm_heap_used_bytes", "gauge",
+        metric(metrics, "arrowflight_jvm_heap_used_bytes", METRIC_TYPE_GAUGE,
                 "Used JVM heap", memory.getHeapMemoryUsage().getUsed());
-        metric(metrics, "arrowflight_jvm_heap_max_bytes", "gauge",
+        metric(metrics, "arrowflight_jvm_heap_max_bytes", METRIC_TYPE_GAUGE,
                 "Maximum JVM heap", memory.getHeapMemoryUsage().getMax());
-        metric(metrics, "arrowflight_jvm_nonheap_used_bytes", "gauge",
+        metric(metrics, "arrowflight_jvm_nonheap_used_bytes", METRIC_TYPE_GAUGE,
                 "Used JVM non-heap memory", memory.getNonHeapMemoryUsage().getUsed());
-        metric(metrics, "arrowflight_jvm_threads_live", "gauge",
+        metric(metrics, "arrowflight_jvm_threads_live", METRIC_TYPE_GAUGE,
                 "Live JVM threads", threads.getThreadCount());
-        metric(metrics, "arrowflight_jvm_threads_daemon", "gauge",
+        metric(metrics, "arrowflight_jvm_threads_daemon", METRIC_TYPE_GAUGE,
                 "Live daemon JVM threads", threads.getDaemonThreadCount());
-        metric(metrics, "arrowflight_jvm_threads_peak", "gauge",
+        metric(metrics, "arrowflight_jvm_threads_peak", METRIC_TYPE_GAUGE,
                 "Peak live JVM threads", threads.getPeakThreadCount());
         java.lang.management.OperatingSystemMXBean operatingSystem =
                 ManagementFactory.getOperatingSystemMXBean();
-        metric(metrics, "arrowflight_process_cpu_available", "gauge",
+        metric(metrics, "arrowflight_process_cpu_available", METRIC_TYPE_GAUGE,
                 "Processors available to the JVM", operatingSystem.getAvailableProcessors());
-        metric(metrics, "arrowflight_system_load_average", "gauge",
+        metric(metrics, "arrowflight_system_load_average", METRIC_TYPE_GAUGE,
                 "Operating system load average", operatingSystem.getSystemLoadAverage());
         if (operatingSystem instanceof com.sun.management.OperatingSystemMXBean extended) {
-            metric(metrics, "arrowflight_process_cpu_time_seconds_total", "counter",
+            metric(metrics, "arrowflight_process_cpu_time_seconds_total", METRIC_TYPE_COUNTER,
                     "CPU time used by the Flight JVM", seconds(extended.getProcessCpuTime()));
         }
         if (operatingSystem instanceof UnixOperatingSystemMXBean unix) {
-            metric(metrics, "arrowflight_process_open_file_descriptors", "gauge",
+            metric(metrics, "arrowflight_process_open_file_descriptors", METRIC_TYPE_GAUGE,
                     "Open file descriptors in the Flight JVM", unix.getOpenFileDescriptorCount());
         }
     }
@@ -221,11 +223,11 @@ public final class MetricsService implements AutoCloseable {
      * @param metrics destination payload
      */
     private static void appendQueryMetrics(StringBuilder metrics) {
-        helpType(metrics, "arrowflight_parquet_queries_total", "counter",
+        helpType(metrics, "arrowflight_parquet_queries_total", METRIC_TYPE_COUNTER,
                 "Completed logical Parquet queries");
-        helpType(metrics, "arrowflight_parquet_query_failures_total", "counter",
+        helpType(metrics, "arrowflight_parquet_query_failures_total", METRIC_TYPE_COUNTER,
                 "Failed logical Parquet queries");
-        helpType(metrics, "arrowflight_parquet_logical_input_bytes_total", "counter",
+        helpType(metrics, "arrowflight_parquet_logical_input_bytes_total", METRIC_TYPE_COUNTER,
                 "Planned logical Parquet input bytes");
         helpType(metrics, "arrowflight_parquet_query_duration_seconds", "histogram",
                 "End-to-end Parquet scan and execution duration");

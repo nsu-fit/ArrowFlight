@@ -61,6 +61,9 @@ public class SparkArrowClientBenchmark {
 
     private static final String SCHEMA = "perf_schema";
     private static final String TABLE  = "perf_table";
+    private static final String PORT_ARGUMENT = "--port";
+    private static final String ARROW_COUNT_PREFIX = "SELECT count(*) FROM ";
+    private static final String CLICKHOUSE_COUNT_PREFIX = "SELECT count() FROM ";
 
     // ── entry point ───────────────────────────────────────────────────────────
 
@@ -75,7 +78,7 @@ public class SparkArrowClientBenchmark {
 
         if (flag(args, "--server-only")) {
             runServerOnly(arg(args, "--datadir", "/tmp/arrow-perf"),
-                    Integer.parseInt(arg(args, "--port", "32010")));
+                    Integer.parseInt(arg(args, PORT_ARGUMENT, "32010")));
             return;
         }
 
@@ -96,7 +99,8 @@ public class SparkArrowClientBenchmark {
      * @throws Exception on failure
      */
     private static void runLocalBenchmark(int numRows) throws Exception {
-        Path dataDir = Files.createTempDirectory("arrow-perf-");
+        Path dataDir = Files.createTempDirectory(
+                Path.of(System.getProperty("user.home")), "arrow-perf-");
         Process serverProc = null;
         try {
             // 1. Generate data (client JVM — its own SparkSession)
@@ -142,7 +146,7 @@ public class SparkArrowClientBenchmark {
                     "net.surpin.data.arrowflight.debug.SparkArrowClientBenchmark",
                     "--server-only",
                     "--datadir", dataDir.toAbsolutePath().toString(),
-                    "--port", String.valueOf(port)
+                    PORT_ARGUMENT, String.valueOf(port)
             ));
 
             System.out.printf("Starting server JVM on port %d...%n", port);
@@ -178,9 +182,9 @@ public class SparkArrowClientBenchmark {
 
                 // 6. Warmup (JIT + page cache)
                 System.out.println("\nWarming up Arrow Flight...");
-                runArrow(sqlClient, client, "SELECT count(*) FROM " + SCHEMA + "." + TABLE);
+                runArrow(sqlClient, client, ARROW_COUNT_PREFIX + SCHEMA + "." + TABLE);
                 System.out.println("Warming up ClickHouse local...");
-                timeClickHouseDirect("SELECT count() FROM " + chGlob);
+                timeClickHouseDirect(CLICKHOUSE_COUNT_PREFIX + chGlob);
                 System.out.println("Warming up Spark...");
                 spark.sql("SELECT count(*) FROM perf_parquet").collectAsList();
 
@@ -195,12 +199,12 @@ public class SparkArrowClientBenchmark {
                 List<BenchQuery> benchmarks = List.of(
                         new BenchQuery(
                                 "count(*)",
-                                "SELECT count(*) FROM " + SCHEMA + "." + TABLE,
-                                "SELECT count() FROM " + chGlob,
+                                ARROW_COUNT_PREFIX + SCHEMA + "." + TABLE,
+                                CLICKHOUSE_COUNT_PREFIX + chGlob,
                                 "SELECT count(*) FROM perf_parquet"),
                         new BenchQuery(
                                 "count(*) GROUP BY tinyint_col",
-                                "SELECT count(*) FROM " + SCHEMA + "." + TABLE + " GROUP BY tinyint_col",
+                                ARROW_COUNT_PREFIX + SCHEMA + "." + TABLE + " GROUP BY tinyint_col",
                                 "SELECT `tinyint_col`, count() FROM " + chGlob + " GROUP BY `tinyint_col`",
                                 "SELECT count(*) FROM perf_parquet GROUP BY tinyint_col"),
                         new BenchQuery(
@@ -215,13 +219,13 @@ public class SparkArrowClientBenchmark {
                                 "SELECT min(int_col), max(int_col) FROM perf_parquet"),
                         new BenchQuery(
                                 "count(*) WHERE tinyint_col = 3",
-                                "SELECT count(*) FROM " + SCHEMA + "." + TABLE + " WHERE \"tinyint_col\" = 3",
-                                "SELECT count() FROM " + chGlob + " WHERE `tinyint_col` = 3",
+                                ARROW_COUNT_PREFIX + SCHEMA + "." + TABLE + " WHERE \"tinyint_col\" = 3",
+                                CLICKHOUSE_COUNT_PREFIX + chGlob + " WHERE `tinyint_col` = 3",
                                 "SELECT count(*) FROM perf_parquet WHERE tinyint_col = 3"),
                         new BenchQuery(
                                 "JOIN t1.id = t2.tinyint_col",
                                 null, // Arrow Flight doesn't support JOINs
-                                "SELECT count() FROM " + chGlob + " AS t1"
+                                CLICKHOUSE_COUNT_PREFIX + chGlob + " AS t1"
                                         + " INNER JOIN " + chGlob2 + " AS t2 ON t1.`id` = t2.`tinyint_col`",
                                 "SELECT count(*) FROM perf_parquet t1 JOIN perf_parquet t2"
                                         + " ON t1.id = t2.tinyint_col")
@@ -313,7 +317,7 @@ public class SparkArrowClientBenchmark {
      */
     private static void runClusterBenchmark(String[] args) {
         String server = arg(args, "--server", "127.0.0.1");
-        int    port   = Integer.parseInt(arg(args, "--port", "32010"));
+        int    port   = Integer.parseInt(arg(args, PORT_ARGUMENT, "32010"));
 
         SparkSession spark = SparkSession.builder()
                 .appName("ArrowFlight Client")

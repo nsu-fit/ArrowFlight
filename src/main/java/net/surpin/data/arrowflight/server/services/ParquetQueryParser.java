@@ -191,6 +191,7 @@ public class ParquetQueryParser {
      * @param query raw SQL query string
      * @return flattened query, or original if no subquery wrapper detected
      */
+    @SuppressWarnings("java:S3776")
     private static String flattenSubqueryWrapper(String query) {
         String q = query.trim();
 
@@ -394,6 +395,7 @@ public class ParquetQueryParser {
      * @param noQuoteCtx DSL context with quoted names disabled
      * @return parsed query representation for a single-table query
      */
+    @SuppressWarnings("java:S3776")
     private static ParquetQueryParser parseSingleTableSelect(Select<?> select,
             List<? extends Table<?>> fromTables, DSLContext noQuoteCtx) {
 

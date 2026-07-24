@@ -49,6 +49,7 @@ import java.math.BigDecimal;
 public final class ExecutionService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ExecutionService.class);
+    private static final String FILES_TIMING_PREFIX = "files=";
 
     private final ParquetAdapter parquetAdapter;
     private final DuckDbAdapter duckDbAdapter;
@@ -100,7 +101,7 @@ public final class ExecutionService {
             long tDiscover = LogUtil.mark();
             fileUris = parquetAdapter.locationsForQuery(query)
                     .keySet().toArray(new String[0]);
-            LogUtil.logTiming(tDiscover, "files.discover", "files=" + fileUris.length);
+            LogUtil.logTiming(tDiscover, "files.discover", FILES_TIMING_PREFIX + fileUris.length);
         }
 
         List<Path> parquetFiles = resolveParquetFiles(parsedQuery, fileUris);
@@ -111,7 +112,7 @@ public final class ExecutionService {
 
         long tResolve = LogUtil.mark();
         List<String> resolvedUris = resolveUris(fileUris);
-        LogUtil.logTiming(tResolve, "files.resolveUris", "files=" + resolvedUris.size());
+        LogUtil.logTiming(tResolve, "files.resolveUris", FILES_TIMING_PREFIX + resolvedUris.size());
 
         if (parsedQuery.hasAggregation) {
             LOGGER.debug("qid={} node={} execution=engine engine=DuckDB(aggregation) hasGroupBy={} files={}",
@@ -141,6 +142,7 @@ public final class ExecutionService {
      * @param startListener whether to call listener.start()
      * @throws Exception on execution failure
      */
+    @SuppressWarnings("java:S3776") // Aggregation dispatch intentionally keeps all aggregate states together.
     private void executeAggregation(BufferAllocator allocator, ParquetQueryParser pq,
             List<Path> parquetFiles, List<String> resolvedUris, String[] fileUris,
             FlightProducer.ServerStreamListener listener,
@@ -169,7 +171,7 @@ public final class ExecutionService {
             for (Future<Long> f : futs) {
                 total += f.get();
             }
-            LogUtil.logTiming(t, "engine:agg.footerCount", "files=" + parquetFiles.size() + " total=" + total);
+            LogUtil.logTiming(t, "engine:agg.footerCount", FILES_TIMING_PREFIX + parquetFiles.size() + " total=" + total);
             int n = pq.selectExprs.size();
             Object[] row = new Object[n];
             Arrays.fill(row, total);
@@ -209,13 +211,13 @@ public final class ExecutionService {
                 }
             }
             if (allHaveStats) {
-                LogUtil.logTiming(t, "engine:agg.footerStats", "files=" + parquetFiles.size());
+                LogUtil.logTiming(t, "engine:agg.footerStats", FILES_TIMING_PREFIX + parquetFiles.size());
                 List<Object[]> rows = merged != null
                         ? Collections.singletonList(merged) : Collections.emptyList();
                 emitRowsAsArrow(allocator, pq, rows, listener, startListener);
                 return;
             }
-            LogUtil.logTiming(t, "engine:agg.footerStatsFallback", "files=" + parquetFiles.size());
+            LogUtil.logTiming(t, "engine:agg.footerStatsFallback", FILES_TIMING_PREFIX + parquetFiles.size());
         }
 
         String duckSql = DuckDbAdapter.buildDuckSqlWithFilter(pq,
@@ -267,7 +269,7 @@ public final class ExecutionService {
                             + " AS SELECT * FROM "
                             + DuckDbAdapter.readParquetFromClause(duckDbPaths));
                 }
-                LogUtil.logTiming(tView, "engine:join.createView", "alias=" + jt.alias() + " files=" + duckDbPaths.size());
+                LogUtil.logTiming(tView, "engine:join.createView", "alias=" + jt.alias() + " " + FILES_TIMING_PREFIX + duckDbPaths.size());
                 registeredAliases.add(jt.alias());
             }
 
@@ -305,7 +307,7 @@ public final class ExecutionService {
         for (String uri : fileUris) {
             files.add(new Path(parquetAdapter.dataDirectory(), uri));
         }
-        LogUtil.logTiming(t, "files.resolvePaths", "files=" + files.size());
+        LogUtil.logTiming(t, "files.resolvePaths", FILES_TIMING_PREFIX + files.size());
         return files;
     }
 
@@ -323,7 +325,7 @@ public final class ExecutionService {
             Path path = new Path(parquetAdapter.dataDirectory(), rel);
             uris.add(parquetAdapter.fileSystem().makeQualified(path).toUri().toString());
         }
-        LogUtil.logTiming(t, "files.resolveUris", "files=" + uris.size());
+        LogUtil.logTiming(t, "files.resolveUris", FILES_TIMING_PREFIX + uris.size());
         return uris;
     }
 
@@ -372,7 +374,7 @@ public final class ExecutionService {
                 uris.add(plainDuckDbPath(f.getPath()));
             }
         }
-        LogUtil.logTiming(t, "engine:join.resolveTableFiles", "table=" + key + " files=" + uris.size());
+        LogUtil.logTiming(t, "engine:join.resolveTableFiles", "table=" + key + " " + FILES_TIMING_PREFIX + uris.size());
         return uris;
     }
 
@@ -415,6 +417,7 @@ public final class ExecutionService {
      * @param startListener whether to call listener.start()
      * @throws InterruptedException if interrupted during send
      */
+    @SuppressWarnings("java:S3776") // Vector population must branch on each supported Arrow vector type.
     private void emitRowsAsArrow(BufferAllocator allocator, ParquetQueryParser pq,
             List<Object[]> rows, FlightProducer.ServerStreamListener listener,
             boolean startListener) throws InterruptedException {

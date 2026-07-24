@@ -61,6 +61,7 @@ public final class SchemaConverter {
      * @param type  parquet type
      * @return Arrow field
      */
+    @SuppressWarnings("java:S3776")
     public static Field convert(String path, Type type) {
         boolean nullable = type.getRepetition() != Type.Repetition.REQUIRED;
 
@@ -146,6 +147,7 @@ public final class SchemaConverter {
      * @param nullable    whether field is nullable
      * @return Arrow field
      */
+    @SuppressWarnings("java:S3776")
     private static Field convertPrimitive(String path, PrimitiveType parquetType, boolean nullable) {
         OriginalType origType = parquetType.getOriginalType();
         if (origType != null) {
@@ -290,7 +292,7 @@ public final class SchemaConverter {
          *
          * @return map of column names to values
          */
-        public Map<String, ?> toMap() {
+        public Map<String, Object> toMap() {
             Map<String, Object> result = new HashMap<>();
             result.put("TYPE_NAME", this.typeName());
             result.put("DATA_TYPE", this.dataType());

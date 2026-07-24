@@ -46,6 +46,8 @@ import static net.surpin.data.arrowflight.server.adapters.HostUtils.LOOPBACK_HOS
 public class ParquetAdapter {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ParquetAdapter.class);
+    private static final String PARQUET_EXTENSION = ".parquet";
+    private static final String TABLE_TIMING_PREFIX = "table=";
 
     private final FileSystem fileSystem;
     private final String dataDirectory;
@@ -149,7 +151,7 @@ public class ParquetAdapter {
             Path parquetPath = null;
             while (it.hasNext()) {
                 LocatedFileStatus lfs = it.next();
-                if (lfs.isFile() && lfs.getPath().getName().endsWith(".parquet")) {
+                if (lfs.isFile() && lfs.getPath().getName().endsWith(PARQUET_EXTENSION)) {
                     parquetPath = lfs.getPath();
                     break;
                 }
@@ -158,7 +160,7 @@ public class ParquetAdapter {
             if (parquetPath == null) {
                 LOGGER.warn("node={} parquet=schemaNotFound table={}.{} path={}",
                         LogUtil.node(), schema, table, tableDirectoryPath);
-                LogUtil.logTiming(t, "schema.tableNotFound", "table=" + schema + "." + table);
+                LogUtil.logTiming(t, "schema.tableNotFound", TABLE_TIMING_PREFIX + schema + "." + table);
                 return new Schema(Collections.emptyList(), null);
             }
 
@@ -184,7 +186,7 @@ public class ParquetAdapter {
                     parquetSchema,
                     cd -> columns == null || columns.isEmpty()
                             || cd.getPath().length == 1 && columns.contains(cd.getPath()[0]));
-            LogUtil.logTiming(t, "schema.readFooter", "table=" + schema + "." + table + " fields=" + parquetSchema.getFieldCount());
+            LogUtil.logTiming(t, "schema.readFooter", TABLE_TIMING_PREFIX + schema + "." + table + " fields=" + parquetSchema.getFieldCount());
             return result;
         } catch (IOException e) {
             throw new UncheckedIOException(e);
@@ -264,6 +266,7 @@ public class ParquetAdapter {
      * @return map of relative file path to FileAssignment with locality info
      * @throws IOException on HDFS read failure
      */
+    @SuppressWarnings("java:S3776") // Locality calculation mirrors the Hadoop block hierarchy.
     public Map<String, FileAssignment> locationsForQuery(String query) throws IOException {
         long t = LogUtil.mark();
         ParquetQueryParser parsedQuery = ParquetQueryParser.parse(query);
@@ -283,7 +286,7 @@ public class ParquetAdapter {
                 RemoteIterator<LocatedFileStatus> filesIter = fileSystem.listFiles(parquetPath, true);
                 while (filesIter.hasNext()) {
                     LocatedFileStatus file = filesIter.next();
-                    if (file.isDirectory() || !file.getPath().getName().toLowerCase().endsWith(".parquet")) {
+                    if (file.isDirectory() || !file.getPath().getName().toLowerCase().endsWith(PARQUET_EXTENSION)) {
                         continue;
                     }
                     String relativePath = dataDirectoryURI.relativize(file.getPath().toUri()).toString();
@@ -291,7 +294,7 @@ public class ParquetAdapter {
                     fileCount++;
                     totalBytes += file.getLen();
                 }
-                LogUtil.logTiming(t, "schema.discoverJoinTable", "table=" + jt.schema() + "." + jt.table() + " files=" + fileCount + " bytes=" + totalBytes);
+                LogUtil.logTiming(t, "schema.discoverJoinTable", TABLE_TIMING_PREFIX + jt.schema() + "." + jt.table() + " files=" + fileCount + " bytes=" + totalBytes);
             }
             return result;
         }
@@ -304,7 +307,7 @@ public class ParquetAdapter {
         RemoteIterator<LocatedFileStatus> filesIter = fileSystem.listFiles(parquetPath, true);
         while (filesIter.hasNext()) {
             LocatedFileStatus file = filesIter.next();
-            if (file.isDirectory() || !file.getPath().getName().toLowerCase().endsWith(".parquet")) {
+            if (file.isDirectory() || !file.getPath().getName().toLowerCase().endsWith(PARQUET_EXTENSION)) {
                 continue;
             }
             String relativePath = dataDirectoryURI.relativize(file.getPath().toUri()).toString();
@@ -312,7 +315,7 @@ public class ParquetAdapter {
             fileCount++;
             totalBytes += file.getLen();
         }
-        LogUtil.logTiming(t, "schema.discover", "table=" + (parsedQuery.schema != null ? parsedQuery.schema + "." : "") + (parsedQuery.table != null ? parsedQuery.table : "") + " files=" + fileCount + " bytes=" + totalBytes);
+        LogUtil.logTiming(t, "schema.discover", TABLE_TIMING_PREFIX + (parsedQuery.schema != null ? parsedQuery.schema + "." : "") + (parsedQuery.table != null ? parsedQuery.table : "") + " files=" + fileCount + " bytes=" + totalBytes);
         return result;
     }
 
@@ -341,7 +344,7 @@ public class ParquetAdapter {
             LocatedFileStatus file = files.next();
             scanned++;
             if (file.isFile()
-                    && file.getPath().getName().toLowerCase().endsWith(".parquet")
+                    && file.getPath().getName().toLowerCase().endsWith(PARQUET_EXTENSION)
                     && hasLocalBlock(fileLocality(file).keySet(), localhost)) {
                 String relativePath = rootUri.relativize(file.getPath().toUri()).toString();
                 result.put(relativePath, file.getLen());

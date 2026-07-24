@@ -1,11 +1,9 @@
 package net.surpin.data.arrowflight.client.model;
 
-import java.io.Serializable;
-
 /**
  * Describes the format of a field-vector
  */
-public class FieldVector implements Serializable {
+public class FieldVector {
     //the field information
     private final Field field;
     //the values in the vector

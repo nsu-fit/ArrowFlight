@@ -181,7 +181,9 @@ class ParquetManagerIntegrationTest {
         }
 
         @Override
-        public void putMetadata(ArrowBuf metadata) {}
+        public void putMetadata(ArrowBuf metadata) {
+            // Metadata frames do not contribute to the row count asserted by this listener.
+        }
 
         @Override
         public boolean isReady() { return true; }
@@ -190,15 +192,21 @@ class ParquetManagerIntegrationTest {
         public boolean isCancelled() { return false; }
 
         @Override
-        public void setOnReadyHandler(Runnable handler) {}
+        public void setOnReadyHandler(Runnable handler) {
+            // The test listener is always ready and never needs a readiness callback.
+        }
 
         @Override
-        public void setOnCancelHandler(Runnable handler) {}
+        public void setOnCancelHandler(Runnable handler) {
+            // The test listener is never cancelled and does not register a callback.
+        }
 
         @Override
         public void error(Throwable ex) { throw new RuntimeException(ex); }
 
         @Override
-        public void completed() {}
+        public void completed() {
+            // Completion is observed through the accumulated row count.
+        }
     }
 }

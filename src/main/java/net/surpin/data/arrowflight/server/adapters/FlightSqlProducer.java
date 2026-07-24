@@ -46,6 +46,7 @@ import static java.util.UUID.randomUUID;
 public final class FlightSqlProducer extends BasicFlightSqlProducer implements AutoCloseable {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(FlightSqlProducer.class);
+    private static final String SCHEMA_NOT_FOUND_MESSAGE = "Could not find Arrow schema for query";
 
     private final Location location;
     private final BufferAllocator allocator;
@@ -210,7 +211,7 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
             LOGGER.error("Error getting Arrow schema for query: {}", query, e);
             if (isFileNotFound(e)) {
                 throw CallStatus.NOT_FOUND
-                        .withDescription("Could not find Arrow schema for query")
+                        .withDescription(SCHEMA_NOT_FOUND_MESSAGE)
                         .withCause(e).toRuntimeException();
             }
             throw CallStatus.INTERNAL
@@ -221,7 +222,7 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
         if (arrowSchema == null) {
             LOGGER.error("Arrow schema not found for query: {}", query);
             throw CallStatus.NOT_FOUND
-                    .withDescription("Could not find Arrow schema for query")
+                    .withDescription(SCHEMA_NOT_FOUND_MESSAGE)
                     .toRuntimeException();
         }
 
@@ -252,7 +253,7 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
 
         if (arrowSchema == null) {
             throw CallStatus.NOT_FOUND
-                    .withDescription("Could not find Arrow schema for query")
+                    .withDescription(SCHEMA_NOT_FOUND_MESSAGE)
                     .toRuntimeException();
         }
 
@@ -383,6 +384,7 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
     }
 
     @Override
+    @SuppressWarnings("java:S3776")
     public void getStreamTables(FlightSql.CommandGetTables command,
             FlightProducer.CallContext context,
             FlightProducer.ServerStreamListener listener) {
@@ -469,6 +471,7 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
 
     @Override
     public void close() throws Exception {
+        // Dependencies and allocator are owned and closed by the server bootstrap.
     }
 
     /**
