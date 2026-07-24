@@ -242,100 +242,147 @@ public class FieldType implements Serializable {
      * @return - the converted field-type
      */
     public static FieldType fromArrow(ArrowType at, java.util.List<org.apache.arrow.vector.types.pojo.Field> children) {
-        switch (at.getTypeID()) {
-            case Int:
-                ArrowType.Int it = (ArrowType.Int) at;
-                switch (it.getBitWidth()) {
-                    case 8:
-                        return new FieldType(it.getIsSigned() ? IDs.BYTE : IDs.SHORT);
-                    case 16:
-                        return new FieldType(it.getIsSigned() ? IDs.SHORT : IDs.INT);
-                    case 64:
-                        return new FieldType(it.getIsSigned() ? IDs.LONG : IDs.BIGINT);
-                    case 32:
-                    default:
-                        return new FieldType(it.getIsSigned() ? IDs.INT : IDs.LONG);
-                }
-            case Utf8:
-            case LargeUtf8:
-                return new FieldType(IDs.VARCHAR);
-            case Decimal:
+        return switch (at.getTypeID()) {
+            case Int -> fromArrowInt((ArrowType.Int) at);
+            case Utf8, LargeUtf8 -> new FieldType(IDs.VARCHAR);
+            case Decimal -> {
                 ArrowType.Decimal d = (ArrowType.Decimal) at;
-                return new DecimalType(d.getPrecision(), d.getScale());
-            case Date:
-                return new FieldType(IDs.DATE);
-            case Time:
-                return new FieldType(IDs.TIME);
-            case Timestamp:
-                return new FieldType(IDs.TIMESTAMP);
-            case FloatingPoint:
-                switch (((ArrowType.FloatingPoint) at).getPrecision()) {
-                    case HALF:
-                    case SINGLE:
-                        return new FieldType(IDs.FLOAT);
-                    case DOUBLE:
-                    default:
-                        return new FieldType(IDs.DOUBLE);
-                }
-            case Interval:
-                switch (((ArrowType.Interval) at).getUnit()) {
-                    case YEAR_MONTH:
-                        return new FieldType(IDs.PERIOD_YEAR_MONTH);
-                    case DAY_TIME:
-                        return new FieldType(IDs.DURATION_DAY_TIME);
-                    case MONTH_DAY_NANO:
-                    default:
-                        return new FieldType(IDs.PERIOD_DURATION_MONTH_DAY_TIME);
-                }
-            case Duration:
-                return new FieldType(IDs.PERIOD_DURATION_MONTH_DAY_TIME);
-            case Bool:
-                return new FieldType(IDs.BOOLEAN);
-            case Struct:
-            case Union:
-                Map<String, FieldType> scType = new java.util.LinkedHashMap<>();
-                if (children != null) {
-                    children.forEach(c -> scType.put(c.getName(), FieldType.fromArrow(c.getType(), c.getChildren())));
-                }
-                return (at.getTypeID() == ArrowType.ArrowTypeID.Struct) ? new StructType(scType) : new UnionType(scType);
-            case Map:
-                FieldType keyType = null;
-                FieldType valueType = null;
-                if (children != null) {
-                    if (children.size() == 1) {
-                        FieldType mcType = FieldType.fromArrow(children.get(0).getType(), children.get(0).getChildren());
-                        if (mcType.getTypeID() == IDs.STRUCT)  {
-                            Map<String, FieldType> cldType = ((StructType) mcType).getChildrenType();
-                            String[] keys = cldType.keySet().toArray(new String[0]);
-                            if (keys.length == 2 && keys[0].equalsIgnoreCase(KEY_FIELD_NAME) && keys[1].equalsIgnoreCase(VALUE_FIELD_NAME)) {
-                                keyType = cldType.get(KEY_FIELD_NAME);
-                                valueType = cldType.get(VALUE_FIELD_NAME);
-                            }
-                        }
-                    } else if (children.size() == 2) {
-                        keyType = FieldType.fromArrow(children.get(0).getType(), children.get(0).getChildren());
-                        valueType = FieldType.fromArrow(children.get(1).getType(), children.get(1).getChildren());
-                    }
-                }
-                if (keyType == null || valueType == null) {
-                    throw new RuntimeException("Invalid map-type.");
-                }
-                return new MapType(keyType, valueType);
-            case List:
-            case LargeList:
-            case FixedSizeList:
-                FieldType lcType = (children != null && children.size() > 0) ? FieldType.fromArrow(children.get(0).getType(), children.get(0).getChildren()) : null;
-                return (at.getTypeID() == ArrowType.ArrowTypeID.FixedSizeList) ? new ListType(((ArrowType.FixedSizeList) at).getListSize(), lcType) : new ListType(lcType);
-            case Binary:
-            case LargeBinary:
-                return new BinaryType(-1);
-            case FixedSizeBinary:
-                return new BinaryType(((ArrowType.FixedSizeBinary) at).getByteWidth());
-            case Null:
-            case NONE:
-            default:
-                return new FieldType(IDs.NULL);
+                yield new DecimalType(d.getPrecision(), d.getScale());
+            }
+            case Date -> new FieldType(IDs.DATE);
+            case Time -> new FieldType(IDs.TIME);
+            case Timestamp -> new FieldType(IDs.TIMESTAMP);
+            case FloatingPoint -> fromArrowFloatingPoint((ArrowType.FloatingPoint) at);
+            case Interval -> fromArrowInterval((ArrowType.Interval) at);
+            case Duration -> new FieldType(IDs.PERIOD_DURATION_MONTH_DAY_TIME);
+            case Bool -> new FieldType(IDs.BOOLEAN);
+            case Struct, Union -> fromArrowStruct(at, children);
+            case Map -> fromArrowMap(children);
+            case List, LargeList, FixedSizeList -> fromArrowList(at, children);
+            case Binary, LargeBinary -> new BinaryType(-1);
+            case FixedSizeBinary -> new BinaryType(((ArrowType.FixedSizeBinary) at).getByteWidth());
+            default -> new FieldType(IDs.NULL);
+        };
+    }
+
+    /**
+     * Converts an Arrow integer type.
+     * @param type Arrow integer type
+     * @return converted field type
+     */
+    private static FieldType fromArrowInt(ArrowType.Int type) {
+        return switch (type.getBitWidth()) {
+            case 8 -> new FieldType(type.getIsSigned() ? IDs.BYTE : IDs.SHORT);
+            case 16 -> new FieldType(type.getIsSigned() ? IDs.SHORT : IDs.INT);
+            case 64 -> new FieldType(type.getIsSigned() ? IDs.LONG : IDs.BIGINT);
+            default -> new FieldType(type.getIsSigned() ? IDs.INT : IDs.LONG);
+        };
+    }
+
+    /**
+     * Converts an Arrow floating-point type.
+     * @param type Arrow floating-point type
+     * @return converted field type
+     */
+    private static FieldType fromArrowFloatingPoint(ArrowType.FloatingPoint type) {
+        return switch (type.getPrecision()) {
+            case HALF, SINGLE -> new FieldType(IDs.FLOAT);
+            default -> new FieldType(IDs.DOUBLE);
+        };
+    }
+
+    /**
+     * Converts an Arrow interval type.
+     * @param type Arrow interval type
+     * @return converted field type
+     */
+    private static FieldType fromArrowInterval(ArrowType.Interval type) {
+        return switch (type.getUnit()) {
+            case YEAR_MONTH -> new FieldType(IDs.PERIOD_YEAR_MONTH);
+            case DAY_TIME -> new FieldType(IDs.DURATION_DAY_TIME);
+            default -> new FieldType(IDs.PERIOD_DURATION_MONTH_DAY_TIME);
+        };
+    }
+
+    /**
+     * Converts an Arrow struct or union type.
+     * @param type Arrow struct or union type
+     * @param children child fields
+     * @return converted field type
+     */
+    private static FieldType fromArrowStruct(ArrowType type, java.util.List<org.apache.arrow.vector.types.pojo.Field> children) {
+        Map<String, FieldType> childTypes = new java.util.LinkedHashMap<>();
+        if (children != null) {
+            children.forEach(child -> childTypes.put(child.getName(), fromArrow(child.getType(), child.getChildren())));
         }
+        return type.getTypeID() == ArrowType.ArrowTypeID.Struct ? new StructType(childTypes) : new UnionType(childTypes);
+    }
+
+    /**
+     * Converts an Arrow map type.
+     * @param children child fields
+     * @return converted map type
+     * @throws RuntimeException if the map children do not define key and value types
+     */
+    private static FieldType fromArrowMap(java.util.List<org.apache.arrow.vector.types.pojo.Field> children) {
+        if (children == null) {
+            throw new RuntimeException("Invalid map-type.");
+        }
+        if (children.size() == 1) {
+            return fromArrowMapChild(children.getFirst());
+        }
+        if (children.size() == 2) {
+            FieldType keyType = fromArrow(children.get(0).getType(), children.get(0).getChildren());
+            FieldType valueType = fromArrow(children.get(1).getType(), children.get(1).getChildren());
+            return createMapType(keyType, valueType);
+        }
+        throw new RuntimeException("Invalid map-type.");
+    }
+
+    /**
+     * Converts the standard struct child of an Arrow map.
+     * @param child map child field
+     * @return converted map type
+     * @throws RuntimeException if the child does not define key and value fields
+     */
+    private static FieldType fromArrowMapChild(org.apache.arrow.vector.types.pojo.Field child) {
+        FieldType mapChildType = fromArrow(child.getType(), child.getChildren());
+        if (mapChildType.getTypeID() != IDs.STRUCT) {
+            throw new RuntimeException("Invalid map-type.");
+        }
+        Map<String, FieldType> childTypes = ((StructType) mapChildType).getChildrenType();
+        String[] keys = childTypes.keySet().toArray(new String[0]);
+        if (keys.length != 2 || !keys[0].equalsIgnoreCase(KEY_FIELD_NAME) || !keys[1].equalsIgnoreCase(VALUE_FIELD_NAME)) {
+            throw new RuntimeException("Invalid map-type.");
+        }
+        return createMapType(childTypes.get(KEY_FIELD_NAME), childTypes.get(VALUE_FIELD_NAME));
+    }
+
+    /**
+     * Creates a validated map type.
+     * @param keyType key field type
+     * @param valueType value field type
+     * @return converted map type
+     * @throws RuntimeException if either field type is missing
+     */
+    private static FieldType createMapType(FieldType keyType, FieldType valueType) {
+        if (keyType == null || valueType == null) {
+            throw new RuntimeException("Invalid map-type.");
+        }
+        return new MapType(keyType, valueType);
+    }
+
+    /**
+     * Converts an Arrow list type.
+     * @param type Arrow list type
+     * @param children child fields
+     * @return converted list type
+     */
+    private static FieldType fromArrowList(ArrowType type, java.util.List<org.apache.arrow.vector.types.pojo.Field> children) {
+        FieldType childType = children != null && !children.isEmpty()
+                ? fromArrow(children.getFirst().getType(), children.getFirst().getChildren()) : null;
+        return type.getTypeID() == ArrowType.ArrowTypeID.FixedSizeList
+                ? new ListType(((ArrowType.FixedSizeList) type).getListSize(), childType) : new ListType(childType);
     }
 
     //Convert to Spark DecimalType
@@ -346,8 +393,8 @@ public class FieldType implements Serializable {
     private static final Function<StructType, org.apache.spark.sql.types.DataType> toStructType = t -> {
         org.apache.spark.sql.types.MapType mt = null;
         java.util.List<Map.Entry<String, FieldType>> entries = new java.util.ArrayList<>(t.getChildrenType().entrySet());
-        if (entries.size() == 1 && entries.get(0).getKey().equals("map") && entries.get(0).getValue().getTypeID() == IDs.LIST) {
-            ListType lt = (ListType) entries.get(0).getValue();
+        if (entries.size() == 1 && entries.getFirst().getKey().equals("map") && entries.getFirst().getValue().getTypeID() == IDs.LIST) {
+            ListType lt = (ListType) entries.getFirst().getValue();
             if (lt.getChildType().getTypeID() == IDs.STRUCT) {
                 StructType st = (StructType) lt.getChildType();
                 if (st.getTypeID() == IDs.STRUCT) {
@@ -371,52 +418,31 @@ public class FieldType implements Serializable {
      * @return corresponding Spark DataType
      */
     public static org.apache.spark.sql.types.DataType toSpark(FieldType ft) {
-        switch (ft.getTypeID()) {
-            case INT:
-                return DataTypes.IntegerType;
-            case CHAR:
-            case VARCHAR:
-            case TIME:
-                return DataTypes.StringType;
-            case LONG:
-            case BIGINT:
-                return DataTypes.LongType;
-            case FLOAT:
-                return DataTypes.FloatType;
-            case DOUBLE:
-                return DataTypes.DoubleType;
-            case DECIMAL:
-                return toDecimalType.apply(ft);
-            case DATE:
-                return DataTypes.DateType;
-            case TIMESTAMP:
-                return DataTypes.TimestampType;
-            case BOOLEAN:
-                return DataTypes.BooleanType;
-            case BYTE:
-                return DataTypes.ByteType;
-            case SHORT:
-                return DataTypes.ShortType;
-            case BYTES:
-                return DataTypes.BinaryType;
-            case PERIOD_YEAR_MONTH:
-                return new YearMonthIntervalType(YearMonthIntervalType.YEAR(), YearMonthIntervalType.MONTH());
-            case DURATION_DAY_TIME:
-                return new DayTimeIntervalType(DayTimeIntervalType.DAY(), DayTimeIntervalType.SECOND());
-            case PERIOD_DURATION_MONTH_DAY_TIME:
-                return new org.apache.spark.sql.types.StructType(Arrays.stream(new org.apache.spark.sql.types.StructField[] {
+        return switch (ft.getTypeID()) {
+            case INT -> DataTypes.IntegerType;
+            case CHAR, VARCHAR, TIME -> DataTypes.StringType;
+            case LONG, BIGINT -> DataTypes.LongType;
+            case FLOAT -> DataTypes.FloatType;
+            case DOUBLE -> DataTypes.DoubleType;
+            case DECIMAL -> toDecimalType.apply(ft);
+            case DATE -> DataTypes.DateType;
+            case TIMESTAMP -> DataTypes.TimestampType;
+            case BOOLEAN -> DataTypes.BooleanType;
+            case BYTE -> DataTypes.ByteType;
+            case SHORT -> DataTypes.ShortType;
+            case BYTES -> DataTypes.BinaryType;
+            case PERIOD_YEAR_MONTH ->
+                new YearMonthIntervalType(YearMonthIntervalType.YEAR(), YearMonthIntervalType.MONTH());
+            case DURATION_DAY_TIME -> new DayTimeIntervalType(DayTimeIntervalType.DAY(), DayTimeIntervalType.SECOND());
+            case PERIOD_DURATION_MONTH_DAY_TIME ->
+                new org.apache.spark.sql.types.StructType(Arrays.stream(new org.apache.spark.sql.types.StructField[]{
                     new org.apache.spark.sql.types.StructField("period", new YearMonthIntervalType(YearMonthIntervalType.YEAR(), YearMonthIntervalType.MONTH()), true, Metadata.empty()),
                     new org.apache.spark.sql.types.StructField("duration", new DayTimeIntervalType(DayTimeIntervalType.DAY(), DayTimeIntervalType.SECOND()), true, Metadata.empty())
                 }).toArray(org.apache.spark.sql.types.StructField[]::new));
-            case LIST:
-                return toListType.apply((ListType) ft);
-            case MAP:
-                return toMapType.apply((MapType) ft);
-            case STRUCT:
-                return toStructType.apply((StructType) ft);
-            case NULL:
-            default:
-                return DataTypes.NullType;
-        }
+            case LIST -> toListType.apply((ListType) ft);
+            case MAP -> toMapType.apply((MapType) ft);
+            case STRUCT -> toStructType.apply((StructType) ft);
+            default -> DataTypes.NullType;
+        };
     }
 }

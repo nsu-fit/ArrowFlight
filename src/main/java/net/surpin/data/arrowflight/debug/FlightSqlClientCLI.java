@@ -27,6 +27,11 @@ import org.apache.commons.cli.ParseException;
  * Command-line client for testing Flight SQL server operations.
  */
 public class FlightSqlClientCLI implements AutoCloseable {
+    private static final String OPTION_COMMAND = "command";
+    private static final String OPTION_QUERY = "query";
+    private static final String OPTION_CATALOG = "catalog";
+    private static final String OPTION_SCHEMA = "schema";
+    private static final String OPTION_TABLE = "table";
     public final List<CallOption> callOptions = new ArrayList<>();
     public final BufferAllocator allocator;
     private FlightSqlClient flightSqlClient;
@@ -53,14 +58,14 @@ public class FlightSqlClientCLI implements AutoCloseable {
         portOption.setRequired(true);
         options.addOption(portOption);
 
-        Option commandOption = new Option("command", "command", true, "Method to run");
+        Option commandOption = new Option(OPTION_COMMAND, OPTION_COMMAND, true, "Method to run");
         commandOption.setRequired(true);
         options.addOption(commandOption);
 
-        options.addOption("query", "query", true, "Query");
-        options.addOption("catalog", "catalog", true, "Catalog");
-        options.addOption("schema", "schema", true, "Schema");
-        options.addOption("table", "table", true, "Table");
+        options.addOption(OPTION_QUERY, OPTION_QUERY, true, "Query");
+        options.addOption(OPTION_CATALOG, OPTION_CATALOG, true, "Catalog");
+        options.addOption(OPTION_SCHEMA, OPTION_SCHEMA, true, "Schema");
+        options.addOption(OPTION_TABLE, OPTION_TABLE, true, "Table");
 
         CommandLineParser parser = new BasicParser();
         HelpFormatter formatter = new HelpFormatter();
@@ -102,33 +107,33 @@ public class FlightSqlClientCLI implements AutoCloseable {
      * @throws Exception if command dispatch or execution fails
      */
     public void executeCommand(CommandLine cmd) throws Exception {
-        switch (cmd.getOptionValue("command").trim()) {
+        switch (cmd.getOptionValue(OPTION_COMMAND).trim()) {
             case "Execute":
-                this.exampleExecute(cmd.getOptionValue("query"));
+                this.exampleExecute(cmd.getOptionValue(OPTION_QUERY));
                 break;
             case "ExecuteUpdate":
-                this.exampleExecuteUpdate(cmd.getOptionValue("query"));
+                this.exampleExecuteUpdate(cmd.getOptionValue(OPTION_QUERY));
                 break;
             case "GetCatalogs":
                 this.exampleGetCatalogs();
                 break;
             case "GetSchemas":
-                this.exampleGetSchemas(cmd.getOptionValue("catalog"), cmd.getOptionValue("schema"));
+                this.exampleGetSchemas(cmd.getOptionValue(OPTION_CATALOG), cmd.getOptionValue(OPTION_SCHEMA));
                 break;
             case "GetTableTypes":
                 this.exampleGetTableTypes();
                 break;
             case "GetTables":
-                this.exampleGetTables(cmd.getOptionValue("catalog"), cmd.getOptionValue("schema"), cmd.getOptionValue("table"));
+                this.exampleGetTables(cmd.getOptionValue(OPTION_CATALOG), cmd.getOptionValue(OPTION_SCHEMA), cmd.getOptionValue(OPTION_TABLE));
                 break;
             case "GetExportedKeys":
-                this.exampleGetExportedKeys(cmd.getOptionValue("catalog"), cmd.getOptionValue("schema"), cmd.getOptionValue("table"));
+                this.exampleGetExportedKeys(cmd.getOptionValue(OPTION_CATALOG), cmd.getOptionValue(OPTION_SCHEMA), cmd.getOptionValue(OPTION_TABLE));
                 break;
             case "GetImportedKeys":
-                this.exampleGetImportedKeys(cmd.getOptionValue("catalog"), cmd.getOptionValue("schema"), cmd.getOptionValue("table"));
+                this.exampleGetImportedKeys(cmd.getOptionValue(OPTION_CATALOG), cmd.getOptionValue(OPTION_SCHEMA), cmd.getOptionValue(OPTION_TABLE));
                 break;
             case "GetPrimaryKeys":
-                this.exampleGetPrimaryKeys(cmd.getOptionValue("catalog"), cmd.getOptionValue("schema"), cmd.getOptionValue("table"));
+                this.exampleGetPrimaryKeys(cmd.getOptionValue(OPTION_CATALOG), cmd.getOptionValue(OPTION_SCHEMA), cmd.getOptionValue(OPTION_TABLE));
                 break;
             default:
                 System.out.println("Command used is not valid! Please use one of: \n[\"ExecuteUpdate\",\n\"Execute\",\n\"GetCatalogs\",\n\"GetSchemas\",\n\"GetTableTypes\",\n\"GetTables\",\n\"GetExportedKeys\",\n\"GetImportedKeys\",\n\"GetPrimaryKeys\"]");
