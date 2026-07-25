@@ -58,7 +58,7 @@ public final class FlightScanBuilder implements ScanBuilder, SupportsPushDownV2F
     public FlightScanBuilder(Configuration configuration, Table table, PartitionBehavior partitionBehavior) {
         LOGGER.debug("{}()", this.getClass().getName());
         this.configuration = configuration;
-        this.table = table;
+        this.table = table.newScan();
         this.partitionBehavior = partitionBehavior;
     }
 
@@ -467,6 +467,7 @@ public final class FlightScanBuilder implements ScanBuilder, SupportsPushDownV2F
     public Scan build() {
         LOGGER.debug("{}.build()", this.getClass().getName());
 
+        StructField[] baseFields = this.table.getSparkSchema().fields().clone();
         //adjust flight-table upon pushed filters & columns
         List<String> whereParts = new ArrayList<>();
         Arrays.stream(this.pdFilters).map(this.table::toWhereClause)
@@ -480,10 +481,30 @@ public final class FlightScanBuilder implements ScanBuilder, SupportsPushDownV2F
                         .map(StructField::name).toArray(String[]::new)),
                 this.pdFilters.length, this.pdPredicates.length);
         this.table.probe(where, this.pdColumns, this.pdAggregation, this.partitionBehavior);
-        // Plan exactly once, after Spark has supplied every accepted pushdown.
-        // Earlier schema-only planning creates unused server handles and makes
-        // Flight latency look worse than the actual scan.
-        this.table.initialize(this.configuration);
-        return new FlightScan(this.configuration, this.table);
+        boolean queryPartitionScan = this.partitionBehavior != null
+                && this.partitionBehavior.enabled();
+        if (this.pdAggregation != null || queryPartitionScan) {
+            // Aggregates require server-side type inference. Query partitions do
+            // not receive endpoint metadata, so their readers also need an exact
+            // Arrow schema before executor planning.
+            this.table.initializeSchema(this.configuration);
+        } else {
+            // A scalar endpoint scan can project exact catalog-level Arrow
+            // metadata locally. Persisted Spark types are lossy, so a table that
+            // lacks exact metadata falls back to one schema lookup.
+            StructField[] readFields = this.pdColumns.length == 0
+                    ? baseFields : this.pdColumns;
+            if (!this.table.projectArrowSchema(readFields)) {
+                this.table.initializeSchema(this.configuration);
+            }
+        }
+        return new FlightScan(
+                this.configuration,
+                this.table,
+                baseFields,
+                this.pdColumns,
+                this.pdAggregation,
+                this.partitionBehavior,
+                where);
     }
 }

@@ -68,6 +68,14 @@ class ParquetManagerIntegrationTest {
     }
 
     @Test
+    void getTableSchemaReusesCachedFullSchema() {
+        Schema first = parquetAdapter.getTableSchema("test_schema", "test_table");
+        Schema second = parquetAdapter.getTableSchema("test_schema", "test_table");
+
+        assertSame(first, second);
+    }
+
+    @Test
     void getTableSchemaColumnNamesArePresent() {
         Schema schema = parquetAdapter.getTableSchema("test_schema", "test_table");
         List<String> names = schema.getFields().stream().map(f -> f.getName()).toList();

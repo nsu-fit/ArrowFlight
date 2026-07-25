@@ -19,12 +19,17 @@ import org.mockito.ArgumentCaptor;
 
 import java.sql.SQLException;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -33,6 +38,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.when;
@@ -40,6 +46,145 @@ import static org.mockito.Mockito.when;
 /** Tests terminal Flight stream status handling in the SQL producer. */
 @Tag("unit")
 class FlightSqlProducerTest {
+
+    /**
+     * Verifies zero configured warm connections preserves disabled warmup semantics.
+     *
+     * @throws Exception on producer shutdown failure
+     */
+    @Test
+    void zeroWarmConnectionsSkipsWarmup() throws Exception {
+        BufferAllocator allocator = mock(BufferAllocator.class);
+        MetadataService metadataService = mock(MetadataService.class);
+        QueryPlanner queryPlanner = mock(QueryPlanner.class);
+        ExecutionService executionService = mock(ExecutionService.class);
+        ClusterService clusterService = mock(ClusterService.class);
+
+        FlightSqlProducer producer = new FlightSqlProducer(
+                Location.forGrpcInsecure("localhost", 32010), allocator,
+                metadataService, queryPlanner, executionService, clusterService,
+                268_435_456L, 2, 0);
+        try {
+            verify(executionService, never()).initializeDuckDbConnection();
+        } finally {
+            producer.close();
+        }
+    }
+
+    /**
+     * Verifies a positive warmup setting initializes every fixed-pool worker.
+     *
+     * @throws Exception on producer shutdown failure
+     */
+    @Test
+    void positiveWarmConnectionsWarmEveryWorker() throws Exception {
+        BufferAllocator allocator = mock(BufferAllocator.class);
+        MetadataService metadataService = mock(MetadataService.class);
+        QueryPlanner queryPlanner = mock(QueryPlanner.class);
+        ExecutionService executionService = mock(ExecutionService.class);
+        ClusterService clusterService = mock(ClusterService.class);
+
+        FlightSqlProducer producer = new FlightSqlProducer(
+                Location.forGrpcInsecure("localhost", 32010), allocator,
+                metadataService, queryPlanner, executionService, clusterService,
+                268_435_456L, 3, 1);
+        try {
+            verify(executionService, times(3)).initializeDuckDbConnection();
+        } finally {
+            producer.close();
+        }
+    }
+
+    /** Verifies a failed connection warmup prevents the producer from starting. */
+    @Test
+    void queryWorkerWarmupFailurePreventsStartup() {
+        BufferAllocator allocator = mock(BufferAllocator.class);
+        MetadataService metadataService = mock(MetadataService.class);
+        QueryPlanner queryPlanner = mock(QueryPlanner.class);
+        ExecutionService executionService = mock(ExecutionService.class);
+        ClusterService clusterService = mock(ClusterService.class);
+        doThrow(new IllegalStateException("warmup failed"))
+                .when(executionService).initializeDuckDbConnection();
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> new FlightSqlProducer(
+                        Location.forGrpcInsecure("localhost", 32010), allocator,
+                        metadataService, queryPlanner, executionService, clusterService,
+                        268_435_456L, 2));
+
+        assertEquals("Failed to warm query executor DuckDB connections",
+                error.getMessage());
+    }
+
+    /**
+     * Verifies every query worker owns a warm DuckDB connection before serving requests.
+     *
+     * @throws Exception on executor shutdown
+     */
+    @Test
+    void queryWorkersAreWarmBeforeFirstExecution() throws Exception {
+        BufferAllocator allocator = mock(BufferAllocator.class);
+        MetadataService metadataService = mock(MetadataService.class);
+        QueryPlanner queryPlanner = mock(QueryPlanner.class);
+        ExecutionService executionService = mock(ExecutionService.class);
+        ClusterService clusterService = mock(ClusterService.class);
+        HandleState state = new HandleState(
+                "select * from s.t", new String[]{"f.parquet"}, null, 0L, null);
+        when(clusterService.getHandle(anyString())).thenReturn(state);
+        when(allocator.newChildAllocator(anyString(), anyLong(), anyLong()))
+                .thenReturn(allocator);
+
+        Set<Thread> warmThreads = ConcurrentHashMap.newKeySet();
+        org.mockito.Mockito.doAnswer(invocation -> {
+            warmThreads.add(Thread.currentThread());
+            return null;
+        }).when(executionService).initializeDuckDbConnection();
+
+        int workerCount = 3;
+        FlightSqlProducer producer = new FlightSqlProducer(
+                Location.forGrpcInsecure("localhost", 32010), allocator,
+                metadataService, queryPlanner, executionService, clusterService,
+                268_435_456L, workerCount);
+        assertEquals(workerCount, warmThreads.size());
+
+        CountDownLatch started = new CountDownLatch(workerCount);
+        CountDownLatch release = new CountDownLatch(1);
+        Set<Thread> queryThreads = ConcurrentHashMap.newKeySet();
+        org.mockito.Mockito.doAnswer(invocation -> {
+            queryThreads.add(Thread.currentThread());
+            started.countDown();
+            release.await(1, TimeUnit.SECONDS);
+            return null;
+        }).when(executionService).readParquet(
+                eq(allocator), eq(state.query()), eq(state.filePaths()),
+                org.mockito.ArgumentMatchers.any(
+                        FlightProducer.ServerStreamListener.class),
+                anyBoolean());
+
+        List<FlightProducer.ServerStreamListener> listeners =
+                new ArrayList<>(workerCount);
+        try {
+            for (int i = 0; i < workerCount; i++) {
+                FlightProducer.ServerStreamListener listener =
+                        mock(FlightProducer.ServerStreamListener.class);
+                listeners.add(listener);
+                ByteString handle = ByteString.copyFromUtf8("warm-query-" + i);
+                FlightSql.TicketStatementQuery ticket = FlightSql.TicketStatementQuery
+                        .newBuilder().setStatementHandle(handle).build();
+                producer.getStreamStatement(
+                        ticket, mock(FlightProducer.CallContext.class), listener);
+            }
+
+            assertTrue(started.await(1, TimeUnit.SECONDS));
+            assertEquals(warmThreads, queryThreads);
+        } finally {
+            release.countDown();
+            for (FlightProducer.ServerStreamListener listener : listeners) {
+                verify(listener, timeout(1000)).completed();
+            }
+            producer.close();
+        }
+    }
 
     /** Verifies a backpressure timeout is reported as an error, never as completion. */
     @Test

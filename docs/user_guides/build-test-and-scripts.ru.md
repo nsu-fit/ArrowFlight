@@ -131,7 +131,7 @@ src/main/resources/arrowflight.properties
 - `ioParallelismMinThreads` - нижняя граница thread pool.
 - `ioParallelismMaxCores` - максимум CPU cores для расчета; `0` значит без ограничения.
 - `ioParallelismMultiplier` - коэффициент умножения cores, по умолчанию `8`.
-- `duckDbWarmConnections` - сколько DuckDB connections прогревать при старте.
+- `duckDbWarmConnections` - `0` отключает прогрев; положительное значение прогревает все query workers.
 - `duckDbGroups` - сколько групп использовать для старых grouped helper paths.
 - `duckDbThreads` - `SET threads` для DuckDB connection.
 - `grpcMaxInboundMessageSize` - max inbound gRPC message size.

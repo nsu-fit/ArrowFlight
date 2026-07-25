@@ -131,7 +131,7 @@ Key parameters:
 - `ioParallelismMinThreads` - lower bound for the thread pool.
 - `ioParallelismMaxCores` - max CPU cores used in the calculation; `0` means no limit.
 - `ioParallelismMultiplier` - core multiplier, `8` by default.
-- `duckDbWarmConnections` - number of DuckDB connections warmed up at startup.
+- `duckDbWarmConnections` - zero disables startup warmup; a positive value warms every query worker.
 - `duckDbGroups` - number of groups used by older grouped helper paths.
 - `duckDbThreads` - `SET threads` value for each DuckDB connection.
 - `grpcMaxInboundMessageSize` - max inbound gRPC message size.

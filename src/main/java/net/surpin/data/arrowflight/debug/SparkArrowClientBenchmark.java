@@ -294,7 +294,10 @@ public class SparkArrowClientBenchmark {
         ExecutionService executionService = new ExecutionService(parquetAdapter, duckDbAdapter,
                 metadataService, appConfig, Executors.newCachedThreadPool());
         FlightSqlProducer flightSqlProducer = new FlightSqlProducer(loc, allocator,
-                metadataService, queryPlanner, executionService, clusterService);
+                metadataService, queryPlanner, executionService, clusterService,
+                appConfig.arrowQueryMemoryLimitBytes(),
+                appConfig.maxConcurrentQueries(),
+                appConfig.duckDbWarmConnections());
 
         FlightServer server = FlightServer.builder(allocator, loc, flightSqlProducer).build();
         server.start();

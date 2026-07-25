@@ -76,6 +76,13 @@ public final class ExecutionService {
     }
 
     /**
+     * Initializes the DuckDB connection owned by the calling execution thread.
+     */
+    public void initializeDuckDbConnection() {
+        duckDbAdapter.connection();
+    }
+
+    /**
      * Reads specific Parquet files and sends Arrow batches through the listener.
      *
      * @param allocator      Arrow buffer allocator

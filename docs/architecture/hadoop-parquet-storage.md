@@ -10,6 +10,11 @@ The data root is configured by the `dataDirectory` parameter. Tables are expecte
 
 `ParquetAdapter` owns the main file and path handling logic.
 
+The file inventory and Arrow table schemas form an immutable startup snapshot.
+Adding, replacing, removing, or schema-evolving Parquet files while servers are
+running is unsupported. Restart all Flight nodes together after any dataset
+change so every node publishes the same inventory and rebuilds its metadata caches.
+
 ## Hadoop FileSystem
 
 Hadoop FileSystem is used for discovery, metadata access, and locality information. DuckDB performs data-page reads and opens `hdfs://` URIs through the configured HDFS extension.

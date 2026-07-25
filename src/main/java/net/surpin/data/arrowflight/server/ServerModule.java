@@ -262,7 +262,8 @@ public final class ServerModule {
         return new FlightSqlProducer(location, allocator, metadataService,
                 queryPlanner, executionService, clusterService,
                 config.arrowQueryMemoryLimitBytes(),
-                config.maxConcurrentQueries());
+                config.maxConcurrentQueries(),
+                config.duckDbWarmConnections());
     }
 
     /**

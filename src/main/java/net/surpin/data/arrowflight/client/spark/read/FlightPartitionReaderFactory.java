@@ -50,13 +50,23 @@ public class FlightPartitionReaderFactory implements PartitionReaderFactory {
         }
         try {
             Schema schema = flightPartition.getSchema();
-            return schema.getFields().stream()
-                    .allMatch(FlightPartitionReaderFactory::isColumnarType);
+            return supportsColumnarSchema(schema);
         } catch (IOException e) {
             LOGGER.warn("Cannot inspect Flight partition schema for columnar read: {}",
                     e.getMessage());
             return false;
         }
+    }
+
+    /**
+     * Checks whether every field has an exact Spark columnar adapter.
+     *
+     * @param schema Arrow result schema
+     * @return true when the complete schema can use the columnar reader
+     */
+    static boolean supportsColumnarSchema(Schema schema) {
+        return schema != null && schema.getFields().stream()
+                .allMatch(FlightPartitionReaderFactory::isColumnarType);
     }
 
     @Override

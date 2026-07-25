@@ -2,6 +2,7 @@ package net.surpin.data.arrowflight.client.spark;
 
 import net.surpin.data.arrowflight.client.Configuration;
 import net.surpin.data.arrowflight.client.model.Table;
+import org.apache.arrow.vector.types.pojo.Schema;
 import org.apache.spark.sql.SQLContext;
 import org.apache.spark.sql.connector.catalog.TableProvider;
 import org.apache.spark.sql.connector.expressions.Transform;
@@ -61,6 +62,17 @@ public class FlightSource implements TableProvider, DataSourceRegister, Relation
     public StructType inferSchema(CaseInsensitiveStringMap options) {
         this.probeOptions(options, true);
         return this.tableName.getSparkSchema();
+    }
+
+    /**
+     * Infers and retains the exact remote Arrow schema.
+     *
+     * @param options connection and table options
+     * @return exact remote Arrow schema
+     */
+    Schema inferArrowSchema(CaseInsensitiveStringMap options) {
+        this.probeOptions(options, true);
+        return this.tableName.getSchema();
     }
 
     /**
@@ -133,13 +145,17 @@ public class FlightSource implements TableProvider, DataSourceRegister, Relation
     }
 
     /**
-     * Restores a persisted Flight table from Spark's session catalog without
-     * issuing a schema-only SELECT * request. The real query is planned once,
-     * after Spark has supplied projection/filter/aggregate pushdown.
+     * Restores a persisted Flight table with catalog-cached exact Arrow metadata.
+     * The real query is planned only after Spark supplies every pushdown.
+     *
+     * @param options connection and table options
+     * @param schema exact remote Arrow schema
+     * @return Flight V2 table
      */
-    FlightTable getTableFromCatalog(CaseInsensitiveStringMap options, StructType schema) {
+    FlightTable getTableFromCatalog(
+            CaseInsensitiveStringMap options, Schema schema) {
         this.probeOptions(options, false);
-        this.tableName.setSparkSchema(schema);
+        this.tableName.setArrowSchema(schema);
         return new FlightTable(this.configuration, this.tableName);
     }
 

@@ -41,10 +41,35 @@ import java.util.function.Function;
 public final class Table implements Serializable {
     private static final Logger LOGGER = LoggerFactory.getLogger(Table.class);
 
+    /**
+     * Supplies query schema and endpoint metadata for a scan.
+     */
+    interface MetadataProvider {
+        /**
+         * Fetches the result schema without allocating endpoint handles.
+         *
+         * @param config connection configuration
+         * @param query physical query
+         * @return Arrow result schema
+         */
+        Schema getQuerySchema(Configuration config, String query);
+
+        /**
+         * Allocates endpoints for a physical query.
+         *
+         * @param config connection configuration
+         * @param query physical query
+         * @return query schema and endpoints
+         */
+        QueryEndpoints getQueryEndpoints(Configuration config, String query);
+    }
+
     //the name of a flight table whose data will be queried/updated
     private final String name;
     //the character for quoting columns in sql statements
     private final String columnQuote;
+    //the metadata boundary used by this driver-side scan
+    private final transient MetadataProvider metadataProvider;
 
     //the read-statement
     private QueryStatement stmt;
@@ -55,6 +80,8 @@ public final class Table implements Serializable {
     private transient Schema schema = null;
     //the end-points exposed by the remote flight-service for fetching data of this table
     private Endpoint[] endpoints = new Endpoint[0];
+    //whether endpoints have been allocated for the current physical statement
+    private boolean endpointsInitialized;
 
     //the container for holding the partitioning queries
     private final java.util.List<String> partitionStmts = new java.util.ArrayList<>();
@@ -65,8 +92,21 @@ public final class Table implements Serializable {
      * @param columnQuote - the character for quoting columns in sql statements
      */
     private Table(String name, String columnQuote) {
+        this(name, columnQuote, null);
+    }
+
+    /**
+     * Constructs a table with an optional metadata provider.
+     *
+     * @param name table name
+     * @param columnQuote SQL identifier quote
+     * @param metadataProvider metadata provider or null for the Flight client
+     */
+    private Table(
+            String name, String columnQuote, MetadataProvider metadataProvider) {
         this.name = name;
         this.columnQuote = columnQuote;
+        this.metadataProvider = metadataProvider;
 
         this.prepareQueryStatement(null, null, null, null);
     }
@@ -118,6 +158,47 @@ public final class Table implements Serializable {
     }
 
     /**
+     * Seeds exact Arrow metadata obtained by a catalog-level schema lookup.
+     *
+     * @param arrowSchema exact remote schema
+     */
+    public synchronized void setArrowSchema(Schema arrowSchema) {
+        applySchema(arrowSchema);
+        this.endpoints = new Endpoint[0];
+        this.endpointsInitialized = false;
+    }
+
+    /**
+     * Projects cached exact Arrow metadata without a remote schema lookup.
+     *
+     * @param projectedFields requested Spark fields
+     * @return true when every projected field exists in the exact schema
+     */
+    public synchronized boolean projectArrowSchema(StructField[] projectedFields) {
+        if (this.schema == null || projectedFields == null) {
+            return false;
+        }
+        java.util.List<org.apache.arrow.vector.types.pojo.Field> projected =
+                new java.util.ArrayList<>();
+        for (StructField projectedField : projectedFields) {
+            org.apache.arrow.vector.types.pojo.Field arrowField =
+                    this.schema.getFields().stream()
+                            .filter(field -> field.getName().equalsIgnoreCase(
+                                    projectedField.name()))
+                            .findFirst()
+                            .orElse(null);
+            if (arrowField == null) {
+                return false;
+            }
+            projected.add(arrowField);
+        }
+        applySchema(new Schema(projected, this.schema.getCustomMetadata()));
+        this.endpoints = new Endpoint[0];
+        this.endpointsInitialized = false;
+        return true;
+    }
+
+    /**
      * Get the end-points
      * @return - end-points exposed by the remote flight service upon submitted query
      */
@@ -151,8 +232,9 @@ public final class Table implements Serializable {
      * @return a table with the same source and quoting rules and a fresh scan state
      */
     public Table newScan() {
-        Table scan = new Table(this.name, this.columnQuote);
+        Table scan = new Table(this.name, this.columnQuote, this.metadataProvider);
         scan.sparkSchema = this.sparkSchema;
+        scan.schema = this.schema;
         return scan;
     }
 
@@ -160,16 +242,18 @@ public final class Table implements Serializable {
      * Initialize the schema and end-points by submitting the physical query
      * @param config - the connection configuration
      */
-    public void initialize(Configuration config) {
+    public synchronized void initialize(Configuration config) {
         LOGGER.debug("Table.initialize(): config: {}", config);
+        if (this.endpointsInitialized) {
+            return;
+        }
         try {
-            Client client = Client.getOrCreate(config);
-            QueryEndpoints eps = client.getQueryEndpoints(this.getQueryStatement());
+            QueryEndpoints eps = getQueryEndpoints(config);
             LOGGER.debug("Table.initialize(): endpoints: {}", eps);
 
-            this.sparkSchema = new StructType(Arrays.stream(Field.from(eps.getSchema())).map(fs -> new StructField(fs.getName(), FieldType.toSpark(fs.getType()), true, Metadata.empty())).toArray(StructField[]::new));
-            this.schema = eps.getSchema();
+            applySchema(eps.getSchema());
             this.endpoints = eps.getEndpoints();
+            this.endpointsInitialized = true;
         } catch (Exception e) {
             LOGGER.error(e.getMessage(), e);
             throw new RuntimeException(e);
@@ -183,20 +267,58 @@ public final class Table implements Serializable {
      *
      * @param config connection configuration
      */
-    public void initializeSchema(Configuration config) {
+    public synchronized void initializeSchema(Configuration config) {
         LOGGER.debug("Table.initializeSchema(): config: {}", config);
         try {
-            Schema resultSchema = Client.getOrCreate(config).getQuerySchema(this.getQueryStatement());
-            this.sparkSchema = new StructType(Arrays.stream(Field.from(resultSchema))
-                    .map(fs -> new StructField(fs.getName(), FieldType.toSpark(fs.getType()),
-                            true, Metadata.empty()))
-                    .toArray(StructField[]::new));
-            this.schema = resultSchema;
+            Schema resultSchema = getQuerySchema(config);
+            applySchema(resultSchema);
             this.endpoints = new Endpoint[0];
+            this.endpointsInitialized = false;
         } catch (Exception e) {
             LOGGER.error(e.getMessage(), e);
             throw new RuntimeException(e);
         }
+    }
+
+    /**
+     * Applies exact Arrow metadata and derives its Spark representation.
+     *
+     * @param resultSchema exact query result schema
+     */
+    private void applySchema(Schema resultSchema) {
+        this.sparkSchema = new StructType(Arrays.stream(Field.from(resultSchema))
+                .map(field -> new StructField(
+                        field.getName(), FieldType.toSpark(field.getType()),
+                        true, Metadata.empty()))
+                .toArray(StructField[]::new));
+        this.schema = resultSchema;
+    }
+
+    /**
+     * Fetches query schema through the configured metadata boundary.
+     *
+     * @param config connection configuration
+     * @return query result schema
+     */
+    private Schema getQuerySchema(Configuration config) {
+        if (this.metadataProvider != null) {
+            return this.metadataProvider.getQuerySchema(config, this.getQueryStatement());
+        }
+        return Client.getOrCreate(config).getQuerySchema(this.getQueryStatement());
+    }
+
+    /**
+     * Fetches query endpoints through the configured metadata boundary.
+     *
+     * @param config connection configuration
+     * @return query schema and endpoints
+     */
+    private QueryEndpoints getQueryEndpoints(Configuration config) {
+        if (this.metadataProvider != null) {
+            return this.metadataProvider.getQueryEndpoints(
+                    config, this.getQueryStatement());
+        }
+        return Client.getOrCreate(config).getQueryEndpoints(this.getQueryStatement());
     }
 
     /**
@@ -231,6 +353,8 @@ public final class Table implements Serializable {
         boolean changed = stmt.different(this.stmt);
         if (changed) {
             this.stmt = stmt;
+            this.endpoints = new Endpoint[0];
+            this.endpointsInitialized = false;
         }
 
         this.partitionStmts.clear();
@@ -622,7 +746,11 @@ public final class Table implements Serializable {
      * @return - true if initialization is required
      */
     public Boolean probe(String pushedFilter, StructField[] pushedFields, PushAggregation pushedAggregation, PartitionBehavior partitionBehavior) {
-        if ((pushedFilter == null || pushedFilter.isEmpty()) && (pushedFields == null || pushedFields.length == 0) && pushedAggregation == null) {
+        boolean queryPartitionScan = partitionBehavior != null
+                && partitionBehavior.enabled();
+        if ((pushedFilter == null || pushedFilter.isEmpty())
+                && (pushedFields == null || pushedFields.length == 0)
+                && pushedAggregation == null && !queryPartitionScan) {
             return false;
         }
         return this.prepareQueryStatement(pushedAggregation, pushedFields, pushedFilter, partitionBehavior);
@@ -635,7 +763,27 @@ public final class Table implements Serializable {
      * @return - a Table object
      */
     public static Table forTable(String tableName, String columnQuote) {
+        return forTable(tableName, columnQuote, null);
+    }
+
+    /**
+     * Creates a table using a supplied metadata boundary.
+     *
+     * @param tableName table name or query
+     * @param columnQuote SQL identifier quote
+     * @param metadataProvider metadata provider
+     * @return table descriptor
+     */
+    static Table forTable(
+            String tableName,
+            String columnQuote,
+            MetadataProvider metadataProvider) {
         Function<String, Boolean> isQuery = (t) -> t.replaceAll("[\r|\n]", " ").trim().toLowerCase().matches("^select .+ [from]?.+");
-        return new Table(isQuery.apply(tableName) ? String.format("(%s) t", tableName) : tableName, columnQuote);
+        return new Table(
+                isQuery.apply(tableName)
+                        ? String.format("(%s) t", tableName)
+                        : tableName,
+                columnQuote,
+                metadataProvider);
     }
 }

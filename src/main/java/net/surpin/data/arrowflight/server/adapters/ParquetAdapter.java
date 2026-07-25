@@ -27,8 +27,11 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
@@ -55,6 +58,7 @@ public class ParquetAdapter {
     private final Map<String, Path> tableSchemaCache;
     private final Map<String, Map<String, Path>> tableCache;
     private final Map<String, Map<String, String>> tableDdlCache = new HashMap<>();
+    private final Map<String, Schema> arrowSchemaCache = new ConcurrentHashMap<>();
 
     /**
      * Creates a ParquetAdapter for the given Hadoop filesystem and data directory.
@@ -140,6 +144,25 @@ public class ParquetAdapter {
         long t = LogUtil.mark();
         validateName(schema);
         validateName(table);
+        String cacheKey = schema + "\0" + table;
+        boolean cached = arrowSchemaCache.containsKey(cacheKey);
+        Schema fullSchema = arrowSchemaCache.computeIfAbsent(
+                cacheKey, ignored -> readTableSchema(schema, table));
+        Schema result = projectSchema(fullSchema, columns);
+        LogUtil.logTiming(t, cached ? "schema.cacheHit" : "schema.cacheMiss",
+                "table=" + schema + "." + table + " fields=" + result.getFields().size());
+        return result;
+    }
+
+    /**
+     * Reads and converts one table schema from a Parquet footer.
+     *
+     * @param schema schema name
+     * @param table table name
+     * @return complete Arrow schema
+     */
+    private Schema readTableSchema(String schema, String table) {
+        long t = LogUtil.mark();
         try {
             Path tableDirectoryPath = new Path(dataDirectory, schema + "/" + table);
             LOGGER.debug("node={} parquet=schemaReadStart table={}.{} path={}",
@@ -181,14 +204,32 @@ public class ParquetAdapter {
             }
 
             Schema result = SchemaConverter.convert(
-                    parquetSchema,
-                    cd -> columns == null || columns.isEmpty()
-                            || cd.getPath().length == 1 && columns.contains(cd.getPath()[0]));
+                    parquetSchema, ignored -> true);
             LogUtil.logTiming(t, "schema.readFooter", "table=" + schema + "." + table + " fields=" + parquetSchema.getFieldCount());
             return result;
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
+    }
+
+    /**
+     * Projects a cached full schema without reading Parquet metadata again.
+     *
+     * @param schema complete table schema
+     * @param columns requested top-level columns
+     * @return projected schema
+     */
+    private static Schema projectSchema(Schema schema, List<String> columns) {
+        if (columns == null || columns.isEmpty()) {
+            return schema;
+        }
+        Set<String> requested = columns.stream()
+                .map(column -> column.toLowerCase(Locale.ROOT))
+                .collect(Collectors.toSet());
+        List<Field> fields = schema.getFields().stream()
+                .filter(field -> requested.contains(field.getName().toLowerCase(Locale.ROOT)))
+                .toList();
+        return new Schema(fields, schema.getCustomMetadata());
     }
 
     /**

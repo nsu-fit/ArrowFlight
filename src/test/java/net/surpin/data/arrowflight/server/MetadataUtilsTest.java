@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Test;
 import java.net.URI;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Predicate;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -299,6 +300,36 @@ class MetadataUtilsTest {
         Schema aggSchema = svc.buildAggregationSchema(pq);
 
         assertEquals(2, aggSchema.getFields().size(), "GROUP BY + MAX should produce 2 fields");
+    }
+
+    @Test
+    void getQuerySchemaCachesRepeatedQueryShape() throws Exception {
+        Schema tableSchema = new Schema(List.of(
+                new Field("sales", FieldType.nullable(new ArrowType.Int(64, true)), null)));
+        AtomicInteger schemaReads = new AtomicInteger();
+        ParquetAdapter adapter = new ParquetAdapter(
+                new AppConfig(3, 4096, 4, 65536, 2, 2, 2,
+                        2_147_483_648L, 4, 75, 64,
+                        "", false, "", "", "", "", false,
+                        67108864, 67108864, 30000L, "/nonexistent-data-dir", null,
+                        31001, 5701, 120, 3, 500, 3),
+                new RawLocalFileSystem() {{
+                    initialize(URI.create("file:///"), new Configuration());
+                }}) {
+            @Override
+            public Schema getTableSchema(String schema, String table) {
+                schemaReads.incrementAndGet();
+                return tableSchema;
+            }
+        };
+        MetadataService service = new MetadataService(adapter);
+        String query = "SELECT max(sales) FROM s.t";
+
+        Schema first = service.getQuerySchema(query);
+        Schema second = service.getQuerySchema(query);
+
+        assertSame(first, second);
+        assertEquals(1, schemaReads.get());
     }
 
     private static MetadataService createMetadataService(Schema tableSchema) throws Exception {

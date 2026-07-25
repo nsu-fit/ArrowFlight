@@ -43,6 +43,7 @@ public class FlightBatch implements Batch, Serializable {
             LOGGER.debug("{}.planInputPartitions(): partitionQueries = {}", this.getClass().getName(), Arrays.asList(partitionQueries));
             return Arrays.stream(partitionQueries).map(q -> new FlightInputPartition.FlightQueryInputPartition(this.table.getSchema(), q)).toArray(InputPartition[]::new);
         } else {
+            this.table.initialize(this.configuration);
             LOGGER.debug("{}.planInputPartitions(): endpoints = {}", this.getClass().getName(), Arrays.asList(this.table.getEndpoints()));
             return Arrays.stream(this.table.getEndpoints()).map(e -> new FlightInputPartition.FlightEndpointInputPartition(this.table.getSchema(), e)).toArray(InputPartition[]::new);
         }

@@ -4,6 +4,7 @@ import csv
 import html
 import json
 import xml.etree.ElementTree as ET
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 
@@ -56,6 +57,10 @@ def parse_args():
     parser.add_argument("--base", help="Result prefix, for example tpch_2026-07-09_07-49-48.")
     parser.add_argument("--out", type=Path)
     parser.add_argument("--compare", action="store_true", help="Build a flight-vs-direct comparison report.")
+    parser.add_argument(
+        "--execution-order",
+        help="Recorded comparison order, for example flight-first, direct-first, or ABBA.",
+    )
     return parser.parse_args()
 
 
@@ -63,8 +68,20 @@ def read_csv(path):
     if not path.exists():
         return []
     with path.open(newline="", encoding="utf-8") as file:
-        # Beeline can emit NUL padding that Python's csv parser rejects.
-        sanitized_lines = (line.replace("\0", "") for line in file)
+        # Beeline can emit leading blanks, NUL padding, and paired NUL CSV quotes.
+        def sanitize(line):
+            without_nuls = line.replace("\0", "")
+            if not without_nuls.strip():
+                return None
+            if line.count("\0") % 2 == 0:
+                return line.replace("\0", '"')
+            return without_nuls
+
+        sanitized_lines = (
+            sanitized
+            for line in file
+            if (sanitized := sanitize(line)) is not None
+        )
         return list(csv.DictReader(sanitized_lines))
 
 
@@ -162,10 +179,13 @@ def read_config(path):
 
     weights = text("./works/work/weights", "")
     active = []
+    configured_weights = {}
     for idx, raw in enumerate(weights.split(","), start=1):
         try:
-            if float(raw) > 0:
+            weight = float(raw)
+            if weight > 0:
                 active.append(f"Q{idx}")
+                configured_weights[f"Q{idx}"] = weight
         except ValueError:
             pass
 
@@ -176,6 +196,7 @@ def read_config(path):
         "warmup": text("./works/work/warmup", "0"),
         "rate": text("./works/work/rate"),
         "queries": ", ".join(active) if active else "all configured",
+        "weights": configured_weights,
     }
 
 
@@ -237,6 +258,28 @@ def per_query_latency_rows(results_dir, base):
     ]
 
 
+def normalized_query_weights(config):
+    weights = {
+        str(query).strip().upper(): number(weight)
+        for query, weight in config.get("weights", {}).items()
+        if number(weight) > 0
+    }
+    total = sum(weights.values())
+    if not total:
+        return {}
+    return {query: weight / total for query, weight in weights.items()}
+
+
+def standardized_weighted_latency(query_rows, weights):
+    means = {
+        str(row.get("query", "")).strip().upper(): number(row.get("avg"))
+        for row in query_rows
+    }
+    if not weights or any(query not in means for query in weights):
+        return None
+    return sum(weight * means[query] for query, weight in weights.items())
+
+
 def load_run(run_dir, base=None):
     summary_path = find_summary(run_dir, base)
     base = summary_path.name.removesuffix(".summary.json")
@@ -252,14 +295,59 @@ def load_run(run_dir, base=None):
     }
 
 
-def rows_equal(expected_rows, actual_rows):
+def rows_equal(expected_rows, actual_rows, ordered=False):
     def normalize(rows):
         return [
-            {str(k).strip().lower(): str(v).strip() for k, v in row.items()}
+            {str(k).strip().casefold(): str(v).strip() for k, v in row.items()}
             for row in rows
         ]
 
-    return normalize(expected_rows) == normalize(actual_rows)
+    def values_equal(expected, actual):
+        try:
+            expected_number = Decimal(expected)
+            actual_number = Decimal(actual)
+            if expected_number.is_finite() and actual_number.is_finite():
+                return abs(expected_number - actual_number) <= Decimal("0.000001")
+        except InvalidOperation:
+            pass
+        return expected == actual
+
+    def row_equal(expected, actual):
+        return expected.keys() == actual.keys() and all(
+            values_equal(value, actual[column])
+            for column, value in expected.items()
+        )
+
+    expected = normalize(expected_rows)
+    actual = normalize(actual_rows)
+    if len(expected) != len(actual):
+        return False
+    if ordered:
+        return all(
+            row_equal(expected_row, actual_row)
+            for expected_row, actual_row in zip(expected, actual)
+        )
+
+    matches = [-1] * len(actual)
+
+    def find_match(expected_index, visited):
+        for actual_index, actual_row in enumerate(actual):
+            if visited[actual_index] or not row_equal(expected[expected_index], actual_row):
+                continue
+            visited[actual_index] = True
+            if matches[actual_index] == -1 or find_match(matches[actual_index], visited):
+                matches[actual_index] = expected_index
+                return True
+        return False
+
+    return all(
+        find_match(index, [False] * len(actual))
+        for index in range(len(expected))
+    )
+
+
+def query_has_order_by(sql):
+    return "order by" in " ".join(str(sql).casefold().split())
 
 
 def table_from_rows(rows, max_rows=20):
@@ -608,15 +696,22 @@ def query_reference_section(run_dir, metadata, title="Query Results", active_que
         actual_path = run_dir / f"query-q{query_id}.actual.csv"
         actual_rows = read_csv(actual_path)
         expected_rows = query.get("expected_rows", [])
+        sql = query.get("sql", "")
+        ordered = query_has_order_by(sql)
         if actual_path.exists():
-            status = "<span class=\"ok\">MATCH</span>" if rows_equal(expected_rows, actual_rows) else "<span class=\"bad\">DIFF</span>"
+            status = (
+                '<span class="ok">MATCH</span>'
+                if rows_equal(expected_rows, actual_rows, ordered=ordered)
+                else '<span class="bad">DIFF</span>'
+            )
         else:
             status = "<span class=\"warn\">not captured</span>"
+        comparison_mode = "ordered sequence" if ordered else "unordered multiset"
         blocks.append(
             f"""
   <h3>{html.escape(query.get('name', f'Q{query_id}'))}: {status}</h3>
-  <p class="subtle">Expected answer is computed by DuckDB on the generated TPC-H data. Actual answer is captured through Spark Thrift for this run path.</p>
-  <pre>{html.escape(query.get('sql', ''))}</pre>
+  <p class="subtle">Expected answer is computed by DuckDB on the generated TPC-H data. Actual answer is captured through Spark Thrift for this run path. Compared as {comparison_mode}.</p>
+  <pre>{html.escape(sql)}</pre>
   <div class="grid2">
     <div><h3>Expected</h3>{table_from_rows(expected_rows)}</div>
     <div><h3>Actual</h3>{table_from_rows(actual_rows)}</div>
@@ -678,6 +773,12 @@ def build_report(results_dir, base, output):
     output.write_text(html_text, encoding="utf-8")
 
 
+def same_query_mix(left, right):
+    return left.keys() == right.keys() and all(
+        abs(left[query] - right[query]) <= 1e-12 for query in left
+    )
+
+
 def compare_cards(flight, direct):
     rows = []
     metrics = [
@@ -686,6 +787,36 @@ def compare_cards(flight, direct):
         ("P95 latency ms", summary_latency_value(flight["summary"], "95th Percentile"), summary_latency_value(direct["summary"], "95th Percentile"), False),
         ("Max latency ms", summary_latency_value(flight["summary"], "Maximum"), summary_latency_value(direct["summary"], "Maximum"), False),
     ]
+    flight_weights = normalized_query_weights(flight["config"])
+    direct_weights = normalized_query_weights(direct["config"])
+    standardized_note = ""
+    if same_query_mix(flight_weights, direct_weights) and flight_weights:
+        flight_standardized = standardized_weighted_latency(
+            flight["query_latency_rows"], flight_weights
+        )
+        direct_standardized = standardized_weighted_latency(
+            direct["query_latency_rows"], direct_weights
+        )
+        if flight_standardized is not None and direct_standardized is not None:
+            metrics.append(
+                (
+                    "Configured-mix avg latency ms",
+                    flight_standardized,
+                    direct_standardized,
+                    False,
+                )
+            )
+        else:
+            standardized_note = (
+                '<p class="warn">Configured-mix latency is unavailable because '
+                "at least one configured query has no measured samples.</p>"
+            )
+    else:
+        standardized_note = (
+            '<p class="warn">Configured-mix latency is unavailable because '
+            "Flight and Direct transaction weights are missing or differ.</p>"
+        )
+
     for label, flight_value, direct_value, higher_better in metrics:
         delta = flight_value - direct_value
         if direct_value:
@@ -704,6 +835,36 @@ def compare_cards(flight, direct):
     <thead><tr><th>Metric</th><th>Flight</th><th>Direct</th><th>Flight - Direct</th><th>Better</th></tr></thead>
     <tbody>{''.join(rows)}</tbody>
   </table>
+  <p class="subtle">Configured-mix latency uses configured transaction weights and measured per-query means. Random differences in per-query sample counts do not affect it.</p>
+  {standardized_note}
+</section>
+"""
+
+
+def comparison_order_notice(metadata, override=None):
+    order = override
+    if not order:
+        for key in (
+            "execution_order",
+            "benchmark_order",
+            "compare_order",
+            "run_order",
+        ):
+            if metadata.get(key):
+                order = metadata[key]
+                break
+
+    if isinstance(order, (list, tuple)):
+        order = " → ".join(str(item) for item in order)
+    if order:
+        context = f"Recorded execution order: {order}."
+    else:
+        context = "Execution order was not recorded."
+    return f"""
+<section>
+  <h2>Comparison Validity</h2>
+  <p><strong>{html.escape(context)}</strong></p>
+  <p class="warn">Execution order can bias a sequential comparison through warmed Spark, HDFS, and operating-system caches. Use counterbalanced or randomized repeated runs for a conclusive result.</p>
 </section>
 """
 
@@ -722,7 +883,7 @@ def compare_reference_section(parent_dir, metadata, flight, direct):
 """
 
 
-def build_compare_report(results_dir, output):
+def build_compare_report(results_dir, output, execution_order=None):
     flight = load_run(results_dir / "flight")
     direct = load_run(results_dir / "direct")
     metadata = metadata_for(results_dir)
@@ -751,6 +912,7 @@ def build_compare_report(results_dir, output):
     <p><a href="{html.escape(str(direct_link))}">Open Direct-only report</a></p>
   </section>
   {compare_cards(flight, direct)}
+  {comparison_order_notice(metadata, execution_order)}
   {settings_section(metadata)}
   {svg_query_latency_chart(
       flight["query_latency_rows"],
@@ -782,7 +944,7 @@ def main():
     results_dir = args.results.resolve()
     if args.compare:
         output = args.out or results_dir / "compare.report.html"
-        build_compare_report(results_dir, output)
+        build_compare_report(results_dir, output, args.execution_order)
     else:
         summary_path = find_summary(results_dir, args.base)
         run_dir = summary_path.parent

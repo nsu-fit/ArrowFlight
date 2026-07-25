@@ -59,8 +59,12 @@ public final class QueryPlanner {
         this.parquetAdapter = parquetAdapter;
         this.clusterService = clusterService;
         try {
-            this.clusterService.registerLocalFiles(this.parquetAdapter.localFileInventory());
-            this.parquetAdapter.initCatalogReader();
+            Map<String, Long> localFiles = this.parquetAdapter.localFileInventory();
+            this.clusterService.registerLocalFiles(localFiles);
+            long localBytes = localFiles.values().stream().mapToLong(Long::longValue).sum();
+            LOGGER.info("node={} snapshot=immutable files={} bytes={} "
+                            + "restartRequiredOnDataChange=true",
+                    LogUtil.node(), localFiles.size(), localBytes);
         } catch (IOException e) {
             throw new UncheckedIOException("Unable to publish local Parquet inventory", e);
         }

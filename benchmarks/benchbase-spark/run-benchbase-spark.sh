@@ -691,7 +691,9 @@ build_html_report() {
 }
 
 build_compare_html_report() {
-  run_python "${SCRIPT_DIR}/visualize-results.py" --compare --results "${RESULTS_DIR}"
+  run_python "${SCRIPT_DIR}/visualize-results.py" --compare \
+    --results "${RESULTS_DIR}" \
+    --execution-order "${BENCHBASE_COMPARE_ORDER}"
   build_pages_site
 }
 

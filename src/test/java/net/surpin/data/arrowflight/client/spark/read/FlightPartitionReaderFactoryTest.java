@@ -44,6 +44,7 @@ class FlightPartitionReaderFactoryTest {
                 field("l_shipdate", new ArrowType.Date(DateUnit.DAY))));
 
         assertTrue(factory().supportColumnarReads(partition(schema)));
+        assertTrue(FlightPartitionReaderFactory.supportsColumnarSchema(schema));
     }
 
     /**
@@ -56,6 +57,7 @@ class FlightPartitionReaderFactoryTest {
                 field("iv", new ArrowType.Interval(IntervalUnit.DAY_TIME))));
 
         assertFalse(factory().supportColumnarReads(partition(schema)));
+        assertFalse(FlightPartitionReaderFactory.supportsColumnarSchema(schema));
     }
 
     /**

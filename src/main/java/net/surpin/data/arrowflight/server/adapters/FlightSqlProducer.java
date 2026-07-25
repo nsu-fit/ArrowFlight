@@ -30,6 +30,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -58,6 +59,7 @@ import static java.util.UUID.randomUUID;
 public final class FlightSqlProducer extends BasicFlightSqlProducer implements AutoCloseable {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(FlightSqlProducer.class);
+    private static final long QUERY_EXECUTOR_WARMUP_TIMEOUT_SECONDS = 30;
 
     private final Location location;
     private final BufferAllocator allocator;
@@ -101,6 +103,28 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
             MetadataService metadataService, QueryPlanner queryPlanner,
             ExecutionService executionService, ClusterService clusterService,
             long queryMemoryLimit, int maxConcurrentQueries) {
+        this(location, allocator, metadataService, queryPlanner, executionService,
+                clusterService, queryMemoryLimit, maxConcurrentQueries,
+                maxConcurrentQueries);
+    }
+
+    /**
+     * Creates a producer with explicit memory, concurrency, and warmup limits.
+     *
+     * @param location server location for endpoint registration
+     * @param allocator Arrow buffer allocator
+     * @param metadataService metadata lookup service
+     * @param queryPlanner query planner
+     * @param executionService execution service
+     * @param clusterService cluster coordination service
+     * @param queryMemoryLimit per-query Arrow limit
+     * @param maxConcurrentQueries query executor size
+     * @param warmConnections zero disables warmup, a positive value warms every worker
+     */
+    public FlightSqlProducer(Location location, BufferAllocator allocator,
+            MetadataService metadataService, QueryPlanner queryPlanner,
+            ExecutionService executionService, ClusterService clusterService,
+            long queryMemoryLimit, int maxConcurrentQueries, int warmConnections) {
         this.location = location;
         this.allocator = allocator;
         this.metadataService = metadataService;
@@ -114,6 +138,15 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
                     thread.setDaemon(true);
                     return thread;
                 });
+        try {
+            int warmWorkerCount = warmConnections > 0 ? maxConcurrentQueries : 0;
+            if (warmWorkerCount > 0) {
+                warmUpQueryExecutor(warmWorkerCount);
+            }
+        } catch (RuntimeException | Error error) {
+            queryExecutor.shutdownNow();
+            throw error;
+        }
 
         this.sqlInfoBuilder = new SqlInfoBuilder();
         sqlInfoBuilder
@@ -135,6 +168,59 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
                 .withSqlAllTablesAreSelectable(true)
                 .withSqlNullOrdering(FlightSql.SqlNullOrdering.SQL_NULLS_SORTED_AT_END)
                 .withSqlMaxColumnsInTable(1000);
+    }
+
+    /**
+     * Starts every query executor worker and initializes its thread-local DuckDB connection.
+     *
+     * @param workerCount query executor worker count
+     * @throws IllegalStateException if a worker cannot initialize before the timeout
+     */
+    private void warmUpQueryExecutor(int workerCount) {
+        LOGGER.info("node={} duckdb=warmup connections={}", LogUtil.node(), workerCount);
+        CountDownLatch initialized = new CountDownLatch(workerCount);
+        CountDownLatch releaseWorkers = new CountDownLatch(1);
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+
+        for (int i = 0; i < workerCount; i++) {
+            queryExecutor.submit(() -> {
+                try {
+                    executionService.initializeDuckDbConnection();
+                } catch (Throwable error) {
+                    failure.compareAndSet(null, error);
+                } finally {
+                    initialized.countDown();
+                    try {
+                        releaseWorkers.await();
+                    } catch (InterruptedException error) {
+                        Thread.currentThread().interrupt();
+                        failure.compareAndSet(null, error);
+                    }
+                }
+            });
+        }
+
+        boolean completed;
+        try {
+            completed = initialized.await(
+                    QUERY_EXECUTOR_WARMUP_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("DuckDB connection warmup interrupted", error);
+        } finally {
+            releaseWorkers.countDown();
+        }
+        if (!completed) {
+            throw new IllegalStateException(
+                    "DuckDB connection warmup timed out after "
+                    + QUERY_EXECUTOR_WARMUP_TIMEOUT_SECONDS + " seconds");
+        }
+        if (failure.get() != null) {
+            throw new IllegalStateException(
+                    "Failed to warm query executor DuckDB connections", failure.get());
+        }
+        LOGGER.info("node={} duckdb=warmupDone connections={}",
+                LogUtil.node(), workerCount);
     }
 
     @Override

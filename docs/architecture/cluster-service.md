@@ -112,6 +112,10 @@ hazelcast.serverFiles().put(this.serverUri, new LinkedHashMap<>(files));
 
 Files are stored as relative paths with their byte sizes. This creates a distributed inventory across all nodes.
 
+The inventory is an immutable startup snapshot. Dataset changes require a
+coordinated restart of all Flight nodes; mixed inventory generations are not
+supported.
+
 ### File Location Resolution
 
 When planning a query, `FlightSqlProducer` calls `fileLocations()` to build a complete picture of where every Parquet file lives:

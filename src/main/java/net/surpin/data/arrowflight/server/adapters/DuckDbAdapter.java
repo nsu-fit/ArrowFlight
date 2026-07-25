@@ -72,11 +72,6 @@ public final class DuckDbAdapter implements AutoCloseable {
         this.batchSize = appConfig.batchSize();
         this.duckDbGroups = appConfig.duckDbGroups();
 
-        String jdbcUrl = "jdbc:duckdb:";
-        Properties connProps = new Properties();
-        if (appConfig.duckDbAllowUnsignedExtensions()) {
-            connProps.setProperty("allow_unsigned_extensions", "true");
-        }
         this.threadConn = ThreadLocal.withInitial(() -> {
             try {
                 Properties props = new Properties();
@@ -91,23 +86,6 @@ public final class DuckDbAdapter implements AutoCloseable {
                 throw new RuntimeException("Failed to create thread-local DuckDB connection", e);
             }
         });
-
-        int warmCount = appConfig.duckDbWarmConnections();
-        if (warmCount > 0) {
-            LOGGER.info("node={} duckdb=warmup connections={}", LogUtil.node(), warmCount);
-            List<Future<Connection>> futs = new ArrayList<>(warmCount);
-            for (int i = 0; i < warmCount; i++) {
-                futs.add(ioPool.submit(threadConn::get));
-            }
-            for (Future<Connection> f : futs) {
-                try {
-                    f.get(30, TimeUnit.SECONDS);
-                } catch (Exception e) {
-                    LOGGER.warn("node={} duckdb=warmupFailed", LogUtil.node(), e);
-                }
-            }
-            LOGGER.info("node={} duckdb=warmupDone", LogUtil.node());
-        }
     }
 
     /**

@@ -37,6 +37,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
@@ -60,8 +61,10 @@ public final class MetadataService {
 
     public static final String CATALOG_NAME = "PARQUET_ARROW_FLIGHT_CATALOG";
     public static final String TABLE_TYPE = "TABLE";
+    private static final int QUERY_SCHEMA_CACHE_SIZE = 1024;
 
     private final ParquetAdapter parquetAdapter;
+    private final Map<String, Schema> querySchemaCache = new ConcurrentHashMap<>();
 
     /**
      * Creates MetadataService.
@@ -115,6 +118,25 @@ public final class MetadataService {
      */
     public Schema getQuerySchema(String query) {
         long t = LogUtil.mark();
+        String cacheKey = query.trim();
+        boolean cached = querySchemaCache.containsKey(cacheKey);
+        if (!cached && querySchemaCache.size() >= QUERY_SCHEMA_CACHE_SIZE) {
+            querySchemaCache.clear();
+        }
+        Schema schema = querySchemaCache.computeIfAbsent(
+                cacheKey, this::buildQuerySchema);
+        LogUtil.logTiming(t, cached ? "schema.queryCacheHit" : "schema.queryCacheMiss",
+                "fields=" + schema.getFields().size());
+        return schema;
+    }
+
+    /**
+     * Builds the uncached Arrow result schema for a SQL query.
+     *
+     * @param query SQL query
+     * @return Arrow result schema
+     */
+    private Schema buildQuerySchema(String query) {
         ParquetQueryParser pq = ParquetQueryParser.parse(query);
         Schema schema;
         if (pq.isJoin) {
@@ -124,7 +146,6 @@ public final class MetadataService {
                     ? buildAggregationSchema(pq)
                     : parquetAdapter.getTableSchema(pq.schema, pq.table, pq.columns);
         }
-        LogUtil.logTiming(t, "schema.getQuerySchema", "join=" + pq.isJoin + " agg=" + pq.hasAggregation);
         return schema;
     }
 

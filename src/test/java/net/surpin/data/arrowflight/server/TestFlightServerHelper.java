@@ -92,7 +92,10 @@ public class TestFlightServerHelper implements AutoCloseable {
                 Executors.newCachedThreadPool());
 
         flightSqlProducer = new FlightSqlProducer(location, allocator,
-                metadataService, queryPlanner, executionService, clusterService);
+                metadataService, queryPlanner, executionService, clusterService,
+                appConfig.arrowQueryMemoryLimitBytes(),
+                appConfig.maxConcurrentQueries(),
+                appConfig.duckDbWarmConnections());
 
         server = FlightServer.builder(allocator, location, flightSqlProducer).build();
         server.start();
