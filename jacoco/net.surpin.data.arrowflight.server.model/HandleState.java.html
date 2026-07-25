@@ -3,16 +3,35 @@
 import java.io.Serializable;
 
 /**
- * State associated with a query handle, including query text, file paths, server URI, and byte count.
+ * State associated with a query handle, including execution and load-accounting data.
+ *
+ * @param query SQL query text
+ * @param filePaths paths to Parquet files
+ * @param serverUri URI of the server holding the files
+ * @param bytes total file size
+ * @param loadTracked whether the bytes were added to distributed server load
  */
-<span class="fc" id="L8">public record HandleState(String query, String[] filePaths, String serverUri, long bytes) implements Serializable {</span>
+<span class="fc" id="L14">public record HandleState(String query, String[] filePaths, String serverUri,</span>
+        long bytes, boolean loadTracked) implements Serializable {
+
+    /**
+     * Creates state compatible with the original four-field representation.
+     *
+     * @param query SQL query text
+     * @param filePaths paths to Parquet files
+     * @param serverUri URI of the server holding the files
+     * @param bytes total file size
+     */
+    public HandleState(String query, String[] filePaths, String serverUri, long bytes) {
+<span class="pc bpc" id="L26" title="3 of 4 branches missed.">        this(query, filePaths, serverUri, bytes, serverUri != null &amp;&amp; bytes &gt; 0);</span>
+<span class="fc" id="L27">    }</span>
 
     /**
      * @param query SQL query text
      * @return handle state with no file paths or server URI
      */
     public static HandleState forQuery(String query) {
-<span class="fc" id="L15">        return new HandleState(query, null, null, 0L);</span>
+<span class="fc" id="L34">        return new HandleState(query, null, null, 0L, false);</span>
     }
 
     /**
@@ -23,7 +42,22 @@ import java.io.Serializable;
      * @return handle state with all fields populated
      */
     public static HandleState forServerFiles(String query, String[] filePaths, String serverUri, long bytes) {
-<span class="fc" id="L26">        return new HandleState(query, filePaths, serverUri, bytes);</span>
+<span class="nc" id="L45">        return new HandleState(query, filePaths, serverUri, bytes, true);</span>
+    }
+
+    /**
+     * Creates endpoint state with explicit distributed load-accounting behavior.
+     *
+     * @param query SQL query text
+     * @param filePaths paths to Parquet files
+     * @param serverUri URI of the server holding the files
+     * @param bytes total file size
+     * @param loadTracked whether the bytes were added to distributed server load
+     * @return handle state with all fields populated
+     */
+    public static HandleState forServerFiles(String query, String[] filePaths,
+            String serverUri, long bytes, boolean loadTracked) {
+<span class="fc" id="L60">        return new HandleState(query, filePaths, serverUri, bytes, loadTracked);</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>
