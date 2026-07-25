@@ -101,14 +101,16 @@ public class FlightInputPartition implements InputPartition, Serializable {
 
     //the schema of the input partition
     private final String schema;
+    private transient volatile Schema parsedSchema;
 
     /**
      * Construct a flight-input-partition
      * @param schema - the schema of the partition
      */
-<span class="fc" id="L109">    protected FlightInputPartition(Schema schema) {</span>
-<span class="fc" id="L110">        this.schema = schema.toJson();</span>
-<span class="fc" id="L111">    }</span>
+<span class="fc" id="L110">    protected FlightInputPartition(Schema schema) {</span>
+<span class="fc" id="L111">        this.schema = schema.toJson();</span>
+<span class="fc" id="L112">        this.parsedSchema = schema;</span>
+<span class="fc" id="L113">    }</span>
 
     /**
      * Get the schema of the partition
@@ -116,7 +118,12 @@ public class FlightInputPartition implements InputPartition, Serializable {
      * @throws IOException - thrown when the schema is in invalid json format.
      */
     public Schema getSchema() throws IOException {
-<span class="fc" id="L119">        return Schema.fromJSON(this.schema);</span>
+<span class="fc" id="L121">        Schema cached = this.parsedSchema;</span>
+<span class="fc bfc" id="L122" title="All 2 branches covered.">        if (cached == null) {</span>
+<span class="fc" id="L123">            cached = Schema.fromJSON(this.schema);</span>
+<span class="fc" id="L124">            this.parsedSchema = cached;</span>
+        }
+<span class="fc" id="L126">        return cached;</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>
