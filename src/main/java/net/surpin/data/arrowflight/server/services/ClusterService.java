@@ -68,11 +68,13 @@ public final class ClusterService implements AutoCloseable {
         this.serverUri = serverUri;
 
         if (hazelcast.instance() != null && hazelcast.reservations() != null
-                && hazelcast.queueNodes() != null) {
+            && hazelcast.queueNodes() != null) {
             cleanupServer(serverUri);
         }
-        registerLocalServerState();
+        // Heartbeat first: liveness must never depend on the (slower, lock-contending)
+        // state-repair transaction below.
         hazelcast.serverHeartbeats().put(serverUri, System.currentTimeMillis());
+        registerLocalServerState();
 
         heartbeatExecutor = Executors.newSingleThreadScheduledExecutor(runnable -> {
             Thread thread = new Thread(runnable, "flight-heartbeat");
@@ -80,12 +82,21 @@ public final class ClusterService implements AutoCloseable {
             return thread;
         });
         heartbeatExecutor.scheduleAtFixedRate(() -> {
+            // Always renew the heartbeat first. This is a single non-transactional put and
+            // must not be blocked by lock contention on the registry/capacity maps, or a
+            // perfectly live node can be marked stale and evicted from the pool.
             try {
-                registerLocalServerState();
                 hazelcast.serverHeartbeats().put(serverUri, System.currentTimeMillis());
             } catch (Exception error) {
                 LOGGER.warn("Failed to update heartbeat for {}: {}",
-                        serverUri, error.getMessage());
+                    serverUri, error.getMessage());
+                return;
+            }
+            try {
+                registerLocalServerState();
+            } catch (Exception error) {
+                LOGGER.warn("Failed to repair registry state for {}: {}",
+                    serverUri, error.getMessage());
             }
         }, HEARTBEAT_INTERVAL_SEC, HEARTBEAT_INTERVAL_SEC, TimeUnit.SECONDS);
 
@@ -558,11 +569,18 @@ public final class ClusterService implements AutoCloseable {
             hazelcast.serverRegistry().putIfAbsent(serverUri, 0L);
             return;
         }
+        // Cheap, non-locking fast path: skip the transaction entirely once both entries
+        // exist (the common case on every heartbeat tick after the first successful init).
+        // Avoids contending for the same key-lock that query reservation/release transactions use.
+        if (hazelcast.serverRegistry().containsKey(serverUri)
+            && hazelcast.serverCapacity().containsKey(serverUri)) {
+            return;
+        }
         withTransaction(context -> {
             TransactionalMap<String, Long> loads =
-                    context.getMap(hazelcast.serverRegistryMapName());
+                context.getMap(hazelcast.serverRegistryMapName());
             TransactionalMap<String, ServerCapacity> capacities =
-                    context.getMap(hazelcast.serverCapacityMapName());
+                context.getMap(hazelcast.serverCapacityMapName());
             Long load = loads.getForUpdate(serverUri);
             ServerCapacity capacity = capacities.getForUpdate(serverUri);
             if (load == null) {

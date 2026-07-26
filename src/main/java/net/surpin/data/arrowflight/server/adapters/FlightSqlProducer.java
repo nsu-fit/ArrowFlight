@@ -591,7 +591,9 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
                     .withDescription(exhausted.getMessage())
                     .withCause(exhausted).toRuntimeException();
         } catch (IOException e) {
-            throw new RuntimeException(e);
+            throw CallStatus.INTERNAL
+                .withDescription(e.getMessage())
+                .withCause(e).toRuntimeException();
         }
     }
 
