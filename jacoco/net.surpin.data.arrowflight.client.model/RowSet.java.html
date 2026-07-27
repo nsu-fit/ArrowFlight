@@ -70,20 +70,21 @@ public class RowSet {
     /**
      * Add all rows from another RowSet
      * @param rs - the input RowSet
+     * @throws IllegalArgumentException if the schemas do not match
      */
     public void add(RowSet rs) {
-<span class="fc bfc" id="L75" title="All 2 branches covered.">        if (rs.schema != this.schema) {</span>
-<span class="fc" id="L76">            throw new RuntimeException(&quot;The schema doesn't match. Cannot add the RowSet.&quot;);</span>
+<span class="fc bfc" id="L76" title="All 2 branches covered.">        if (rs.schema != this.schema) {</span>
+<span class="fc" id="L77">            throw new IllegalArgumentException(&quot;The schema doesn't match. Cannot add the RowSet.&quot;);</span>
         }
-<span class="fc" id="L78">        this.data.addAll(rs.data);</span>
-<span class="fc" id="L79">    }</span>
+<span class="fc" id="L79">        this.data.addAll(rs.data);</span>
+<span class="fc" id="L80">    }</span>
 
     /**
      * Get all Rows
      * @return - all rows in the RowSet
      */
     public Row[] getData() {
-<span class="fc" id="L86">        return this.data.toArray(new Row[] {});</span>
+<span class="fc" id="L87">        return this.data.toArray(new Row[] {});</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

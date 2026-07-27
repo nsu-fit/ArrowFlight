@@ -363,11 +363,11 @@ public class FieldType implements Serializable {
      * @param keyType key field type
      * @param valueType value field type
      * @return converted map type
-     * @throws RuntimeException if either field type is missing
+     * @throws IllegalArgumentException if either field type is missing
      */
     private static FieldType createMapType(FieldType keyType, FieldType valueType) {
 <span class="pc bpc" id="L369" title="2 of 4 branches missed.">        if (keyType == null || valueType == null) {</span>
-<span class="nc" id="L370">            throw new RuntimeException(&quot;Invalid map-type.&quot;);</span>
+<span class="nc" id="L370">            throw new IllegalArgumentException(&quot;Invalid map-type.&quot;);</span>
         }
 <span class="fc" id="L372">        return new MapType(keyType, valueType);</span>
     }

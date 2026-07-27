@@ -154,7 +154,7 @@ public final class FlightDataWriter implements DataWriter&lt;InternalRow&gt; {
 
 <span class="nc" id="L155">        long cnt = this.count;</span>
 <span class="nc" id="L156">        this.count = 0;</span>
-<span class="nc bnc" id="L157" title="All 2 branches missed.">        return (this.epochId.length() == 0) ? new FlightWriterCommitMessage(this.partitionId, this.taskId, cnt)</span>
+<span class="nc bnc" id="L157" title="All 2 branches missed.">        return this.epochId.isEmpty() ? new FlightWriterCommitMessage(this.partitionId, this.taskId, cnt)</span>
 <span class="nc" id="L158">            : new FlightWriterCommitMessage(this.partitionId, this.taskId, this.epochId, cnt);</span>
     }
 
@@ -164,7 +164,7 @@ public final class FlightDataWriter implements DataWriter&lt;InternalRow&gt; {
      */
     @Override
     public void abort() throws IOException {
-<span class="nc bnc" id="L167" title="All 2 branches missed.">        throw (this.epochId.length() == 0) ? new FlightWriteAbortException(this.partitionId, this.taskId, this.count)</span>
+<span class="nc bnc" id="L167" title="All 2 branches missed.">        throw this.epochId.isEmpty() ? new FlightWriteAbortException(this.partitionId, this.taskId, this.count)</span>
 <span class="nc" id="L168">            : new FlightWriteAbortException(this.partitionId, this.taskId, this.epochId, this.count);</span>
     }
     

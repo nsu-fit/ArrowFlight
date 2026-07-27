@@ -108,17 +108,18 @@ import java.util.Map;
         }
 
         //the table name
-<span class="nc" id="L111">        String tableName = options.getOrDefault(FlightSource.TABLE, &quot;&quot;);</span>
+<span class="nc" id="L111">        String requestedTableName = options.getOrDefault(FlightSource.TABLE, &quot;&quot;);</span>
         //table name cannot empty
-<span class="nc bnc" id="L113" title="All 4 branches missed.">        if (tableName == null || tableName.isEmpty()) {</span>
+<span class="nc bnc" id="L113" title="All 4 branches missed.">        if (requestedTableName == null || requestedTableName.isEmpty()) {</span>
 <span class="nc" id="L114">            throw new RuntimeException(&quot;The table is mandatory.&quot;);</span>
         }
         //set up the flight-table with the column quote-character. By default, columns are not quoted
-<span class="nc" id="L117">        this.tableName = Table.forTable(tableName, options.getOrDefault(FlightSource.COLUMN_QUOTE, &quot;&quot;));</span>
-<span class="nc bnc" id="L118" title="All 2 branches missed.">        if (initialize) {</span>
-<span class="nc" id="L119">            this.tableName.initializeSchema(this.configuration);</span>
+<span class="nc" id="L117">        this.tableName = Table.forTable(requestedTableName,</span>
+<span class="nc" id="L118">                options.getOrDefault(FlightSource.COLUMN_QUOTE, &quot;&quot;));</span>
+<span class="nc bnc" id="L119" title="All 2 branches missed.">        if (initialize) {</span>
+<span class="nc" id="L120">            this.tableName.initializeSchema(this.configuration);</span>
         }
-<span class="nc" id="L121">    }</span>
+<span class="nc" id="L122">    }</span>
 
     /**
      * Get the table of the DataSource
@@ -129,7 +130,7 @@ import java.util.Map;
      */
     @Override
     public org.apache.spark.sql.connector.catalog.Table getTable(StructType schema, Transform[] partitioning, Map&lt;String, String&gt; properties) {
-<span class="nc" id="L132">        return new FlightTable(this.configuration, this.tableName);</span>
+<span class="nc" id="L133">        return new FlightTable(this.configuration, this.tableName);</span>
     }
 
     /**
@@ -138,9 +139,9 @@ import java.util.Map;
      * after Spark has supplied projection/filter/aggregate pushdown.
      */
     FlightTable getTableFromCatalog(CaseInsensitiveStringMap options, StructType schema) {
-<span class="nc" id="L141">        this.probeOptions(options, false);</span>
-<span class="nc" id="L142">        this.tableName.setSparkSchema(schema);</span>
-<span class="nc" id="L143">        return new FlightTable(this.configuration, this.tableName);</span>
+<span class="nc" id="L142">        this.probeOptions(options, false);</span>
+<span class="nc" id="L143">        this.tableName.setSparkSchema(schema);</span>
+<span class="nc" id="L144">        return new FlightTable(this.configuration, this.tableName);</span>
     }
 
     /**
@@ -148,9 +149,9 @@ import java.util.Map;
      */
     @Override
     public BaseRelation createRelation(SQLContext sqlContext, scala.collection.immutable.Map&lt;String, String&gt; parameters) {
-<span class="nc" id="L151">        Map&lt;String, String&gt; options = new HashMap&lt;&gt;(JavaConverters.mapAsJavaMap(parameters));</span>
-<span class="nc" id="L152">        this.probeOptions(new CaseInsensitiveStringMap(options), true);</span>
-<span class="nc" id="L153">        return new FlightRelation(sqlContext, this.configuration, this.tableName);</span>
+<span class="nc" id="L152">        Map&lt;String, String&gt; options = new HashMap&lt;&gt;(JavaConverters.mapAsJavaMap(parameters));</span>
+<span class="nc" id="L153">        this.probeOptions(new CaseInsensitiveStringMap(options), true);</span>
+<span class="nc" id="L154">        return new FlightRelation(sqlContext, this.configuration, this.tableName);</span>
     }
 
     /**
@@ -159,7 +160,7 @@ import java.util.Map;
      */
     @Override
     public String shortName() {
-<span class="nc" id="L162">        return &quot;flight&quot;;</span>
+<span class="nc" id="L163">        return &quot;flight&quot;;</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

@@ -652,6 +652,6 @@ public class WriteStatement implements Serializable {
 <span class="nc" id="L652">        return sb.toString().replace(&quot;'&quot;, &quot;''&quot;);</span>
     };
     //quote all fields in the collection
-<span class="pc" id="L655">    private static final BiFunction&lt;String[], String, String[]&gt; quote = (fields, quote) -&gt; Arrays.stream(fields).map(field -&gt; String.format(&quot;%s%s%s&quot;, quote, field, quote)).toArray(String[]::new);</span>
+<span class="pc" id="L655">    private static final BiFunction&lt;String[], String, String[]&gt; quote = (fields, quoteChar) -&gt; Arrays.stream(fields).map(field -&gt; String.format(&quot;%s%s%s&quot;, quoteChar, field, quoteChar)).toArray(String[]::new);</span>
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

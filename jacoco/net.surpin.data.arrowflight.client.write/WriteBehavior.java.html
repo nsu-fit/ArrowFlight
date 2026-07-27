@@ -51,7 +51,7 @@ public class WriteBehavior implements Serializable {
      * @return - the columns on which to merge data into the target table
      */
     public String[] getMergeByColumns() {
-<span class="fc bfc" id="L54" title="All 2 branches covered.">        return isTruncate() ? new String[0] : this.mergeByColumns;</span>
+<span class="fc bfc" id="L54" title="All 2 branches covered.">        return isTruncate().booleanValue() ? new String[0] : this.mergeByColumns;</span>
     }
 
     /**
@@ -64,20 +64,21 @@ public class WriteBehavior implements Serializable {
 
     /**
      * set the flag to truncate the target table
+     * @throws IllegalStateException if merge-by columns are configured
      */
     public void truncate() {
-<span class="fc bfc" id="L69" title="All 4 branches covered.">        if (this.mergeByColumns != null &amp;&amp; this.mergeByColumns.length &gt; 0) {</span>
-<span class="fc" id="L70">            throw new RuntimeException(&quot;The merge-by can only work with append mode.&quot;);</span>
+<span class="fc bfc" id="L70" title="All 4 branches covered.">        if (this.mergeByColumns != null &amp;&amp; this.mergeByColumns.length &gt; 0) {</span>
+<span class="fc" id="L71">            throw new IllegalStateException(&quot;The merge-by can only work with append mode.&quot;);</span>
         }
-<span class="fc" id="L72">        this.truncate = true;</span>
-<span class="fc" id="L73">    }</span>
+<span class="fc" id="L73">        this.truncate = true;</span>
+<span class="fc" id="L74">    }</span>
 
     /**
      * Flag to truncate the target table
      * @return - true if it is to truncate the target table
      */
     public Boolean isTruncate() {
-<span class="fc" id="L80">        return this.truncate;</span>
+<span class="fc" id="L81">        return this.truncate;</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.15.202606040825</span></div></body></html>

@@ -292,10 +292,10 @@ public class FlightPartitionReader implements PartitionReader&lt;InternalRow&gt;
      * @throws Exception - if stream opening fails
      */
     private boolean openStream() throws Exception {
-<span class="nc bnc" id="L295" title="All 2 branches missed.">        if (this.inputPartition instanceof FlightInputPartition.FlightEndpointInputPartition) {</span>
-<span class="nc" id="L296">            return openEndpointStreamWithRetry((FlightInputPartition.FlightEndpointInputPartition) this.inputPartition);</span>
-<span class="nc bnc" id="L297" title="All 2 branches missed.">        } else if (this.inputPartition instanceof FlightInputPartition.FlightQueryInputPartition) {</span>
-<span class="nc" id="L298">            return openQueryStreamWithRetry((FlightInputPartition.FlightQueryInputPartition) this.inputPartition);</span>
+<span class="nc bnc" id="L295" title="All 2 branches missed.">        if (this.inputPartition instanceof FlightInputPartition.FlightEndpointInputPartition endpointPartition) {</span>
+<span class="nc" id="L296">            return openEndpointStreamWithRetry(endpointPartition);</span>
+<span class="nc bnc" id="L297" title="All 2 branches missed.">        } else if (this.inputPartition instanceof FlightInputPartition.FlightQueryInputPartition queryPartition) {</span>
+<span class="nc" id="L298">            return openQueryStreamWithRetry(queryPartition);</span>
         } else {
 <span class="nc" id="L300">            LOGGER.error(&quot;FlightPartitionReader.openStream(): Unsupported partition, no data read: {}&quot;, this.inputPartition);</span>
 <span class="nc" id="L301">            return false;</span>
@@ -569,7 +569,7 @@ public class FlightPartitionReader implements PartitionReader&lt;InternalRow&gt;
 <span class="nc bnc" id="L569" title="All 4 branches missed.">                switch (field.getType().getTypeID()) {</span>
 <span class="nc" id="L570">                    case INT:   return (int) b;</span>
 <span class="nc" id="L571">                    case SHORT: return (short) b;</span>
-<span class="nc" id="L572">                    case LONG: case BIGINT: return (long) b;</span>
+<span class="nc" id="L572">                    case LONG, BIGINT: return (long) b;</span>
                     default: break;
                 }
             }
@@ -580,7 +580,7 @@ public class FlightPartitionReader implements PartitionReader&lt;InternalRow&gt;
 <span class="nc bnc" id="L580" title="All 2 branches missed.">            if (field != null) {</span>
 <span class="nc bnc" id="L581" title="All 3 branches missed.">                switch (field.getType().getTypeID()) {</span>
 <span class="nc" id="L582">                    case INT:   return (int) s;</span>
-<span class="nc" id="L583">                    case LONG: case BIGINT: return (long) s;</span>
+<span class="nc" id="L583">                    case LONG, BIGINT: return (long) s;</span>
                     default: break;
                 }
             }
@@ -590,7 +590,7 @@ public class FlightPartitionReader implements PartitionReader&lt;InternalRow&gt;
 <span class="nc" id="L590">            int i = vec.get(rowIndex);</span>
 <span class="nc bnc" id="L591" title="All 2 branches missed.">            if (field != null) {</span>
 <span class="nc bnc" id="L592" title="All 4 branches missed.">                switch (field.getType().getTypeID()) {</span>
-<span class="nc" id="L593">                    case LONG: case BIGINT: return (long) i;</span>
+<span class="nc" id="L593">                    case LONG, BIGINT: return (long) i;</span>
 <span class="nc" id="L594">                    case SHORT: return (short) i;</span>
 <span class="nc" id="L595">                    case BYTE:  return (byte) i;</span>
                     default: break;

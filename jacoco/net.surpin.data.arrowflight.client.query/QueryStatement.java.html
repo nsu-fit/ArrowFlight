@@ -44,8 +44,8 @@ public class QueryStatement implements Serializable {
      */
     public String getStatement() {
 <span class="fc" id="L46">        return String.format(&quot;%s %s %s&quot;, this.stmt,</span>
-<span class="fc bfc" id="L47" title="All 4 branches covered.">            (this.where != null &amp;&amp; this.where.length() &gt; 0) ? String.format(&quot;where %s&quot;, this.where) : &quot;&quot;,</span>
-<span class="fc bfc" id="L48" title="All 4 branches covered.">            (this.groupBy != null &amp;&amp; this.groupBy.length() &gt; 0) ? String.format(&quot;group by %s&quot;, this.groupBy) : &quot;&quot;</span>
+<span class="fc bfc" id="L47" title="All 4 branches covered.">            (this.where != null &amp;&amp; !this.where.isEmpty()) ? String.format(&quot;where %s&quot;, this.where) : &quot;&quot;,</span>
+<span class="fc bfc" id="L48" title="All 4 branches covered.">            (this.groupBy != null &amp;&amp; !this.groupBy.isEmpty()) ? String.format(&quot;group by %s&quot;, this.groupBy) : &quot;&quot;</span>
         );
     }
 }
