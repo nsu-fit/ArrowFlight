@@ -182,7 +182,7 @@ public final class ArrowConversion implements Serializable {
     //convert arrow BitVector to FieldVector for STRING
 <span class="pc" id="L183">    private static final ConvertFrom&lt;org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector&gt; fromBit = (vector, size, type) -&gt; new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((TypeConversionHelper.&lt;BitVector&gt;cast(vector))::getObject).toArray(Object[]::new));</span>
     //convert arrow DateDayVector to FieldVector for DATE
-<span class="pc bnc" id="L185" title="All 2 branches missed.">    private static final ConvertFrom&lt;org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector&gt; fromDateDay = (vector, size, type) -&gt; new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((TypeConversionHelper.&lt;DateDayVector&gt;cast(vector))::getObject).map(dd -&gt; (dd == null) ? null : TypeConversionHelper.dateDayToInt.apply(dd)).toArray(Object[]::new));</span>
+<span class="pc bnc" id="L185" title="All 2 branches missed.">    private static final ConvertFrom&lt;org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector&gt; fromDateDay = (vector, size, type) -&gt; new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((TypeConversionHelper.&lt;DateDayVector&gt;cast(vector))::getObject).map(dd -&gt; (dd == null) ? null : TypeConversionHelper.dateDayToInt.applyAsInt(dd)).toArray(Object[]::new));</span>
     //convert arrow DateMilliVector to FieldVector for DATE
 <span class="pc bnc" id="L187" title="All 2 branches missed.">    private static final ConvertFrom&lt;org.apache.arrow.vector.FieldVector, Integer, FieldType, FieldVector&gt; fromDateMilli = (vector, size, type) -&gt; new FieldVector(vector.getName(), type, IntStream.range(0, size).mapToObj((TypeConversionHelper.&lt;DateMilliVector&gt;cast(vector))::getObject).map(ldt -&gt; (ldt == null) ? null : TypeConversionHelper.localDateTimeToInt.apply(ldt)).toArray(Object[]::new));</span>
     //convert arrow TimeSecVector to FieldVector for TIME
@@ -545,7 +545,7 @@ public final class ArrowConversion implements Serializable {
 <span class="nc bnc" id="L545" title="All 2 branches missed.">        } else if (type == DataTypes.TimestampType) {</span>
 <span class="nc bnc" id="L546" title="All 2 branches missed.">            TypeConversionHelper.&lt;TimeSecVector&gt;cast(vector).setSafe(row, (int) (TypeConversionHelper.microsToEpochNanos.apply((value instanceof Number) ? (Long) value : Long.parseLong(value.toString())) / 1000000000L));</span>
 <span class="nc bnc" id="L547" title="All 2 branches missed.">        } else if (type == DataTypes.StringType) {</span>
-<span class="nc" id="L548">            TypeConversionHelper.&lt;TimeSecVector&gt;cast(vector).setSafe(row, (int) (TypeConversionHelper.timestrToNanos.apply(value.toString()) / 1000000000L));</span>
+<span class="nc" id="L548">            TypeConversionHelper.&lt;TimeSecVector&gt;cast(vector).setSafe(row, (int) (TypeConversionHelper.timestrToNanos.applyAsLong(value.toString()) / 1000000000L));</span>
         }
 <span class="nc" id="L550">    };</span>
     //convert TIME to arrow TimeMilliVector
@@ -563,7 +563,7 @@ public final class ArrowConversion implements Serializable {
 <span class="nc bnc" id="L563" title="All 2 branches missed.">        } else if (type == DataTypes.TimestampType) {</span>
 <span class="nc bnc" id="L564" title="All 2 branches missed.">            TypeConversionHelper.&lt;TimeMilliVector&gt;cast(vector).setSafe(row, (int) (TypeConversionHelper.microsToEpochNanos.apply((value instanceof Number) ? (Long) value : Long.parseLong(value.toString())) / 1000000L));</span>
 <span class="nc bnc" id="L565" title="All 2 branches missed.">        } else if (type == DataTypes.StringType) {</span>
-<span class="nc" id="L566">            TypeConversionHelper.&lt;TimeMilliVector&gt;cast(vector).setSafe(row, (int) (TypeConversionHelper.timestrToNanos.apply(value.toString()) / 1000000L));</span>
+<span class="nc" id="L566">            TypeConversionHelper.&lt;TimeMilliVector&gt;cast(vector).setSafe(row, (int) (TypeConversionHelper.timestrToNanos.applyAsLong(value.toString()) / 1000000L));</span>
         }
 <span class="nc" id="L568">    };</span>
     //convert TIME arrow TimeMicroVector
@@ -581,7 +581,7 @@ public final class ArrowConversion implements Serializable {
 <span class="nc bnc" id="L581" title="All 2 branches missed.">        } else if (type == DataTypes.TimestampType) {</span>
 <span class="nc bnc" id="L582" title="All 2 branches missed.">           TypeConversionHelper.&lt;TimeMicroVector&gt;cast(vector).setSafe(row, TypeConversionHelper.microsToEpochNanos.apply((value instanceof Number) ? (Long) value : Long.parseLong(value.toString())) / 1000L);</span>
 <span class="nc bnc" id="L583" title="All 2 branches missed.">        } else if (type == DataTypes.StringType) {</span>
-<span class="nc" id="L584">            TypeConversionHelper.&lt;TimeMicroVector&gt;cast(vector).setSafe(row, TypeConversionHelper.timestrToNanos.apply(value.toString()) / 1000L);</span>
+<span class="nc" id="L584">            TypeConversionHelper.&lt;TimeMicroVector&gt;cast(vector).setSafe(row, TypeConversionHelper.timestrToNanos.applyAsLong(value.toString()) / 1000L);</span>
         }
 <span class="nc" id="L586">    };</span>
     //convert TIME to arrow TimeNanoVector
@@ -599,7 +599,7 @@ public final class ArrowConversion implements Serializable {
 <span class="nc bnc" id="L599" title="All 2 branches missed.">        } else if (type == DataTypes.TimestampType) {</span>
 <span class="nc bnc" id="L600" title="All 2 branches missed.">            TypeConversionHelper.&lt;TimeNanoVector&gt;cast(vector).setSafe(row, TypeConversionHelper.microsToEpochNanos.apply((value instanceof Number) ? (Long) value : Long.parseLong(value.toString())));</span>
 <span class="nc bnc" id="L601" title="All 2 branches missed.">        } else if (type == DataTypes.StringType) {</span>
-<span class="nc" id="L602">            TypeConversionHelper.&lt;TimeNanoVector&gt;cast(vector).setSafe(row, TypeConversionHelper.timestrToNanos.apply(value.toString()));</span>
+<span class="nc" id="L602">            TypeConversionHelper.&lt;TimeNanoVector&gt;cast(vector).setSafe(row, TypeConversionHelper.timestrToNanos.applyAsLong(value.toString()));</span>
         }
 <span class="nc" id="L604">    };</span>
     //convert TIMESTAMP to arrow TimeStampMicroVector
@@ -651,9 +651,9 @@ public final class ArrowConversion implements Serializable {
 <span class="nc bnc" id="L651" title="All 2 branches missed.">        if (value == null) {</span>
 <span class="nc" id="L652">            TypeConversionHelper.&lt;TimeStampMilliVector&gt;cast(vector).setSafe(row, ArrowConversion.nullTimeStampMilli);</span>
 <span class="nc bnc" id="L653" title="All 2 branches missed.">        } else if (type == DataTypes.TimestampType) {</span>
-<span class="nc bnc" id="L654" title="All 2 branches missed.">            TypeConversionHelper.&lt;TimeStampMilliVector&gt;cast(vector).setSafe(row, TypeConversionHelper.microsToMillis.apply(((value instanceof Number) ? (Long) value : Long.parseLong(value.toString()))));</span>
+<span class="nc bnc" id="L654" title="All 2 branches missed.">            TypeConversionHelper.&lt;TimeStampMilliVector&gt;cast(vector).setSafe(row, TypeConversionHelper.microsToMillis.applyAsLong(((value instanceof Number) ? (Long) value : Long.parseLong(value.toString()))));</span>
 <span class="nc bnc" id="L655" title="All 2 branches missed.">        } else if (type == DataTypes.DateType) {</span>
-<span class="nc bnc" id="L656" title="All 2 branches missed.">            TypeConversionHelper.&lt;TimeStampMilliVector&gt;cast(vector).setSafe(row, TypeConversionHelper.microsToMillis.apply(TypeConversionHelper.daysToMicros.apply((value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString()), ZoneId.systemDefault())));</span>
+<span class="nc bnc" id="L656" title="All 2 branches missed.">            TypeConversionHelper.&lt;TimeStampMilliVector&gt;cast(vector).setSafe(row, TypeConversionHelper.microsToMillis.applyAsLong(TypeConversionHelper.daysToMicros.apply((value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString()), ZoneId.systemDefault())));</span>
         }
 <span class="nc" id="L658">    };</span>
     //convert TIMESTAMP to arrow TimeStampMilliTZVector
@@ -669,9 +669,9 @@ public final class ArrowConversion implements Serializable {
 <span class="nc bnc" id="L669" title="All 2 branches missed.">        if (value == null) {</span>
 <span class="nc" id="L670">            TypeConversionHelper.&lt;TimeStampMilliTZVector&gt;cast(vector).setSafe(row, ArrowConversion.nullTimeStampMilliTZ);</span>
 <span class="nc bnc" id="L671" title="All 2 branches missed.">        } else if (type == DataTypes.TimestampType) {</span>
-<span class="nc bnc" id="L672" title="All 2 branches missed.">            TypeConversionHelper.&lt;TimeStampMilliTZVector&gt;cast(vector).setSafe(row, TypeConversionHelper.microsToMillis.apply(DateTimeUtils.convertTz((value instanceof Number) ? (Long) value : Long.parseLong(value.toString()), ZoneId.systemDefault(), ZoneId.of(TypeConversionHelper.&lt;TimeStampMilliTZVector&gt;cast(vector).getTimeZone()))));</span>
+<span class="nc bnc" id="L672" title="All 2 branches missed.">            TypeConversionHelper.&lt;TimeStampMilliTZVector&gt;cast(vector).setSafe(row, TypeConversionHelper.microsToMillis.applyAsLong(DateTimeUtils.convertTz((value instanceof Number) ? (Long) value : Long.parseLong(value.toString()), ZoneId.systemDefault(), ZoneId.of(TypeConversionHelper.&lt;TimeStampMilliTZVector&gt;cast(vector).getTimeZone()))));</span>
 <span class="nc bnc" id="L673" title="All 2 branches missed.">        } else if (type == DataTypes.DateType) {</span>
-<span class="nc bnc" id="L674" title="All 2 branches missed.">            TypeConversionHelper.&lt;TimeStampMilliTZVector&gt;cast(vector).setSafe(row, TypeConversionHelper.microsToMillis.apply(TypeConversionHelper.daysToMicros.apply((value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString()), ZoneId.of(TypeConversionHelper.&lt;TimeStampMilliTZVector&gt;cast(vector).getTimeZone()))));</span>
+<span class="nc bnc" id="L674" title="All 2 branches missed.">            TypeConversionHelper.&lt;TimeStampMilliTZVector&gt;cast(vector).setSafe(row, TypeConversionHelper.microsToMillis.applyAsLong(TypeConversionHelper.daysToMicros.apply((value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString()), ZoneId.of(TypeConversionHelper.&lt;TimeStampMilliTZVector&gt;cast(vector).getTimeZone()))));</span>
         }
 <span class="nc" id="L676">    };</span>
     //convert TIMESTAMP to arrow TimeStampSecVector
@@ -687,9 +687,9 @@ public final class ArrowConversion implements Serializable {
 <span class="nc bnc" id="L687" title="All 2 branches missed.">        if (value == null) {</span>
 <span class="nc" id="L688">            TypeConversionHelper.&lt;TimeStampSecVector&gt;cast(vector).setSafe(row, ArrowConversion.nullTimeStampSec);</span>
 <span class="nc bnc" id="L689" title="All 2 branches missed.">        } else if (type == DataTypes.TimestampType) {</span>
-<span class="nc bnc" id="L690" title="All 2 branches missed.">            TypeConversionHelper.&lt;TimeStampSecVector&gt;cast(vector).setSafe(row, TypeConversionHelper.microsToSecs.apply(((value instanceof Number) ? (Long) value : Long.parseLong(value.toString()))));</span>
+<span class="nc bnc" id="L690" title="All 2 branches missed.">            TypeConversionHelper.&lt;TimeStampSecVector&gt;cast(vector).setSafe(row, TypeConversionHelper.microsToSecs.applyAsLong(((value instanceof Number) ? (Long) value : Long.parseLong(value.toString()))));</span>
 <span class="nc bnc" id="L691" title="All 2 branches missed.">        } else if (type == DataTypes.DateType) {</span>
-<span class="nc bnc" id="L692" title="All 2 branches missed.">            TypeConversionHelper.&lt;TimeStampSecVector&gt;cast(vector).setSafe(row, TypeConversionHelper.microsToSecs.apply(TypeConversionHelper.daysToMicros.apply((value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString()), ZoneId.systemDefault())));</span>
+<span class="nc bnc" id="L692" title="All 2 branches missed.">            TypeConversionHelper.&lt;TimeStampSecVector&gt;cast(vector).setSafe(row, TypeConversionHelper.microsToSecs.applyAsLong(TypeConversionHelper.daysToMicros.apply((value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString()), ZoneId.systemDefault())));</span>
         }
 <span class="nc" id="L694">    };</span>
     //convert TIMESTAMP to arrow TimeStampSecTZVector
@@ -705,9 +705,9 @@ public final class ArrowConversion implements Serializable {
 <span class="nc bnc" id="L705" title="All 2 branches missed.">        if (value == null) {</span>
 <span class="nc" id="L706">            TypeConversionHelper.&lt;TimeStampSecTZVector&gt;cast(vector).setSafe(row, ArrowConversion.nullTimeStampSecTZ);</span>
 <span class="nc bnc" id="L707" title="All 2 branches missed.">        } else if (type == DataTypes.TimestampType) {</span>
-<span class="nc bnc" id="L708" title="All 2 branches missed.">            TypeConversionHelper.&lt;TimeStampSecTZVector&gt;cast(vector).setSafe(row, TypeConversionHelper.microsToSecs.apply(DateTimeUtils.convertTz((value instanceof Number) ? (Long) value : Long.parseLong(value.toString()), ZoneId.systemDefault(), ZoneId.of(TypeConversionHelper.&lt;TimeStampSecTZVector&gt;cast(vector).getTimeZone()))));</span>
+<span class="nc bnc" id="L708" title="All 2 branches missed.">            TypeConversionHelper.&lt;TimeStampSecTZVector&gt;cast(vector).setSafe(row, TypeConversionHelper.microsToSecs.applyAsLong(DateTimeUtils.convertTz((value instanceof Number) ? (Long) value : Long.parseLong(value.toString()), ZoneId.systemDefault(), ZoneId.of(TypeConversionHelper.&lt;TimeStampSecTZVector&gt;cast(vector).getTimeZone()))));</span>
 <span class="nc bnc" id="L709" title="All 2 branches missed.">        } else if (type == DataTypes.DateType) {</span>
-<span class="nc bnc" id="L710" title="All 2 branches missed.">            TypeConversionHelper.&lt;TimeStampSecTZVector&gt;cast(vector).setSafe(row, TypeConversionHelper.microsToSecs.apply(TypeConversionHelper.daysToMicros.apply((value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString()), ZoneId.of(TypeConversionHelper.&lt;TimeStampSecTZVector&gt;cast(vector).getTimeZone()))));</span>
+<span class="nc bnc" id="L710" title="All 2 branches missed.">            TypeConversionHelper.&lt;TimeStampSecTZVector&gt;cast(vector).setSafe(row, TypeConversionHelper.microsToSecs.applyAsLong(TypeConversionHelper.daysToMicros.apply((value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString()), ZoneId.of(TypeConversionHelper.&lt;TimeStampSecTZVector&gt;cast(vector).getTimeZone()))));</span>
         }
 <span class="nc" id="L712">    };</span>
     //convert TIMESTAMP to arrow TimeStampNanoVector
@@ -723,9 +723,9 @@ public final class ArrowConversion implements Serializable {
 <span class="nc bnc" id="L723" title="All 2 branches missed.">        if (value == null) {</span>
 <span class="nc" id="L724">            TypeConversionHelper.&lt;TimeStampNanoVector&gt;cast(vector).setSafe(row, ArrowConversion.nullTimeStampNano);</span>
 <span class="nc bnc" id="L725" title="All 2 branches missed.">        } else if (type == DataTypes.TimestampType) {</span>
-<span class="nc bnc" id="L726" title="All 2 branches missed.">            TypeConversionHelper.&lt;TimeStampNanoVector&gt;cast(vector).setSafe(row, TypeConversionHelper.microsToNanos.apply(((value instanceof Number) ? (Long) value : Long.parseLong(value.toString()))));</span>
+<span class="nc bnc" id="L726" title="All 2 branches missed.">            TypeConversionHelper.&lt;TimeStampNanoVector&gt;cast(vector).setSafe(row, TypeConversionHelper.microsToNanos.applyAsLong(((value instanceof Number) ? (Long) value : Long.parseLong(value.toString()))));</span>
 <span class="nc bnc" id="L727" title="All 2 branches missed.">        } else if (type == DataTypes.DateType) {</span>
-<span class="nc bnc" id="L728" title="All 2 branches missed.">            TypeConversionHelper.&lt;TimeStampNanoVector&gt;cast(vector).setSafe(row, TypeConversionHelper.microsToNanos.apply(TypeConversionHelper.daysToMicros.apply((value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString()), ZoneId.systemDefault())));</span>
+<span class="nc bnc" id="L728" title="All 2 branches missed.">            TypeConversionHelper.&lt;TimeStampNanoVector&gt;cast(vector).setSafe(row, TypeConversionHelper.microsToNanos.applyAsLong(TypeConversionHelper.daysToMicros.apply((value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString()), ZoneId.systemDefault())));</span>
         }
 <span class="nc" id="L730">    };</span>
     //convert TIMESTAMP to arrow TimeStampNanoTZVector
@@ -741,9 +741,9 @@ public final class ArrowConversion implements Serializable {
 <span class="nc bnc" id="L741" title="All 2 branches missed.">        if (value == null) {</span>
 <span class="nc" id="L742">            TypeConversionHelper.&lt;TimeStampNanoTZVector&gt;cast(vector).setSafe(row, ArrowConversion.nullTimeStampNanoTZ);</span>
 <span class="nc bnc" id="L743" title="All 2 branches missed.">        } else if (type == DataTypes.TimestampType) {</span>
-<span class="nc bnc" id="L744" title="All 2 branches missed.">            TypeConversionHelper.&lt;TimeStampNanoTZVector&gt;cast(vector).setSafe(row, TypeConversionHelper.microsToNanos.apply(DateTimeUtils.convertTz((value instanceof Number) ? (Long) value : Long.parseLong(value.toString()), ZoneId.systemDefault(), ZoneId.of(TypeConversionHelper.&lt;TimeStampNanoTZVector&gt;cast(vector).getTimeZone()))));</span>
+<span class="nc bnc" id="L744" title="All 2 branches missed.">            TypeConversionHelper.&lt;TimeStampNanoTZVector&gt;cast(vector).setSafe(row, TypeConversionHelper.microsToNanos.applyAsLong(DateTimeUtils.convertTz((value instanceof Number) ? (Long) value : Long.parseLong(value.toString()), ZoneId.systemDefault(), ZoneId.of(TypeConversionHelper.&lt;TimeStampNanoTZVector&gt;cast(vector).getTimeZone()))));</span>
         } else {
-<span class="nc bnc" id="L746" title="All 2 branches missed.">            TypeConversionHelper.&lt;TimeStampNanoTZVector&gt;cast(vector).setSafe(row, TypeConversionHelper.microsToNanos.apply(TypeConversionHelper.daysToMicros.apply((value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString()), ZoneId.of(TypeConversionHelper.&lt;TimeStampNanoTZVector&gt;cast(vector).getTimeZone()))));</span>
+<span class="nc bnc" id="L746" title="All 2 branches missed.">            TypeConversionHelper.&lt;TimeStampNanoTZVector&gt;cast(vector).setSafe(row, TypeConversionHelper.microsToNanos.applyAsLong(TypeConversionHelper.daysToMicros.apply((value instanceof Number) ? (Integer) value : Integer.parseInt(value.toString()), ZoneId.of(TypeConversionHelper.&lt;TimeStampNanoTZVector&gt;cast(vector).getTimeZone()))));</span>
         }
 <span class="nc" id="L748">    };</span>
     //convert DURATION_DAY_TIME to arrow DurationVector

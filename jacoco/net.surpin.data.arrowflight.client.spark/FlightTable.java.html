@@ -146,7 +146,7 @@ public class FlightTable implements org.apache.spark.sql.connector.catalog.Table
         //validate the schema - fields being written must be in the table schema
 <span class="nc" id="L147">        Function&lt;String, Boolean&gt; exists = (field) -&gt; this.table.getSparkSchema().exists(sf -&gt; sf.name().equalsIgnoreCase(field));</span>
 <span class="nc bnc" id="L148" title="All 2 branches missed.">        if (!Arrays.stream(logicalWriteInfo.schema().fields()).map(sf -&gt; exists.apply(sf.name())).reduce((x, y) -&gt; x &amp; y).orElse(false)) {</span>
-<span class="nc" id="L149">            throw new RuntimeException(&quot;The schema of the dataframe being written is not compatible with the schema of the underlying table.&quot;);</span>
+<span class="nc" id="L149">            throw new IllegalArgumentException(&quot;The schema of the dataframe being written is not compatible with the schema of the underlying table.&quot;);</span>
         }
 
         //construct write-behavior

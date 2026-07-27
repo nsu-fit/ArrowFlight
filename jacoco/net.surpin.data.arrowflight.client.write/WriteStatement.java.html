@@ -582,7 +582,7 @@ public class WriteStatement implements Serializable {
 <span class="nc" id="L582">        Object[] columns = IntStream.range(0, dataFields.length).mapToObj(idx -&gt; {</span>
 <span class="nc" id="L583">            Optional&lt;Field&gt; arrowField = find.apply(dataFields[idx].name());</span>
 <span class="nc bnc" id="L584" title="All 2 branches missed.">            if (arrowField.isEmpty()) {</span>
-<span class="nc" id="L585">                throw new RuntimeException(&quot;The arrow field is not available.&quot;);</span>
+<span class="nc" id="L585">                throw new IllegalArgumentException(&quot;The arrow field is not available.&quot;);</span>
             }
 <span class="nc" id="L587">            return this.fillColumns(rows, idx, dataFields[idx].dataType(), arrowField.get());</span>
 <span class="nc" id="L588">        }).toArray(Object[]::new);</span>

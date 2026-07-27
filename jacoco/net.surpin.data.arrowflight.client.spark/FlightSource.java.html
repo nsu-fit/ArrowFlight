@@ -77,7 +77,7 @@ import java.util.Map;
 <span class="nc" id="L77">        String bearerToken = options.getOrDefault(FlightSource.BEARER_TOKEN, &quot;&quot;);</span>
         //validation - host, user &amp; password cannot be empty
 <span class="nc bnc" id="L79" title="All 8 branches missed.">        if (host.isEmpty() || user.isEmpty() || (password.isEmpty() &amp;&amp; bearerToken.isEmpty())) {</span>
-<span class="nc" id="L80">            throw new RuntimeException(&quot;The host, user and (password or access-token) are all mandatory.&quot;);</span>
+<span class="nc" id="L80">            throw new IllegalArgumentException(&quot;The host, user and (password or access-token) are all mandatory.&quot;);</span>
         }
         //tls configuration
 <span class="nc" id="L83">        boolean tlsEnabled = Boolean.parseBoolean(options.getOrDefault(FlightSource.TLS_ENABLED, &quot;false&quot;));</span>
@@ -111,7 +111,7 @@ import java.util.Map;
 <span class="nc" id="L111">        String requestedTableName = options.getOrDefault(FlightSource.TABLE, &quot;&quot;);</span>
         //table name cannot empty
 <span class="nc bnc" id="L113" title="All 4 branches missed.">        if (requestedTableName == null || requestedTableName.isEmpty()) {</span>
-<span class="nc" id="L114">            throw new RuntimeException(&quot;The table is mandatory.&quot;);</span>
+<span class="nc" id="L114">            throw new IllegalArgumentException(&quot;The table is mandatory.&quot;);</span>
         }
         //set up the flight-table with the column quote-character. By default, columns are not quoted
 <span class="nc" id="L117">        this.tableName = Table.forTable(requestedTableName,</span>
