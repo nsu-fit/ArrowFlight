@@ -251,7 +251,7 @@ public final class Table implements Serializable {
 
 <span class="fc" id="L252">        this.partitionStmts.clear();</span>
 <span class="pc bpc" id="L253" title="1 of 4 branches missed.">        if (!parts.aggregationWithoutGroupBy()</span>
-<span class="nc bnc" id="L254" title="All 2 branches missed.">                &amp;&amp; partitionBehavior != null &amp;&amp; partitionBehavior.enabled()) {</span>
+<span class="nc bnc" id="L254" title="All 2 branches missed.">                &amp;&amp; partitionBehavior != null &amp;&amp; partitionBehavior.enabled().booleanValue()) {</span>
 <span class="nc" id="L255">            preparePartitionStatements(parts, fields, filter, partitionBehavior);</span>
         }
 <span class="fc" id="L257">        return changed;</span>
@@ -295,7 +295,7 @@ public final class Table implements Serializable {
 <span class="nc" id="L295">                ? &quot;&quot; : String.format(&quot;(%s)%s&quot;, filter, AND);</span>
 <span class="nc bnc" id="L296" title="All 2 branches missed.">        StructField[] predicateFields = this.sparkSchema == null</span>
 <span class="nc" id="L297">                ? fields : mergeFields(fields, this.sparkSchema.fields());</span>
-<span class="nc bnc" id="L298" title="All 2 branches missed.">        String[] predicates = partitionBehavior.predicateDefined()</span>
+<span class="nc bnc" id="L298" title="All 2 branches missed.">        String[] predicates = partitionBehavior.predicateDefined().booleanValue()</span>
 <span class="nc" id="L299">                ? partitionBehavior.getPredicates()</span>
 <span class="nc" id="L300">                : partitionBehavior.calculatePredicates(predicateFields);</span>
 <span class="nc bnc" id="L301" title="All 2 branches missed.">        for (String predicate : predicates) {</span>
@@ -378,20 +378,20 @@ public final class Table implements Serializable {
 <span class="pc bpc" id="L378" title="1 of 2 branches missed.">        if (predicate == null) {</span>
 <span class="nc" id="L379">            return Optional.empty();</span>
         }
-<span class="fc" id="L381">        String name = predicate.name().toUpperCase(Locale.ROOT);</span>
+<span class="fc" id="L381">        String predicateName = predicate.name().toUpperCase(Locale.ROOT);</span>
 <span class="fc" id="L382">        Expression[] children = predicate.children();</span>
-<span class="pc bpc" id="L383" title="1 of 2 branches missed.">        if (isComparisonPredicate(name)) {</span>
-<span class="fc" id="L384">            return comparisonPredicate(name, children);</span>
+<span class="pc bpc" id="L383" title="1 of 2 branches missed.">        if (isComparisonPredicate(predicateName)) {</span>
+<span class="fc" id="L384">            return comparisonPredicate(predicateName, children);</span>
         }
-<span class="nc bnc" id="L386" title="All 8 branches missed.">        return switch (name) {</span>
+<span class="nc bnc" id="L386" title="All 8 branches missed.">        return switch (predicateName) {</span>
 <span class="nc" id="L387">            case &quot;ALWAYS_TRUE&quot; -&gt; fixedPredicate(children, &quot;(1 = 1)&quot;);</span>
 <span class="nc" id="L388">            case &quot;ALWAYS_FALSE&quot; -&gt; fixedPredicate(children, &quot;(1 = 0)&quot;);</span>
-<span class="nc" id="L389">            case &quot;AND&quot;, &quot;OR&quot; -&gt; logicalPredicate(name, children);</span>
+<span class="nc" id="L389">            case &quot;AND&quot;, &quot;OR&quot; -&gt; logicalPredicate(predicateName, children);</span>
 <span class="nc" id="L390">            case &quot;NOT&quot; -&gt; notPredicate(children);</span>
-<span class="nc" id="L391">            case &quot;IS_NULL&quot;, &quot;IS_NOT_NULL&quot; -&gt; nullPredicate(name, children);</span>
+<span class="nc" id="L391">            case &quot;IS_NULL&quot;, &quot;IS_NOT_NULL&quot; -&gt; nullPredicate(predicateName, children);</span>
 <span class="nc" id="L392">            case &quot;IN&quot; -&gt; inPredicate(children);</span>
             case &quot;STARTS_WITH&quot;, &quot;ENDS_WITH&quot;, &quot;CONTAINS&quot; -&gt;
-<span class="nc" id="L394">                    likePredicate(name, children);</span>
+<span class="nc" id="L394">                    likePredicate(predicateName, children);</span>
 <span class="nc" id="L395">            default -&gt; Optional.empty();</span>
         };
     }
@@ -728,14 +728,14 @@ public final class Table implements Serializable {
 <span class="fc" id="L728">                return Optional.of(value.toString());</span>
             }
             default -&gt; {
-<span class="fc" id="L731">            }</span>
+<span class="pc bpc" id="L731" title="11 of 12 branches missed.">                if (value instanceof CharSequence || value instanceof Character</span>
+                        || value instanceof Date || value instanceof Time
+                        || value instanceof Timestamp || value instanceof TemporalAccessor) {
+<span class="fc" id="L734">                    return Optional.of(quoteString(value.toString()));</span>
+                }
+<span class="nc" id="L736">                return Optional.empty();</span>
+            }
         }
-<span class="pc bpc" id="L733" title="11 of 12 branches missed.">        if (value instanceof CharSequence || value instanceof Character</span>
-                || value instanceof Date || value instanceof Time || value instanceof Timestamp
-                || value instanceof TemporalAccessor) {
-<span class="fc" id="L736">            return Optional.of(quoteString(value.toString()));</span>
-        }
-<span class="nc" id="L738">        return Optional.empty();</span>
     }
 
     private String quoteIdentifier(String identifier) {

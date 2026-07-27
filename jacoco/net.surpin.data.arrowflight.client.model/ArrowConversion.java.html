@@ -61,7 +61,7 @@ public final class ArrowConversion implements Serializable {
     public FieldVector convert(org.apache.arrow.vector.FieldVector vector, FieldType type, int rowCount) {
 <span class="nc" id="L62">        String key = String.format(FORMAT, vector.getClass().getTypeName(), type.getTypeID());</span>
 <span class="nc bnc" id="L63" title="All 2 branches missed.">        if (!this.fromConverters.containsKey(key)) {</span>
-<span class="nc" id="L64">            throw new RuntimeException(String.format(CONVERTER_NOT_FOUND_MSG, key));</span>
+<span class="nc" id="L64">            throw new IllegalArgumentException(String.format(CONVERTER_NOT_FOUND_MSG, key));</span>
         }
 <span class="nc" id="L66">        return this.fromConverters.get(key).apply(vector, rowCount, type);</span>
     }
@@ -76,7 +76,7 @@ public final class ArrowConversion implements Serializable {
     public void populate(org.apache.arrow.vector.FieldVector vector, InternalRow[] rows, int idxColumn, DataType type) {
 <span class="nc" id="L77">        String key = vector.getClass().getTypeName();</span>
 <span class="nc bnc" id="L78" title="All 2 branches missed.">        if (!this.toConverters.containsKey(key)) {</span>
-<span class="nc" id="L79">            throw new RuntimeException(String.format(CONVERTER_NOT_FOUND_MSG, key));</span>
+<span class="nc" id="L79">            throw new IllegalArgumentException(String.format(CONVERTER_NOT_FOUND_MSG, key));</span>
         }
 <span class="nc" id="L81">        this.toConverters.get(key).apply(vector, rows, idxColumn, type);</span>
 <span class="nc" id="L82">    }</span>
@@ -90,7 +90,7 @@ public final class ArrowConversion implements Serializable {
     private void populateObject(org.apache.arrow.vector.FieldVector vector, int index, Object value, DataType type) {
 <span class="nc" id="L91">        String key = vector.getClass().getTypeName();</span>
 <span class="nc bnc" id="L92" title="All 2 branches missed.">        if (!this.toObjectConverters.containsKey(key)) {</span>
-<span class="nc" id="L93">            throw new RuntimeException(String.format(CONVERTER_NOT_FOUND_MSG, key));</span>
+<span class="nc" id="L93">            throw new IllegalArgumentException(String.format(CONVERTER_NOT_FOUND_MSG, key));</span>
         }
 <span class="nc" id="L95">        this.toObjectConverters.get(key).apply(vector, index, value, type);</span>
 <span class="nc" id="L96">    }</span>

@@ -322,11 +322,11 @@ public class FieldType implements Serializable {
      * Converts an Arrow map type.
      * @param children child fields
      * @return converted map type
-     * @throws RuntimeException if the map children do not define key and value types
+     * @throws IllegalArgumentException if the map children do not define key and value types
      */
     private static FieldType fromArrowMap(java.util.List&lt;org.apache.arrow.vector.types.pojo.Field&gt; children) {
 <span class="pc bpc" id="L328" title="1 of 2 branches missed.">        if (children == null) {</span>
-<span class="nc" id="L329">            throw new RuntimeException(&quot;Invalid map-type.&quot;);</span>
+<span class="nc" id="L329">            throw new IllegalArgumentException(&quot;Invalid map-type.&quot;);</span>
         }
 <span class="fc bfc" id="L331" title="All 2 branches covered.">        if (children.size() == 1) {</span>
 <span class="fc" id="L332">            return fromArrowMapChild(children.getFirst());</span>
@@ -336,24 +336,24 @@ public class FieldType implements Serializable {
 <span class="fc" id="L336">            FieldType valueType = fromArrow(children.get(1).getType(), children.get(1).getChildren());</span>
 <span class="fc" id="L337">            return createMapType(keyType, valueType);</span>
         }
-<span class="fc" id="L339">        throw new RuntimeException(&quot;Invalid map-type.&quot;);</span>
+<span class="fc" id="L339">        throw new IllegalArgumentException(&quot;Invalid map-type.&quot;);</span>
     }
 
     /**
      * Converts the standard struct child of an Arrow map.
      * @param child map child field
      * @return converted map type
-     * @throws RuntimeException if the child does not define key and value fields
+     * @throws IllegalArgumentException if the child does not define key and value fields
      */
     private static FieldType fromArrowMapChild(org.apache.arrow.vector.types.pojo.Field child) {
 <span class="fc" id="L349">        FieldType mapChildType = fromArrow(child.getType(), child.getChildren());</span>
 <span class="pc bpc" id="L350" title="1 of 2 branches missed.">        if (mapChildType.getTypeID() != IDs.STRUCT) {</span>
-<span class="nc" id="L351">            throw new RuntimeException(&quot;Invalid map-type.&quot;);</span>
+<span class="nc" id="L351">            throw new IllegalArgumentException(&quot;Invalid map-type.&quot;);</span>
         }
 <span class="fc" id="L353">        Map&lt;String, FieldType&gt; childTypes = ((StructType) mapChildType).getChildrenType();</span>
 <span class="fc" id="L354">        String[] keys = childTypes.keySet().toArray(new String[0]);</span>
 <span class="pc bpc" id="L355" title="3 of 6 branches missed.">        if (keys.length != 2 || !keys[0].equalsIgnoreCase(KEY_FIELD_NAME) || !keys[1].equalsIgnoreCase(VALUE_FIELD_NAME)) {</span>
-<span class="nc" id="L356">            throw new RuntimeException(&quot;Invalid map-type.&quot;);</span>
+<span class="nc" id="L356">            throw new IllegalArgumentException(&quot;Invalid map-type.&quot;);</span>
         }
 <span class="fc" id="L358">        return createMapType(childTypes.get(KEY_FIELD_NAME), childTypes.get(VALUE_FIELD_NAME));</span>
     }
