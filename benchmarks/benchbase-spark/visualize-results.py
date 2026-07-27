@@ -4,7 +4,6 @@ import csv
 import html
 import json
 import xml.etree.ElementTree as ET
-from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 
@@ -57,10 +56,6 @@ def parse_args():
     parser.add_argument("--base", help="Result prefix, for example tpch_2026-07-09_07-49-48.")
     parser.add_argument("--out", type=Path)
     parser.add_argument("--compare", action="store_true", help="Build a flight-vs-direct comparison report.")
-    parser.add_argument(
-        "--execution-order",
-        help="Recorded comparison order, for example flight-first, direct-first, or ABBA.",
-    )
     return parser.parse_args()
 
 
@@ -68,20 +63,8 @@ def read_csv(path):
     if not path.exists():
         return []
     with path.open(newline="", encoding="utf-8") as file:
-        # Beeline can emit leading blanks, NUL padding, and paired NUL CSV quotes.
-        def sanitize(line):
-            without_nuls = line.replace("\0", "")
-            if not without_nuls.strip():
-                return None
-            if line.count("\0") % 2 == 0:
-                return line.replace("\0", '"')
-            return without_nuls
-
-        sanitized_lines = (
-            sanitized
-            for line in file
-            if (sanitized := sanitize(line)) is not None
-        )
+        # Beeline can emit NUL padding that Python's csv parser rejects.
+        sanitized_lines = (line.replace("\0", "") for line in file)
         return list(csv.DictReader(sanitized_lines))
 
 
@@ -177,17 +160,15 @@ def read_config(path):
         value = root.findtext(expr)
         return value.strip() if value and value.strip() else default
 
-    weights = text("./works/work/weights", "")
-    active = []
-    configured_weights = {}
-    for idx, raw in enumerate(weights.split(","), start=1):
-        try:
-            weight = float(raw)
-            if weight > 0:
-                active.append(f"Q{idx}")
-                configured_weights[f"Q{idx}"] = weight
-        except ValueError:
-            pass
+    active = set()
+    for work in root.findall("./works/work"):
+        weights = work.findtext("weights", "")
+        for idx, raw in enumerate(weights.split(","), start=1):
+            try:
+                if float(raw) > 0:
+                    active.add(f"Q{idx}")
+            except ValueError:
+                pass
 
     return {
         "scale": text("./scalefactor"),
@@ -195,8 +176,9 @@ def read_config(path):
         "time": text("./works/work/time", "serial"),
         "warmup": text("./works/work/warmup", "0"),
         "rate": text("./works/work/rate"),
-        "queries": ", ".join(active) if active else "all configured",
-        "weights": configured_weights,
+        "queries": ", ".join(
+            sorted(active, key=lambda query: int(query[1:]))
+        ) if active else "all configured",
     }
 
 
@@ -258,28 +240,6 @@ def per_query_latency_rows(results_dir, base):
     ]
 
 
-def normalized_query_weights(config):
-    weights = {
-        str(query).strip().upper(): number(weight)
-        for query, weight in config.get("weights", {}).items()
-        if number(weight) > 0
-    }
-    total = sum(weights.values())
-    if not total:
-        return {}
-    return {query: weight / total for query, weight in weights.items()}
-
-
-def standardized_weighted_latency(query_rows, weights):
-    means = {
-        str(row.get("query", "")).strip().upper(): number(row.get("avg"))
-        for row in query_rows
-    }
-    if not weights or any(query not in means for query in weights):
-        return None
-    return sum(weight * means[query] for query, weight in weights.items())
-
-
 def load_run(run_dir, base=None):
     summary_path = find_summary(run_dir, base)
     base = summary_path.name.removesuffix(".summary.json")
@@ -295,59 +255,14 @@ def load_run(run_dir, base=None):
     }
 
 
-def rows_equal(expected_rows, actual_rows, ordered=False):
+def rows_equal(expected_rows, actual_rows):
     def normalize(rows):
         return [
-            {str(k).strip().casefold(): str(v).strip() for k, v in row.items()}
+            {str(k).strip().lower(): str(v).strip() for k, v in row.items()}
             for row in rows
         ]
 
-    def values_equal(expected, actual):
-        try:
-            expected_number = Decimal(expected)
-            actual_number = Decimal(actual)
-            if expected_number.is_finite() and actual_number.is_finite():
-                return abs(expected_number - actual_number) <= Decimal("0.000001")
-        except InvalidOperation:
-            pass
-        return expected == actual
-
-    def row_equal(expected, actual):
-        return expected.keys() == actual.keys() and all(
-            values_equal(value, actual[column])
-            for column, value in expected.items()
-        )
-
-    expected = normalize(expected_rows)
-    actual = normalize(actual_rows)
-    if len(expected) != len(actual):
-        return False
-    if ordered:
-        return all(
-            row_equal(expected_row, actual_row)
-            for expected_row, actual_row in zip(expected, actual)
-        )
-
-    matches = [-1] * len(actual)
-
-    def find_match(expected_index, visited):
-        for actual_index, actual_row in enumerate(actual):
-            if visited[actual_index] or not row_equal(expected[expected_index], actual_row):
-                continue
-            visited[actual_index] = True
-            if matches[actual_index] == -1 or find_match(matches[actual_index], visited):
-                matches[actual_index] = expected_index
-                return True
-        return False
-
-    return all(
-        find_match(index, [False] * len(actual))
-        for index in range(len(expected))
-    )
-
-
-def query_has_order_by(sql):
-    return "order by" in " ".join(str(sql).casefold().split())
+    return normalize(expected_rows) == normalize(actual_rows)
 
 
 def table_from_rows(rows, max_rows=20):
@@ -696,22 +611,15 @@ def query_reference_section(run_dir, metadata, title="Query Results", active_que
         actual_path = run_dir / f"query-q{query_id}.actual.csv"
         actual_rows = read_csv(actual_path)
         expected_rows = query.get("expected_rows", [])
-        sql = query.get("sql", "")
-        ordered = query_has_order_by(sql)
         if actual_path.exists():
-            status = (
-                '<span class="ok">MATCH</span>'
-                if rows_equal(expected_rows, actual_rows, ordered=ordered)
-                else '<span class="bad">DIFF</span>'
-            )
+            status = "<span class=\"ok\">MATCH</span>" if rows_equal(expected_rows, actual_rows) else "<span class=\"bad\">DIFF</span>"
         else:
             status = "<span class=\"warn\">not captured</span>"
-        comparison_mode = "ordered sequence" if ordered else "unordered multiset"
         blocks.append(
             f"""
   <h3>{html.escape(query.get('name', f'Q{query_id}'))}: {status}</h3>
-  <p class="subtle">Expected answer is computed by DuckDB on the generated TPC-H data. Actual answer is captured through Spark Thrift for this run path. Compared as {comparison_mode}.</p>
-  <pre>{html.escape(sql)}</pre>
+  <p class="subtle">Expected answer is computed by DuckDB on the generated TPC-H data. Actual answer is captured through Spark Thrift for this run path.</p>
+  <pre>{html.escape(query.get('sql', ''))}</pre>
   <div class="grid2">
     <div><h3>Expected</h3>{table_from_rows(expected_rows)}</div>
     <div><h3>Actual</h3>{table_from_rows(actual_rows)}</div>
@@ -727,6 +635,53 @@ def summary_block(summary):
         return ""
     pretty = html.escape(json.dumps(summary, indent=2, ensure_ascii=False))
     return f"<section><h2>Summary JSON</h2><pre>{pretty}</pre></section>"
+
+
+def execution_path_section(results_dir):
+    machine_result = read_json(results_dir / "benchmark-result.json")
+    if not machine_result:
+        return ""
+
+    rows = []
+    for observation in machine_result.get("observations", []):
+        for engine in observation.get("engines", []):
+            paths = engine.get("execution_paths", {})
+            nodes = paths.get("nodes", [])
+            node_text = ", ".join(
+                f"{node.get('node', 'unknown')}: "
+                + "/".join(node.get("paths", {}).keys())
+                for node in nodes
+            ) or "n/a"
+            evidence = (
+                '<span class="ok">yes</span>'
+                if paths.get("pushdown_evidence")
+                else '<span class="warn">no</span>'
+            )
+            classification = paths.get("classification", "unknown")
+            uniform = paths.get("uniform_path")
+            if uniform:
+                classification += f" ({uniform})"
+            rows.append(
+                "<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>"
+                % (
+                    observation.get("observation_index", ""),
+                    html.escape(str(engine.get("id", ""))),
+                    html.escape(str(classification)),
+                    evidence,
+                    html.escape(node_text),
+                )
+            )
+    return f"""
+<section>
+  <h2>Runtime Execution Paths</h2>
+  <p class="subtle">Paths are emitted by the server branch that executed each
+  query. Fallback and unknown events are not pushdown evidence.</p>
+  <table>
+    <thead><tr><th>Observation</th><th>Engine</th><th>Classification</th><th>Pushdown evidence</th><th>Per-node paths</th></tr></thead>
+    <tbody>{''.join(rows)}</tbody>
+  </table>
+</section>
+"""
 
 
 def cards(run):
@@ -773,12 +728,6 @@ def build_report(results_dir, base, output):
     output.write_text(html_text, encoding="utf-8")
 
 
-def same_query_mix(left, right):
-    return left.keys() == right.keys() and all(
-        abs(left[query] - right[query]) <= 1e-12 for query in left
-    )
-
-
 def compare_cards(flight, direct):
     rows = []
     metrics = [
@@ -787,36 +736,6 @@ def compare_cards(flight, direct):
         ("P95 latency ms", summary_latency_value(flight["summary"], "95th Percentile"), summary_latency_value(direct["summary"], "95th Percentile"), False),
         ("Max latency ms", summary_latency_value(flight["summary"], "Maximum"), summary_latency_value(direct["summary"], "Maximum"), False),
     ]
-    flight_weights = normalized_query_weights(flight["config"])
-    direct_weights = normalized_query_weights(direct["config"])
-    standardized_note = ""
-    if same_query_mix(flight_weights, direct_weights) and flight_weights:
-        flight_standardized = standardized_weighted_latency(
-            flight["query_latency_rows"], flight_weights
-        )
-        direct_standardized = standardized_weighted_latency(
-            direct["query_latency_rows"], direct_weights
-        )
-        if flight_standardized is not None and direct_standardized is not None:
-            metrics.append(
-                (
-                    "Configured-mix avg latency ms",
-                    flight_standardized,
-                    direct_standardized,
-                    False,
-                )
-            )
-        else:
-            standardized_note = (
-                '<p class="warn">Configured-mix latency is unavailable because '
-                "at least one configured query has no measured samples.</p>"
-            )
-    else:
-        standardized_note = (
-            '<p class="warn">Configured-mix latency is unavailable because '
-            "Flight and Direct transaction weights are missing or differ.</p>"
-        )
-
     for label, flight_value, direct_value, higher_better in metrics:
         delta = flight_value - direct_value
         if direct_value:
@@ -835,36 +754,6 @@ def compare_cards(flight, direct):
     <thead><tr><th>Metric</th><th>Flight</th><th>Direct</th><th>Flight - Direct</th><th>Better</th></tr></thead>
     <tbody>{''.join(rows)}</tbody>
   </table>
-  <p class="subtle">Configured-mix latency uses configured transaction weights and measured per-query means. Random differences in per-query sample counts do not affect it.</p>
-  {standardized_note}
-</section>
-"""
-
-
-def comparison_order_notice(metadata, override=None):
-    order = override
-    if not order:
-        for key in (
-            "execution_order",
-            "benchmark_order",
-            "compare_order",
-            "run_order",
-        ):
-            if metadata.get(key):
-                order = metadata[key]
-                break
-
-    if isinstance(order, (list, tuple)):
-        order = " → ".join(str(item) for item in order)
-    if order:
-        context = f"Recorded execution order: {order}."
-    else:
-        context = "Execution order was not recorded."
-    return f"""
-<section>
-  <h2>Comparison Validity</h2>
-  <p><strong>{html.escape(context)}</strong></p>
-  <p class="warn">Execution order can bias a sequential comparison through warmed Spark, HDFS, and operating-system caches. Use counterbalanced or randomized repeated runs for a conclusive result.</p>
 </section>
 """
 
@@ -883,7 +772,231 @@ def compare_reference_section(parent_dir, metadata, flight, direct):
 """
 
 
-def build_compare_report(results_dir, output, execution_order=None):
+def optional_number(value, divisor=1):
+    if value is None:
+        return "n/a"
+    return fmt(number(value) / divisor)
+
+
+def observation_statistics_section(machine_result):
+    rows = []
+    for observation in machine_result.get("observations", []):
+        metrics = observation.get("metrics", {})
+        engines = {
+            engine.get("id"): engine for engine in observation.get("engines", [])
+        }
+        cells = []
+        for engine_id in ("flight", "direct"):
+            engine_metrics = metrics.get(engine_id, {})
+            latency = engine_metrics.get("latency_microseconds", {})
+            engine = engines.get(engine_id, {})
+            report = engine.get("artifact_refs", {}).get("report")
+            label = html.escape(str(engine.get("status", "missing")))
+            if report:
+                label = f'<a href="{html.escape(report)}">{label}</a>'
+            cells.extend(
+                [
+                    label,
+                    optional_number(latency.get("median"), 1000),
+                    optional_number(latency.get("p95"), 1000),
+                    html.escape(str(engine_metrics.get("samples", 0))),
+                ]
+            )
+        failures = "; ".join(
+            f"{failure.get('engine')}: {failure.get('reason')}"
+            for failure in observation.get("failures", [])
+        ) or "none"
+        rows.append(
+            "<tr><td>%s</td><td>%s</td><td>%s</td>"
+            "<td>%s</td><td>%s</td><td>%s</td><td>%s</td>"
+            "<td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>"
+            % (
+                observation.get("observation_index", ""),
+                html.escape(" → ".join(observation.get("engine_order", []))),
+                html.escape(str(observation.get("status", ""))),
+                *cells,
+                html.escape(failures),
+            )
+        )
+    return f"""
+<section>
+  <h2>Paired Observations</h2>
+  <p class="subtle">Latency values are calculated from each observation's raw
+  measured transactions. Serial work phases retain their repetition indices.</p>
+  <table>
+    <thead>
+      <tr>
+        <th>Pair</th><th>Order</th><th>Status</th>
+        <th>Flight</th><th>Flight median ms</th><th>Flight p95 ms</th><th>Flight samples</th>
+        <th>Direct</th><th>Direct median ms</th><th>Direct p95 ms</th><th>Direct samples</th>
+        <th>Failures</th>
+      </tr>
+    </thead>
+    <tbody>{''.join(rows)}</tbody>
+  </table>
+</section>
+"""
+
+
+def aggregate_statistics_section(machine_result):
+    aggregate = machine_result.get("aggregate_summary", {})
+    rows = []
+    for engine_id in ("flight", "direct"):
+        engine = aggregate.get("engines", {}).get(engine_id, {})
+        latency = engine.get("latency_microseconds", {})
+        rows.append(
+            "<tr><td>%s</td><td>%s/%s</td><td>%s</td><td>%s</td>"
+            "<td>%s</td><td>%s</td><td>%s</td><td>%s</td>"
+            "<td>%s</td><td>%s</td></tr>"
+            % (
+                html.escape(engine_id),
+                engine.get("successful_observations", 0),
+                engine.get("scheduled_observations", 0),
+                optional_number(latency.get("median"), 1000),
+                optional_number(latency.get("minimum"), 1000),
+                optional_number(latency.get("maximum"), 1000),
+                optional_number(latency.get("spread"), 1000),
+                optional_number(latency.get("p25"), 1000),
+                optional_number(latency.get("p75"), 1000),
+                optional_number(latency.get("iqr"), 1000),
+                optional_number(latency.get("p95"), 1000),
+            )
+        )
+    paired = aggregate.get("paired", {})
+    ratios = paired.get("flight_to_direct_median_latency_ratio", {})
+    return f"""
+<section>
+  <h2>Aggregate Statistics</h2>
+  <p class="subtle">Each successful observation contributes one median, so
+  observations are equally weighted. Quartiles and p95 use linear interpolation.</p>
+  <table>
+    <thead><tr><th>Engine</th><th>Successful pairs</th><th>Median ms</th><th>Min ms</th><th>Max ms</th><th>Spread ms</th><th>p25 ms</th><th>p75 ms</th><th>IQR ms</th><th>p95 ms</th></tr></thead>
+    <tbody>{''.join(rows)}</tbody>
+  </table>
+  <p>Complete pairs: {paired.get('complete_pairs', 0)} /
+  {paired.get('scheduled_pairs', 0)}. Median Flight/Direct latency ratio:
+  <strong>{optional_number(ratios.get('median'))}</strong>;
+  ratio spread: {optional_number(ratios.get('spread'))};
+  ratio IQR: {optional_number(ratios.get('iqr'))};
+  ratio p95: {optional_number(ratios.get('p95'))}.</p>
+</section>
+"""
+
+
+def query_aggregate_section(machine_result):
+    aggregate = machine_result.get("aggregate_summary", {})
+    engines = aggregate.get("engines", {})
+    paired_queries = aggregate.get("paired", {}).get("queries", {})
+    query_ids = sorted(
+        {
+            query_id
+            for engine in engines.values()
+            for query_id in engine.get("queries", {})
+        }
+        | set(paired_queries),
+        key=lambda query_id: int(query_id.removeprefix("q")),
+    )
+    if not query_ids:
+        return ""
+    rows = []
+    for query_id in query_ids:
+        cells = []
+        for engine_id in ("flight", "direct"):
+            summary = (
+                engines.get(engine_id, {})
+                .get("queries", {})
+                .get(query_id, {})
+                .get("observation_median_latency_microseconds", {})
+            )
+            cells.extend(
+                [
+                    optional_number(summary.get("median"), 1000),
+                    optional_number(summary.get("iqr"), 1000),
+                    optional_number(summary.get("p95"), 1000),
+                ]
+            )
+        ratios = paired_queries.get(query_id, {}).get(
+            "flight_to_direct_median_latency_ratio", {}
+        )
+        cells.extend(
+            [
+                optional_number(ratios.get("median")),
+                optional_number(ratios.get("iqr")),
+            ]
+        )
+        rows.append(
+            "<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td>"
+            "<td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>"
+            % (html.escape(query_id.upper()), *cells)
+        )
+    return f"""
+<section>
+  <h2>Per-query Aggregate Latency</h2>
+  <table>
+    <thead><tr><th>Query</th><th>Flight median ms</th><th>Flight IQR ms</th><th>Flight p95 ms</th><th>Direct median ms</th><th>Direct IQR ms</th><th>Direct p95 ms</th><th>F/D median ratio</th><th>Ratio IQR</th></tr></thead>
+    <tbody>{''.join(rows)}</tbody>
+  </table>
+</section>
+"""
+
+
+def machine_policy_section(machine_result):
+    run = machine_result.get("run", {})
+    policy = run.get("policy", {})
+    publication = machine_result.get("comparison", {}).get("publication", {})
+    state = publication.get("state", "not-publishable")
+    css_class = "ok" if state == "publishable" else "bad"
+    reasons = "; ".join(publication.get("reasons", [])) or "none"
+    return f"""
+<section>
+  <h2>Measurement Policy</h2>
+  <p>Publication: <span class="{css_class}">{html.escape(state)}</span></p>
+  <table class="kv"><tbody>
+    <tr><th>Paired observations</th><td>{policy.get('paired_observations', 'n/a')}</td></tr>
+    <tr><th>Order schedule</th><td>{html.escape(str(policy.get('engine_order_schedule', [])))}</td></tr>
+    <tr><th>Warmup</th><td>{policy.get('warmup_seconds', 'n/a')} seconds per engine run</td></tr>
+    <tr><th>Query repetitions</th><td>{policy.get('repetitions', 'n/a')}</td></tr>
+    <tr><th>Cache policy</th><td>{html.escape(str(policy.get('cache_policy', 'n/a')))}</td></tr>
+    <tr><th>Started</th><td>{html.escape(str(run.get('started_at', 'n/a')))}</td></tr>
+    <tr><th>Finished</th><td>{html.escape(str(run.get('finished_at', 'n/a')))}</td></tr>
+    <tr><th>Publication reasons</th><td>{html.escape(reasons)}</td></tr>
+  </tbody></table>
+</section>
+"""
+
+
+def build_machine_compare_report(results_dir, output, machine_result):
+    metadata = metadata_for(results_dir)
+    html_text = f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BenchBase Spark Paired Report - {html.escape(results_dir.name)}</title>
+  {STYLE}
+</head>
+<body>
+<main>
+  <h1>BenchBase Spark Paired Report</h1>
+  <p>{html.escape(results_dir.name)}</p>
+  {machine_policy_section(machine_result)}
+  {observation_statistics_section(machine_result)}
+  {aggregate_statistics_section(machine_result)}
+  {query_aggregate_section(machine_result)}
+  {execution_path_section(results_dir)}
+  {settings_section(metadata)}
+</main>
+</body>
+</html>
+"""
+    output.write_text(html_text, encoding="utf-8")
+
+
+def build_compare_report(results_dir, output):
+    machine_result = read_json(results_dir / "benchmark-result.json")
+    if machine_result.get("observations"):
+        build_machine_compare_report(results_dir, output, machine_result)
+        return
     flight = load_run(results_dir / "flight")
     direct = load_run(results_dir / "direct")
     metadata = metadata_for(results_dir)
@@ -912,7 +1025,7 @@ def build_compare_report(results_dir, output, execution_order=None):
     <p><a href="{html.escape(str(direct_link))}">Open Direct-only report</a></p>
   </section>
   {compare_cards(flight, direct)}
-  {comparison_order_notice(metadata, execution_order)}
+  {execution_path_section(results_dir)}
   {settings_section(metadata)}
   {svg_query_latency_chart(
       flight["query_latency_rows"],
@@ -944,7 +1057,7 @@ def main():
     results_dir = args.results.resolve()
     if args.compare:
         output = args.out or results_dir / "compare.report.html"
-        build_compare_report(results_dir, output, args.execution_order)
+        build_compare_report(results_dir, output)
     else:
         summary_path = find_summary(results_dir, args.base)
         run_dir = summary_path.parent

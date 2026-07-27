@@ -8,18 +8,22 @@ import org.apache.spark.sql.connector.expressions.NamedReference;
 import org.apache.spark.sql.connector.expressions.filter.Predicate;
 import org.apache.spark.sql.connector.read.Batch;
 import org.apache.spark.sql.connector.read.Scan;
+import org.apache.spark.sql.connector.read.Statistics;
 import org.apache.spark.sql.connector.read.SupportsRuntimeV2Filtering;
+import org.apache.spark.sql.connector.read.SupportsReportStatistics;
 import org.apache.spark.sql.types.StructField;
 import org.apache.spark.sql.types.StructType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.Serializable;
+import java.util.OptionalLong;
 
 /**
  * Describes the data-structure of FlightScan
  */
-public final class FlightScan implements Scan, SupportsRuntimeV2Filtering, Serializable {
+public final class FlightScan implements Scan, SupportsRuntimeV2Filtering,
+        SupportsReportStatistics, Serializable {
     private static final Logger LOGGER = LoggerFactory.getLogger(FlightScan.class);
 
     private final Configuration configuration;
@@ -29,6 +33,22 @@ public final class FlightScan implements Scan, SupportsRuntimeV2Filtering, Seria
     private final PartitionBehavior partitionBehavior;
     private final String baseWhere;
     private final RuntimeFilterTranslator runtimeFilterTranslator;
+
+    /**
+     * Constructs a statistics-only scan for callers that do not use pushdown state.
+     *
+     * @param configuration configuration of the remote Flight service
+     * @param table Flight table
+     */
+    public FlightScan(Configuration configuration, Table table) {
+        this.configuration = configuration;
+        this.table = table;
+        this.projectedFields = new StructField[0];
+        this.aggregation = null;
+        this.partitionBehavior = null;
+        this.baseWhere = "";
+        this.runtimeFilterTranslator = null;
+    }
 
     /**
      * Constructs a Flight scan with immutable base pushdown state.
@@ -99,6 +119,9 @@ public final class FlightScan implements Scan, SupportsRuntimeV2Filtering, Seria
      */
     @Override
     public NamedReference[] filterAttributes() {
+        if (this.runtimeFilterTranslator == null) {
+            return new NamedReference[0];
+        }
         return this.runtimeFilterTranslator.filterAttributes();
     }
 
@@ -109,6 +132,9 @@ public final class FlightScan implements Scan, SupportsRuntimeV2Filtering, Seria
      */
     @Override
     public synchronized void filter(Predicate[] predicates) {
+        if (this.runtimeFilterTranslator == null) {
+            return;
+        }
         String runtimeWhere = this.runtimeFilterTranslator.translate(predicates);
         String where;
         if (this.baseWhere.isEmpty()) {
@@ -120,6 +146,28 @@ public final class FlightScan implements Scan, SupportsRuntimeV2Filtering, Seria
         }
         this.table.probe(
                 where, this.projectedFields, this.aggregation, this.partitionBehavior);
+    }
+
+    /**
+     * Reports Parquet input estimates transported in the standard FlightInfo fields.
+     *
+     * @return Spark scan statistics
+     */
+    @Override
+    public Statistics estimateStatistics() {
+        long bytes = this.table.getEstimatedBytes();
+        long rows = this.table.getEstimatedRows();
+        return new Statistics() {
+            @Override
+            public OptionalLong sizeInBytes() {
+                return bytes >= 0 ? OptionalLong.of(bytes) : OptionalLong.empty();
+            }
+
+            @Override
+            public OptionalLong numRows() {
+                return rows >= 0 ? OptionalLong.of(rows) : OptionalLong.empty();
+            }
+        };
     }
 
     /**

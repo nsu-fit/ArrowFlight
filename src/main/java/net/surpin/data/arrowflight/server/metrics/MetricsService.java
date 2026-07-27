@@ -3,6 +3,7 @@ package net.surpin.data.arrowflight.server.metrics;
 import com.sun.management.UnixOperatingSystemMXBean;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
+import net.surpin.data.arrowflight.server.model.ExecutionPath;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -12,6 +13,7 @@ import java.lang.management.ThreadMXBean;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -20,7 +22,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicLongArray;
 import java.util.function.Supplier;
-import java.util.regex.Pattern;
 import org.apache.arrow.memory.BufferAllocator;
 import net.surpin.data.arrowflight.server.model.AppConfig;
 import net.surpin.data.arrowflight.server.model.ServerCapacity;
@@ -30,17 +31,11 @@ import net.surpin.data.arrowflight.server.model.ServerCapacity;
  */
 public final class MetricsService implements AutoCloseable {
 
+    private static final String METRIC_TYPE_GAUGE = "gauge";
+    private static final String METRIC_TYPE_COUNTER = "counter";
     private static final double[] DURATION_BUCKETS = {
         0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0
     };
-    private static final int SQL_PATTERN_FLAGS = Pattern.CASE_INSENSITIVE | Pattern.DOTALL;
-    private static final Pattern JOIN_PATTERN = Pattern.compile(
-            "\\bjoin\\b|\\bfrom\\b[^;]*,[^;]*", SQL_PATTERN_FLAGS);
-    private static final Pattern AGGREGATION_PATTERN = Pattern.compile(
-            "\\b(count|sum|min|max|avg)\\s*\\(", SQL_PATTERN_FLAGS);
-    private static final Pattern GROUP_BY_PATTERN = Pattern.compile(
-            "\\bgroup\\s+by\\b", SQL_PATTERN_FLAGS);
-    private static final Pattern WHERE_PATTERN = Pattern.compile("\\bwhere\\b", SQL_PATTERN_FLAGS);
     private static final ConcurrentHashMap<String, QueryMetrics> QUERY_METRICS =
             new ConcurrentHashMap<>();
     private static final AtomicLong ACTIVE_QUERIES = new AtomicLong();
@@ -93,14 +88,12 @@ public final class MetricsService implements AutoCloseable {
     /**
      * Starts observing one logical Parquet query.
      *
-     * @param query SQL query used to derive a bounded execution-path label
      * @param logicalBytes planned Parquet input bytes
      * @return observation that must be closed when execution finishes
      */
-    public static QueryObservation observeQuery(String query, long logicalBytes) {
-        String path = classify(query);
+    public static QueryObservation observeQuery(long logicalBytes) {
         ACTIVE_QUERIES.incrementAndGet();
-        return new QueryObservation(path, Math.max(0L, logicalBytes));
+        return new QueryObservation(Math.max(0L, logicalBytes));
     }
 
     /** Binds production Arrow allocator for allocation gauges. */
@@ -154,30 +147,6 @@ public final class MetricsService implements AutoCloseable {
     public void close() {
         server.stop(0);
         executor.shutdownNow();
-    }
-
-    /**
-     * Classifies SQL into a bounded query-path label without parsing it again.
-     *
-     * @param query SQL query
-     * @return bounded query-path label
-     */
-    private static String classify(String query) {
-        String normalized = query == null ? "" : query.toLowerCase(Locale.ROOT);
-        if (JOIN_PATTERN.matcher(normalized).find()) {
-            return "join";
-        }
-        boolean aggregation = AGGREGATION_PATTERN.matcher(normalized).find();
-        if (aggregation && GROUP_BY_PATTERN.matcher(normalized).find()) {
-            return "aggregation-groupby";
-        }
-        if (aggregation) {
-            return "aggregation";
-        }
-        if (WHERE_PATTERN.matcher(normalized).find()) {
-            return "filtered-scan";
-        }
-        return "full-scan";
     }
 
     /**
@@ -242,7 +211,7 @@ public final class MetricsService implements AutoCloseable {
                     "Arrow allocation limit", allocator.getLimit());
         }
         appendExecutionMetrics(metrics);
-        metric(metrics, "arrowflight_parquet_queries_active", "gauge",
+        metric(metrics, "arrowflight_parquet_queries_active", METRIC_TYPE_GAUGE,
                 "Currently executing Parquet queries", ACTIVE_QUERIES.get());
         appendQueryMetrics(metrics);
 
@@ -306,30 +275,30 @@ public final class MetricsService implements AutoCloseable {
     private static void appendJvmMetrics(StringBuilder metrics) {
         MemoryMXBean memory = ManagementFactory.getMemoryMXBean();
         ThreadMXBean threads = ManagementFactory.getThreadMXBean();
-        metric(metrics, "arrowflight_jvm_heap_used_bytes", "gauge",
+        metric(metrics, "arrowflight_jvm_heap_used_bytes", METRIC_TYPE_GAUGE,
                 "Used JVM heap", memory.getHeapMemoryUsage().getUsed());
-        metric(metrics, "arrowflight_jvm_heap_max_bytes", "gauge",
+        metric(metrics, "arrowflight_jvm_heap_max_bytes", METRIC_TYPE_GAUGE,
                 "Maximum JVM heap", memory.getHeapMemoryUsage().getMax());
-        metric(metrics, "arrowflight_jvm_nonheap_used_bytes", "gauge",
+        metric(metrics, "arrowflight_jvm_nonheap_used_bytes", METRIC_TYPE_GAUGE,
                 "Used JVM non-heap memory", memory.getNonHeapMemoryUsage().getUsed());
-        metric(metrics, "arrowflight_jvm_threads_live", "gauge",
+        metric(metrics, "arrowflight_jvm_threads_live", METRIC_TYPE_GAUGE,
                 "Live JVM threads", threads.getThreadCount());
-        metric(metrics, "arrowflight_jvm_threads_daemon", "gauge",
+        metric(metrics, "arrowflight_jvm_threads_daemon", METRIC_TYPE_GAUGE,
                 "Live daemon JVM threads", threads.getDaemonThreadCount());
-        metric(metrics, "arrowflight_jvm_threads_peak", "gauge",
+        metric(metrics, "arrowflight_jvm_threads_peak", METRIC_TYPE_GAUGE,
                 "Peak live JVM threads", threads.getPeakThreadCount());
         java.lang.management.OperatingSystemMXBean operatingSystem =
                 ManagementFactory.getOperatingSystemMXBean();
-        metric(metrics, "arrowflight_process_cpu_available", "gauge",
+        metric(metrics, "arrowflight_process_cpu_available", METRIC_TYPE_GAUGE,
                 "Processors available to the JVM", operatingSystem.getAvailableProcessors());
-        metric(metrics, "arrowflight_system_load_average", "gauge",
+        metric(metrics, "arrowflight_system_load_average", METRIC_TYPE_GAUGE,
                 "Operating system load average", operatingSystem.getSystemLoadAverage());
         if (operatingSystem instanceof com.sun.management.OperatingSystemMXBean extended) {
-            metric(metrics, "arrowflight_process_cpu_time_seconds_total", "counter",
+            metric(metrics, "arrowflight_process_cpu_time_seconds_total", METRIC_TYPE_COUNTER,
                     "CPU time used by the Flight JVM", seconds(extended.getProcessCpuTime()));
         }
         if (operatingSystem instanceof UnixOperatingSystemMXBean unix) {
-            metric(metrics, "arrowflight_process_open_file_descriptors", "gauge",
+            metric(metrics, "arrowflight_process_open_file_descriptors", METRIC_TYPE_GAUGE,
                     "Open file descriptors in the Flight JVM", unix.getOpenFileDescriptorCount());
         }
     }
@@ -340,11 +309,11 @@ public final class MetricsService implements AutoCloseable {
      * @param metrics destination payload
      */
     private static void appendQueryMetrics(StringBuilder metrics) {
-        helpType(metrics, "arrowflight_parquet_queries_total", "counter",
+        helpType(metrics, "arrowflight_parquet_queries_total", METRIC_TYPE_COUNTER,
                 "Completed logical Parquet queries");
-        helpType(metrics, "arrowflight_parquet_query_failures_total", "counter",
+        helpType(metrics, "arrowflight_parquet_query_failures_total", METRIC_TYPE_COUNTER,
                 "Failed logical Parquet queries");
-        helpType(metrics, "arrowflight_parquet_logical_input_bytes_total", "counter",
+        helpType(metrics, "arrowflight_parquet_logical_input_bytes_total", METRIC_TYPE_COUNTER,
                 "Planned logical Parquet input bytes");
         helpType(metrics, "arrowflight_parquet_query_duration_seconds", "histogram",
                 "End-to-end Parquet scan and execution duration");
@@ -441,21 +410,28 @@ public final class MetricsService implements AutoCloseable {
      */
     public static final class QueryObservation implements AutoCloseable {
 
-        private final String path;
         private final long logicalBytes;
         private final long startedNanos = System.nanoTime();
         private final AtomicBoolean closed = new AtomicBoolean();
+        private volatile ExecutionPath path = ExecutionPath.UNKNOWN;
         private volatile boolean failed;
 
         /**
          * Creates an active query observation.
          *
-         * @param path bounded query-path label
          * @param logicalBytes planned Parquet input bytes
          */
-        private QueryObservation(String path, long logicalBytes) {
-            this.path = path;
+        private QueryObservation(long logicalBytes) {
             this.logicalBytes = logicalBytes;
+        }
+
+        /**
+         * Sets the execution path selected by the runtime.
+         *
+         * @param selectedPath selected execution path
+         */
+        public void executionPath(ExecutionPath selectedPath) {
+            path = Objects.requireNonNull(selectedPath, "selectedPath");
         }
 
         /**
@@ -471,7 +447,7 @@ public final class MetricsService implements AutoCloseable {
                 return;
             }
             long elapsedNanos = Math.max(0L, System.nanoTime() - startedNanos);
-            QueryMetrics values = QUERY_METRICS.computeIfAbsent(path,
+            QueryMetrics values = QUERY_METRICS.computeIfAbsent(path.label(),
                     ignored -> new QueryMetrics());
             values.count.incrementAndGet();
             values.logicalBytes.addAndGet(logicalBytes);

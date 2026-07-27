@@ -178,7 +178,7 @@ class ClusterExecutionQueueIntegrationTest {
             String uri, String handle, long bytes) {
         return new ExecutionReservationRequest(uri, handle,
                 new HandleState("select * from s.t",
-                        new String[]{"s/t/f.parquet"}, uri, bytes, null));
+                        new String[]{"s/t/f.parquet"}, uri, bytes, null, true));
     }
 
     /**

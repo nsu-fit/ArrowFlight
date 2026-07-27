@@ -1,5 +1,7 @@
 package net.surpin.data.arrowflight.server;
 
+import net.surpin.data.arrowflight.server.model.ExecutionPath;
+import net.surpin.data.arrowflight.server.model.ExecutionPathTracker;
 import net.surpin.data.arrowflight.server.services.ParquetQueryParser;
 import org.apache.arrow.flight.FlightProducer;
 import org.apache.arrow.memory.ArrowBuf;
@@ -45,11 +47,14 @@ class JoinIntegrationTest {
         assertNotNull(pq.duckDbSql, "Should produce DuckDB SQL");
 
         CountingListener listener = new CountingListener();
+        ExecutionPathTracker pathTracker = new ExecutionPathTracker();
         String[] files = helper.parquetAdapter.locationsForQuery(query)
                 .keySet().toArray(new String[0]);
         assertTrue(files.length > 0, "Should find files for join query");
-        helper.executionService.readParquet(helper.allocator, query, files, listener, true);
+        helper.executionService.readParquet(
+                helper.allocator, query, files, listener, true, pathTracker);
         assertTrue(listener.totalRows > 0, "Self-join should return rows");
+        assertEquals(ExecutionPath.DUCKDB_JOIN, pathTracker.path());
     }
 
     @Test
@@ -265,12 +270,20 @@ class JoinIntegrationTest {
         @Override public void start(VectorSchemaRoot r, DictionaryProvider p, IpcOption o) { this.root = r; }
         @Override public void putNext() { totalRows += root.getRowCount(); }
         @Override public void putNext(ArrowBuf metadata) { totalRows += root.getRowCount(); }
-        @Override public void putMetadata(ArrowBuf metadata) {}
+        @Override public void putMetadata(ArrowBuf metadata) {
+            // Metadata frames do not contribute to the row count asserted by this listener.
+        }
         @Override public boolean isReady() { return true; }
         @Override public boolean isCancelled() { return false; }
-        @Override public void setOnReadyHandler(Runnable handler) {}
-        @Override public void setOnCancelHandler(Runnable handler) {}
+        @Override public void setOnReadyHandler(Runnable handler) {
+            // The test listener is always ready and never needs a readiness callback.
+        }
+        @Override public void setOnCancelHandler(Runnable handler) {
+            // The test listener is never cancelled and does not register a callback.
+        }
         @Override public void error(Throwable ex) { throw new RuntimeException(ex); }
-        @Override public void completed() {}
+        @Override public void completed() {
+            // Completion is observed through the accumulated row count.
+        }
     }
 }

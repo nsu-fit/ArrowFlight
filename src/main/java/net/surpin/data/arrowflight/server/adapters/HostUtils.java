@@ -11,8 +11,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * Accepts server URIs, domain names, and raw IPs.
  */
 public final class HostUtils {
+    private static final String IPV4_LOOPBACK = "127.0.0.1";
 
-    public static final Set<String> LOOPBACK_HOSTS = Set.of("localhost", "127.0.0.1", "::1");
+    public static final Set<String> LOOPBACK_HOSTS = Set.of("localhost", IPV4_LOOPBACK, "::1");
 
     private static final Map<String, String> CACHE = new ConcurrentHashMap<>();
 
@@ -39,8 +40,8 @@ public final class HostUtils {
         // Short-circuit for known loopback addresses
         String hostOnly = input.contains("://") ? URI.create(input).getHost() : input;
         if (hostOnly != null && LOOPBACK_HOSTS.contains(hostOnly)) {
-            CACHE.put(input, "127.0.0.1");
-            return "127.0.0.1";
+            CACHE.put(input, IPV4_LOOPBACK);
+            return IPV4_LOOPBACK;
         }
 
         String resolved;

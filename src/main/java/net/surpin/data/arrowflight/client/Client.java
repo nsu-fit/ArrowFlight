@@ -138,7 +138,8 @@ public final class Client implements AutoCloseable {
             LOGGER.debug("Client.getQueryEndpoints('{}'): got endpoints \n{}", query, fi.getEndpoints());
             Endpoint[] endpoints = fi.getEndpoints().stream().map(ep -> new Endpoint(ep.getLocations().stream().map(Location::getUri).toArray(URI[]::new), ep.getTicket().getBytes())).toArray(Endpoint[]::new);
             LOGGER.debug("Client.getQueryEndpoints('{}'): return endpoints \n{}", query, Arrays.asList(endpoints));
-            return new QueryEndpoints(fi.getSchema(), endpoints);
+            return new QueryEndpoints(
+                    fi.getSchema(), endpoints, fi.getBytes(), fi.getRecords());
         }, "getQueryEndpoints");
     }
 
@@ -307,11 +308,11 @@ public final class Client implements AutoCloseable {
 
     /**
      * Execute a prepared-statement
+     *
      * @param preparedStmt - the prepared-statement being executed.
-     * @return - the number of rows affected.
      */
-    public long executeUpdate(FlightSqlClient.PreparedStatement preparedStmt) {
-        return preparedStmt.executeUpdate(this.bearerToken);
+    public void executeUpdate(FlightSqlClient.PreparedStatement preparedStmt) {
+        preparedStmt.executeUpdate(this.bearerToken);
     }
 
     /**
@@ -340,11 +341,6 @@ public final class Client implements AutoCloseable {
         }
     }
 
-    /**
-     * Get a client object
-     * @param config - the connection configuration for establishing connections to remote flight service
-     * @return - the client object
-     */
     /**
      * Default max allocation per client: 2GB.
      * Can be overridden via {@link Configuration}.

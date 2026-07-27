@@ -53,6 +53,9 @@ public final class Configuration implements Serializable {
     private long retryBackoffMs = 1000;
     private long connectTimeoutMs;
 
+    //string constant
+    private static final String NOT_SET = "[not set]";
+
     /**
      * Construct a Configuration object
      * @param host - the host name of the remote flight service
@@ -380,15 +383,15 @@ public final class Configuration implements Serializable {
     }
 
     private static String formatValue(Object value) {
-        return value != null ? value.toString() : "[not set]";
+        return value != null ? value.toString() : NOT_SET;
     }
 
     private static String formatSensitive(Object value) {
-        return value != null ? "[hidden]" : "[not set]";
+        return value != null ? "[hidden]" : NOT_SET;
     }
 
     private static String formatBytes(byte[] bytes) {
-        return bytes != null ? "[hidden, " + bytes.length + " bytes]" : "[not set]";
+        return bytes != null ? "[hidden, " + bytes.length + " bytes]" : NOT_SET;
     }
 
     @Override

@@ -12,130 +12,14 @@ SPEC.loader.exec_module(VISUALIZE_RESULTS)
 
 
 class ReadCsvTest(unittest.TestCase):
-    def test_read_csv_skips_blank_and_nul_only_beeline_lines(self):
+    def test_read_csv_removes_nul_bytes_from_beeline_output(self):
         with tempfile.TemporaryDirectory() as directory:
             csv_path = Path(directory) / "query-q5.actual.csv"
-            csv_path.write_text(
-                "\n"
-                "\0\0\n"
-                " \0 \n"
-                "name,value\n"
-                "customer,ab\0cd\n"
-                "\0\n"
-                "\n",
-                encoding="utf-8",
-            )
+            csv_path.write_text("name,value\ncustomer,ab\0cd\n", encoding="utf-8")
 
             rows = VISUALIZE_RESULTS.read_csv(csv_path)
 
         self.assertEqual([{"name": "customer", "value": "abcd"}], rows)
-
-    def test_read_csv_preserves_commas_between_paired_nul_quotes(self):
-        with tempfile.TemporaryDirectory() as directory:
-            csv_path = Path(directory) / "query-q10.actual.csv"
-            csv_path.write_text(
-                "name,comment\n"
-                "customer,\0regular, pending packages\0\n",
-                encoding="utf-8",
-            )
-
-            rows = VISUALIZE_RESULTS.read_csv(csv_path)
-
-        self.assertEqual(
-            [{"name": "customer", "comment": "regular, pending packages"}],
-            rows,
-        )
-
-
-class RowsEqualTest(unittest.TestCase):
-    def test_matches_case_insensitive_columns_unordered_rows_and_float_formatting(self):
-        expected = [
-            {"CUSTOMER": "alice", "Revenue": "25.537587116854997"},
-            {"CUSTOMER": "bob", "Revenue": "10.0"},
-        ]
-        actual = [
-            {"customer": "bob", "revenue": "10.000000"},
-            {"customer": "alice", "revenue": "25.537587"},
-        ]
-
-        self.assertTrue(VISUALIZE_RESULTS.rows_equal(expected, actual))
-
-    def test_preserves_duplicate_row_counts(self):
-        expected = [{"name": "alice"}, {"name": "alice"}, {"name": "bob"}]
-        reordered = [{"NAME": "bob"}, {"NAME": "alice"}, {"NAME": "alice"}]
-        missing_duplicate = [{"NAME": "bob"}, {"NAME": "alice"}, {"NAME": "bob"}]
-
-        self.assertTrue(VISUALIZE_RESULTS.rows_equal(expected, reordered))
-        self.assertFalse(VISUALIZE_RESULTS.rows_equal(expected, missing_duplicate))
-
-    def test_numeric_tolerance_is_absolute_and_inclusive(self):
-        expected = [{"value": "1.000000"}]
-
-        self.assertTrue(
-            VISUALIZE_RESULTS.rows_equal(expected, [{"VALUE": "1.000001"}])
-        )
-        self.assertFalse(
-            VISUALIZE_RESULTS.rows_equal(expected, [{"VALUE": "1.0000011"}])
-        )
-
-    def test_non_numeric_values_require_exact_match(self):
-        self.assertFalse(
-            VISUALIZE_RESULTS.rows_equal(
-                [{"status": "Complete"}],
-                [{"STATUS": "complete"}],
-            )
-        )
-
-    def test_ordered_comparison_rejects_reordered_rows(self):
-        expected = [{"name": "alice"}, {"name": "bob"}]
-        reordered = [{"NAME": "bob"}, {"NAME": "alice"}]
-
-        self.assertFalse(
-            VISUALIZE_RESULTS.rows_equal(expected, reordered, ordered=True)
-        )
-        self.assertTrue(VISUALIZE_RESULTS.rows_equal(expected, reordered))
-
-    def test_ordered_comparison_keeps_column_and_numeric_normalization(self):
-        expected = [{"CUSTOMER": "alice", "value": "1.000000"}]
-        actual = [{"customer": "alice", "VALUE": "1.000001"}]
-
-        self.assertTrue(
-            VISUALIZE_RESULTS.rows_equal(expected, actual, ordered=True)
-        )
-
-
-class QueryReferenceOrderingTest(unittest.TestCase):
-    def test_order_by_uses_sequence_while_other_queries_use_multiset(self):
-        metadata = {
-            "reference_queries": [
-                {
-                    "query_id": 1,
-                    "name": "Q1",
-                    "sql": "SELECT name FROM customer ORDER\n  BY name",
-                    "expected_rows": [{"name": "alice"}, {"name": "bob"}],
-                },
-                {
-                    "query_id": 2,
-                    "name": "Q2",
-                    "sql": "SELECT name FROM customer",
-                    "expected_rows": [{"name": "alice"}, {"name": "bob"}],
-                },
-            ]
-        }
-        with tempfile.TemporaryDirectory() as directory:
-            run_dir = Path(directory)
-            for query_id in (1, 2):
-                (run_dir / f"query-q{query_id}.actual.csv").write_text(
-                    "name\nbob\nalice\n",
-                    encoding="utf-8",
-                )
-
-            report = VISUALIZE_RESULTS.query_reference_section(run_dir, metadata)
-
-        self.assertIn('Q1: <span class="bad">DIFF</span>', report)
-        self.assertIn('Q2: <span class="ok">MATCH</span>', report)
-        self.assertIn("Compared as ordered sequence.", report)
-        self.assertIn("Compared as unordered multiset.", report)
 
 
 class PerQueryLatencyTest(unittest.TestCase):
@@ -176,80 +60,172 @@ class PerQueryLatencyTest(unittest.TestCase):
         self.assertIn("average query execution time, ms", chart)
 
 
-class StandardizedLatencyTest(unittest.TestCase):
-    def test_read_config_preserves_positive_transaction_weights(self):
+class ReadConfigTest(unittest.TestCase):
+    def test_collects_queries_from_all_timed_work_phases(self):
+        config_text = """<?xml version="1.0"?>
+<parameters>
+  <scalefactor>1</scalefactor>
+  <terminals>1</terminals>
+  <works>
+    <work>
+      <time>180</time>
+      <warmup>20</warmup>
+      <rate>unlimited</rate>
+      <weights>100,0,0</weights>
+    </work>
+    <work>
+      <time>180</time>
+      <warmup>0</warmup>
+      <rate>unlimited</rate>
+      <weights>0,0,100</weights>
+    </work>
+  </works>
+</parameters>
+"""
         with tempfile.TemporaryDirectory() as directory:
-            config_path = Path(directory) / "tpch.config.xml"
-            config_path.write_text(
-                "<configuration><works><work>"
-                "<weights>75,25,0</weights>"
-                "</work></works></configuration>",
-                encoding="utf-8",
-            )
+            config_path = Path(directory) / "tpch.xml"
+            config_path.write_text(config_text, encoding="utf-8")
 
             config = VISUALIZE_RESULTS.read_config(config_path)
 
-        self.assertEqual({"Q1": 75.0, "Q2": 25.0}, config["weights"])
+        self.assertEqual("Q1, Q3", config["queries"])
+        self.assertEqual({1, 3}, VISUALIZE_RESULTS.configured_query_ids(config))
 
-    def test_uses_configured_mix_instead_of_measured_sample_counts(self):
-        weights = VISUALIZE_RESULTS.normalized_query_weights(
-            {"weights": {"Q1": 75, "Q2": 25}}
-        )
-        rows = [
-            {"query": "Q1", "avg": 10.0, "samples": 1},
-            {"query": "Q2", "avg": 30.0, "samples": 99},
-        ]
 
-        latency = VISUALIZE_RESULTS.standardized_weighted_latency(rows, weights)
-
-        self.assertEqual(15.0, latency)
-
-    def test_returns_none_when_configured_query_has_no_samples(self):
-        weights = VISUALIZE_RESULTS.normalized_query_weights(
-            {"weights": {"Q1": 50, "Q2": 50}}
-        )
-
-        latency = VISUALIZE_RESULTS.standardized_weighted_latency(
-            [{"query": "Q1", "avg": 10.0, "samples": 1}],
-            weights,
-        )
-
-        self.assertIsNone(latency)
-
-    def test_compare_cards_displays_standardized_delta(self):
-        def run(q1, q2):
-            return {
-                "summary": {
-                    VISUALIZE_RESULTS.THROUGHPUT: 1,
-                    "Latency Distribution": {},
+class PairedReportTest(unittest.TestCase):
+    def test_renders_each_observation_and_aggregate_spread(self):
+        machine_result = {
+            "run": {
+                "started_at": "2026-07-26T00:00:00Z",
+                "finished_at": "2026-07-26T00:10:00Z",
+                "policy": {
+                    "paired_observations": 3,
+                    "engine_order_schedule": [
+                        {
+                            "observation_index": 1,
+                            "engine_order": ["flight", "direct"],
+                        },
+                        {
+                            "observation_index": 2,
+                            "engine_order": ["direct", "flight"],
+                        },
+                    ],
+                    "warmup_seconds": 30,
+                    "repetitions": 2,
+                    "cache_policy": "warm-cache",
                 },
-                "config": {"weights": {"Q1": 75, "Q2": 25}},
-                "query_latency_rows": [
-                    {"query": "Q1", "avg": q1, "samples": 1},
-                    {"query": "Q2", "avg": q2, "samples": 99},
-                ],
-            }
+            },
+            "comparison": {
+                "publication": {"state": "publishable", "reasons": []}
+            },
+            "observations": [
+                {
+                    "observation_index": 1,
+                    "engine_order": ["flight", "direct"],
+                    "status": "completed",
+                    "failures": [],
+                    "metrics": {
+                        "flight": {
+                            "samples": 2,
+                            "latency_microseconds": {
+                                "median": 1000,
+                                "p95": 1500,
+                            },
+                        },
+                        "direct": {
+                            "samples": 2,
+                            "latency_microseconds": {
+                                "median": 2000,
+                                "p95": 2500,
+                            },
+                        },
+                    },
+                    "engines": [
+                        {
+                            "id": "flight",
+                            "status": "completed",
+                            "artifact_refs": {
+                                "report": "observations/observation-001/"
+                                "flight/report.html"
+                            },
+                            "execution_paths": {
+                                "classification": "duckdb-scan",
+                                "pushdown_evidence": True,
+                                "nodes": [],
+                            },
+                        },
+                        {
+                            "id": "direct",
+                            "status": "completed",
+                            "artifact_refs": {},
+                            "execution_paths": {
+                                "classification": "unknown",
+                                "pushdown_evidence": False,
+                                "nodes": [],
+                            },
+                        },
+                    ],
+                }
+            ],
+            "aggregate_summary": {
+                "engines": {
+                    engine: {
+                        "successful_observations": 3,
+                        "scheduled_observations": 3,
+                        "latency_microseconds": {
+                            "median": 1000,
+                            "p25": 900,
+                            "p75": 1100,
+                            "iqr": 200,
+                            "p95": 1200,
+                        },
+                        "queries": {
+                            "q6": {
+                                "observation_median_latency_microseconds": {
+                                    "median": 1000,
+                                    "iqr": 200,
+                                    "p95": 1200,
+                                }
+                            }
+                        },
+                    }
+                    for engine in ("flight", "direct")
+                },
+                "paired": {
+                    "complete_pairs": 3,
+                    "scheduled_pairs": 3,
+                    "flight_to_direct_median_latency_ratio": {
+                        "median": 0.5,
+                        "iqr": 0.1,
+                        "p95": 0.6,
+                    },
+                    "queries": {
+                        "q6": {
+                            "flight_to_direct_median_latency_ratio": {
+                                "median": 0.5,
+                                "iqr": 0.1,
+                            }
+                        }
+                    },
+                },
+            },
+        }
 
-        report = VISUALIZE_RESULTS.compare_cards(run(10, 30), run(20, 20))
+        with tempfile.TemporaryDirectory() as directory:
+            results = Path(directory)
+            output = results / "compare.report.html"
+            VISUALIZE_RESULTS.build_machine_compare_report(
+                results, output, machine_result
+            )
+            report = output.read_text(encoding="utf-8")
 
-        self.assertIn("Configured-mix avg latency ms", report)
-        self.assertIn("-5.000 (-25.0%)", report)
-        self.assertIn("sample counts do not affect it", report)
-
-
-class ComparisonOrderNoticeTest(unittest.TestCase):
-    def test_displays_execution_order_from_metadata_and_cache_warning(self):
-        notice = VISUALIZE_RESULTS.comparison_order_notice(
-            {"execution_order": ["flight", "direct"]}
-        )
-
-        self.assertIn("Recorded execution order: flight → direct.", notice)
-        self.assertIn("warmed Spark, HDFS, and operating-system caches", notice)
-
-    def test_warns_when_execution_order_is_missing(self):
-        notice = VISUALIZE_RESULTS.comparison_order_notice({})
-
-        self.assertIn("Execution order was not recorded.", notice)
+        self.assertIn("Paired Observations", report)
+        self.assertIn("flight → direct", report)
+        self.assertIn("Aggregate Statistics", report)
+        self.assertIn("ratio IQR", report)
+        self.assertIn("Per-query Aggregate Latency", report)
+        self.assertIn("Q6", report)
+        self.assertIn("warm-cache", report)
 
 
 if __name__ == "__main__":

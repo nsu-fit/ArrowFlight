@@ -2,17 +2,22 @@ package net.surpin.data.arrowflight.server.adapters;
 
 import com.google.protobuf.ByteString;
 import net.surpin.data.arrowflight.server.model.HandleState;
+import net.surpin.data.arrowflight.server.model.ExecutionPathTracker;
+import net.surpin.data.arrowflight.server.model.QueryPlan;
 import net.surpin.data.arrowflight.server.services.ClusterService;
 import net.surpin.data.arrowflight.server.services.ExecutionService;
 import net.surpin.data.arrowflight.server.services.MetadataService;
 import net.surpin.data.arrowflight.server.services.QueryPlanner;
 import org.apache.arrow.flight.CallStatus;
+import org.apache.arrow.flight.FlightDescriptor;
+import org.apache.arrow.flight.FlightInfo;
 import org.apache.arrow.flight.FlightProducer;
 import org.apache.arrow.flight.FlightRuntimeException;
 import org.apache.arrow.flight.FlightStatusCode;
 import org.apache.arrow.flight.Location;
 import org.apache.arrow.flight.sql.impl.FlightSql;
 import org.apache.arrow.memory.BufferAllocator;
+import org.apache.arrow.vector.types.pojo.Schema;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -33,6 +38,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
@@ -129,8 +135,8 @@ class FlightSqlProducerTest {
         ExecutionService executionService = mock(ExecutionService.class);
         ClusterService clusterService = mock(ClusterService.class);
         HandleState state = new HandleState(
-                "select * from s.t", new String[]{"f.parquet"}, null, 0L, null);
-        when(clusterService.getHandle(anyString())).thenReturn(state);
+                "select * from s.t", new String[]{"f.parquet"}, null, 0L, null, false);
+        when(clusterService.resolveEndpointHandle(any())).thenReturn(state);
         when(allocator.newChildAllocator(anyString(), anyLong(), anyLong()))
                 .thenReturn(allocator);
 
@@ -159,7 +165,7 @@ class FlightSqlProducerTest {
                 eq(allocator), eq(state.query()), eq(state.filePaths()),
                 org.mockito.ArgumentMatchers.any(
                         FlightProducer.ServerStreamListener.class),
-                anyBoolean());
+                anyBoolean(), any(ExecutionPathTracker.class));
 
         List<FlightProducer.ServerStreamListener> listeners =
                 new ArrayList<>(workerCount);
@@ -200,8 +206,8 @@ class FlightSqlProducerTest {
         ByteString handle = ByteString.copyFromUtf8("timeout-query");
         HandleState state = new HandleState(
                 "select * from tpch.lineitem",
-                new String[]{"part.parquet"}, null, 0L, null);
-        when(clusterService.getHandle(handle.toStringUtf8())).thenReturn(state);
+                new String[]{"part.parquet"}, null, 0L, null, false);
+        when(clusterService.resolveEndpointHandle(handle.toByteArray())).thenReturn(state);
         when(allocator.newChildAllocator(anyString(), anyLong(), anyLong()))
                 .thenReturn(allocator);
 
@@ -210,7 +216,7 @@ class FlightSqlProducerTest {
                 .toRuntimeException();
         doThrow(timeout).when(executionService).readParquet(
                 eq(allocator), eq(state.query()), eq(state.filePaths()), eq(listener),
-                anyBoolean());
+                anyBoolean(), any(ExecutionPathTracker.class));
 
         FlightSqlProducer producer = new FlightSqlProducer(
                 Location.forGrpcInsecure("localhost", 32010), allocator,
@@ -245,8 +251,8 @@ class FlightSqlProducerTest {
                 mock(FlightProducer.ServerStreamListener.class);
         ByteString handle = ByteString.copyFromUtf8("async-query");
         HandleState state = new HandleState(
-                "select * from s.t", new String[]{"f.parquet"}, null, 0L, null);
-        when(clusterService.getHandle(handle.toStringUtf8())).thenReturn(state);
+                "select * from s.t", new String[]{"f.parquet"}, null, 0L, null, false);
+        when(clusterService.resolveEndpointHandle(handle.toByteArray())).thenReturn(state);
         when(allocator.newChildAllocator(anyString(), anyLong(), anyLong()))
                 .thenReturn(allocator);
         CountDownLatch started = new CountDownLatch(1);
@@ -257,7 +263,7 @@ class FlightSqlProducerTest {
             return null;
         }).when(executionService).readParquet(
                 eq(allocator), eq(state.query()), eq(state.filePaths()),
-                eq(listener), anyBoolean());
+                eq(listener), anyBoolean(), any(ExecutionPathTracker.class));
 
         FlightSqlProducer producer = new FlightSqlProducer(
                 Location.forGrpcInsecure("localhost", 32010), allocator,
@@ -290,14 +296,14 @@ class FlightSqlProducerTest {
                 mock(FlightProducer.ServerStreamListener.class);
         ByteString handle = ByteString.copyFromUtf8("oom-query");
         HandleState state = new HandleState(
-                "select * from s.t", new String[]{"f.parquet"}, null, 0L, null);
-        when(clusterService.getHandle(handle.toStringUtf8())).thenReturn(state);
+                "select * from s.t", new String[]{"f.parquet"}, null, 0L, null, false);
+        when(clusterService.resolveEndpointHandle(handle.toByteArray())).thenReturn(state);
         when(allocator.newChildAllocator(anyString(), anyLong(), anyLong()))
                 .thenReturn(allocator);
         doThrow(new SQLException("Out of Memory Error: failed to allocate block"))
                 .when(executionService).readParquet(
                         eq(allocator), eq(state.query()), eq(state.filePaths()),
-                        eq(listener), anyBoolean());
+                        eq(listener), anyBoolean(), any(ExecutionPathTracker.class));
 
         FlightSqlProducer producer = new FlightSqlProducer(
                 Location.forGrpcInsecure("localhost", 32010), allocator,
@@ -314,5 +320,34 @@ class FlightSqlProducerTest {
         assertEquals(FlightStatusCode.RESOURCE_EXHAUSTED,
                 reported.status().code());
         producer.close();
+    }
+
+    /** Verifies statement planning exports Parquet statistics through FlightInfo. */
+    @Test
+    void statementFlightInfoContainsQueryStatistics() throws Exception {
+        BufferAllocator allocator = mock(BufferAllocator.class);
+        MetadataService metadataService = mock(MetadataService.class);
+        QueryPlanner queryPlanner = mock(QueryPlanner.class);
+        ExecutionService executionService = mock(ExecutionService.class);
+        ClusterService clusterService = mock(ClusterService.class);
+        FlightProducer.CallContext context = mock(FlightProducer.CallContext.class);
+        String query = "select * from tpch.lineitem";
+        Schema schema = new Schema(List.of());
+        when(metadataService.getQuerySchema(query)).thenReturn(schema);
+        when(queryPlanner.plan(query)).thenReturn(
+                new QueryPlan(List.of(), 4096L, 125L));
+        FlightSqlProducer producer = new FlightSqlProducer(
+                Location.forGrpcInsecure("localhost", 32010), allocator,
+                metadataService, queryPlanner, executionService, clusterService);
+        FlightSql.CommandStatementQuery command = FlightSql.CommandStatementQuery
+                .newBuilder().setQuery(query).build();
+        FlightDescriptor descriptor = FlightDescriptor.command(new byte[]{1});
+
+        FlightInfo info = producer.getFlightInfoStatement(
+                command, context, descriptor);
+
+        assertEquals(4096L, info.getBytes());
+        assertEquals(125L, info.getRecords());
+        verify(clusterService, never()).storeHandle(anyString(), any());
     }
 }

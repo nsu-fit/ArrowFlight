@@ -27,6 +27,7 @@ import net.surpin.data.arrowflight.server.model.AppConfig;
  * Uses Dagger for dependency injection and manages the Flight server lifecycle.
  */
 public class HadoopArrowFlightServer {
+    private static final String DEFAULT_LOG_LEVEL_PROPERTY = "org.slf4j.simpleLogger.defaultLogLevel";
 
     static {
         initLogLevel();
@@ -50,19 +51,19 @@ public class HadoopArrowFlightServer {
         for (String key : new String[]{"logLevel", "arrowflight.log.level"}) {
             String v = System.getProperty(key);
             if (v != null && !v.isBlank()) {
-                System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", v.trim());
+                System.setProperty(DEFAULT_LOG_LEVEL_PROPERTY, v.trim());
                 return;
             }
         }
         String env = System.getenv("LOGGING_LEVEL");
         if (env != null && !env.isBlank()) {
-            System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", env.trim());
+            System.setProperty(DEFAULT_LOG_LEVEL_PROPERTY, env.trim());
             return;
         }
         for (String key : new String[]{"logLevel", "arrowflight.log.level"}) {
             String v = props.getProperty(key);
             if (v != null && !v.isBlank()) {
-                System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", v.trim());
+                System.setProperty(DEFAULT_LOG_LEVEL_PROPERTY, v.trim());
                 return;
             }
         }

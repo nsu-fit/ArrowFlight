@@ -1,18 +1,16 @@
 package net.surpin.data.arrowflight.client.model;
 
 import org.apache.arrow.vector.types.pojo.Schema;
-
-import java.io.Serializable;
 import java.util.ArrayList;
 
 /**
  * Describes row batch from remote flight service
  */
-public class RowSet implements Serializable {
+public class RowSet {
     /**
      * The definition of Row
      */
-    public static class Row implements Serializable {
+    public static class Row {
         private final ArrayList<Object> data;
 
         /**
@@ -40,7 +38,7 @@ public class RowSet implements Serializable {
     }
 
     //the schema of each ROw
-    private final transient Schema schema;
+    private final Schema schema;
     //the row collection
     private final ArrayList<Row> data;
 

@@ -51,12 +51,14 @@ BENCHBASE_TERMINALS=1 \
 2. запускает HDFS NameNode и четыре `DataNode + Flight + Spark worker` ноды;
 3. генерирует один TPC-H dataset и загружает его в `hdfs://hdfs-namenode:8020/bench`;
 4. публикует `tpch_flight` и `tpch_direct` поверх тех же HDFS Parquet-файлов;
-5. запускает выбранные queries для обоих путей;
+5. запускает минимум три парных наблюдения, автоматически чередуя порядок
+   Flight/Direct;
 6. строит общий HTML report и обновляет локальную папку `pages/`.
 
 В generated report и reference results попадут только `q1`, `q6`, `q14`. BenchBase может вывести в консоль остальные transaction types с нулевыми counters; они не выполняются и не добавляются в per-query report.
 
-Все 22 TPC-H query по одному разу для каждого пути:
+Все 22 TPC-H query по одному разу для каждого пути внутри каждого парного
+наблюдения:
 
 ```bash
 bash benchmarks/benchbase-spark/run-benchbase-spark.sh tpch compare all
@@ -67,17 +69,22 @@ Selector `all` активирует Q1-Q22 для Flight и Direct. Общий c
 latency по каждому query (`q01`-`q22`). Значения берутся из BenchBase
 `*.raw.csv`.
 
-Если нужны повторные samples каждого query, явно задай общий timed workload:
+Если нужны повторные samples каждого query, задай длительность измерения каждой
+query:
 
 ```bash
-BENCHBASE_TIME_SECONDS=1200 \
-BENCHBASE_WARMUP_SECONDS=120 \
+BENCHBASE_TIME_SECONDS=180 \
+BENCHBASE_WARMUP_SECONDS=20 \
 bash benchmarks/benchbase-spark/run-benchbase-spark.sh tpch compare all
 ```
 
-В timed-режиме `BENCHBASE_TIME_SECONDS` задаёт общую длительность каждого пути,
-а не отдельное время для каждого query. Выбирай достаточно большое значение,
-чтобы все тяжёлые TPC-H queries успели выполниться.
+В timed-режиме `BENCHBASE_TIME_SECONDS` применяется отдельно к каждой выбранной
+query. Скрипт создаёт последовательные фазы Q1-Q22, в каждой из которых активна
+только одна query. `BENCHBASE_WARMUP_SECONDS` применяется один раз перед первой
+query каждого engine run. Для значений выше один engine run занимает примерно
+`20 + 22 * 180 = 3980` секунд. Полный `compare` по умолчанию выполняет шесть
+engine runs (три пары), то есть около 23880 секунд плюс подготовка данных и
+завершение текущих queries.
 
 Результат:
 
@@ -85,27 +92,34 @@ bash benchmarks/benchbase-spark/run-benchbase-spark.sh tpch compare all
 benchmarks/benchbase-spark/results/tpch-compare-q1,q6,q14-<timestamp>/compare.report.html
 ```
 
-Внутри также будут отдельные reports:
+Внутри сохраняются все наблюдения и отдельные reports:
 
 ```text
-flight/*.report.html
-direct/*.report.html
+observations/observation-001/flight/*.report.html
+observations/observation-001/direct/*.report.html
+observations/observation-002/...
+observations/observation-003/...
 ```
 
 ## Основные параметры
 
 ```bash
 BENCHMARK_SCALE_FACTOR=0.1       # TPC-H scale factor
-BENCHBASE_TIME_SECONDS=120      # длительность каждого пути
-BENCHBASE_WARMUP_SECONDS=30     # отдельный прогрев перед измерением (default для compare/graph)
+BENCHBASE_TIME_SECONDS=120      # measured-секунды для каждой выбранной query
+BENCHBASE_WARMUP_SECONDS=30     # прогрев каждого engine run
 BENCHBASE_TERMINALS=2           # параллельные BenchBase workers
 BENCHBASE_RATE=unlimited        # лимит requests/sec
 BENCHBASE_QUERY_TIMEOUT_SECONDS=120   # timeout BenchBase query через JDBC
 BENCHBASE_CAPTURE_TIMEOUT_SECONDS=120 # timeout повторного query для HTML-проверки
-BENCHBASE_COMPARE_ORDER=flight-first  # flight-first или direct-first
+BENCHBASE_PAIRED_OBSERVATIONS=3       # число пар; для публикации минимум 3
+BENCHBASE_COMPARE_ORDER=flight-first  # порядок первой пары; следующие чередуются
+BENCHBASE_CACHE_POLICY=warm-cache     # один stack без eviction/reset между runs
 BENCHBASE_UPDATE_PAGES=false    # не обновлять локальную pages/
 BENCHMARK_OBSERVABILITY=true    # автоматически запустить Grafana/Prometheus
 HDFS_BLOCK_SIZE_BYTES=1073741824 # shard обязан помещаться в один HDFS block
+FLIGHT_BATCH_SIZE=65536         # Arrow/gRPC batch; 131072 доступен для A/B
+FLIGHT_DUCKDB_THREADS=2         # optional A/B override для DuckDB SET threads
+FLIGHT_TIMING_LOG_LEVEL=DEBUG   # только TIMING-события при общем INFO
 ```
 
 Benchmark Spark запускается с `spark.sql.ansi.enabled=true`. Это необходимо для
@@ -114,9 +128,27 @@ Spark DataSource V2: без ANSI Spark 3.5 не передаёт decimal-выр�
 передавать миллионы исходных строк обратно в Spark вместо нескольких partial
 aggregate rows.
 
-Оба пути выполняются последовательно. Для проверки влияния порядка повтори
-сравнение с `BENCHBASE_COMPARE_ORDER=direct-first`; отдельный warmup применяется
-к каждому пути.
+Для профилирования не включай общий `FLIGHT_LOG_LEVEL=DEBUG`: он синхронно пишет
+все клиентские и серверные DEBUG-события и искажает Flight-only часть сравнения.
+Используй `FLIGHT_LOG_LEVEL=INFO FLIGHT_TIMING_LOG_LEVEL=DEBUG`, чтобы оставить
+структурированные `TIMING`-строки без подробного лога каждого batch. Значение
+`FLIGHT_BATCH_SIZE=131072` уменьшает число batch, но его нужно сравнивать на
+целевом HDFS workload: на локальном synthetic scan устойчивого ускорения
+относительно `65536` не было.
+
+Два пути внутри пары выполняются последовательно. В одной команде порядок
+автоматически чередуется: `Flight → Direct`, затем `Direct → Flight` и так
+далее. `BENCHBASE_COMPARE_ORDER=direct-first` меняет только порядок первой пары.
+Поддерживаемая cache policy `warm-cache` готовит stack один раз и не сбрасывает
+JVM, Spark, HDFS или OS caches между runs; эффект порядка распределяется за счёт
+чередования. Warmup применяется отдельно в начале каждого engine run.
+
+Machine-readable `benchmark-result.json` хранит значения каждого наблюдения,
+timestamps, порядок, warmup, cache policy, failure metadata и ссылки на все raw
+CSV. Агрегаты используют медиану каждого успешного наблюдения как один
+равновесный sample и показывают median, min/max spread, p25/p75, IQR и p95.
+Если один engine падает, harness всё равно запускает вторую половину пары и
+следующие пары, но такой результат не попадает в публикуемый dashboard.
 
 После измерения каждый выбранный query повторно выполняется через `beeline`, чтобы
 сохранить фактический результат в HTML report. Если этот запуск превышает

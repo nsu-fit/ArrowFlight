@@ -44,6 +44,9 @@ import net.surpin.data.arrowflight.server.model.HandleState;
 import net.surpin.data.arrowflight.server.model.CapacityExhaustedException;
 import net.surpin.data.arrowflight.server.model.ReservationState;
 import net.surpin.data.arrowflight.server.model.ReservationStatus;
+import net.surpin.data.arrowflight.server.model.ExecutionPathTracker;
+import net.surpin.data.arrowflight.server.model.QueryPlan;
+import net.surpin.data.arrowflight.server.metrics.ExecutionPathRecorder;
 import net.surpin.data.arrowflight.server.metrics.MetricsService;
 import net.surpin.data.arrowflight.server.services.ClusterService;
 import net.surpin.data.arrowflight.server.services.ExecutionService;
@@ -60,6 +63,7 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
 
     private static final Logger LOGGER = LoggerFactory.getLogger(FlightSqlProducer.class);
     private static final long QUERY_EXECUTOR_WARMUP_TIMEOUT_SECONDS = 30;
+    private static final String SCHEMA_NOT_FOUND_MESSAGE = "Could not find Arrow schema for query";
 
     private final Location location;
     private final BufferAllocator allocator;
@@ -231,7 +235,15 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
         String handleValue = handle.toStringUtf8();
         String qid = qid(handle);
         long tGet = LogUtil.mark();
-        HandleState state = clusterService.getHandle(handleValue);
+        HandleState state;
+        try {
+            state = clusterService.resolveEndpointHandle(handle.toByteArray());
+        } catch (IllegalArgumentException e) {
+            listener.error(CallStatus.UNAUTHENTICATED
+                    .withDescription("Invalid Flight endpoint ticket")
+                    .withCause(e).toRuntimeException());
+            return;
+        }
         LogUtil.logTiming(tGet, "execution.getHandle");
         if (state == null) {
             LOGGER.error("qid={} No HandleState found", qid);
@@ -259,7 +271,7 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
                 if (state.reservationId() != null) {
                     clusterService.releaseExecution(state.reservationId());
                 } else {
-                    clusterService.removeHandle(handleValue);
+                    clusterService.releaseEndpointLoad(handle.toByteArray(), state);
                 }
             }
             cancellations.remove(handleValue);
@@ -288,19 +300,18 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
                                 - reservation.createdAtMillis()));
                 clusterService.removeReservationListener(
                         reservationListener.getAndSet(null));
-                submitExecution(state, handleValue, qid, listener,
+                submitExecution(state, handleValue, handle.toByteArray(), qid, listener,
                         cancelled, executionFuture);
             }
         };
 
         if (state.reservationId() == null) {
             submitted.set(true);
-            submitExecution(state, handleValue, qid, listener,
+            submitExecution(state, handleValue, handle.toByteArray(), qid, listener,
                     cancelled, executionFuture);
             return;
         }
-        ReservationState claimed = clusterService.claimExecution(
-                handleValue, state.reservationId());
+        ReservationState claimed = clusterService.claimExecution(state.reservationId());
         if (claimed == null) {
             cancellations.remove(handleValue);
             listener.error(CallStatus.NOT_FOUND.withDescription(
@@ -321,6 +332,7 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
      *
      * @param state execution handle state
      * @param handle handle string
+     * @param endpointHandle encoded Flight endpoint handle
      * @param qid query identifier
      * @param listener Flight stream listener
      * @param cancelled cancellation flag
@@ -329,6 +341,7 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
     private void submitExecution(
             HandleState state,
             String handle,
+            byte[] endpointHandle,
             String qid,
             FlightProducer.ServerStreamListener listener,
             AtomicBoolean cancelled,
@@ -341,7 +354,8 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
         }
         try {
             Future<?> future = queryExecutor.submit(
-                    () -> runExecution(state, handle, qid, listener, cancelled));
+                    () -> runExecution(state, handle, endpointHandle,
+                            qid, listener, cancelled));
             executionFuture.set(future);
             if (cancelled.get()) {
                 future.cancel(true);
@@ -362,6 +376,7 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
      *
      * @param state execution handle state
      * @param handle handle string
+     * @param endpointHandle encoded Flight endpoint handle
      * @param qid query identifier
      * @param listener Flight stream listener
      * @param cancelled cancellation flag
@@ -369,6 +384,7 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
     private void runExecution(
             HandleState state,
             String handle,
+            byte[] endpointHandle,
             String qid,
             FlightProducer.ServerStreamListener listener,
             AtomicBoolean cancelled) {
@@ -380,8 +396,11 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
         LogUtil.setQid(qid);
         MDC.put("qid", qid);
         MetricsService.QueryObservation observation =
-                MetricsService.observeQuery(query, state.bytes());
+                MetricsService.observeQuery(state.bytes());
         BufferAllocator queryAllocator = allocator;
+        ExecutionPathTracker pathTracker = new ExecutionPathTracker();
+        boolean success = false;
+        String failureReason = null;
         try {
             if (cancelled.get() || Thread.currentThread().isInterrupted()) {
                 return;
@@ -392,15 +411,17 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
             queryAllocator = allocator.newChildAllocator(
                     "query-" + qid, 0, queryMemoryLimit);
             executionService.readParquet(
-                    queryAllocator, query, filePaths, listener, true);
+                    queryAllocator, query, filePaths, listener, true, pathTracker);
             if (!cancelled.get() && !listener.isCancelled()) {
                 listener.completed();
+                success = true;
             }
             LogUtil.logTiming(started, "execution.total",
                     "files=" + filePaths.length);
         } catch (Exception error) {
             observation.markFailed();
             String failure = failureDescription(error);
+            failureReason = failure;
             long elapsed = TimeUnit.NANOSECONDS.toMillis(
                     System.nanoTime() - executionStartNanos);
             LOGGER.error("qid={} node={} execution=failed server={} elapsedMs={} error='{}'",
@@ -419,8 +440,15 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
             if (state.reservationId() != null) {
                 clusterService.releaseExecution(state.reservationId());
             } else {
-                clusterService.removeHandle(handle);
+                clusterService.releaseEndpointLoad(
+                        endpointHandle, state);
             }
+            observation.executionPath(pathTracker.path());
+            ExecutionPathRecorder.record(
+                    qid, query, pathTracker, success, failureReason);
+            observation.close();
+            MDC.remove("qid");
+            LogUtil.setQid(null);
         }
     }
 
@@ -513,7 +541,7 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
             LOGGER.error("Error getting Arrow schema for query: {}", query, e);
             if (isFileNotFound(e)) {
                 throw CallStatus.NOT_FOUND
-                        .withDescription("Could not find Arrow schema for query")
+                        .withDescription(SCHEMA_NOT_FOUND_MESSAGE)
                         .withCause(e).toRuntimeException();
             }
             throw CallStatus.INTERNAL
@@ -524,17 +552,19 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
         if (arrowSchema == null) {
             LOGGER.error("Arrow schema not found for query: {}", query);
             throw CallStatus.NOT_FOUND
-                    .withDescription("Could not find Arrow schema for query")
+                    .withDescription(SCHEMA_NOT_FOUND_MESSAGE)
                     .toRuntimeException();
         }
 
-        long tStore = LogUtil.mark();
-        clusterService.storeHandle(handle.toStringUtf8(), HandleState.forQuery(query));
-        LogUtil.logTiming(tStore, "planning.storeHandle", "qid=" + qid);
-
-        FlightSql.TicketStatementQuery ticket = FlightSql.TicketStatementQuery.newBuilder()
-                .setStatementHandle(handle).build();
-        return getFlightInfoForSchema(ticket, descriptor, arrowSchema);
+        try {
+            QueryPlan plan = queryPlanner.plan(query);
+            return new FlightInfo(arrowSchema, descriptor, plan.endpoints(),
+                    plan.totalBytes(), plan.totalRecords());
+        } catch (IOException e) {
+            throw CallStatus.INTERNAL
+                    .withDescription("Unable to plan Flight query")
+                    .withCause(e).toRuntimeException();
+        }
     }
 
     @Override
@@ -555,7 +585,7 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
 
         if (arrowSchema == null) {
             throw CallStatus.NOT_FOUND
-                    .withDescription("Could not find Arrow schema for query")
+                    .withDescription(SCHEMA_NOT_FOUND_MESSAGE)
                     .toRuntimeException();
         }
 
@@ -693,6 +723,7 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
     }
 
     @Override
+    @SuppressWarnings("java:S3776")
     public void getStreamTables(FlightSql.CommandGetTables command,
             FlightProducer.CallContext context,
             FlightProducer.ServerStreamListener listener) {

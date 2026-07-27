@@ -68,6 +68,7 @@ public final class FlightScanBuilder implements ScanBuilder, SupportsPushDownV2F
      * @return - pushed aggregation
      */
     @Override
+    @SuppressWarnings("java:S3776")
     public boolean pushAggregation(Aggregation aggregation) {
         LOGGER.debug("{}.pushAggregation()", this.getClass().getName());
 

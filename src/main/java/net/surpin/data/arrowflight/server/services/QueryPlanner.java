@@ -13,16 +13,19 @@ import org.apache.arrow.flight.sql.impl.FlightSql;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import net.surpin.data.arrowflight.server.adapters.HostUtils;
@@ -32,6 +35,7 @@ import net.surpin.data.arrowflight.server.model.ExecutionReservationRequest;
 import net.surpin.data.arrowflight.server.model.FileAssignment;
 import net.surpin.data.arrowflight.server.model.HandleState;
 import net.surpin.data.arrowflight.server.model.ServerCapacity;
+import net.surpin.data.arrowflight.server.model.QueryPlan;
 
 import static java.util.UUID.randomUUID;
 
@@ -45,9 +49,31 @@ import net.surpin.data.arrowflight.server.LogUtil;
 public final class QueryPlanner {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(QueryPlanner.class);
+    private static final long FILE_PLAN_TTL_NANOS = TimeUnit.SECONDS.toNanos(30);
 
     private final ParquetAdapter parquetAdapter;
     private final ClusterService clusterService;
+    private final Map<String, CachedFilePlan> filePlanCache = new ConcurrentHashMap<>();
+
+    /**
+     * Stores immutable table file assignments until the inventory refresh deadline.
+     *
+     * @param files cached file assignments
+     * @param expiresAtNanos monotonic expiration deadline
+     */
+    private record CachedFilePlan(
+            Map<String, FileAssignment> files, long expiresAtNanos) {
+    }
+
+    /**
+     * Contains one validated view of live servers and their loads.
+     *
+     * @param serverUris live server URIs
+     * @param serverLoads current load by live server
+     */
+    private record ClusterSnapshot(
+            Set<String> serverUris, Map<String, Long> serverLoads) {
+    }
 
     /**
      * Creates QueryPlanner.
@@ -80,13 +106,25 @@ public final class QueryPlanner {
      */
     public List<FlightEndpoint> determineEndpoints(String query)
             throws IOException {
+        return plan(query).endpoints();
+    }
+
+    /**
+     * Plans endpoints and estimates Parquet input statistics for Spark.
+     *
+     * @param query SQL query
+     * @return endpoints with byte and row estimates
+     * @throws IOException on file-system or cluster metadata failure
+     */
+    public QueryPlan plan(String query) throws IOException {
         long t = LogUtil.mark();
         ParquetQueryParser parsed = ParquetQueryParser.parse(query);
         long tSv = LogUtil.mark();
-        Set<String> allServerUris = validatedServerUris();
+        ClusterSnapshot cluster = validatedCluster();
+        Set<String> allServerUris = cluster.serverUris();
         LogUtil.logTiming(tSv, "planning.validateServers", "servers=" + allServerUris.size());
         long tLoad = LogUtil.mark();
-        Map<String, Long> serverLoad = validatedServerLoad(allServerUris);
+        Map<String, Long> serverLoad = new HashMap<>(cluster.serverLoads());
         Map<String, ServerCapacity> capacities =
                 clusterService.getCapacities(allServerUris);
         LogUtil.logTiming(tLoad, "planning.serverLoads", "servers=" + serverLoad.size());
@@ -102,11 +140,14 @@ public final class QueryPlanner {
             endpoints = distributeEndpoints(
                     query, pathLocations, serverLoad, capacities);
         }
+        long totalBytes = pathLocations.values().stream()
+                .mapToLong(FileAssignment::size).sum();
+        long totalRecords = parquetAdapter.estimateRowCount(pathLocations);
         LogUtil.logTiming(t, "planning.determineEndpoints", "endpoints=" + endpoints.size() + " files=" + pathLocations.size());
-        return endpoints;
+        return new QueryPlan(endpoints, totalBytes, totalRecords);
     }
 
-    private Set<String> validatedServerUris() throws IOException {
+    private ClusterSnapshot validatedCluster() throws IOException {
         long t = LogUtil.mark();
         Map<String, Long> registry = clusterService.allServerLoads();
         if (registry.isEmpty()) {
@@ -123,23 +164,72 @@ public final class QueryPlanner {
             throw new IOException("Flight nodes have not published file inventories: " + missing);
         }
         LogUtil.logTiming(t, "planning.validateServers", "live=" + uris.size() + " total=" + registry.size());
-        return uris;
-    }
-
-    private Map<String, Long> validatedServerLoad(Set<String> serverUris) {
-        Map<String, Long> allLoads = clusterService.allServerLoads();
         Map<String, Long> serverLoad = new HashMap<>();
-        for (String uri : serverUris) {
-            Long load = allLoads.get(uri);
+        for (String uri : uris) {
+            Long load = registry.get(uri);
             serverLoad.put(uri, load != null ? load : 0L);
         }
-        return serverLoad;
+        return new ClusterSnapshot(Set.copyOf(uris), Map.copyOf(serverLoad));
     }
 
     private Map<String, FileAssignment> validatedPathLocations(
             ParquetQueryParser parsed, Set<String> allServerUris) throws IOException {
-        Map<String, FileAssignment> pathLocations = filterForQuery(
+        String cacheKey = sourceCacheKey(parsed);
+        long now = System.nanoTime();
+        CachedFilePlan cached = filePlanCache.get(cacheKey);
+        Map<String, FileAssignment> pathLocations;
+        boolean reusedCache = cached != null && cached.expiresAtNanos() > now;
+        if (reusedCache) {
+            pathLocations = cached.files();
+        } else {
+            pathLocations = loadFilePlan(parsed, cacheKey, now);
+        }
+        try {
+            validatePathLocations(pathLocations, parsed, allServerUris);
+        } catch (IOException e) {
+            if (!reusedCache) {
+                throw e;
+            }
+            filePlanCache.remove(cacheKey, cached);
+            pathLocations = loadFilePlan(parsed, cacheKey, System.nanoTime());
+            validatePathLocations(pathLocations, parsed, allServerUris);
+        }
+        return pathLocations;
+    }
+
+    /**
+     * Loads and caches file assignments for referenced tables.
+     *
+     * @param parsed parsed SQL query
+     * @param cacheKey normalized source-table key
+     * @param now current monotonic time
+     * @return immutable file assignments
+     */
+    private Map<String, FileAssignment> loadFilePlan(
+            ParquetQueryParser parsed, String cacheKey, long now) {
+        Map<String, FileAssignment> loaded = filterForQuery(
                 clusterService.fileLocations(), parsed);
+        Map<String, FileAssignment> immutable = Collections.unmodifiableMap(
+                new LinkedHashMap<>(loaded));
+        if (!immutable.isEmpty()) {
+            filePlanCache.put(cacheKey, new CachedFilePlan(
+                    immutable, now + FILE_PLAN_TTL_NANOS));
+        }
+        return immutable;
+    }
+
+    /**
+     * Validates cached assignments against current live cluster membership.
+     *
+     * @param pathLocations file assignments
+     * @param parsed parsed SQL query
+     * @param allServerUris live server URIs
+     * @throws IOException when files or required shard owners are unavailable
+     */
+    private static void validatePathLocations(
+            Map<String, FileAssignment> pathLocations,
+            ParquetQueryParser parsed, Set<String> allServerUris)
+            throws IOException {
         if (pathLocations.isEmpty()) {
             throw new IOException("No distributed Parquet files found for query: " + parsed);
         }
@@ -151,7 +241,6 @@ public final class QueryPlanner {
             }
         }
         requireShardCoverage(pathLocations, parsed, allServerUris);
-        return pathLocations;
     }
 
     private List<FlightEndpoint> joinEndpoints(String query,
@@ -196,6 +285,47 @@ public final class QueryPlanner {
                     serverAdditions.getOrDefault(entry.getKey(), 0L)));
         }
         return createEndpoints(plans);
+    }
+
+    /**
+     * Builds a stable cache key from the tables referenced by a query.
+     *
+     * @param parsed parsed SQL query
+     * @return normalized source-table key
+     */
+    private static String sourceCacheKey(ParquetQueryParser parsed) {
+        if (!parsed.isJoin) {
+            return normalizedTable(parsed.schema, parsed.table);
+        }
+        return parsed.joinTables.stream()
+                .map(table -> normalizedTable(table.schema(), table.table()))
+                .sorted()
+                .collect(Collectors.joining("|"));
+    }
+
+    /**
+     * Normalizes a schema and table name for metadata caching.
+     *
+     * @param schema schema name
+     * @param table table name
+     * @return normalized qualified table name
+     */
+    private static String normalizedTable(String schema, String table) {
+        return ((schema == null ? "" : schema) + "." + table)
+                .toLowerCase(Locale.ROOT);
+    }
+
+    /**
+     * Checks whether any shard can be assigned to more than one live server.
+     *
+     * @param files file assignments
+     * @param liveServers live server URIs
+     * @return true when distributed load tracking can affect placement
+     */
+    private static boolean hasReplicatedFiles(
+            Map<String, FileAssignment> files, Set<String> liveServers) {
+        return files.values().stream().anyMatch(file ->
+                file.hosts().stream().filter(liveServers::contains).limit(2).count() > 1);
     }
 
     private static Map<String, FileAssignment> filterForQuery(
@@ -283,12 +413,11 @@ public final class QueryPlanner {
     private EndpointPlan endpointPlan(String serverUri, List<String> filePaths,
             String query, long bytes) {
         URI parsedUri = URI.create(serverUri);
-        ByteString handle = ByteString.copyFrom(
-                randomUUID().toString().getBytes(StandardCharsets.UTF_8));
-        HandleState state = new HandleState(
-                query, filePaths.toArray(new String[0]), serverUri, bytes, null);
+        String reservationId = randomUUID().toString();
+        HandleState state = HandleState.forServerFiles(
+                query, filePaths.toArray(new String[0]), serverUri, bytes, true);
         return new EndpointPlan(
-                serverUri, new Location(parsedUri), handle, state);
+                serverUri, new Location(parsedUri), reservationId, state);
     }
 
     /**
@@ -301,7 +430,7 @@ public final class QueryPlanner {
         long started = LogUtil.mark();
         List<ExecutionReservationRequest> requests = plans.stream()
                 .map(plan -> new ExecutionReservationRequest(
-                        plan.serverUri(), plan.handle().toStringUtf8(),
+                        plan.serverUri(), plan.reservationId(),
                         plan.state()))
                 .toList();
         clusterService.reserveExecutions(requests);
@@ -311,9 +440,15 @@ public final class QueryPlanner {
         try {
             List<FlightEndpoint> endpoints = new ArrayList<>(plans.size());
             for (EndpointPlan plan : plans) {
+                HandleState reservedState = new HandleState(
+                        plan.state().query(), plan.state().filePaths(),
+                        plan.serverUri(), plan.state().bytes(),
+                        plan.reservationId(), plan.state().loadTracked());
+                ByteString handle = ByteString.copyFrom(
+                        clusterService.createEndpointHandle(reservedState));
                 Ticket ticket = new Ticket(Any.pack(
                         FlightSql.TicketStatementQuery.newBuilder()
-                                .setStatementHandle(plan.handle()).build())
+                                .setStatementHandle(handle).build())
                         .toByteArray());
                 endpoints.add(new FlightEndpoint(ticket, plan.location()));
             }
@@ -482,7 +617,7 @@ public final class QueryPlanner {
     private record EndpointPlan(
             String serverUri,
             Location location,
-            ByteString handle,
+            String reservationId,
             HandleState state) {
     }
 }
