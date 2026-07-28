@@ -24,14 +24,14 @@ stages:
 build-server:
   stage: compile
   script:
-    - mvn compile -P server $MAVEN_CLI_OPTS
+    - mvn compile -pl server -am $MAVEN_CLI_OPTS
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
 
 build-client:
   stage: compile
   script:
-    - mvn compile -P client $MAVEN_CLI_OPTS
+    - mvn compile -pl client-core,spark-connector -am $MAVEN_CLI_OPTS
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
 
@@ -49,7 +49,7 @@ integration:
     - mvn test -P integration $MAVEN_CLI_OPTS
   artifacts:
     reports:
-      junit: target/surefire-reports/TEST-*.xml
+      junit: '**/target/surefire-reports/TEST-*.xml'
 
 coverage:
   stage: coverage
@@ -58,7 +58,7 @@ coverage:
     - |
       python3 <<'PYEOF'
       import xml.etree.ElementTree as ET
-      r = ET.parse('target/site/jacoco/jacoco.xml').getroot()
+      r = ET.parse('coverage/target/site/jacoco-aggregate/jacoco.xml').getroot()
       c = r.find('.//counter[@type="INSTRUCTION"]')
       covered = int(c.get('covered'))
       missed = int(c.get('missed'))
@@ -68,9 +68,9 @@ coverage:
   allow_failure: true
   artifacts:
     paths:
-      - target/site/jacoco/
+      - coverage/target/site/jacoco-aggregate/
     reports:
-      junit: target/surefire-reports/TEST-*.xml
+      junit: '**/target/surefire-reports/TEST-*.xml'
   coverage: '/JaCoCo coverage:\s*(\d+\.\d+)%/'
 
 pages:
@@ -79,7 +79,7 @@ pages:
     - coverage
   script:
     - mkdir -p public/jacoco
-    - cp -r target/site/jacoco/* public/jacoco/
+    - cp -r coverage/target/site/jacoco-aggregate/* public/jacoco/
   artifacts:
     paths:
       - public/

@@ -22,7 +22,7 @@ jobs:
           java-version: 21
           distribution: temurin
           cache: maven
-      - run: mvn compile -P server --batch-mode --errors --fail-at-end
+      - run: mvn compile -pl server -am --batch-mode --errors --fail-at-end
 
   build-client:
     if: github.event_name != 'push'
@@ -34,7 +34,7 @@ jobs:
           java-version: 21
           distribution: temurin
           cache: maven
-      - run: mvn compile -P client --batch-mode --errors --fail-at-end
+      - run: mvn compile -pl client-core,spark-connector -am --batch-mode --errors --fail-at-end
 
   lint:
     if: github.event_name != 'push'
@@ -77,7 +77,7 @@ jobs:
         uses: cicirello/jacoco-badge-generator@v2
         with:
           generate-branches-badge: true
-          badges-directory: target/site/jacoco
+          badges-directory: coverage/target/site/jacoco-aggregate
           coverage-label: JaCoCo
         if: always()
 
@@ -86,14 +86,14 @@ jobs:
         if: always()
         with:
           name: jacoco-report
-          path: target/site/jacoco/
+          path: coverage/target/site/jacoco-aggregate/
           if-no-files-found: warn
           retention-days: 14
 
       - name: PR coverage comment
         uses: madrapps/jacoco-report@v1.7
         with:
-          paths: target/site/jacoco/jacoco.xml
+          paths: coverage/target/site/jacoco-aggregate/jacoco.xml
           token: ${{ secrets.GITHUB_TOKEN }}
           min-coverage-overall: 80
           min-coverage-changed-files: 80
@@ -106,16 +106,16 @@ jobs:
         continue-on-error: true
         if: always()
         with:
-          file: target/site/jacoco/jacoco.xml
+          file: coverage/target/site/jacoco-aggregate/jacoco.xml
           format: jacoco
-          base-path: /src/main/java
+          base-path: /
 
       - name: Deploy JaCoCo report to gh-pages (main)
         uses: peaceiris/actions-gh-pages@v4
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./target/site/jacoco
+          publish_dir: ./coverage/target/site/jacoco-aggregate
           destination_dir: jacoco
 
       - name: Deploy JaCoCo report to gh-pages (PR)
@@ -123,6 +123,5 @@ jobs:
         if: github.event_name == 'pull_request'
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./target/site/jacoco
+          publish_dir: ./coverage/target/site/jacoco-aggregate
           destination_dir: pr-${{ github.event.number }}
-

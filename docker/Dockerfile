@@ -30,16 +30,23 @@ RUN chmod +x configure_apt_mirror.sh download_hadoop.sh \
 FROM maven:3.9.9-eclipse-temurin-21 AS java-builder
 WORKDIR /src
 COPY pom.xml checkstyle.xml spotbugs-exclude.xml ./
+COPY client-core/pom.xml ./client-core/pom.xml
+COPY spark-connector/pom.xml ./spark-connector/pom.xml
+COPY server/pom.xml ./server/pom.xml
+COPY tools/pom.xml ./tools/pom.xml
+COPY coverage/pom.xml ./coverage/pom.xml
 RUN mvn -q dependency:go-offline dependency:resolve-plugins
-COPY src/ ./src/
-RUN mvn -q -DskipTests package
+COPY client-core/src/ ./client-core/src/
+COPY spark-connector/src/ ./spark-connector/src/
+COPY server/src/ ./server/src/
+RUN mvn -q -pl server -am -Dmaven.test.skip=true package
 
 # Stage 5: Final runtime image
 FROM eclipse-temurin:21-jre-jammy
 ARG UBUNTU_MIRROR
 
 ENV APP_HOME=/opt/arrowflight
-ENV APP_JAR=${APP_HOME}/hadoop-arrow-flight-1.0-SNAPSHOT.jar
+ENV APP_JAR=${APP_HOME}/arrowflight-server-1.0-SNAPSHOT.jar
 ENV SPARK_HOME=/opt/spark
 ENV HADOOP_HOME=/opt/hadoop
 ENV HADOOP_CONF_DIR=${HADOOP_HOME}/etc/hadoop
@@ -48,7 +55,7 @@ ENV HADOOP_CONF_DIR=${HADOOP_HOME}/etc/hadoop
 COPY --from=duckdb-builder /opt/duckdb-extensions /opt/duckdb-extensions
 COPY --from=spark-downloader /opt/spark /opt/spark
 COPY --from=hadoop-downloader /opt/hadoop /opt/hadoop
-COPY --from=java-builder /src/target/hadoop-arrow-flight-1.0-SNAPSHOT.jar ${APP_JAR}
+COPY --from=java-builder /src/server/target/arrowflight-server-1.0-SNAPSHOT.jar ${APP_JAR}
 
 # FIX 1: Установить runtime-зависимости для libhdfs3 (они были в рабочем Dockerfile, но пропали здесь!)
 # Без них libhdfs3.so не загрузится, и DuckDB не поймет протокол hdfs://

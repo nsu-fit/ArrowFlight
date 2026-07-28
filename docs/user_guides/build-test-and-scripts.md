@@ -59,7 +59,7 @@ mvn -q clean package
 The resulting shaded jar:
 
 ```text
-target/hadoop-arrow-flight-1.0-SNAPSHOT.jar
+server/target/arrowflight-server-1.0-SNAPSHOT.jar
 ```
 
 ## Unit Tests
@@ -121,7 +121,7 @@ mvn -q -DexcludedGroups="" -Dgroups=perf -Dtest=ArrowFlightPerfTest \
 Main config file:
 
 ```text
-src/main/resources/arrowflight.properties
+server/src/main/resources/arrowflight.properties
 ```
 
 Key parameters:

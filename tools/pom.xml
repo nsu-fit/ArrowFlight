@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.example</groupId>
+        <artifactId>hadoop-arrow-flight</artifactId>
+        <version>1.0-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+    <artifactId>arrowflight-tools</artifactId>
+    <name>ArrowFlight Tools</name>
+
+    <properties>
+        <spotbugs.skip>false</spotbugs.skip>
+    </properties>
+
+    <dependencies>
+        <dependency><groupId>com.example</groupId><artifactId>arrowflight-client-core</artifactId></dependency>
+        <dependency><groupId>com.example</groupId><artifactId>arrowflight-spark-connector</artifactId></dependency>
+        <dependency><groupId>com.example</groupId><artifactId>arrowflight-server</artifactId></dependency>
+        <dependency><groupId>commons-cli</groupId><artifactId>commons-cli</artifactId></dependency>
+        <dependency><groupId>org.apache.arrow</groupId><artifactId>flight-sql</artifactId></dependency>
+        <dependency><groupId>org.apache.arrow</groupId><artifactId>arrow-memory-netty</artifactId></dependency>
+        <dependency><groupId>org.apache.hadoop</groupId><artifactId>hadoop-client</artifactId><scope>provided</scope></dependency>
+        <dependency><groupId>org.apache.spark</groupId><artifactId>spark-core_2.12</artifactId><scope>provided</scope></dependency>
+        <dependency><groupId>org.apache.spark</groupId><artifactId>spark-sql_2.12</artifactId><scope>provided</scope></dependency>
+    </dependencies>
+</project>

@@ -18,6 +18,22 @@ High-performance **Arrow Flight SQL** server for analytical queries on Parquet d
 
 ---
 
+## Modules
+
+The Maven reactor enforces the first set of physical architecture boundaries:
+
+| Module | Responsibility |
+| --- | --- |
+| `client-core` | Flight SQL client API, client models, query and write contracts |
+| `spark-connector` | Spark DataSource V1/V2 integration and service registration |
+| `server` | Executable Flight SQL server, query execution, storage and cluster adapters |
+| `tools` | Debug CLIs, data generation and benchmark utilities |
+| `coverage` | Reactor-wide JaCoCo report aggregation |
+
+`spark-connector` depends on `client-core`; production server code is independent from both client modules. The legacy client model still exposes some Spark types, so `client-core` temporarily retains Spark as a provided dependency.
+
+---
+
 ## Quick Start (Local)
 
 ```bash
@@ -28,8 +44,8 @@ cd ArrowFlight
 ./mvnw package -DskipTests
 
 # Start a single-node server with test data
-java -jar target/hadoop-arrow-flight-1.0-SNAPSHOT.jar \
-    --data-dir src/test/resources/test_db \
+java -jar server/target/arrowflight-server-1.0-SNAPSHOT.jar \
+    --data-dir server/src/test/resources/test_db \
     --localhost 127.0.0.1 \
     --port 32010 \
     --hosts 127.0.0.1
@@ -165,7 +181,7 @@ Supports exponential backoff retry, connection pooling, TLS, BasicAuth and Beare
 ## CI / CD
 
 PR checks (`.github/workflows/ci.yml`) enforce on every pull request:
-- `build-server` / `build-client` — compilation via `mvn compile -P server` / `-P client`
+- `build-server` / `build-client` — compilation via `mvn compile -pl server -am` / `mvn compile -pl client-core,spark-connector -am`
 - `lint` — Checkstyle violations and SpotBugs errors via `mvn compile checkstyle:check spotbugs:check`
 - `integration` — integration + spark + smoke tests via `mvn test -P integration`
 - `coverage` — JaCoCo coverage with per-file table in PR comments and detailed HTML report on GitHub Pages
