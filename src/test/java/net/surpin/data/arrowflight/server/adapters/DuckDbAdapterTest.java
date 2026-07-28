@@ -102,29 +102,18 @@ class DuckDbAdapterTest {
 
     /** Verifies polling observes readiness when Arrow never invokes its callback. */
     @Test
-    void listenerReadinessWithoutCallbackIsPolled() throws Exception {
+    void listenerReadinessWithoutCallbackIsPolled() {
         FlightProducer.ServerStreamListener listener =
                 mock(FlightProducer.ServerStreamListener.class);
-        AtomicBoolean ready = new AtomicBoolean();
-        CountDownLatch handlerRegistered = new CountDownLatch(1);
-        when(listener.isReady()).thenAnswer(invocation -> ready.get());
-        doAnswer(invocation -> {
-            handlerRegistered.countDown();
-            return null;
-        }).when(listener).setOnReadyHandler(any(Runnable.class));
+        AtomicInteger readinessChecks = new AtomicInteger();
+        when(listener.isReady()).thenAnswer(invocation ->
+                readinessChecks.getAndIncrement() > 0);
 
-        ExecutorService executor = Executors.newSingleThreadExecutor();
-        try {
-            Future<Void> result = executor.submit(() -> {
-                DuckDbAdapter.awaitListenerReady(listener, 500);
-                return null;
-            });
-            assertTrue(handlerRegistered.await(1, TimeUnit.SECONDS));
-            ready.set(true);
-            assertNull(result.get(1, TimeUnit.SECONDS));
-        } finally {
-            executor.shutdownNow();
-        }
+        assertTimeoutPreemptively(Duration.ofSeconds(1), () ->
+                assertTrue(DuckDbAdapter.awaitListenerReady(listener, 500)));
+
+        verify(listener).setOnReadyHandler(any(Runnable.class));
+        assertTrue(readinessChecks.get() >= 2);
     }
 
     /** Verifies a readiness signal received before waiting remains observable. */
