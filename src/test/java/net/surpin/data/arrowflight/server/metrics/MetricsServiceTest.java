@@ -32,6 +32,9 @@ class MetricsServiceTest {
         }
         try (MetricsService service = new MetricsService(0)) {
             service.start();
+            HttpResponse<String> before = get(service.port(), "/metrics");
+            MetricsService.recordFlightStream(ExecutionPath.DUCKDB_SCAN,
+                    20_000_000L, 5_000_000L, 2_000_000L, 1024L, 2L, 4L);
             HttpResponse<String> response = get(service.port(), "/metrics");
 
             assertEquals(200, response.statusCode());
@@ -43,6 +46,22 @@ class MetricsServiceTest {
                     "arrowflight_parquet_query_failures_total{path=\"duckdb-scan\"}"));
             assertTrue(response.body().contains(
                     "arrowflight_parquet_logical_input_bytes_total{path=\"duckdb-scan\"}"));
+            assertTrue(response.body().contains(
+                    "arrowflight_flight_stream_duration_seconds_count{path=\"duckdb-scan\"}"));
+            assertTrue(response.body().contains(
+                    "arrowflight_flight_ttfb_seconds_count{path=\"duckdb-scan\"}"));
+            assertTrue(response.body().contains(
+                    "arrowflight_flight_backpressure_seconds_total{path=\"duckdb-scan\"}"));
+            assertTrue(response.body().contains(
+                    "arrowflight_flight_result_bytes_total{path=\"duckdb-scan\"}"));
+            assertEquals(2.0, metricValue(response.body(),
+                    "arrowflight_flight_result_batches_total{path=\"duckdb-scan\"}")
+                    - metricValue(before.body(),
+                    "arrowflight_flight_result_batches_total{path=\"duckdb-scan\"}"));
+            assertEquals(4.0, metricValue(response.body(),
+                    "arrowflight_flight_result_rows_total{path=\"duckdb-scan\"}")
+                    - metricValue(before.body(),
+                    "arrowflight_flight_result_rows_total{path=\"duckdb-scan\"}"));
             assertTrue(response.body().contains("arrowflight_jvm_threads_live"));
         }
     }
@@ -76,5 +95,20 @@ class MetricsServiceTest {
                 URI.create("http://127.0.0.1:" + port + path)).GET().build();
         return HttpClient.newHttpClient().send(request,
                 HttpResponse.BodyHandlers.ofString());
+    }
+
+    /**
+     * Extracts one Prometheus sample value from a scrape payload.
+     *
+     * @param metrics Prometheus text payload
+     * @param metricName complete sample name including labels
+     * @return numeric sample value
+     */
+    private static double metricValue(String metrics, String metricName) {
+        return metrics.lines()
+                .filter(line -> line.startsWith(metricName + " "))
+                .findFirst()
+                .map(line -> Double.parseDouble(line.substring(metricName.length() + 1)))
+                .orElse(0.0);
     }
 }

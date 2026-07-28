@@ -174,6 +174,34 @@
       ],
       "title": "Container network I/O",
       "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "TTFB includes server-side production before the first result batch. Stream duration overlaps production and delivery; it is not wire time alone.",
+      "fieldConfig": {"defaults": {"custom": {"drawStyle": "line", "fillOpacity": 8, "lineWidth": 1, "showPoints": "never"}, "min": 0, "unit": "s"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 44},
+      "id": 15,
+      "options": {"legend": {"calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "right", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [
+        {"expr": "histogram_quantile(0.95, sum by (le, path) (rate(arrowflight_flight_ttfb_seconds_bucket[$__rate_interval])))", "legendFormat": "p95 TTFB {{path}}", "refId": "A"},
+        {"expr": "histogram_quantile(0.95, sum by (le, path) (rate(arrowflight_flight_stream_duration_seconds_bucket[$__rate_interval])))", "legendFormat": "p95 stream {{path}}", "refId": "B"}
+      ],
+      "title": "Flight result-delivery latency",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "description": "Backpressure is server time blocked by Flight flow control. Compare it with container TX/RX; it can also be caused by a slow Spark consumer.",
+      "fieldConfig": {"defaults": {"custom": {"drawStyle": "line", "fillOpacity": 8, "lineWidth": 1, "showPoints": "never"}, "min": 0, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 44},
+      "id": 16,
+      "options": {"legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "right", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [
+        {"expr": "sum by (path) (rate(arrowflight_flight_result_bytes_total[$__rate_interval]))", "legendFormat": "Arrow {{path}}", "refId": "A"},
+        {"expr": "sum by (path) (rate(arrowflight_flight_backpressure_seconds_total[$__rate_interval]))", "legendFormat": "backpressure s/s {{path}}", "refId": "B"}
+      ],
+      "title": "Flight throughput and backpressure",
+      "type": "timeseries"
     }
   ],
   "refresh": "2s",

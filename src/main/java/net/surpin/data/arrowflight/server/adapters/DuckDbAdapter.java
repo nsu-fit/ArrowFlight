@@ -32,7 +32,9 @@ import java.util.concurrent.TimeUnit;
 
 import net.surpin.data.arrowflight.server.services.ParquetQueryParser;
 import net.surpin.data.arrowflight.server.model.AppConfig;
+import net.surpin.data.arrowflight.server.model.ExecutionPath;
 import net.surpin.data.arrowflight.server.LogUtil;
+import net.surpin.data.arrowflight.server.metrics.MetricsService;
 
 /**
  * Manages DuckDB connection pool and SQL execution.
@@ -219,6 +221,22 @@ public final class DuckDbAdapter implements AutoCloseable {
     public void streamSql(BufferAllocator allocator, String duckSql,
             org.apache.arrow.flight.FlightProducer.ServerStreamListener listener,
             boolean startListener) throws Exception {
+        streamSql(allocator, duckSql, listener, startListener, ExecutionPath.UNKNOWN);
+    }
+
+    /**
+     * Streams DuckDB SQL query results while recording Flight delivery metrics.
+     *
+     * @param allocator Arrow buffer allocator
+     * @param duckSql DuckDB SQL query
+     * @param listener Flight stream listener
+     * @param startListener whether to call listener.start()
+     * @param executionPath runtime execution path
+     * @throws Exception on query or stream failure
+     */
+    public void streamSql(BufferAllocator allocator, String duckSql,
+            org.apache.arrow.flight.FlightProducer.ServerStreamListener listener,
+            boolean startListener, ExecutionPath executionPath) throws Exception {
         String qid = LogUtil.qid();
         long t = LogUtil.mark();
         long streamStartNanos = System.nanoTime();
@@ -227,6 +245,7 @@ public final class DuckDbAdapter implements AutoCloseable {
         Connection conn = threadConn.get();
         long firstBatchNanos = -1;
         long backpressureNanos = 0;
+        long resultBytes = 0;
         try (Statement stmt = conn.createStatement();
                 org.duckdb.DuckDBResultSet drs = (org.duckdb.DuckDBResultSet) stmt.executeQuery(duckSql);
                 ArrowReader reader = (ArrowReader) drs.arrowExportStream(allocator, batchSize)) {
@@ -253,6 +272,8 @@ public final class DuckDbAdapter implements AutoCloseable {
                 long bpStart = System.nanoTime();
                 listenerReadiness.await();
                 backpressureNanos += System.nanoTime() - bpStart;
+                resultBytes += duckRoot.getFieldVectors().stream()
+                        .mapToLong(vector -> vector.getBufferSize()).sum();
                 listener.putNext();
                 batchesSent++;
                 rowsSent += rows;
@@ -273,6 +294,9 @@ public final class DuckDbAdapter implements AutoCloseable {
                     firstBatchNanos >= 0 ? formatDuration(firstBatchNanos) : "N/A",
                     backpressureNanos / 1_000_000,
                     LogUtil.elapsedNanos(streamStartNanos), listener.isCancelled());
+            MetricsService.recordFlightStream(executionPath,
+                    System.nanoTime() - streamStartNanos, firstBatchNanos, backpressureNanos,
+                    resultBytes, batchesSent, rowsSent);
         }
     }
 

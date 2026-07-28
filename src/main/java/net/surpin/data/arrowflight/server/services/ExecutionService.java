@@ -150,7 +150,8 @@ public final class ExecutionService {
                 LogUtil.qid(), LogUtil.node(), resolvedUris.size());
         String duckSql = DuckDbAdapter.buildSelectSql(parsedQuery,
                 DuckDbAdapter.readParquetFromClause(ducksDbPaths(resolvedUris)));
-        duckDbAdapter.streamSql(allocator, duckSql, listener, startListener);
+        duckDbAdapter.streamSql(allocator, duckSql, listener, startListener,
+                ExecutionPath.DUCKDB_SCAN);
     }
 
     /**
@@ -253,7 +254,8 @@ public final class ExecutionService {
 
         String duckSql = DuckDbAdapter.buildDuckSqlWithFilter(pq,
                 DuckDbAdapter.readParquetFromClause(ducksDbPaths(resolvedUris)), false);
-        duckDbAdapter.streamSql(allocator, duckSql, listener, startListener);
+        duckDbAdapter.streamSql(allocator, duckSql, listener, startListener,
+                ExecutionPath.DUCKDB_AGGREGATION);
     }
 
     // ── DuckDB join execution ────────────────────────────────────────────
@@ -304,7 +306,8 @@ public final class ExecutionService {
                 registeredAliases.add(jt.alias());
             }
 
-            duckDbAdapter.streamSql(allocator, pq.duckDbSql, listener, startListener);
+            duckDbAdapter.streamSql(allocator, pq.duckDbSql, listener, startListener,
+                    ExecutionPath.DUCKDB_JOIN);
         } finally {
             long tDrop = LogUtil.mark();
             try (Statement stmt = conn.createStatement()) {

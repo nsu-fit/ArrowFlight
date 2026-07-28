@@ -33,6 +33,8 @@ public final class MetricsService implements AutoCloseable {
     };
     private static final ConcurrentHashMap<String, QueryMetrics> QUERY_METRICS =
             new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, FlightMetrics> FLIGHT_METRICS =
+            new ConcurrentHashMap<>();
     private static final AtomicLong ACTIVE_QUERIES = new AtomicLong();
 
     private final HttpServer server;
@@ -81,6 +83,38 @@ public final class MetricsService implements AutoCloseable {
     public static QueryObservation observeQuery(long logicalBytes) {
         ACTIVE_QUERIES.incrementAndGet();
         return new QueryObservation(Math.max(0L, logicalBytes));
+    }
+
+    /**
+     * Records one completed Flight result stream.
+     *
+     * @param path runtime execution path
+     * @param durationNanos elapsed time from stream creation to completion
+     * @param firstBatchNanos elapsed time to the first non-empty batch, or -1
+     * @param backpressureNanos time blocked by Flight flow control
+     * @param resultBytes logical Arrow buffer bytes handed to Flight
+     * @param batches number of non-empty Arrow batches
+     * @param rows number of result rows
+     */
+    public static void recordFlightStream(ExecutionPath path, long durationNanos,
+            long firstBatchNanos, long backpressureNanos, long resultBytes,
+            long batches, long rows) {
+        FlightMetrics values = FLIGHT_METRICS.computeIfAbsent(
+                Objects.requireNonNull(path, "path").label(), ignored -> new FlightMetrics());
+        long elapsed = Math.max(0L, durationNanos);
+        values.streamCount.incrementAndGet();
+        values.streamDurationNanos.addAndGet(elapsed);
+        values.backpressureNanos.addAndGet(Math.max(0L, backpressureNanos));
+        values.resultBytes.addAndGet(Math.max(0L, resultBytes));
+        values.batches.addAndGet(Math.max(0L, batches));
+        values.rows.addAndGet(Math.max(0L, rows));
+        recordHistogram(values.streamDurationBuckets, elapsed);
+        if (firstBatchNanos >= 0L) {
+            long ttfb = Math.max(0L, firstBatchNanos);
+            values.firstBatchNanos.addAndGet(ttfb);
+            values.firstBatchCount.incrementAndGet();
+            recordHistogram(values.firstBatchBuckets, ttfb);
+        }
     }
 
     @Override
@@ -144,6 +178,7 @@ public final class MetricsService implements AutoCloseable {
         metric(metrics, "arrowflight_parquet_queries_active", METRIC_TYPE_GAUGE,
                 "Currently executing Parquet queries", ACTIVE_QUERIES.get());
         appendQueryMetrics(metrics);
+        appendFlightMetrics(metrics);
 
         return metrics.toString();
     }
@@ -219,6 +254,79 @@ public final class MetricsService implements AutoCloseable {
             sample(metrics, "arrowflight_parquet_query_duration_seconds_count" + labels,
                     values.count.get());
         });
+    }
+
+    /**
+     * Appends Flight result-delivery metrics.
+     *
+     * @param metrics destination payload
+     */
+    private static void appendFlightMetrics(StringBuilder metrics) {
+        helpType(metrics, "arrowflight_flight_stream_duration_seconds", "histogram",
+                "Time to produce and hand off Flight result streams");
+        helpType(metrics, "arrowflight_flight_ttfb_seconds", "histogram",
+                "Time to the first non-empty Flight batch");
+        helpType(metrics, "arrowflight_flight_backpressure_seconds_total", METRIC_TYPE_COUNTER,
+                "Time blocked waiting for Flight flow control");
+        helpType(metrics, "arrowflight_flight_result_bytes_total", METRIC_TYPE_COUNTER,
+                "Logical Arrow buffer bytes handed to Flight");
+        helpType(metrics, "arrowflight_flight_result_batches_total", METRIC_TYPE_COUNTER,
+                "Non-empty Arrow batches handed to Flight");
+        helpType(metrics, "arrowflight_flight_result_rows_total", METRIC_TYPE_COUNTER,
+                "Rows handed to Flight");
+        FLIGHT_METRICS.forEach((path, values) -> {
+            String labels = "{path=\"" + path + "\"}";
+            appendHistogram(metrics, "arrowflight_flight_stream_duration_seconds", labels,
+                    values.streamDurationBuckets, values.streamDurationNanos,
+                    values.streamCount.get());
+            appendHistogram(metrics, "arrowflight_flight_ttfb_seconds", labels,
+                    values.firstBatchBuckets, values.firstBatchNanos,
+                    values.firstBatchCount.get());
+            sample(metrics, "arrowflight_flight_backpressure_seconds_total" + labels,
+                    seconds(values.backpressureNanos.get()));
+            sample(metrics, "arrowflight_flight_result_bytes_total" + labels,
+                    values.resultBytes.get());
+            sample(metrics, "arrowflight_flight_result_batches_total" + labels,
+                    values.batches.get());
+            sample(metrics, "arrowflight_flight_result_rows_total" + labels, values.rows.get());
+        });
+    }
+
+    /**
+     * Appends one Prometheus duration histogram.
+     *
+     * @param metrics destination payload
+     * @param name metric family name
+     * @param labels path label set
+     * @param buckets cumulative bucket values
+     * @param durationNanos total observed duration
+     * @param count number of observations
+     */
+    private static void appendHistogram(StringBuilder metrics, String name, String labels,
+            AtomicLongArray buckets, AtomicLong durationNanos, long count) {
+        for (int i = 0; i < DURATION_BUCKETS.length; i++) {
+            sample(metrics, name + "_bucket" + labels.substring(0, labels.length() - 1)
+                    + ",le=\"" + decimal(DURATION_BUCKETS[i]) + "\"}", buckets.get(i));
+        }
+        sample(metrics, name + "_bucket" + labels.substring(0, labels.length() - 1)
+                + ",le=\"+Inf\"}", count);
+        sample(metrics, name + "_sum" + labels, seconds(durationNanos.get()));
+        sample(metrics, name + "_count" + labels, count);
+    }
+
+    /**
+     * Records a duration in all applicable histogram buckets.
+     *
+     * @param buckets bucket counters
+     * @param durationNanos observed duration
+     */
+    private static void recordHistogram(AtomicLongArray buckets, long durationNanos) {
+        double durationSeconds = seconds(durationNanos);
+        for (int i = 0; i < DURATION_BUCKETS.length; i++) {
+            if (durationSeconds <= DURATION_BUCKETS[i]) {
+                buckets.incrementAndGet(i);
+            }
+        }
     }
 
     /**
@@ -355,6 +463,24 @@ public final class MetricsService implements AutoCloseable {
         private final AtomicLong logicalBytes = new AtomicLong();
         private final AtomicLong durationNanos = new AtomicLong();
         private final AtomicLongArray durationBuckets =
+                new AtomicLongArray(DURATION_BUCKETS.length);
+    }
+
+    /**
+     * Stores cumulative Flight result-delivery metrics for one execution path.
+     */
+    private static final class FlightMetrics {
+        private final AtomicLong streamCount = new AtomicLong();
+        private final AtomicLong streamDurationNanos = new AtomicLong();
+        private final AtomicLong firstBatchNanos = new AtomicLong();
+        private final AtomicLong firstBatchCount = new AtomicLong();
+        private final AtomicLong backpressureNanos = new AtomicLong();
+        private final AtomicLong resultBytes = new AtomicLong();
+        private final AtomicLong batches = new AtomicLong();
+        private final AtomicLong rows = new AtomicLong();
+        private final AtomicLongArray streamDurationBuckets =
+                new AtomicLongArray(DURATION_BUCKETS.length);
+        private final AtomicLongArray firstBatchBuckets =
                 new AtomicLongArray(DURATION_BUCKETS.length);
     }
 }

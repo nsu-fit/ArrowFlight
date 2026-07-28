@@ -215,23 +215,35 @@ public final class Client implements AutoCloseable {
             FlightEndpoint fep = new FlightEndpoint(new Ticket(ep.getTicket()), Arrays.stream(ep.getURIs()).map(Location::new).toArray(Location[]::new));
             int batches = 0;
             long rows = 0;
+            long waitNanos = 0;
+            long consumeNanos = 0;
             try (FlightStream stream = this.openStream(fep)) {
                 VectorSchemaRoot root = stream.getRoot();
-                while (stream.next()) {
+                while (true) {
+                    long waitStartNanos = System.nanoTime();
+                    boolean hasBatch = stream.next();
+                    waitNanos += System.nanoTime() - waitStartNanos;
+                    if (!hasBatch) {
+                        break;
+                    }
                     batches++;
                     rows += root.getRowCount();
                     if (batches == 1) {
                         LOGGER.debug("node={} client=ttfB batchRowCount={} elapsed={}",
                                 NODE, root.getRowCount(), LogUtil.elapsedNanos(startNanos));
                     }
+                    long consumeStartNanos = System.nanoTime();
                     boolean shouldContinue = callback.onBatch(root, fields);
+                    consumeNanos += System.nanoTime() - consumeStartNanos;
                     if (!shouldContinue) {
                         break;
                     }
                 }
             }
-            LOGGER.debug("node={} client=fetchStreamingCompleted batches={} rows={} elapsed={}",
-                    NODE, batches, rows, LogUtil.elapsedNanos(startNanos));
+            LOGGER.debug("node={} client=fetchStreamingCompleted batches={} rows={} elapsed={} waitMs={} consumeMs={}",
+                    NODE, batches, rows, LogUtil.elapsedNanos(startNanos),
+                    TimeUnit.NANOSECONDS.toMillis(waitNanos),
+                    TimeUnit.NANOSECONDS.toMillis(consumeNanos));
             return null;
         }, "fetchStreaming");
     }
