@@ -317,94 +317,10 @@ cleanup_generated_config() {
   done
 }
 
-tpch_query_weights() {
-  local normalized="${QUERY_SET,,}"
-  normalized="${normalized// /}"
-
-  local weights=()
-  local selected=()
-  for _ in $(seq 1 22); do
-    weights+=(0)
-  done
-
-  if [[ "${normalized}" == "all" ]]; then
-    normalized="$(seq -s, 1 22)"
-  fi
-
-  IFS=',' read -ra tokens <<< "${normalized}"
-  for token in "${tokens[@]}"; do
-    token="${token#q}"
-    if [[ -z "${token}" || ! "${token}" =~ ^[0-9]+$ ]]; then
-      echo "Bad TPC-H query selector: ${QUERY_SET}" >&2
-      exit 2
-    fi
-
-    local query_id=$((10#${token}))
-    if (( query_id < 1 || query_id > 22 )); then
-      echo "TPC-H query must be between q1 and q22: q${query_id}" >&2
-      exit 2
-    fi
-
-    selected+=("${query_id}")
-  done
-
-  local count="${#selected[@]}"
-  local base=$((100 / count))
-  local rest=$((100 - base * count))
-  local index=0
-  for query_id in "${selected[@]}"; do
-    local value="${base}"
-    if (( index < rest )); then
-      value=$((value + 1))
-    fi
-    weights[$((query_id - 1))]="${value}"
-    index=$((index + 1))
-  done
-
-  join_by_comma "${weights[@]}"
-}
-
-tpcds_query_weights() {
-  local normalized="${QUERY_SET,,}"
-  normalized="${normalized// /}"
-
-  local weights=()
-  local selected=()
-  for _ in $(seq 1 99); do
-    weights+=(0)
-  done
-
-  IFS=',' read -ra tokens <<< "${normalized}"
-  for token in "${tokens[@]}"; do
-    token="${token#q}"
-    if [[ -z "${token}" || ! "${token}" =~ ^[0-9]+$ ]]; then
-      echo "Bad TPC-DS query selector: ${QUERY_SET}" >&2
-      exit 2
-    fi
-
-    local query_id=$((10#${token}))
-    if (( query_id < 1 || query_id > 99 )); then
-      echo "TPC-DS query must be between q1 and q99: q${query_id}" >&2
-      exit 2
-    fi
-
-    selected+=("${query_id}")
-  done
-
-  local count="${#selected[@]}"
-  local base=$((100 / count))
-  local rest=$((100 - base * count))
-  local index=0
-  for query_id in "${selected[@]}"; do
-    local value="${base}"
-    if (( index < rest )); then
-      value=$((value + 1))
-    fi
-    weights[$((query_id - 1))]="${value}"
-    index=$((index + 1))
-  done
-
-  join_by_comma "${weights[@]}"
+benchmark_query_weights() {
+  run_python "${SCRIPT_DIR}/query-weights.py" \
+    --benchmark "${BENCHMARK}" \
+    --selector "${QUERY_SET}"
 }
 
 prepare_execute_config() {
@@ -446,11 +362,7 @@ prepare_execute_config() {
 
   if [[ -n "${QUERY_SET}" ]]; then
     local weights
-    if [[ "${BENCHMARK}" == "tpcds" ]]; then
-      weights="$(tpcds_query_weights)"
-    else
-      weights="$(tpch_query_weights)"
-    fi
+    weights="$(benchmark_query_weights)" || return $?
     sed -i "s#<weights>.*</weights>#      <weights>${weights}</weights>#" "${GENERATED_CONFIG_LOCAL}"
   fi
 
@@ -890,7 +802,7 @@ ensure_benchbase_image() {
 }
 
 benchbase_execute() {
-  prepare_execute_config
+  prepare_execute_config || return $?
   prepare_results_dir
   ensure_benchbase_image
 

@@ -25,6 +25,7 @@ REPEAT_WORK = load_module("repeat_work_phases", "repeat-work-phases.py")
 SPLIT_TIMED_WORK = load_module(
     "split_timed_work_phases", "split-timed-work-phases.py"
 )
+QUERY_WEIGHTS = load_module("query_weights", "query-weights.py")
 
 
 class AllQuerySelectorTest(unittest.TestCase):
@@ -33,6 +34,49 @@ class AllQuerySelectorTest(unittest.TestCase):
 
     def test_generator_selector_expands_all_queries(self):
         self.assertEqual(list(range(1, 23)), GENERATE_DATA.parse_query_ids("ALL"))
+
+    def test_tpcds_weights_expand_all_queries(self):
+        weights = QUERY_WEIGHTS.build_query_weights("all", 99, "TPC-DS")
+
+        self.assertEqual(99, len(weights))
+        self.assertEqual(100, sum(weights))
+        self.assertTrue(all(weight > 0 for weight in weights))
+
+    def test_tpcds_all_weights_create_99_timed_phases(self):
+        weights = QUERY_WEIGHTS.build_query_weights("all", 99, "TPC-DS")
+        config_text = f"""<?xml version="1.0"?>
+<parameters>
+  <works>
+    <work>
+      <time>10</time>
+      <warmup>20</warmup>
+      <weights>{",".join(str(weight) for weight in weights)}</weights>
+    </work>
+  </works>
+</parameters>
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "tpcds.xml"
+            config.write_text(config_text, encoding="utf-8")
+
+            count = SPLIT_TIMED_WORK.split_timed_work_phases(config)
+            phases = element_tree.parse(config).getroot().findall(
+                "./works/work"
+            )
+
+        self.assertEqual(99, count)
+        self.assertEqual(99, len(phases))
+
+    def test_tpcds_weights_reject_bad_selector(self):
+        with self.assertRaisesRegex(ValueError, "Bad TPC-DS"):
+            QUERY_WEIGHTS.build_query_weights("everything", 99, "TPC-DS")
+
+    def test_tpch_weights_preserve_selected_queries(self):
+        weights = QUERY_WEIGHTS.build_query_weights("q1,q4", 22, "TPC-H")
+
+        self.assertEqual(50, weights[0])
+        self.assertEqual(50, weights[3])
+        self.assertEqual(2, sum(weight > 0 for weight in weights))
 
 
 class RepeatWorkPhasesTest(unittest.TestCase):
