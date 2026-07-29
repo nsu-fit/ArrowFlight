@@ -87,6 +87,28 @@ class FlightDeliveryTimingTest(unittest.TestCase):
         self.assertIn("25.0%", chart)
         self.assertIn("RPC delivery wait", chart)
 
+    def test_treats_missing_startup_counters_as_zero(self):
+        with tempfile.TemporaryDirectory() as directory:
+            results = Path(directory)
+            metrics = results / "flight-metrics"
+            metrics.mkdir()
+            (metrics / "before-server-node-1.prom").write_text(
+                "# Flight query metrics have no samples before the first request.\n",
+                encoding="utf-8",
+            )
+            (metrics / "after-server-node-1.prom").write_text(
+                "arrowflight_parquet_query_duration_seconds_sum{path=\"duckdb-scan\"} 8\n"
+                "arrowflight_flight_backpressure_seconds_total{path=\"duckdb-scan\"} 2\n",
+                encoding="utf-8",
+            )
+
+            timing = VISUALIZE_RESULTS.flight_delivery_timing(results)
+
+        self.assertEqual(
+            {"total_seconds": 8.0, "rpc_seconds": 2.0, "other_seconds": 6.0},
+            timing,
+        )
+
 
 class ReadConfigTest(unittest.TestCase):
     def test_collects_queries_from_all_timed_work_phases(self):

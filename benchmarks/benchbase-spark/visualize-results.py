@@ -162,8 +162,10 @@ def flight_delivery_timing(results_dir):
     backpressure_after = prometheus_counter_totals(
         metrics_dir, "after", "arrowflight_flight_backpressure_seconds_total"
     )
-    if None in (query_before, query_after, backpressure_before, backpressure_after):
+    if query_after is None or backpressure_after is None:
         return None
+    query_before = query_before or 0.0
+    backpressure_before = backpressure_before or 0.0
     total_seconds = max(0.0, query_after - query_before)
     rpc_seconds = max(0.0, backpressure_after - backpressure_before)
     if total_seconds <= 0:
