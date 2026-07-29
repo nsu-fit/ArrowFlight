@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1
 
 ARG UBUNTU_MIRROR=http://mirror.yandex.ru/ubuntu
+ARG ARROWFLIGHT_SOURCE_DIR=.
 
 # Stage 1: Build duckdb-hdfs extension
 FROM eclipse-temurin:21-jdk-jammy AS duckdb-builder
@@ -28,10 +29,11 @@ RUN chmod +x configure_apt_mirror.sh download_hadoop.sh \
 
 # Stage 4: Build Java application
 FROM maven:3.9.9-eclipse-temurin-21 AS java-builder
+ARG ARROWFLIGHT_SOURCE_DIR
 WORKDIR /src
-COPY pom.xml checkstyle.xml spotbugs-exclude.xml ./
+COPY ${ARROWFLIGHT_SOURCE_DIR}/pom.xml ${ARROWFLIGHT_SOURCE_DIR}/checkstyle.xml ${ARROWFLIGHT_SOURCE_DIR}/spotbugs-exclude.xml ./
 RUN mvn -q dependency:go-offline dependency:resolve-plugins
-COPY src/ ./src/
+COPY ${ARROWFLIGHT_SOURCE_DIR}/src/ ./src/
 RUN mvn -q -DskipTests package
 
 # Stage 5: Final runtime image

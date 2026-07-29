@@ -32,7 +32,9 @@ import net.surpin.data.arrowflight.server.adapters.ParquetAdapter;
 import net.surpin.data.arrowflight.server.services.ParquetQueryParser;
 import net.surpin.data.arrowflight.server.model.FileAssignment;
 import net.surpin.data.arrowflight.server.model.HandleState;
+import net.surpin.data.arrowflight.server.model.NodeLoadSnapshot;
 import net.surpin.data.arrowflight.server.model.QueryPlan;
+import net.surpin.data.arrowflight.server.model.SchedulerConfig;
 
 import net.surpin.data.arrowflight.server.LogUtil;
 
@@ -45,6 +47,9 @@ public final class QueryPlanner {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(QueryPlanner.class);
     private static final long FILE_PLAN_TTL_NANOS = TimeUnit.SECONDS.toNanos(30);
+    private static final long DEFAULT_THROUGHPUT_BYTES_PER_SECOND =
+            128L * 1024L * 1024L;
+    private static final double SLOT_PRESSURE_MILLIS = 1_000.0;
 
     private final ParquetAdapter parquetAdapter;
     private final ClusterService clusterService;
@@ -65,9 +70,14 @@ public final class QueryPlanner {
      *
      * @param serverUris live server URIs
      * @param serverLoads current load by live server
+     * @param nodeSnapshots recent execution state by live server
+     * @param schedulerConfig adaptive scheduler configuration
      */
     private record ClusterSnapshot(
-            Set<String> serverUris, Map<String, Long> serverLoads) {
+            Set<String> serverUris,
+            Map<String, Long> serverLoads,
+            Map<String, NodeLoadSnapshot> nodeSnapshots,
+            SchedulerConfig schedulerConfig) {
     }
 
     /**
@@ -113,19 +123,22 @@ public final class QueryPlanner {
         long tSv = LogUtil.mark();
         ClusterSnapshot cluster = validatedCluster();
         Set<String> allServerUris = cluster.serverUris();
+        boolean sharedStorage = usesSharedStorage();
         LogUtil.logTiming(tSv, "planning.validateServers", "servers=" + allServerUris.size());
         long tPaths = LogUtil.mark();
-        Map<String, FileAssignment> pathLocations = validatedPathLocations(parsed, allServerUris);
+        Map<String, FileAssignment> pathLocations = validatedPathLocations(
+                parsed, allServerUris, sharedStorage);
         LogUtil.logTiming(tPaths, "planning.fileLocations", "files=" + pathLocations.size());
 
-        boolean loadTracked = hasReplicatedFiles(pathLocations, allServerUris);
         List<FlightEndpoint> endpoints;
         if (parsed.isJoin) {
             endpoints = joinEndpoints(
-                    query, pathLocations, allServerUris, loadTracked);
+                    query, pathLocations, cluster, sharedStorage);
         } else {
             endpoints = distributeEndpoints(query, pathLocations,
-                    new HashMap<>(cluster.serverLoads()), loadTracked);
+                    new HashMap<>(cluster.serverLoads()),
+                    cluster.nodeSnapshots(), cluster.schedulerConfig(),
+                    sharedStorage);
         }
         long totalBytes = pathLocations.values().stream()
                 .mapToLong(FileAssignment::size).sum();
@@ -144,6 +157,28 @@ public final class QueryPlanner {
         if (uris.isEmpty()) {
             throw new IOException("No live Flight servers are registered");
         }
+        SchedulerConfig schedulerConfig = clusterService.schedulerConfig();
+        if (schedulerConfig == null) {
+            schedulerConfig = SchedulerConfig.disabled();
+        }
+        Map<String, NodeLoadSnapshot> snapshots =
+                new HashMap<>(clusterService.nodeSnapshots(uris));
+        if (schedulerConfig.enabled() && !snapshots.isEmpty()) {
+            long now = System.currentTimeMillis();
+            SchedulerConfig finalSchedulerConfig = schedulerConfig;
+            uris.removeIf(uri -> {
+                NodeLoadSnapshot snapshot = snapshots.get(uri);
+                return snapshot == null
+                        || !snapshot.isFresh(
+                                now, finalSchedulerConfig.snapshotStaleMillis())
+                        || !snapshot.acceptingRequests();
+            });
+            if (uris.isEmpty()) {
+                throw new NoSchedulableNodeException(
+                        "No Flight servers have fresh schedulable load snapshots");
+            }
+            snapshots.keySet().retainAll(uris);
+        }
         Set<String> missing = uris.stream()
                 .filter(uri -> !clusterService.hasFileInventory(uri))
                 .collect(Collectors.toCollection(LinkedHashSet::new));
@@ -156,11 +191,14 @@ public final class QueryPlanner {
             Long load = registry.get(uri);
             serverLoad.put(uri, load != null ? load : 0L);
         }
-        return new ClusterSnapshot(Set.copyOf(uris), Map.copyOf(serverLoad));
+        return new ClusterSnapshot(
+                Set.copyOf(uris), Map.copyOf(serverLoad),
+                Map.copyOf(snapshots), schedulerConfig);
     }
 
     private Map<String, FileAssignment> validatedPathLocations(
-            ParquetQueryParser parsed, Set<String> allServerUris) throws IOException {
+            ParquetQueryParser parsed, Set<String> allServerUris,
+            boolean sharedStorage) throws IOException {
         String cacheKey = sourceCacheKey(parsed);
         long now = System.nanoTime();
         CachedFilePlan cached = filePlanCache.get(cacheKey);
@@ -172,14 +210,16 @@ public final class QueryPlanner {
             pathLocations = loadFilePlan(parsed, cacheKey, now);
         }
         try {
-            validatePathLocations(pathLocations, parsed, allServerUris);
+            validatePathLocations(
+                    pathLocations, parsed, allServerUris, sharedStorage);
         } catch (IOException e) {
             if (!reusedCache) {
                 throw e;
             }
             filePlanCache.remove(cacheKey, cached);
             pathLocations = loadFilePlan(parsed, cacheKey, System.nanoTime());
-            validatePathLocations(pathLocations, parsed, allServerUris);
+            validatePathLocations(
+                    pathLocations, parsed, allServerUris, sharedStorage);
         }
         return pathLocations;
     }
@@ -211,53 +251,78 @@ public final class QueryPlanner {
      * @param pathLocations file assignments
      * @param parsed parsed SQL query
      * @param allServerUris live server URIs
+     * @param sharedStorage whether every compute node can read every path
      * @throws IOException when files or required shard owners are unavailable
      */
     private static void validatePathLocations(
             Map<String, FileAssignment> pathLocations,
-            ParquetQueryParser parsed, Set<String> allServerUris)
+            ParquetQueryParser parsed, Set<String> allServerUris,
+            boolean sharedStorage)
             throws IOException {
         if (pathLocations.isEmpty()) {
             throw new IOException("No distributed Parquet files found for query: " + parsed);
         }
-        for (Map.Entry<String, FileAssignment> file : pathLocations.entrySet()) {
-            boolean hasLiveOwner = file.getValue().hosts().stream()
-                    .anyMatch(allServerUris::contains);
-            if (!hasLiveOwner) {
-                throw new IOException("No live Flight node owns required shard: " + file.getKey());
+        if (!sharedStorage) {
+            for (Map.Entry<String, FileAssignment> file : pathLocations.entrySet()) {
+                boolean hasLiveOwner = file.getValue().hosts().stream()
+                        .anyMatch(allServerUris::contains);
+                if (!hasLiveOwner) {
+                    throw new IOException(
+                            "No live Flight node owns required shard: "
+                                    + file.getKey());
+                }
             }
+            requireShardCoverage(pathLocations, parsed, allServerUris);
         }
-        requireShardCoverage(pathLocations, parsed, allServerUris);
     }
 
     private List<FlightEndpoint> joinEndpoints(String query,
-            Map<String, FileAssignment> pathLocations, Set<String> allServerUris,
-            boolean loadTracked)
+            Map<String, FileAssignment> pathLocations, ClusterSnapshot cluster,
+            boolean sharedStorage)
             throws IOException {
-        String allFilesServer = findServerWithAllFiles(pathLocations, allServerUris);
+        long addedBytes = pathLocations.values().stream()
+                .mapToLong(FileAssignment::size).sum();
+        Set<String> fullyLocalServers = serversWithAllFiles(
+                pathLocations, cluster.serverUris());
+        String allFilesServer;
+        if (sharedStorage) {
+            allFilesServer = selectServer(
+                    fullyLocalServers,
+                    new HashMap<>(cluster.serverLoads()),
+                    cluster.nodeSnapshots(),
+                    true,
+                    addedBytes,
+                    cluster.schedulerConfig());
+        } else {
+            allFilesServer = fullyLocalServers.stream().sorted().findFirst().orElse(null);
+        }
         if (allFilesServer == null) {
             throw new IOException(
                     "Server-side joins require all input shards on one Flight node; "
                             + "Spark must execute this distributed join");
         }
-        long addedBytes = pathLocations.values().stream()
-                .mapToLong(FileAssignment::size).sum();
         FlightEndpoint ep = createEndpoint(allFilesServer,
-                new ArrayList<>(pathLocations.keySet()), query, addedBytes, loadTracked);
-        if (loadTracked) {
-            clusterService.addLoad(allFilesServer, addedBytes);
-        }
+                new ArrayList<>(pathLocations.keySet()), query, addedBytes, true);
+        clusterService.addLoad(allFilesServer, addedBytes);
         return List.of(ep);
     }
 
     private List<FlightEndpoint> distributeEndpoints(String query,
             Map<String, FileAssignment> pathLocations, Map<String, Long> serverLoad,
-            boolean loadTracked) {
+            Map<String, NodeLoadSnapshot> nodeSnapshots,
+            SchedulerConfig schedulerConfig, boolean sharedStorage) {
         Map<String, List<String>> serverToFiles = new LinkedHashMap<>();
         Map<String, Long> serverAdditions = new HashMap<>();
-        for (Map.Entry<String, FileAssignment> entry : pathLocations.entrySet()) {
+        List<Map.Entry<String, FileAssignment>> orderedFiles =
+                new ArrayList<>(pathLocations.entrySet());
+        orderedFiles.sort(Map.Entry.<String, FileAssignment>comparingByValue(
+                Comparator.comparingLong(FileAssignment::size)).reversed()
+                .thenComparing(Map.Entry.comparingByKey()));
+        for (Map.Entry<String, FileAssignment> entry : orderedFiles) {
             FileAssignment fa = entry.getValue();
-            String bestServer = pickServer(fa.hosts(), serverLoad);
+            String bestServer = selectServer(
+                    fa.hosts(), serverLoad, nodeSnapshots,
+                    sharedStorage, fa.size(), schedulerConfig);
             serverToFiles.computeIfAbsent(bestServer, k -> new ArrayList<>()).add(entry.getKey());
             serverLoad.merge(bestServer, fa.size(), Long::sum);
             serverAdditions.merge(bestServer, fa.size(), Long::sum);
@@ -267,10 +332,8 @@ public final class QueryPlanner {
         for (Map.Entry<String, List<String>> entry : serverToFiles.entrySet()) {
             long addedBytes = serverAdditions.getOrDefault(entry.getKey(), 0L);
             endpoints.add(createEndpoint(entry.getKey(), entry.getValue(),
-                    query, addedBytes, loadTracked));
-            if (loadTracked) {
-                clusterService.addLoad(entry.getKey(), addedBytes);
-            }
+                    query, addedBytes, true));
+            clusterService.addLoad(entry.getKey(), addedBytes);
         }
         return endpoints;
     }
@@ -301,19 +364,6 @@ public final class QueryPlanner {
     private static String normalizedTable(String schema, String table) {
         return ((schema == null ? "" : schema) + "." + table)
                 .toLowerCase(Locale.ROOT);
-    }
-
-    /**
-     * Checks whether any shard can be assigned to more than one live server.
-     *
-     * @param files file assignments
-     * @param liveServers live server URIs
-     * @return true when distributed load tracking can affect placement
-     */
-    private static boolean hasReplicatedFiles(
-            Map<String, FileAssignment> files, Set<String> liveServers) {
-        return files.values().stream().anyMatch(file ->
-                file.hosts().stream().filter(liveServers::contains).limit(2).count() > 1);
     }
 
     private static Map<String, FileAssignment> filterForQuery(
@@ -444,6 +494,106 @@ public final class QueryPlanner {
     }
 
     /**
+     * Selects the node with the lowest predicted completion score.
+     *
+     * @param fileHosts nodes with local blocks for the task
+     * @param serverLoad outstanding reserved bytes by live node
+     * @param snapshots recent node execution snapshots
+     * @param sharedStorage whether remote reads are allowed
+     * @param taskBytes logical bytes in the task
+     * @param schedulerConfig adaptive scheduler configuration
+     * @return selected Flight server URI
+     */
+    static String selectServer(
+            Set<String> fileHosts,
+            Map<String, Long> serverLoad,
+            Map<String, NodeLoadSnapshot> snapshots,
+            boolean sharedStorage,
+            long taskBytes,
+            SchedulerConfig schedulerConfig) {
+        if (!schedulerConfig.enabled() || snapshots.isEmpty()) {
+            return pickServer(fileHosts, serverLoad);
+        }
+        Set<String> normalizedFileHosts = fileHosts.stream()
+                .map(HostUtils::normalize)
+                .collect(Collectors.toSet());
+        List<String> localServers = serverLoad.keySet().stream()
+                .filter(uri -> normalizedFileHosts.contains(HostUtils.normalize(uri)))
+                .toList();
+        List<String> candidates;
+        if (sharedStorage || localServers.isEmpty()) {
+            candidates = List.copyOf(serverLoad.keySet());
+        } else {
+            candidates = localServers;
+        }
+        return candidates.stream()
+                .min(Comparator
+                        .comparingDouble((String uri) -> schedulingScore(
+                                uri,
+                                normalizedFileHosts,
+                                serverLoad.getOrDefault(uri, 0L),
+                                taskBytes,
+                                snapshots.get(uri),
+                                schedulerConfig))
+                        .thenComparing(uri -> uri))
+                .orElseThrow();
+    }
+
+    /**
+     * Estimates how long a node will take to start and process a file.
+     *
+     * @param serverUri candidate server URI
+     * @param normalizedFileHosts normalized hosts containing the file
+     * @param reservedBytes bytes already reserved for the node
+     * @param taskBytes bytes in the candidate task
+     * @param snapshot latest node load snapshot
+     * @param config scheduler configuration
+     * @return comparable scheduling score in milliseconds
+     */
+    static double schedulingScore(
+            String serverUri,
+            Set<String> normalizedFileHosts,
+            long reservedBytes,
+            long taskBytes,
+            NodeLoadSnapshot snapshot,
+            SchedulerConfig config) {
+        long throughput = snapshot != null
+                && snapshot.throughputBytesPerSecond() > 0L
+                ? snapshot.throughputBytesPerSecond()
+                : DEFAULT_THROUGHPUT_BYTES_PER_SECOND;
+        int limit = snapshot != null
+                ? Math.max(1, snapshot.concurrencyLimit()) : 1;
+        int active = snapshot != null ? snapshot.activeQueries() : 0;
+        int queued = snapshot != null ? snapshot.queuedQueries() : 0;
+        double workMillis = (reservedBytes + Math.max(0L, taskBytes))
+                * 1_000.0 / throughput / limit;
+        double slotPressure = (active + queued)
+                * SLOT_PRESSURE_MILLIS / limit;
+        double resourcePenalty = snapshot == null ? 0.0
+                : pressurePenalty(Math.max(
+                        snapshot.processCpuLoad(), snapshot.systemCpuLoad()))
+                        + pressurePenalty(snapshot.memoryPressure());
+        boolean local = normalizedFileHosts.contains(
+                HostUtils.normalize(serverUri));
+        double localityPenalty = local
+                ? 0.0 : config.remoteLocalityPenaltyMillis();
+        return workMillis + slotPressure + resourcePenalty + localityPenalty;
+    }
+
+    /**
+     * Converts a sampled utilization value into a nonlinear scheduling penalty.
+     *
+     * @param pressure sampled utilization
+     * @return scheduling penalty in milliseconds
+     */
+    private static double pressurePenalty(double pressure) {
+        if (pressure < 0.0) {
+            return 0.0;
+        }
+        return Math.pow(Math.min(1.0, pressure), 4.0) * 2_000.0;
+    }
+
+    /**
      * Groups files by their assigned server based on data locality and load.
      *
      * @param pathLocations file to host assignments
@@ -461,14 +611,15 @@ public final class QueryPlanner {
     }
 
     /**
-     * Finds a server that has ALL files in the map, or null if none.
+     * Finds every server that has all files in the map.
      *
      * @param pathLocations file to host assignments
      * @param allServerUris all registered server URIs
-     * @return server URI with all files, or null
+     * @return server URIs with all files
      */
-    private String findServerWithAllFiles(
+    private static Set<String> serversWithAllFiles(
             Map<String, FileAssignment> pathLocations, Set<String> allServerUris) {
+        Set<String> result = new LinkedHashSet<>();
         outer:
         for (String serverUri : allServerUris) {
             String normServer = HostUtils.normalize(serverUri);
@@ -484,9 +635,50 @@ public final class QueryPlanner {
                     continue outer;
                 }
             }
-            return serverUri;
+            result.add(serverUri);
         }
-        return null;
+        return result;
+    }
+
+    /**
+     * Detects storage schemes that every compute node can read remotely.
+     *
+     * @return whether the configured data directory uses shared storage
+     */
+    private boolean usesSharedStorage() {
+        return usesSharedStorage(parquetAdapter.dataDirectory());
+    }
+
+    /**
+     * Detects a shared-storage scheme from a configured data directory.
+     *
+     * @param dataDirectory configured Parquet data directory
+     * @return whether every compute node can read paths in the directory
+     */
+    static boolean usesSharedStorage(String dataDirectory) {
+        if (dataDirectory == null || dataDirectory.isBlank()) {
+            return false;
+        }
+        String scheme = new org.apache.hadoop.fs.Path(
+                dataDirectory).toUri().getScheme();
+        return scheme != null
+                && scheme.length() > 1
+                && !"file".equalsIgnoreCase(scheme);
+    }
+
+    /**
+     * Signals that live nodes exist but none can currently accept planned work.
+     */
+    public static final class NoSchedulableNodeException extends IOException {
+
+        /**
+         * Creates a scheduling-capacity failure.
+         *
+         * @param message client-safe failure description
+         */
+        public NoSchedulableNodeException(String message) {
+            super(message);
+        }
     }
 
     /**

@@ -13,6 +13,7 @@ import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
@@ -20,12 +21,16 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 import com.hazelcast.core.HazelcastInstance;
+import com.hazelcast.transaction.TransactionalMap;
 
 import net.surpin.data.arrowflight.server.LogUtil;
 import net.surpin.data.arrowflight.server.adapters.HazelcastAdapter;
 import net.surpin.data.arrowflight.server.model.AppConfig;
 import net.surpin.data.arrowflight.server.model.FileAssignment;
+import net.surpin.data.arrowflight.server.model.EndpointLease;
 import net.surpin.data.arrowflight.server.model.HandleState;
+import net.surpin.data.arrowflight.server.model.NodeLoadSnapshot;
+import net.surpin.data.arrowflight.server.model.SchedulerConfig;
 
 /**
  * Manages server registration, heartbeats, load tracking, and statement cache lifecycle.
@@ -57,6 +62,15 @@ public final class ClusterService implements AutoCloseable {
      * @param expiresAtNanos monotonic expiration deadline
      */
     private record LocalHandle(HandleState state, long expiresAtNanos) {
+    }
+
+    /**
+     * Contains the signed handle and state created by an atomic redirect.
+     *
+     * @param handle replacement signed handle
+     * @param state replacement endpoint state
+     */
+    public record RedirectedEndpoint(byte[] handle, HandleState state) {
     }
 
     /**
@@ -92,8 +106,8 @@ public final class ClusterService implements AutoCloseable {
         }, HEARTBEAT_INTERVAL_SEC, HEARTBEAT_INTERVAL_SEC, TimeUnit.SECONDS);
 
         hazelcast.onStatementExpired((EntryExpiredListener<String, Serializable>) event -> {
-            Serializable value = event.getOldValue();
-            if (value instanceof HandleState state && state.serverUri() != null
+            HandleState state = leaseState(event.getOldValue());
+            if (state != null && state.serverUri() != null
                     && state.loadTracked()) {
                 hazelcast.serverRegistry().compute(state.serverUri(), (k, v) -> {
                     if (v == null) {
@@ -132,6 +146,8 @@ public final class ClusterService implements AutoCloseable {
                         uri, now - lastHb);
                 hazelcast.serverRegistry().remove(uri);
                 hazelcast.serverHeartbeats().remove(uri);
+                hazelcast.serverFiles().remove(uri);
+                hazelcast.nodeLoadSnapshots().remove(uri);
             }
         }
         LogUtil.logTiming(t, "hazelcast.filterLiveServers", "total=" + serverUris.size() + " live=" + live.size());
@@ -161,6 +177,41 @@ public final class ClusterService implements AutoCloseable {
      */
     public Map<String, Long> getLoads(Set<String> serverUris) {
         return hazelcast.serverRegistry().getAll(serverUris);
+    }
+
+    /**
+     * Returns recent load snapshots for the requested Flight nodes.
+     *
+     * @param serverUris node URIs to read
+     * @return available node snapshots
+     */
+    public Map<String, NodeLoadSnapshot> nodeSnapshots(Set<String> serverUris) {
+        return hazelcast.nodeLoadSnapshots().getAll(serverUris);
+    }
+
+    /**
+     * Publishes this node's current scheduling snapshot.
+     *
+     * @param snapshot current local snapshot
+     */
+    public void publishNodeSnapshot(NodeLoadSnapshot snapshot) {
+        hazelcast.nodeLoadSnapshots().put(serverUri, snapshot);
+    }
+
+    /**
+     * Removes this node's scheduling snapshot.
+     */
+    public void removeNodeSnapshot() {
+        hazelcast.nodeLoadSnapshots().remove(serverUri);
+    }
+
+    /**
+     * Returns adaptive scheduler configuration.
+     *
+     * @return scheduler configuration
+     */
+    public SchedulerConfig schedulerConfig() {
+        return appConfig.scheduler();
     }
 
     /**
@@ -283,7 +334,9 @@ public final class ClusterService implements AutoCloseable {
         byte[] handle = endpointTicketCodec.encode(state);
         if (state.loadTracked()) {
             hazelcast.statementCache().put(
-                    loadReservationKey(handle), state, 10, TimeUnit.MINUTES);
+                    loadReservationKey(handle),
+                    EndpointLease.reserved(state),
+                    10, TimeUnit.MINUTES);
         }
         return handle;
     }
@@ -302,18 +355,125 @@ public final class ClusterService implements AutoCloseable {
     }
 
     /**
+     * Exclusively claims a signed endpoint before it enters local admission.
+     *
+     * @param handle ticket statement-handle bytes
+     * @param state decoded endpoint state
+     * @return whether this request owns the endpoint execution
+     */
+    public boolean claimEndpointExecution(byte[] handle, HandleState state) {
+        if (!state.loadTracked()) {
+            return true;
+        }
+        String key = loadReservationKey(handle);
+        for (int attempt = 0; attempt < 4; attempt++) {
+            Serializable current = hazelcast.statementCache().get(key);
+            EndpointLease lease = asLease(current);
+            if (lease == null
+                    || lease.status() != EndpointLease.Status.RESERVED
+                    || !lease.state().equals(state)) {
+                return false;
+            }
+            if (hazelcast.statementCache().replace(
+                    key, current, lease.claimed())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Returns a claimed endpoint to the retryable state after admission rejection.
+     *
+     * @param handle ticket statement-handle bytes
+     * @param state decoded endpoint state
+     */
+    public void resetEndpointClaim(byte[] handle, HandleState state) {
+        if (!state.loadTracked()) {
+            return;
+        }
+        String key = loadReservationKey(handle);
+        Serializable current = hazelcast.statementCache().get(key);
+        EndpointLease lease = asLease(current);
+        if (lease != null
+                && lease.status() == EndpointLease.Status.CLAIMED
+                && lease.state().equals(state)) {
+            hazelcast.statementCache().replace(
+                    key, current, lease.reserved());
+        }
+    }
+
+    /**
+     * Atomically transfers a claimed endpoint reservation and load to another node.
+     *
+     * @param sourceHandle currently claimed statement-handle bytes
+     * @param sourceState currently assigned endpoint state
+     * @param targetServerUri replacement Flight server URI
+     * @return replacement endpoint when the transactional transfer succeeds
+     */
+    public Optional<RedirectedEndpoint> redirectEndpoint(
+            byte[] sourceHandle,
+            HandleState sourceState,
+            String targetServerUri) {
+        if (!sourceState.loadTracked()
+                || sourceState.serverUri() == null
+                || sourceState.serverUri().equals(targetServerUri)) {
+            return Optional.empty();
+        }
+        HandleState targetState = sourceState.redirectedTo(targetServerUri);
+        byte[] targetHandle = endpointTicketCodec.encode(targetState);
+        String sourceKey = loadReservationKey(sourceHandle);
+        String targetKey = loadReservationKey(targetHandle);
+        Boolean transferred = hazelcast.instance().executeTransaction(context -> {
+            TransactionalMap<String, Serializable> statements =
+                    hazelcast.transactionalStatementCache(context);
+            TransactionalMap<String, Long> registry =
+                    hazelcast.transactionalServerRegistry(context);
+            EndpointLease sourceLease = asLease(
+                    statements.getForUpdate(sourceKey));
+            if (sourceLease == null
+                    || sourceLease.status() != EndpointLease.Status.CLAIMED
+                    || !sourceLease.state().equals(sourceState)
+                    || statements.containsKey(targetKey)) {
+                return false;
+            }
+            Long sourceLoad = registry.getForUpdate(sourceState.serverUri());
+            Long targetLoad = registry.getForUpdate(targetServerUri);
+            if (sourceLoad == null || targetLoad == null) {
+                return false;
+            }
+            statements.remove(sourceKey);
+            statements.put(
+                    targetKey, EndpointLease.reserved(targetState),
+                    10, TimeUnit.MINUTES);
+            registry.put(
+                    sourceState.serverUri(),
+                    Math.max(0L, sourceLoad - sourceState.bytes()));
+            registry.put(
+                    targetServerUri,
+                    Math.addExact(targetLoad, sourceState.bytes()));
+            return true;
+        });
+        if (!Boolean.TRUE.equals(transferred)) {
+            return Optional.empty();
+        }
+        return Optional.of(new RedirectedEndpoint(targetHandle, targetState));
+    }
+
+    /**
      * Releases distributed load once for a completed signed endpoint ticket.
      *
      * @param handle ticket statement-handle bytes
      * @param state completed endpoint state
      */
     public void releaseEndpointLoad(byte[] handle, HandleState state) {
-        if (!state.loadTracked() || state.serverUri() == null || state.bytes() == 0L) {
+        if (!state.loadTracked() || state.serverUri() == null) {
             return;
         }
         Serializable reservation = hazelcast.statementCache()
                 .remove(loadReservationKey(handle));
-        if (reservation instanceof HandleState reserved) {
+        HandleState reserved = leaseState(reservation);
+        if (reserved != null && reserved.bytes() != 0L) {
             addLoad(reserved.serverUri(), -reserved.bytes());
         }
     }
@@ -364,6 +524,33 @@ public final class ClusterService implements AutoCloseable {
     }
 
     /**
+     * Converts current and legacy reservation values into endpoint leases.
+     *
+     * @param value distributed reservation value
+     * @return endpoint lease, or null for an unrelated value
+     */
+    private static EndpointLease asLease(Serializable value) {
+        if (value instanceof EndpointLease lease) {
+            return lease;
+        }
+        if (value instanceof HandleState state) {
+            return EndpointLease.reserved(state);
+        }
+        return null;
+    }
+
+    /**
+     * Extracts endpoint state from current and legacy reservation values.
+     *
+     * @param value distributed reservation value
+     * @return endpoint state, or null for an unrelated value
+     */
+    private static HandleState leaseState(Serializable value) {
+        EndpointLease lease = asLease(value);
+        return lease == null ? null : lease.state();
+    }
+
+    /**
      * Removes expired local handle and idempotency entries.
      */
     private void removeExpiredLocalEntries() {
@@ -395,6 +582,8 @@ public final class ClusterService implements AutoCloseable {
         try {
             hazelcast.serverRegistry().remove(serverUri);
             hazelcast.serverHeartbeats().remove(serverUri);
+            hazelcast.serverFiles().remove(serverUri);
+            hazelcast.nodeLoadSnapshots().remove(serverUri);
         } catch (Exception e) {
             LOGGER.warn("Failed to deregister server from cluster: {}", e.getMessage());
         }

@@ -8,6 +8,7 @@ import org.apache.arrow.memory.BufferAllocator;
 import net.surpin.data.arrowflight.server.adapters.DuckDbAdapter;
 import net.surpin.data.arrowflight.server.adapters.FlightSqlProducer;
 import net.surpin.data.arrowflight.server.services.ClusterService;
+import net.surpin.data.arrowflight.server.services.NodeResourceMonitor;
 
 /**
  * Dagger component for the Flight server.
@@ -30,6 +31,13 @@ public interface ServerComponent {
      * @return cluster service
      */
     ClusterService clusterService();
+
+    /**
+     * Returns the monitor that publishes adaptive scheduling snapshots.
+     *
+     * @return node resource monitor
+     */
+    NodeResourceMonitor nodeResourceMonitor();
 
     /**
      * Returns the DuckDB adapter for lifecycle management.

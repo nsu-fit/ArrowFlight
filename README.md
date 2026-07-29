@@ -201,6 +201,7 @@ Key properties (see `AppConfig.java` / `ConfigAdapter.java` for the full list):
 | DuckDB | `batchSize`, `duckDbThreads`, `duckDbGroups`, `duckDbWarmConnections` |
 | I/O | `ioParallelism`, `ioParallelismMinThreads`, `ioFileBufferSize` |
 | Flight/gRPC | `grpcMaxInboundMessageSize`, `flightBackpressureThresholdBytes`, `flightListenerReadyTimeoutMs` |
+| Scheduling | `adaptiveSchedulingEnabled`, `admission*`, `scheduler*Watermark`, `schedulerRemoteLocalityPenaltyMs` |
 | Client | `client.maxRetries`, `client.retryBackoffMs`, `client.connectTimeoutMs` |
 | Hazelcast | `hazelcastClusterJoinTimeoutSec` |
 

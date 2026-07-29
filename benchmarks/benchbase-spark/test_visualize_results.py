@@ -21,6 +21,24 @@ class ReadCsvTest(unittest.TestCase):
 
         self.assertEqual([{"name": "customer", "value": "abcd"}], rows)
 
+    def test_read_csv_skips_nul_only_prefix(self):
+        with tempfile.TemporaryDirectory() as directory:
+            csv_path = Path(directory) / "query-q5.actual.csv"
+            csv_path.write_text(
+                "\0\0\nname,value\ncustomer,42\n",
+                encoding="utf-8",
+            )
+
+            rows = VISUALIZE_RESULTS.read_csv(csv_path)
+
+        self.assertEqual([{"name": "customer", "value": "42"}], rows)
+
+    def test_rows_equal_accepts_six_decimal_rendering(self):
+        expected = [{"average": "25.522005853257337"}]
+        actual = [{"average": "25.522006"}]
+
+        self.assertTrue(VISUALIZE_RESULTS.rows_equal(expected, actual))
+
 
 class PerQueryLatencyTest(unittest.TestCase):
     def test_aggregates_measured_raw_latency_by_query(self):

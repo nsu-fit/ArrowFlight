@@ -4,10 +4,14 @@ import com.google.protobuf.ByteString;
 import net.surpin.data.arrowflight.server.model.HandleState;
 import net.surpin.data.arrowflight.server.model.ExecutionPathTracker;
 import net.surpin.data.arrowflight.server.model.QueryPlan;
+import net.surpin.data.arrowflight.server.model.SchedulerConfig;
+import net.surpin.data.arrowflight.server.services.AdaptiveAdmissionController;
 import net.surpin.data.arrowflight.server.services.ClusterService;
 import net.surpin.data.arrowflight.server.services.ExecutionService;
 import net.surpin.data.arrowflight.server.services.MetadataService;
 import net.surpin.data.arrowflight.server.services.QueryPlanner;
+import net.surpin.data.arrowflight.server.services.TaskRedirectService;
+import net.surpin.data.arrowflight.common.FlightRedirectProtocol;
 import org.apache.arrow.flight.CallStatus;
 import org.apache.arrow.flight.FlightDescriptor;
 import org.apache.arrow.flight.FlightInfo;
@@ -23,6 +27,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -106,5 +111,109 @@ class FlightSqlProducerTest {
         assertEquals(4096L, info.getBytes());
         assertEquals(125L, info.getRecords());
         verify(clusterService, never()).storeHandle(anyString(), any());
+    }
+
+    /** Verifies a full local admission queue rejects DoGet before execution. */
+    @Test
+    void fullAdmissionQueueReturnsResourceExhausted() throws Exception {
+        BufferAllocator allocator = mock(BufferAllocator.class);
+        MetadataService metadataService = mock(MetadataService.class);
+        QueryPlanner queryPlanner = mock(QueryPlanner.class);
+        ExecutionService executionService = mock(ExecutionService.class);
+        ClusterService clusterService = mock(ClusterService.class);
+        FlightProducer.ServerStreamListener listener =
+                mock(FlightProducer.ServerStreamListener.class);
+        FlightProducer.CallContext context = mock(FlightProducer.CallContext.class);
+        ByteString handle = ByteString.copyFromUtf8("overloaded-query");
+        HandleState state = new HandleState(
+                "select * from tpch.lineitem",
+                new String[]{"part.parquet"}, null, 0L);
+        when(clusterService.resolveEndpointHandle(handle.toByteArray()))
+                .thenReturn(state);
+        SchedulerConfig schedulerConfig = new SchedulerConfig(
+                true, 1_000L, 5_000L, 5_000L,
+                1, 1, 0, 1_000L,
+                0.65, 0.90, 0.70, 0.85, 250L);
+        AdaptiveAdmissionController controller =
+                new AdaptiveAdmissionController(schedulerConfig);
+        FlightSqlProducer producer = new FlightSqlProducer(
+                Location.forGrpcInsecure("localhost", 32010), allocator,
+                metadataService, queryPlanner, executionService, clusterService,
+                controller);
+        FlightSql.TicketStatementQuery ticket = FlightSql.TicketStatementQuery
+                .newBuilder().setStatementHandle(handle).build();
+
+        try (AdaptiveAdmissionController.Permit ignored =
+                     controller.acquire(() -> false)) {
+            producer.getStreamStatement(ticket, context, listener);
+        }
+
+        ArgumentCaptor<Throwable> error =
+                ArgumentCaptor.forClass(Throwable.class);
+        verify(listener).error(error.capture());
+        FlightRuntimeException reported = assertInstanceOf(
+                FlightRuntimeException.class, error.getValue());
+        assertEquals(FlightStatusCode.RESOURCE_EXHAUSTED,
+                reported.status().code());
+        verify(executionService, never()).readParquet(
+                any(), anyString(), any(), eq(listener),
+                anyBoolean(), any(ExecutionPathTracker.class));
+    }
+
+    /** Verifies an overloaded claimed endpoint returns a replacement ticket. */
+    @Test
+    void redirectedEndpointReturnsFlightMetadata() throws Exception {
+        BufferAllocator allocator = mock(BufferAllocator.class);
+        MetadataService metadataService = mock(MetadataService.class);
+        QueryPlanner queryPlanner = mock(QueryPlanner.class);
+        ExecutionService executionService = mock(ExecutionService.class);
+        ClusterService clusterService = mock(ClusterService.class);
+        TaskRedirectService redirectService =
+                mock(TaskRedirectService.class);
+        FlightProducer.ServerStreamListener listener =
+                mock(FlightProducer.ServerStreamListener.class);
+        FlightProducer.CallContext context =
+                mock(FlightProducer.CallContext.class);
+        ByteString handle = ByteString.copyFromUtf8("redirect-query");
+        HandleState state = new HandleState(
+                "select * from tpch.lineitem",
+                new String[]{"part.parquet"},
+                "grpc+tcp://node-1:32010", 100L, true);
+        byte[] replacementTicket = new byte[] {9, 8, 7};
+        when(clusterService.resolveEndpointHandle(handle.toByteArray()))
+                .thenReturn(state);
+        when(clusterService.claimEndpointExecution(
+                handle.toByteArray(), state)).thenReturn(true);
+        when(redirectService.tryRedirect(
+                handle.toByteArray(), state)).thenReturn(Optional.of(
+                        new TaskRedirectService.Redirect(
+                                "grpc+tcp://node-2:32010",
+                                replacementTicket, 1)));
+        FlightSqlProducer producer = new FlightSqlProducer(
+                Location.forGrpcInsecure("localhost", 32010), allocator,
+                metadataService, queryPlanner, executionService,
+                clusterService, AdaptiveAdmissionController.permissive(),
+                redirectService);
+        FlightSql.TicketStatementQuery ticket =
+                FlightSql.TicketStatementQuery.newBuilder()
+                        .setStatementHandle(handle).build();
+
+        producer.getStreamStatement(ticket, context, listener);
+
+        ArgumentCaptor<Throwable> error =
+                ArgumentCaptor.forClass(Throwable.class);
+        verify(listener).error(error.capture());
+        FlightRuntimeException failure = assertInstanceOf(
+                FlightRuntimeException.class, error.getValue());
+        assertEquals(
+                "grpc+tcp://node-2:32010",
+                FlightRedirectProtocol.endpoint(failure)
+                        .orElseThrow().getLocations()
+                        .getFirst().getUri().toString());
+        verify(executionService, never()).readParquet(
+                any(), anyString(), any(), eq(listener),
+                anyBoolean(), any(ExecutionPathTracker.class));
+        verify(clusterService, never()).releaseEndpointLoad(
+                handle.toByteArray(), state);
     }
 }

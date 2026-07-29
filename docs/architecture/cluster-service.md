@@ -16,6 +16,7 @@ This document describes how `ClusterService` coordinates multiple Flight server 
 | `serverHeartbeats`| `flight-server-N:32010`| `Long` (timestamp)   | Heartbeat timestamps for liveness check |
 | `serverFiles`    | `flight-server-N:32010`| `Map<String, Long>`  | Per-node file inventory (path -> bytes) |
 | `statementCache` | handle (UUID string)   | `HandleState`        | Query state, TTL 10 minutes             |
+| `node-load-snapshots-v1` | `flight-server-N:32010` | `NodeLoadSnapshot` | Live admission, CPU, memory, and throughput state |
 
 ## Server Registration and Deregistration
 
@@ -153,10 +154,8 @@ The result is a map of `relative_path -> FileAssignment(size, [host1, host2, ...
 
 During `GetFlightInfo`, the server encodes endpoint state in an HMAC-SHA256
 authenticated ticket. The signing secret is shared once through `statementCache`.
-Unique-owner shards require no per-query distributed entry.
-
-For replicated shards only, the server stores a load lease with a 10-minute TTL.
-This preserves cleanup when a client never calls `DoGet`.
+Every endpoint stores a load lease with a 10-minute TTL. This preserves cleanup
+when a client never calls `DoGet`.
 
 ### Ticket Resolution
 
@@ -165,8 +164,8 @@ UUID handles are resolved from a local TTL cache first and Hazelcast second.
 
 ### Load-Lease Removal
 
-When replicated-shard execution completes, removing the lease and decrementing
-load is idempotent. Unique-owner shards skip both operations.
+When endpoint execution completes, removing the lease and decrementing load is
+idempotent.
 
 ### Load-Lease Expiry
 
@@ -182,19 +181,54 @@ During `GetFlightInfo`:
 1. `FlightSqlProducer` calls `filterLiveServers()` to get active nodes.
 2. `ClusterService.fileLocations()` provides the distributed file inventory.
 3. `QueryPlanner` reuses or refreshes the table file-plan cache.
-4. `pickServer()` selects the best node for each file, preferring nodes that host the file's blocks and picking the one with the lowest load among candidates.
+4. The load-aware planner scores reservations, throughput, execution slots, CPU, memory, and locality.
 5. Each endpoint receives a signed self-contained ticket.
-6. Replicated assignments additionally create a 10-minute load lease.
+6. Every assignment creates a 10-minute load lease.
 
 During `DoGet`:
 
 1. The ticket is verified and decoded locally.
 2. The assigned files and SQL query are restored.
 3. `ExecutionService` reads and streams the result.
-4. A replicated-shard load lease is removed on completion.
+4. The endpoint load lease is removed on completion.
 
-If `DoGet` never arrives for a replicated assignment, its lease expires after
-10 minutes and the load is corrected by the expiry listener.
+If `DoGet` never arrives for an assignment, its lease expires after 10 minutes
+and the load is corrected by the expiry listener.
+
+## Adaptive Load Snapshots and Admission
+
+Each node publishes a `NodeLoadSnapshot` every second. The snapshot contains
+the current concurrency limit, active and queued queries, process CPU load,
+total host or container CPU load, JVM, Arrow, system, or cgroup memory pressure, and
+observed query throughput. Unrelated work on the same node therefore affects
+admission and placement. Scheduling ignores stale or non-accepting snapshots.
+
+For shared storage such as HDFS, every live Flight node is eligible to execute
+a file. Block locality contributes a configurable score penalty instead of
+acting as a hard constraint. The planner combines outstanding reserved bytes
+with the snapshot to estimate completion cost.
+
+Before `ExecutionService` starts DuckDB, `AdaptiveAdmissionController` obtains
+a local execution permit. It maintains a bounded queue and adjusts its
+concurrency limit with low/high CPU and memory watermarks. Existing executions
+are never interrupted when the limit decreases.
+
+## Queued DoGet Redirect
+
+Before admission, an endpoint atomically changes its load lease from `RESERVED`
+to `CLAIMED`. Reusing the same ticket cannot start a second execution.
+
+When the local node is overloaded or a request waits longer than
+`admissionRedirectAfterMs`, `TaskRedirectService` looks for a node with a
+meaningfully lower score. A Hazelcast transaction removes the old lease,
+creates a `RESERVED` lease for a new signed ticket, and transfers reserved
+bytes between `serverRegistry` entries.
+
+The server returns the replacement URI and ticket in Flight error metadata.
+The client consumes that metadata before exposing the first Arrow batch and
+automatically repeats only that `DoGet` on the replacement node.
+`redirectCount` is signed into the ticket and `admissionMaxRedirects` prevents
+ping-pong. Running DuckDB work is never migrated.
 
 ## Time Constants Summary
 
@@ -203,5 +237,6 @@ If `DoGet` never arrives for a replicated assignment, its lease expires after
 | `HEARTBEAT_INTERVAL_SEC`        | 15s    | Cluster    | Interval between heartbeat writes        |
 | `HEARTBEAT_TIMEOUT_SEC`         | 45s    | Cluster    | Node considered dead after this silence  |
 | load lease TTL                   | 10min  | Statement  | Max lifetime of a load reservation       |
+| `admissionRedirectAfterMs`       | 500ms  | Admission  | Wait before redirect evaluation          |
 | `flightListenerReadyTimeoutMs`  | 60s    | DuckDB     | Max wait for Flight client readiness     |
 | `hazelcastClusterJoinTimeoutSec`| 60s    | Hazelcast  | Max wait for cluster formation           |

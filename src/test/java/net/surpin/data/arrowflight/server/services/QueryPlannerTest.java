@@ -3,7 +3,9 @@ package net.surpin.data.arrowflight.server.services;
 import net.surpin.data.arrowflight.server.adapters.HostUtils;
 import net.surpin.data.arrowflight.server.adapters.ParquetAdapter;
 import net.surpin.data.arrowflight.server.model.FileAssignment;
+import net.surpin.data.arrowflight.server.model.NodeLoadSnapshot;
 import net.surpin.data.arrowflight.server.model.QueryPlan;
+import net.surpin.data.arrowflight.server.model.SchedulerConfig;
 import org.apache.arrow.flight.FlightEndpoint;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -68,6 +70,40 @@ class QueryPlannerTest {
     void pickServerSingleServer() {
         Map<String, Long> load = Map.of(S1, 0L);
         String server = QueryPlanner.pickServer(Set.of("x"), load);
+        assertEquals(S1, server);
+    }
+
+    /** Verifies runtime pressure can outweigh HDFS block locality. */
+    @Test
+    void selectServerMovesSharedStorageWorkFromOverloadedLocalNode() {
+        Map<String, Long> load = new LinkedHashMap<>();
+        load.put(S1, 0L);
+        load.put(S2, 0L);
+        Map<String, NodeLoadSnapshot> snapshots = Map.of(
+                S1, snapshot(4, 4, 3, 0.99, 0.80),
+                S2, snapshot(4, 0, 0, 0.10, 0.20));
+
+        String server = QueryPlanner.selectServer(
+                Set.of(H1), load, snapshots, true,
+                16L * 1024L * 1024L, schedulerConfig());
+
+        assertEquals(S2, server);
+    }
+
+    /** Verifies locality wins when shared-storage nodes have similar pressure. */
+    @Test
+    void selectServerPrefersLocalNodeAtSimilarPressure() {
+        Map<String, Long> load = new LinkedHashMap<>();
+        load.put(S1, 0L);
+        load.put(S2, 0L);
+        Map<String, NodeLoadSnapshot> snapshots = Map.of(
+                S1, snapshot(4, 0, 0, 0.10, 0.20),
+                S2, snapshot(4, 0, 0, 0.10, 0.20));
+
+        String server = QueryPlanner.selectServer(
+                Set.of(H1), load, snapshots, true,
+                16L * 1024L * 1024L, schedulerConfig());
+
         assertEquals(S1, server);
     }
 
@@ -258,7 +294,7 @@ class QueryPlannerTest {
         assertEquals(25L, first.totalRecords());
         assertEquals(1, second.endpoints().size());
         verify(clusterService, times(1)).fileLocations();
-        verify(clusterService, never()).addLoad(anyString(), anyLong());
+        verify(clusterService, times(2)).addLoad(S1, 100L);
     }
 
     @Test
@@ -277,6 +313,24 @@ class QueryPlannerTest {
 
         QueryPlanner planner = new QueryPlanner(parquetAdapter, clusterService);
         assertThrows(Exception.class, () ->
+                planner.determineEndpoints("SELECT * FROM s.t"));
+    }
+
+    @Test
+    void determineEndpointsRejectsStaleLoadSnapshots() throws Exception {
+        when(clusterService.allServerLoads()).thenReturn(Map.of(S1, 0L));
+        when(clusterService.filterLiveServers(anySet())).thenReturn(Set.of(S1));
+        when(clusterService.schedulerConfig()).thenReturn(schedulerConfig());
+        NodeLoadSnapshot stale = new NodeLoadSnapshot(
+                System.currentTimeMillis() - 10_000L,
+                4, 0, 0, 0.10, 0.20,
+                128L * 1024L * 1024L, true);
+        when(clusterService.nodeSnapshots(anySet()))
+                .thenReturn(Map.of(S1, stale));
+
+        QueryPlanner planner = new QueryPlanner(parquetAdapter, clusterService);
+
+        assertThrows(QueryPlanner.NoSchedulableNodeException.class, () ->
                 planner.determineEndpoints("SELECT * FROM s.t"));
     }
 
@@ -300,6 +354,20 @@ class QueryPlannerTest {
                 Map.class, ParquetQueryParser.class);
         m.setAccessible(true);
         return (Map<String, FileAssignment>) m.invoke(null, inventory, query);
+    }
+
+    private static NodeLoadSnapshot snapshot(
+            int limit, int active, int queued, double cpu, double memory) {
+        return new NodeLoadSnapshot(
+                System.currentTimeMillis(), limit, active, queued,
+                cpu, memory, 128L * 1024L * 1024L, true);
+    }
+
+    private static SchedulerConfig schedulerConfig() {
+        return new SchedulerConfig(
+                true, 1_000L, 5_000L, 5_000L,
+                1, 8, 64, 30_000L,
+                0.65, 0.90, 0.70, 0.85, 250L);
     }
 
     private static boolean invokeBelongsToTable(String path, String schema, String table)

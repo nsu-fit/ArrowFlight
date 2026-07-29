@@ -54,7 +54,7 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
     private final InputPartition inputPartition;
 
     // current FlightStream and its VectorSchemaRoot
-    private FlightStream stream;
+    private Client.RedirectingStream stream;
     private VectorSchemaRoot root;
     private Field[] fields;
 
@@ -103,7 +103,7 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
         this.configuration = null;
         this.inputPartition = null;
         this.client = null;
-        this.stream = stream;
+        this.stream = new Client.RedirectingStream(stream, false);
         this.root = root;
         this.rowIdx = -1;
         this.batchRowCount = root.getRowCount();
@@ -397,7 +397,7 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
                         .toArray(org.apache.arrow.flight.Location[]::new)
         );
 
-        this.stream = this.client.openStream(fep);
+        this.stream = this.client.openRedirectingStream(fep);
         this.root = stream.getRoot();
         this.fields = Field.from(schema);
         this.sparkFields = this.fields;
@@ -459,7 +459,7 @@ public class FlightPartitionReader implements PartitionReader<InternalRow> {
                         .toArray(org.apache.arrow.flight.Location[]::new)
         );
 
-        this.stream = this.client.openStream(fep);
+        this.stream = this.client.openRedirectingStream(fep);
         this.root = stream.getRoot();
         this.fields = Field.from(schema);
         this.sparkFields = this.fields;  // FlightInfo schema = what Spark's codegen expects

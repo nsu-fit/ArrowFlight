@@ -34,6 +34,17 @@ public final class MetricsService implements AutoCloseable {
     private static final ConcurrentHashMap<String, QueryMetrics> QUERY_METRICS =
             new ConcurrentHashMap<>();
     private static final AtomicLong ACTIVE_QUERIES = new AtomicLong();
+    private static final AtomicLong ADMISSION_ACTIVE_QUERIES = new AtomicLong();
+    private static final AtomicLong ADMISSION_QUEUED_QUERIES = new AtomicLong();
+    private static final AtomicLong ADMISSION_CONCURRENCY_LIMIT = new AtomicLong();
+    private static final AtomicLong NODE_THROUGHPUT_BYTES_PER_SECOND = new AtomicLong();
+    private static final AtomicLong PROCESS_CPU_LOAD_BITS =
+            new AtomicLong(Double.doubleToRawLongBits(-1.0));
+    private static final AtomicLong SYSTEM_CPU_LOAD_BITS =
+            new AtomicLong(Double.doubleToRawLongBits(-1.0));
+    private static final AtomicLong MEMORY_PRESSURE_BITS =
+            new AtomicLong(Double.doubleToRawLongBits(0.0));
+    private static final AtomicLong ENDPOINT_REDIRECTS = new AtomicLong();
 
     private final HttpServer server;
     private final ExecutorService executor;
@@ -81,6 +92,58 @@ public final class MetricsService implements AutoCloseable {
     public static QueryObservation observeQuery(long logicalBytes) {
         ACTIVE_QUERIES.incrementAndGet();
         return new QueryObservation(Math.max(0L, logicalBytes));
+    }
+
+    /**
+     * Updates local query admission gauges.
+     *
+     * @param active executing queries
+     * @param queued queued queries
+     * @param limit current concurrency limit
+     * @param throughputBytesPerSecond moving-average query throughput
+     */
+    public static void updateAdmission(
+            int active, int queued, int limit, long throughputBytesPerSecond) {
+        ADMISSION_ACTIVE_QUERIES.set(Math.max(0, active));
+        ADMISSION_QUEUED_QUERIES.set(Math.max(0, queued));
+        ADMISSION_CONCURRENCY_LIMIT.set(Math.max(0, limit));
+        NODE_THROUGHPUT_BYTES_PER_SECOND.set(
+                Math.max(0L, throughputBytesPerSecond));
+    }
+
+    /**
+     * Updates local process resource-pressure gauges.
+     *
+     * @param processCpuLoad process CPU utilization
+     * @param memoryPressure managed or Arrow memory utilization
+     */
+    public static void updateResourcePressure(
+            double processCpuLoad, double memoryPressure) {
+        updateResourcePressure(
+                processCpuLoad, processCpuLoad, memoryPressure);
+    }
+
+    /**
+     * Updates local process and system resource-pressure gauges.
+     *
+     * @param processCpuLoad process CPU utilization
+     * @param systemCpuLoad total node or container CPU utilization
+     * @param memoryPressure managed or Arrow memory utilization
+     */
+    public static void updateResourcePressure(
+            double processCpuLoad,
+            double systemCpuLoad,
+            double memoryPressure) {
+        PROCESS_CPU_LOAD_BITS.set(Double.doubleToRawLongBits(processCpuLoad));
+        SYSTEM_CPU_LOAD_BITS.set(Double.doubleToRawLongBits(systemCpuLoad));
+        MEMORY_PRESSURE_BITS.set(Double.doubleToRawLongBits(memoryPressure));
+    }
+
+    /**
+     * Records one successful cross-node endpoint redirect.
+     */
+    public static void recordRedirect() {
+        ENDPOINT_REDIRECTS.incrementAndGet();
     }
 
     @Override
@@ -143,6 +206,32 @@ public final class MetricsService implements AutoCloseable {
         appendJvmMetrics(metrics);
         metric(metrics, "arrowflight_parquet_queries_active", METRIC_TYPE_GAUGE,
                 "Currently executing Parquet queries", ACTIVE_QUERIES.get());
+        metric(metrics, "arrowflight_admission_active_queries", METRIC_TYPE_GAUGE,
+                "Queries holding local execution permits",
+                ADMISSION_ACTIVE_QUERIES.get());
+        metric(metrics, "arrowflight_admission_queued_queries", METRIC_TYPE_GAUGE,
+                "Queries waiting for local execution permits",
+                ADMISSION_QUEUED_QUERIES.get());
+        metric(metrics, "arrowflight_admission_concurrency_limit", METRIC_TYPE_GAUGE,
+                "Current adaptive local query concurrency limit",
+                ADMISSION_CONCURRENCY_LIMIT.get());
+        metric(metrics, "arrowflight_node_throughput_bytes_per_second",
+                METRIC_TYPE_GAUGE,
+                "Moving-average successful query throughput",
+                NODE_THROUGHPUT_BYTES_PER_SECOND.get());
+        metric(metrics, "arrowflight_process_cpu_load_ratio", METRIC_TYPE_GAUGE,
+                "Recent process CPU utilization",
+                Double.longBitsToDouble(PROCESS_CPU_LOAD_BITS.get()));
+        metric(metrics, "arrowflight_system_cpu_load_ratio", METRIC_TYPE_GAUGE,
+                "Recent total node or container CPU utilization",
+                Double.longBitsToDouble(SYSTEM_CPU_LOAD_BITS.get()));
+        metric(metrics, "arrowflight_memory_pressure_ratio", METRIC_TYPE_GAUGE,
+                "Maximum recent JVM, Arrow, system, or cgroup memory utilization",
+                Double.longBitsToDouble(MEMORY_PRESSURE_BITS.get()));
+        metric(metrics, "arrowflight_endpoint_redirects_total",
+                METRIC_TYPE_COUNTER,
+                "Endpoints atomically redirected to another Flight node",
+                ENDPOINT_REDIRECTS.get());
         appendQueryMetrics(metrics);
 
         return metrics.toString();

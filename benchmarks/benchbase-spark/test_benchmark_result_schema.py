@@ -3,10 +3,12 @@
 
 import importlib.util
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -26,6 +28,66 @@ PUBLICATION_SPEC.loader.exec_module(PUBLICATION)
 
 class BenchmarkResultSchemaTest(unittest.TestCase):
     """Validates artifact construction, versioning, and failure behavior."""
+
+    def test_pom_versions_reads_hardcoded_duckdb_dependency(self):
+        """Legacy POM dependency versions remain machine-readable."""
+        project = Path(self.temp.name) / "legacy-project"
+        project.mkdir()
+        (project / "pom.xml").write_text(
+            """<?xml version="1.0"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <properties>
+    <spark.version>3.5.1</spark.version>
+  </properties>
+  <dependencies>
+    <dependency>
+      <groupId>org.duckdb</groupId>
+      <artifactId>duckdb_jdbc</artifactId>
+      <version>1.1.3</version>
+    </dependency>
+  </dependencies>
+</project>
+""",
+            encoding="utf-8",
+        )
+
+        versions = SCHEMA.pom_versions(project)
+
+        self.assertEqual("3.5.1", versions["spark"])
+        self.assertEqual("1.1.3", versions["duckdb_jdbc"])
+
+    def test_application_root_resolves_selected_source_directory(self):
+        """Runtime metadata follows the Docker application source selector."""
+        repo = Path(self.temp.name).resolve()
+        with patch.dict(
+            os.environ,
+            {"ARROWFLIGHT_SOURCE_DIR": "TEST/hadoop-arrowflight"},
+        ):
+            selected = SCHEMA.application_root(repo)
+
+        self.assertEqual(
+            repo / "TEST" / "hadoop-arrowflight",
+            selected,
+        )
+
+    def test_read_csv_skips_nul_only_prefix(self):
+        """NUL-only Beeline padding does not replace the CSV header."""
+        csv_path = Path(self.temp.name) / "nul-prefix.csv"
+        csv_path.write_text(
+            "\0\0\0\nname,value\ncustomer,42\n",
+            encoding="utf-8",
+        )
+
+        rows = SCHEMA.read_csv(csv_path)
+
+        self.assertEqual([{"name": "customer", "value": "42"}], rows)
+
+    def test_rows_equal_accepts_six_decimal_rendering(self):
+        """Numeric engine rendering may round reference decimals."""
+        expected = [{"average": "25.522005853257337"}]
+        actual = [{"average": "25.522006"}]
+
+        self.assertTrue(SCHEMA.rows_equal(expected, actual))
 
     def setUp(self):
         """Create one complete paired benchmark fixture."""

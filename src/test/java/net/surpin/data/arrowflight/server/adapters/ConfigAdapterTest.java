@@ -51,6 +51,11 @@ class ConfigAdapterTest {
         assertEquals(Integer.MAX_VALUE, cfg.grpcMaxInboundMessageSize());
         assertEquals(67108864, cfg.flightBackpressureThresholdBytes());
         assertEquals(300000, cfg.flightListenerReadyTimeoutMillis());
+        assertTrue(cfg.scheduler().enabled());
+        assertEquals(64, cfg.scheduler().maxQueuedQueries());
+        assertTrue(cfg.scheduler().redirectEnabled());
+        assertEquals(500L, cfg.scheduler().redirectAfterMillis());
+        assertEquals(2, cfg.scheduler().maxRedirects());
     }
 
     @Test
@@ -217,6 +222,36 @@ class ConfigAdapterTest {
 
         AppConfig cfg = ConfigAdapter.getConfig();
         assertFalse(cfg.metricsEnabled());
+    }
+
+    /** Verifies adaptive admission limits map from system properties. */
+    @Test
+    void getConfigAdaptiveAdmissionLimits() {
+        setProp("admissionMinConcurrentQueries", "2");
+        setProp("admissionMaxConcurrentQueries", "6");
+        setProp("admissionMaxQueuedQueries", "12");
+
+        AppConfig cfg = ConfigAdapter.getConfig();
+
+        assertEquals(2, cfg.scheduler().minConcurrentQueries());
+        assertEquals(6, cfg.scheduler().maxConcurrentQueries());
+        assertEquals(12, cfg.scheduler().maxQueuedQueries());
+    }
+
+    /** Verifies endpoint redirect controls map from system properties. */
+    @Test
+    void getConfigAdmissionRedirectControls() {
+        setProp("admissionRedirectAfterMs", "750");
+        setProp("admissionMaxRedirects", "3");
+        setProp("admissionRedirectMinScoreImprovement", "0.40");
+
+        AppConfig cfg = ConfigAdapter.getConfig();
+
+        assertEquals(750L, cfg.scheduler().redirectAfterMillis());
+        assertEquals(3, cfg.scheduler().maxRedirects());
+        assertEquals(
+                0.40,
+                cfg.scheduler().redirectMinScoreImprovement());
     }
 
     @Test

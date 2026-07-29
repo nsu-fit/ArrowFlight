@@ -53,4 +53,21 @@ class HandleStateTest {
 
         assertTrue(state.toString().contains("filePaths=[a.parquet, b.parquet]"));
     }
+
+    /**
+     * Verifies redirects preserve work and increment the signed hop count.
+     */
+    @Test
+    void redirectedStateChangesOnlyTargetAndHop() {
+        HandleState state = HandleState.forServerFiles(
+                "SELECT 1", new String[] {"a.parquet"},
+                "grpc://server-1", 42L);
+
+        HandleState redirected = state.redirectedTo("grpc://server-2");
+
+        assertEquals("grpc://server-2", redirected.serverUri());
+        assertEquals(1, redirected.redirectCount());
+        assertEquals(state.query(), redirected.query());
+        assertEquals(state.bytes(), redirected.bytes());
+    }
 }

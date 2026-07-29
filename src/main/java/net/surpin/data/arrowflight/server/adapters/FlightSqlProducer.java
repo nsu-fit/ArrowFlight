@@ -28,6 +28,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
 import net.surpin.data.arrowflight.server.model.HandleState;
@@ -35,9 +36,12 @@ import net.surpin.data.arrowflight.server.model.ExecutionPathTracker;
 import net.surpin.data.arrowflight.server.model.QueryPlan;
 import net.surpin.data.arrowflight.server.metrics.ExecutionPathRecorder;
 import net.surpin.data.arrowflight.server.metrics.MetricsService;
+import net.surpin.data.arrowflight.server.services.AdaptiveAdmissionController;
 import net.surpin.data.arrowflight.server.services.ClusterService;
 import net.surpin.data.arrowflight.server.services.ExecutionService;
 import net.surpin.data.arrowflight.server.services.MetadataService;
+import net.surpin.data.arrowflight.server.services.TaskRedirectService;
+import net.surpin.data.arrowflight.common.FlightRedirectProtocol;
 import net.surpin.data.arrowflight.server.services.QueryPlanner;
 
 import static com.google.protobuf.ByteString.copyFrom;
@@ -57,6 +61,8 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
     private final QueryPlanner queryPlanner;
     private final ExecutionService executionService;
     private final ClusterService clusterService;
+    private final AdaptiveAdmissionController admissionController;
+    private final TaskRedirectService taskRedirectService;
     private final SqlInfoBuilder sqlInfoBuilder;
 
     /**
@@ -70,12 +76,56 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
     public FlightSqlProducer(Location location, BufferAllocator allocator,
             MetadataService metadataService, QueryPlanner queryPlanner,
             ExecutionService executionService, ClusterService clusterService) {
+        this(location, allocator, metadataService, queryPlanner,
+                executionService, clusterService,
+                AdaptiveAdmissionController.permissive(), null);
+    }
+
+    /**
+     * Creates a Flight SQL producer with adaptive local query admission.
+     *
+     * @param location server location for endpoint registration
+     * @param allocator Arrow buffer allocator
+     * @param metadataService metadata lookup service
+     * @param queryPlanner query planning and endpoint determination
+     * @param executionService query execution service
+     * @param clusterService cluster state management
+     * @param admissionController local execution admission controller
+     */
+    public FlightSqlProducer(Location location, BufferAllocator allocator,
+            MetadataService metadataService, QueryPlanner queryPlanner,
+            ExecutionService executionService, ClusterService clusterService,
+            AdaptiveAdmissionController admissionController) {
+        this(location, allocator, metadataService, queryPlanner,
+                executionService, clusterService,
+                admissionController, null);
+    }
+
+    /**
+     * Creates a Flight SQL producer with adaptive admission and task redirect.
+     *
+     * @param location server location for endpoint registration
+     * @param allocator Arrow buffer allocator
+     * @param metadataService metadata lookup service
+     * @param queryPlanner query planning and endpoint determination
+     * @param executionService query execution service
+     * @param clusterService cluster state management
+     * @param admissionController local execution admission controller
+     * @param taskRedirectService cross-node endpoint redirect service
+     */
+    public FlightSqlProducer(Location location, BufferAllocator allocator,
+            MetadataService metadataService, QueryPlanner queryPlanner,
+            ExecutionService executionService, ClusterService clusterService,
+            AdaptiveAdmissionController admissionController,
+            TaskRedirectService taskRedirectService) {
         this.location = location;
         this.allocator = allocator;
         this.metadataService = metadataService;
         this.queryPlanner = queryPlanner;
         this.executionService = executionService;
         this.clusterService = clusterService;
+        this.admissionController = admissionController;
+        this.taskRedirectService = taskRedirectService;
 
         this.sqlInfoBuilder = new SqlInfoBuilder();
         sqlInfoBuilder
@@ -131,6 +181,16 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
         }
 
         String serverUri = state.serverUri() != null ? state.serverUri() : "local";
+        byte[] handleBytes = handle.toByteArray();
+        if (state.loadTracked()
+                && !clusterService.claimEndpointExecution(
+                        handleBytes, state)) {
+            listener.error(CallStatus.ALREADY_EXISTS
+                    .withDescription(
+                            "Flight endpoint is already executing, completed, or expired")
+                    .toRuntimeException());
+            return;
+        }
         long bytes = state.bytes();
         long tExec = LogUtil.mark();
         long executionStartNanos = System.nanoTime();
@@ -140,15 +200,70 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
                 serverUri, filePaths.length, bytes, qid, query);
 
         MDC.put("qid", qid);
+        Optional<TaskRedirectService.Redirect> redirect =
+                tryRedirect(handleBytes, state);
+        if (redirect.isPresent()) {
+            sendRedirect(listener, redirect.orElseThrow());
+            clearQueryContext();
+            return;
+        }
+        AdaptiveAdmissionController.Permit permit;
+        try {
+            try {
+                permit = admissionController.acquire(
+                        listener::isCancelled,
+                        taskRedirectService != null
+                                && taskRedirectService.canRedirect(state));
+            } catch (AdaptiveAdmissionController.AdmissionRedirectException e) {
+                redirect = tryRedirect(handleBytes, state);
+                if (redirect.isPresent()) {
+                    sendRedirect(listener, redirect.orElseThrow());
+                    clearQueryContext();
+                    return;
+                }
+                permit = admissionController.acquire(listener::isCancelled);
+            }
+        } catch (AdaptiveAdmissionController.AdmissionRejectedException e) {
+            redirect = tryRedirect(handleBytes, state);
+            if (redirect.isPresent()) {
+                sendRedirect(listener, redirect.orElseThrow());
+                clearQueryContext();
+                return;
+            }
+            listener.error(CallStatus.RESOURCE_EXHAUSTED
+                    .withDescription(e.getMessage())
+                    .withCause(e).toRuntimeException());
+            clusterService.resetEndpointClaim(handleBytes, state);
+            clearQueryContext();
+            return;
+        } catch (AdaptiveAdmissionController.AdmissionCancelledException e) {
+            listener.error(CallStatus.CANCELLED
+                    .withDescription(e.getMessage())
+                    .withCause(e).toRuntimeException());
+            clusterService.releaseEndpointLoad(handleBytes, state);
+            clearQueryContext();
+            return;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            listener.error(CallStatus.CANCELLED
+                    .withDescription("Interrupted while waiting for query admission")
+                    .withCause(e).toRuntimeException());
+            clusterService.resetEndpointClaim(handleBytes, state);
+            clearQueryContext();
+            return;
+        }
+
         MetricsService.QueryObservation observation =
                 MetricsService.observeQuery(bytes);
         ExecutionPathTracker pathTracker = new ExecutionPathTracker();
         boolean success = false;
         String failureReason = null;
-        try {
+        AdaptiveAdmissionController.Permit executionPermit = permit;
+        try (executionPermit) {
             executionService.readParquet(
                     allocator, query, filePaths, listener, true, pathTracker);
             listener.completed();
+            executionPermit.markSuccessful(bytes);
             success = true;
             LogUtil.logTiming(tExec, "execution.total", "files=" + filePaths.length);
             long elapsed = TimeUnit.NANOSECONDS.toMillis(
@@ -179,10 +294,58 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
             ExecutionPathRecorder.recordEvent(
                     qid, query, pathTracker, success, failureReason);
             observation.close();
-            MDC.remove("qid");
-            LogUtil.setQid(null);
-            clusterService.releaseEndpointLoad(handle.toByteArray(), state);
+            clearQueryContext();
+            clusterService.releaseEndpointLoad(handleBytes, state);
         }
+    }
+
+    /**
+     * Attempts to move a claimed endpoint to another node.
+     *
+     * @param handle signed statement handle
+     * @param state decoded endpoint state
+     * @return replacement endpoint when an atomic redirect succeeds
+     */
+    private Optional<TaskRedirectService.Redirect> tryRedirect(
+            byte[] handle, HandleState state) {
+        if (taskRedirectService == null) {
+            return Optional.empty();
+        }
+        try {
+            return taskRedirectService.tryRedirect(handle, state);
+        } catch (RuntimeException e) {
+            LOGGER.warn(
+                    "Unable to evaluate Flight endpoint redirect: {}",
+                    e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * Sends a client-readable replacement endpoint through Flight error metadata.
+     *
+     * @param listener current server stream listener
+     * @param redirect replacement endpoint
+     */
+    private static void sendRedirect(
+            FlightProducer.ServerStreamListener listener,
+            TaskRedirectService.Redirect redirect) {
+        listener.error(CallStatus.RESOURCE_EXHAUSTED
+                .withDescription("Flight endpoint redirected to "
+                        + redirect.targetUri())
+                .withMetadata(FlightRedirectProtocol.metadata(
+                        redirect.targetUri(),
+                        redirect.ticket(),
+                        redirect.redirectCount()))
+                .toRuntimeException());
+    }
+
+    /**
+     * Clears query identifiers from the serving thread.
+     */
+    private static void clearQueryContext() {
+        MDC.remove("qid");
+        LogUtil.setQid(null);
     }
 
     private static boolean isFileNotFound(Throwable e) {
@@ -244,6 +407,10 @@ public final class FlightSqlProducer extends BasicFlightSqlProducer implements A
             QueryPlan plan = queryPlanner.plan(query);
             return new FlightInfo(arrowSchema, descriptor, plan.endpoints(),
                     plan.totalBytes(), plan.totalRecords());
+        } catch (QueryPlanner.NoSchedulableNodeException e) {
+            throw CallStatus.RESOURCE_EXHAUSTED
+                    .withDescription(e.getMessage())
+                    .withCause(e).toRuntimeException();
         } catch (IOException e) {
             throw CallStatus.INTERNAL
                     .withDescription("Unable to plan Flight query")

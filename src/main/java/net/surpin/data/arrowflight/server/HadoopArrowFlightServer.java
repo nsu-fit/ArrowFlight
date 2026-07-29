@@ -123,6 +123,7 @@ public class HadoopArrowFlightServer {
                         Location.forGrpcInsecure(localhost, port).getUri().toString(),
                         storageHost, hadoopConfig))
                 .build();
+        component.nodeResourceMonitor().start();
 
         // Wait for cluster nodes (single-node skip)
         if (hazelcastHosts.length > 1) {
@@ -179,6 +180,11 @@ public class HadoopArrowFlightServer {
             LOGGER.info("Flight SQL server stopped");
         }
         if (component != null) {
+            try {
+                component.nodeResourceMonitor().close();
+            } catch (Exception e) {
+                LOGGER.error("Error closing node resource monitor", e);
+            }
             try {
                 component.duckDb().close();
             } catch (Exception e) {

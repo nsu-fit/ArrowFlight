@@ -5,6 +5,7 @@ import net.surpin.data.arrowflight.client.model.FieldVector;
 import net.surpin.data.arrowflight.client.model.RowSet;
 import net.surpin.data.arrowflight.client.query.Endpoint;
 import net.surpin.data.arrowflight.client.query.QueryEndpoints;
+import net.surpin.data.arrowflight.common.FlightRedirectProtocol;
 import com.google.protobuf.Any;
 import net.surpin.data.arrowflight.server.LogUtil;
 import org.apache.arrow.flight.*;
@@ -30,6 +31,7 @@ import java.net.UnknownHostException;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
@@ -41,6 +43,7 @@ import java.util.concurrent.TimeUnit;
  */
 public final class Client implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger(Client.class);
+    private static final int MAX_CLIENT_REDIRECT_HOPS = 8;
 
     private static final String NODE;
 
@@ -170,7 +173,8 @@ public final class Client implements AutoCloseable {
             FlightEndpoint fep = new FlightEndpoint(new Ticket(ep.getTicket()), Arrays.stream(ep.getURIs()).map(Location::new).toArray(Location[]::new));
             int batches = 0;
             long rows = 0;
-            try (FlightStream stream = this.openStream(fep)) {
+            try (RedirectingStream stream =
+                         this.openRedirectingStream(fep)) {
                 VectorSchemaRoot root = stream.getRoot();
                 while (stream.next()) {
                     batches++;
@@ -215,7 +219,8 @@ public final class Client implements AutoCloseable {
             FlightEndpoint fep = new FlightEndpoint(new Ticket(ep.getTicket()), Arrays.stream(ep.getURIs()).map(Location::new).toArray(Location[]::new));
             int batches = 0;
             long rows = 0;
-            try (FlightStream stream = this.openStream(fep)) {
+            try (RedirectingStream stream =
+                         this.openRedirectingStream(fep)) {
                 VectorSchemaRoot root = stream.getRoot();
                 while (stream.next()) {
                     batches++;
@@ -273,7 +278,8 @@ public final class Client implements AutoCloseable {
             int endpointIdx = 0;
             for (FlightEndpoint endpoint: fi.getEndpoints()) {
                 int batches = 0;
-                try (FlightStream stream = this.openStream(endpoint)) {
+                try (RedirectingStream stream =
+                             this.openRedirectingStream(endpoint)) {
                     while (stream.next()) {
                         batches++;
                         VectorSchemaRoot root = stream.getRoot();
@@ -582,6 +588,152 @@ public final class Client implements AutoCloseable {
             throw unsupported;
         }
         throw new IllegalArgumentException("Flight endpoint has no usable location: " + fep);
+    }
+
+    /**
+     * Opens a stream and follows server-provided endpoint redirects before any batch is exposed.
+     *
+     * @param endpoint initially planned Flight endpoint
+     * @return stream with the first successful batch buffered
+     * @throws Exception when stream creation fails or redirect safety limits are exceeded
+     */
+    public RedirectingStream openRedirectingStream(
+            FlightEndpoint endpoint) throws Exception {
+        return followRedirects(endpoint, this::openStream);
+    }
+
+    /**
+     * Follows redirect metadata using the supplied stream opener.
+     *
+     * @param endpoint initially planned endpoint
+     * @param opener stream-opening function
+     * @return first successful stream with its first batch buffered
+     * @throws Exception when opening fails or the safety limit is exceeded
+     */
+    static RedirectingStream followRedirects(
+            FlightEndpoint endpoint,
+            StreamOpener opener) throws Exception {
+        FlightEndpoint current = endpoint;
+        int followedRedirects = 0;
+        while (true) {
+            FlightStream stream = null;
+            try {
+                stream = opener.open(current);
+                boolean firstBatchAvailable = stream.next();
+                return new RedirectingStream(
+                        stream, firstBatchAvailable);
+            } catch (FlightRuntimeException failure) {
+                closeQuietly(stream);
+                Optional<FlightEndpoint> replacement =
+                        FlightRedirectProtocol.endpoint(failure);
+                if (replacement.isEmpty()) {
+                    throw failure;
+                }
+                followedRedirects++;
+                if (followedRedirects > MAX_CLIENT_REDIRECT_HOPS) {
+                    throw new IllegalStateException(
+                            "Flight endpoint redirect safety limit exceeded",
+                            failure);
+                }
+                current = replacement.orElseThrow();
+                LOGGER.info(
+                        "node={} client=followRedirect hop={} target={}",
+                        NODE,
+                        FlightRedirectProtocol.redirectCount(failure),
+                        current.getLocations());
+            }
+        }
+    }
+
+    /**
+     * Opens one candidate endpoint and permits checked transport failures.
+     */
+    @FunctionalInterface
+    interface StreamOpener {
+
+        /**
+         * Opens one Flight stream.
+         *
+         * @param endpoint candidate endpoint
+         * @return opened stream
+         * @throws Exception when the endpoint cannot be opened
+         */
+        FlightStream open(FlightEndpoint endpoint) throws Exception;
+    }
+
+    /**
+     * Closes a failed candidate stream without hiding its original exception.
+     *
+     * @param stream failed candidate stream
+     */
+    private static void closeQuietly(FlightStream stream) {
+        if (stream == null) {
+            return;
+        }
+        try {
+            stream.close();
+        } catch (Exception e) {
+            LOGGER.debug(
+                    "Failed to close redirected Flight stream: {}",
+                    e.getMessage());
+        }
+    }
+
+    /**
+     * Wraps an opened Flight stream while preserving an eagerly requested first batch.
+     */
+    public static final class RedirectingStream implements AutoCloseable {
+
+        private final FlightStream delegate;
+        private boolean firstBatchAvailable;
+
+        /**
+         * Creates a redirect-aware stream wrapper.
+         *
+         * @param delegate successfully opened Flight stream
+         * @param firstBatchAvailable whether the delegate already advanced to its first batch
+         */
+        public RedirectingStream(
+                FlightStream delegate, boolean firstBatchAvailable) {
+            this.delegate = delegate;
+            this.firstBatchAvailable = firstBatchAvailable;
+        }
+
+        /**
+         * Advances to the buffered or next Arrow batch.
+         *
+         * @return whether a batch is available
+         */
+        public boolean next() {
+            if (firstBatchAvailable) {
+                firstBatchAvailable = false;
+                return true;
+            }
+            return delegate.next();
+        }
+
+        /**
+         * Returns the current Flight-owned vector root.
+         *
+         * @return current vector root
+         */
+        public VectorSchemaRoot getRoot() {
+            return delegate.getRoot();
+        }
+
+        /**
+         * Returns the schema advertised by the successful stream.
+         *
+         * @return stream schema
+         */
+        public Schema getSchema() {
+            return delegate.getSchema();
+        }
+
+        @Override
+        public void close() throws Exception {
+            delegate.close();
+        }
     }
 
     private boolean isPrimaryLocation(Location location) {

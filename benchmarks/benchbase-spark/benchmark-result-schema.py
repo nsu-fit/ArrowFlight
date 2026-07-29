@@ -14,6 +14,7 @@ import sys
 import xml.etree.ElementTree as ET
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 
@@ -338,13 +339,37 @@ def pom_versions(repo_root):
         "hazelcast.version": "hazelcast",
         "spark.version": "spark",
     }
+    property_values = {}
     versions = {}
     if properties is not None:
         for child in properties:
             key = child.tag.rsplit("}", 1)[-1]
+            property_values[key] = (child.text or "").strip()
             if key in wanted:
-                versions[wanted[key]] = (child.text or "").strip()
+                versions[wanted[key]] = property_values[key]
+
+    dependency_fallbacks = {
+        "duckdb_jdbc": "duckdb_jdbc",
+    }
+    for dependency in pom.findall("m:dependencies/m:dependency", namespace):
+        artifact = dependency.findtext("m:artifactId", default="", namespaces=namespace)
+        target = dependency_fallbacks.get(artifact)
+        if not target or target in versions:
+            continue
+        version = dependency.findtext("m:version", default="", namespaces=namespace)
+        match = re.fullmatch(r"\$\{([^}]+)\}", version.strip())
+        if match:
+            version = property_values.get(match.group(1), version)
+        if version:
+            versions[target] = version.strip()
     return versions
+
+
+def application_root(repo_root):
+    """Resolve the application source selected for the runtime image."""
+    configured = Path(os.environ.get("ARROWFLIGHT_SOURCE_DIR", "."))
+    root = configured if configured.is_absolute() else repo_root / configured
+    return root.resolve()
 
 
 def docker_image_id(image_ref, repo_root):
@@ -359,6 +384,10 @@ def docker_image_id(image_ref, repo_root):
 
 def runtime_dependencies(repo_root):
     """Capture declared versions and locally resolved runtime image IDs."""
+    app_root = application_root(repo_root)
+    arrowflight_ref = os.environ.get(
+        "ARROWFLIGHT_IMAGE", "arrowflight-test:latest"
+    )
     benchbase_ref = os.environ.get(
         "BENCHBASE_IMAGE", "benchbase.azurecr.io/benchbase:latest"
     )
@@ -367,10 +396,10 @@ def runtime_dependencies(repo_root):
         "arrowflight-duckdb-benchmark-generator:latest",
     )
     return {
-        "maven": pom_versions(repo_root),
+        "maven": pom_versions(app_root),
         "arrowflight": {
-            "image_ref": "arrowflight-test:latest",
-            "image_id": docker_image_id("arrowflight-test:latest", repo_root),
+            "image_ref": arrowflight_ref,
+            "image_id": docker_image_id(arrowflight_ref, repo_root),
         },
         "benchbase": {
             "image_ref": benchbase_ref,
@@ -442,9 +471,10 @@ def runtime_configuration(args):
 
 def source_state(repo_root):
     """Capture the exact source revision and dirty state."""
-    sha = command_output(["git", "rev-parse", "HEAD"], repo_root)
+    git = ["git", "-c", f"safe.directory={repo_root.as_posix()}"]
+    sha = command_output([*git, "rev-parse", "HEAD"], repo_root)
     status = command_output(
-        ["git", "status", "--porcelain", "--untracked-files=normal"], repo_root
+        [*git, "status", "--porcelain", "--untracked-files=normal"], repo_root
     )
     return {
         "git_sha": sha,
@@ -461,6 +491,7 @@ def initialize_context(args):
         return read_json(context_path)
 
     repo_root = args.repo_root.resolve()
+    app_root = application_root(repo_root)
     compose = repo_root / "docker-compose.yml"
     benchmark_dir = repo_root / "benchmarks" / "benchbase-spark"
     input_files = {
@@ -477,7 +508,7 @@ def initialize_context(args):
         "started_at": utc_now(),
         "benchmark": args.benchmark,
         "mode": args.mode,
-        "source": source_state(repo_root),
+        "source": source_state(app_root),
         "workload": {
             "query_set": args.query_set or "all",
             "scale_factor": args.scale_factor,
@@ -806,7 +837,9 @@ def read_csv(path):
     if not path.exists():
         return []
     with path.open(newline="", encoding="utf-8") as source:
-        return list(csv.DictReader(line.replace("\0", "") for line in source))
+        sanitized = (line.replace("\0", "") for line in source)
+        non_empty = (line for line in sanitized if line.strip())
+        return list(csv.DictReader(non_empty))
 
 
 def latest_file(directory, suffix):
@@ -949,7 +982,7 @@ def correctness(metadata, engine_dir):
         if not actual_path.exists():
             status = "not-captured"
             reason = "actual-result-missing"
-        elif normalize_rows(expected) == normalize_rows(actual):
+        elif rows_equal(expected, actual):
             status = "pass"
             reason = None
         else:
@@ -978,6 +1011,39 @@ def normalize_rows(rows):
         {str(key).strip().lower(): str(value).strip() for key, value in row.items()}
         for row in rows
     ]
+
+
+def scalar_equal(expected, actual):
+    """Compare result scalars while tolerating six-decimal engine rendering."""
+    if expected == actual:
+        return True
+    try:
+        expected_number = Decimal(expected)
+        actual_number = Decimal(actual)
+    except InvalidOperation:
+        return False
+    return (
+        expected_number.is_finite()
+        and actual_number.is_finite()
+        and abs(expected_number - actual_number) <= Decimal("0.000001")
+    )
+
+
+def rows_equal(expected_rows, actual_rows):
+    """Compare normalized rows with exact keys and tolerant numeric scalars."""
+    expected = normalize_rows(expected_rows)
+    actual = normalize_rows(actual_rows)
+    if len(expected) != len(actual):
+        return False
+    for expected_row, actual_row in zip(expected, actual):
+        if expected_row.keys() != actual_row.keys():
+            return False
+        if any(
+            not scalar_equal(value, actual_row[key])
+            for key, value in expected_row.items()
+        ):
+            return False
+    return True
 
 
 def read_path_events(engine_dir, measurements):

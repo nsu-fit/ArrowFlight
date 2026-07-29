@@ -25,6 +25,8 @@ class MetricsServiceTest {
      */
     @Test
     void exposesQueryMetrics() throws Exception {
+        MetricsService.updateAdmission(2, 3, 4, 4096L);
+        MetricsService.updateResourcePressure(0.50, 0.60);
         try (MetricsService.QueryObservation observation = MetricsService.observeQuery(
                 4096L)) {
             observation.executionPath(ExecutionPath.DUCKDB_SCAN);
@@ -44,6 +46,16 @@ class MetricsServiceTest {
             assertTrue(response.body().contains(
                     "arrowflight_parquet_logical_input_bytes_total{path=\"duckdb-scan\"}"));
             assertTrue(response.body().contains("arrowflight_jvm_threads_live"));
+            assertTrue(response.body().contains(
+                    "arrowflight_admission_queued_queries 3"));
+            assertTrue(response.body().contains(
+                    "arrowflight_admission_concurrency_limit 4"));
+            assertTrue(response.body().contains(
+                    "arrowflight_process_cpu_load_ratio"));
+            assertTrue(response.body().contains(
+                    "arrowflight_system_cpu_load_ratio"));
+            assertTrue(response.body().contains(
+                    "arrowflight_endpoint_redirects_total"));
         }
     }
 

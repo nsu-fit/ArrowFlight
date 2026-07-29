@@ -2,10 +2,15 @@ package net.surpin.data.arrowflight.server.services;
 
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.map.IMap;
+import com.hazelcast.transaction.TransactionalMap;
+import com.hazelcast.transaction.TransactionalTask;
+import com.hazelcast.transaction.TransactionalTaskContext;
 import net.surpin.data.arrowflight.server.adapters.HazelcastAdapter;
 import net.surpin.data.arrowflight.server.model.AppConfig;
+import net.surpin.data.arrowflight.server.model.EndpointLease;
 import net.surpin.data.arrowflight.server.model.FileAssignment;
 import net.surpin.data.arrowflight.server.model.HandleState;
+import net.surpin.data.arrowflight.server.model.NodeLoadSnapshot;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -17,6 +22,7 @@ import java.io.Serializable;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -41,6 +47,21 @@ class ClusterServiceTest {
     @Mock
     private IMap<String, Map<String, Long>> serverFiles;
 
+    @Mock
+    private IMap<String, NodeLoadSnapshot> nodeLoadSnapshots;
+
+    @Mock
+    private HazelcastInstance instance;
+
+    @Mock
+    private TransactionalTaskContext transactionContext;
+
+    @Mock
+    private TransactionalMap<String, Serializable> transactionalStatements;
+
+    @Mock
+    private TransactionalMap<String, Long> transactionalRegistry;
+
     private static final AppConfig APP_CONFIG = new AppConfig(
             3, 4096, 1, 131072, 1, 1, 1,
             null, false, null, null,
@@ -56,6 +77,12 @@ class ClusterServiceTest {
         when(hazelcast.serverHeartbeats()).thenReturn(serverHeartbeats);
         when(hazelcast.statementCache()).thenReturn(statementCache);
         when(hazelcast.serverFiles()).thenReturn(serverFiles);
+        when(hazelcast.nodeLoadSnapshots()).thenReturn(nodeLoadSnapshots);
+        when(hazelcast.instance()).thenReturn(instance);
+        when(hazelcast.transactionalStatementCache(transactionContext))
+                .thenReturn(transactionalStatements);
+        when(hazelcast.transactionalServerRegistry(transactionContext))
+                .thenReturn(transactionalRegistry);
         return new ClusterService(hazelcast, APP_CONFIG, serverUri);
     }
 
@@ -227,6 +254,62 @@ class ClusterServiceTest {
         cs.close();
     }
 
+    /** Verifies only one concurrent DoGet can claim a reserved ticket. */
+    @Test
+    void endpointExecutionClaimIsExclusive() {
+        HandleState state = HandleState.forServerFiles(
+                "SELECT * FROM s.t", new String[]{"s/t/f.parquet"},
+                "s1", 100L, true);
+        EndpointLease reserved = EndpointLease.reserved(state);
+        EndpointLease claimed = reserved.claimed();
+        when(statementCache.get(anyString()))
+                .thenReturn(reserved, claimed);
+        when(statementCache.replace(
+                anyString(), eq(reserved), eq(claimed)))
+                .thenReturn(true);
+        ClusterService cs = createService("s1");
+
+        assertTrue(cs.claimEndpointExecution(new byte[]{1}, state));
+        assertFalse(cs.claimEndpointExecution(new byte[]{1}, state));
+        cs.close();
+    }
+
+    /** Verifies redirect atomically replaces the lease and transfers reserved bytes. */
+    @Test
+    @SuppressWarnings("unchecked")
+    void redirectEndpointTransfersLeaseAndLoadTransactionally() {
+        HandleState state = HandleState.forServerFiles(
+                "SELECT * FROM s.t", new String[]{"s/t/f.parquet"},
+                "s1", 100L, true);
+        when(instance.executeTransaction(any(TransactionalTask.class)))
+                .thenAnswer(invocation -> {
+                    TransactionalTask<?> task = invocation.getArgument(0);
+                    return task.execute(transactionContext);
+                });
+        when(transactionalStatements.getForUpdate(anyString()))
+                .thenReturn(EndpointLease.reserved(state).claimed());
+        when(transactionalStatements.containsKey(anyString()))
+                .thenReturn(false);
+        when(transactionalRegistry.getForUpdate("s1")).thenReturn(100L);
+        when(transactionalRegistry.getForUpdate("s2")).thenReturn(25L);
+        ClusterService cs = createService("s1");
+
+        ClusterService.RedirectedEndpoint redirected = cs.redirectEndpoint(
+                new byte[]{1}, state, "s2").orElseThrow();
+
+        assertEquals("s2", redirected.state().serverUri());
+        assertEquals(1, redirected.state().redirectCount());
+        verify(transactionalRegistry).put("s1", 0L);
+        verify(transactionalRegistry).put("s2", 125L);
+        verify(transactionalStatements).put(
+                anyString(),
+                argThat(value -> value instanceof EndpointLease lease
+                        && lease.status() == EndpointLease.Status.RESERVED
+                        && "s2".equals(lease.state().serverUri())),
+                eq(10L), eq(TimeUnit.MINUTES));
+        cs.close();
+    }
+
     @Test
     void getHandleReturnsNullWhenNotStored() {
         when(statementCache.get("nonexistent")).thenReturn(null);
@@ -313,6 +396,25 @@ class ClusterServiceTest {
         ClusterService cs = createService("s1");
         cs.registerLocalFiles(files);
         verify(serverFiles).put(eq("s1"), anyMap());
+        cs.close();
+    }
+
+    /** Verifies local scheduler snapshots are published and read through Hazelcast. */
+    @Test
+    void publishesAndReadsNodeSnapshot() {
+        NodeLoadSnapshot snapshot = new NodeLoadSnapshot(
+                System.currentTimeMillis(), 4, 2, 1,
+                0.5, 0.4, 1024L, true);
+        when(nodeLoadSnapshots.getAll(Set.of("s1")))
+                .thenReturn(Map.of("s1", snapshot));
+        ClusterService cs = createService("s1");
+
+        cs.publishNodeSnapshot(snapshot);
+        Map<String, NodeLoadSnapshot> result =
+                cs.nodeSnapshots(Set.of("s1"));
+
+        verify(nodeLoadSnapshots).put("s1", snapshot);
+        assertEquals(snapshot, result.get("s1"));
         cs.close();
     }
 

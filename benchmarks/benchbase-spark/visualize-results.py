@@ -4,6 +4,7 @@ import csv
 import html
 import json
 import xml.etree.ElementTree as ET
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 
@@ -64,8 +65,9 @@ def read_csv(path):
         return []
     with path.open(newline="", encoding="utf-8") as file:
         # Beeline can emit NUL padding that Python's csv parser rejects.
-        sanitized_lines = (line.replace("\0", "") for line in file)
-        return list(csv.DictReader(sanitized_lines))
+        sanitized = (line.replace("\0", "") for line in file)
+        non_empty = (line for line in sanitized if line.strip())
+        return list(csv.DictReader(non_empty))
 
 
 def read_json(path):
@@ -262,7 +264,29 @@ def rows_equal(expected_rows, actual_rows):
             for row in rows
         ]
 
-    return normalize(expected_rows) == normalize(actual_rows)
+    expected = normalize(expected_rows)
+    actual = normalize(actual_rows)
+    if len(expected) != len(actual):
+        return False
+    for expected_row, actual_row in zip(expected, actual):
+        if expected_row.keys() != actual_row.keys():
+            return False
+        for key, expected_value in expected_row.items():
+            actual_value = actual_row[key]
+            if expected_value == actual_value:
+                continue
+            try:
+                expected_number = Decimal(expected_value)
+                actual_number = Decimal(actual_value)
+            except InvalidOperation:
+                return False
+            if (
+                not expected_number.is_finite()
+                or not actual_number.is_finite()
+                or abs(expected_number - actual_number) > Decimal("0.000001")
+            ):
+                return False
+    return True
 
 
 def table_from_rows(rows, max_rows=20):

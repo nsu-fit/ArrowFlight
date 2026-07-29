@@ -33,6 +33,8 @@ DEFAULT_SPARK_JAVA_OPTIONS="${DEFAULT_SPARK_JAVA_OPTIONS:-\
 
 DEFAULT_HIVE_METASTORE_SHARED_PREFIXES="${SPARK_HIVE_METASTORE_SHARED_PREFIXES:-\
 net.surpin.data.arrowflight,flight,org.apache.arrow,io.grpc,io.netty,com.google.protobuf}"
+DEFAULT_SPARK_SESSION_CATALOG_CLASS="${SPARK_SESSION_CATALOG_CLASS:-\
+net.surpin.data.arrowflight.client.spark.FlightSessionCatalog}"
 
 export SPARK_DAEMON_JAVA_OPTS="${SPARK_DAEMON_JAVA_OPTS:-${DEFAULT_SPARK_JAVA_OPTIONS}}"
 export HDFS_BLOCK_SIZE_BYTES="${HDFS_BLOCK_SIZE_BYTES:-1073741824}"
@@ -181,11 +183,15 @@ spark_common_conf=(
   --conf "spark.sql.ansi.enabled=${SPARK_SQL_ANSI_ENABLED:-true}"
   --conf "spark.sql.decimalOperations.allowPrecisionLoss=${SPARK_DECIMAL_ALLOW_PRECISION_LOSS:-true}"
   --conf "spark.sql.catalogImplementation=hive"
-  --conf "spark.sql.catalog.spark_catalog=net.surpin.data.arrowflight.client.spark.FlightSessionCatalog"
   --conf "spark.sql.hive.metastore.sharedPrefixes=${DEFAULT_HIVE_METASTORE_SHARED_PREFIXES}"
   --conf "spark.sql.warehouse.dir=${SPARK_WAREHOUSE_DIR:-/spark-warehouse}"
   --conf "spark.hadoop.javax.jdo.option.ConnectionURL=jdbc:derby:;databaseName=${SPARK_METASTORE_DB:-/spark-warehouse/metastore_db};create=true"
 )
+if [[ -n "${DEFAULT_SPARK_SESSION_CATALOG_CLASS}" ]]; then
+  spark_common_conf+=(
+    --conf "spark.sql.catalog.spark_catalog=${DEFAULT_SPARK_SESSION_CATALOG_CLASS}"
+  )
+fi
 
 case "${mode}" in
   server)

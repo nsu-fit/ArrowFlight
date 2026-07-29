@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Exploratory TPC-H per-query results</title>
+
+  <style>
+    body { margin: 0; font: 14px/1.45 system-ui, -apple-system, Segoe UI, sans-serif; background: #f8fafc; color: #111827; }
+    main { max-width: 1180px; margin: 0 auto; padding: 28px; }
+    h1 { margin: 0 0 8px; font-size: 28px; }
+    h2 { margin: 0 0 14px; font-size: 19px; }
+    h3 { margin: 16px 0 8px; font-size: 15px; }
+    section { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 18px; margin: 16px 0; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-top: 18px; }
+    .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 14px; }
+    .label { color: #6b7280; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+    .value { font-size: 25px; font-weight: 700; margin-top: 4px; }
+    .subtle { color: #6b7280; margin: 4px 0 0; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border-bottom: 1px solid #e5e7eb; padding: 8px 10px; text-align: right; vertical-align: top; }
+    th:first-child, td:first-child { text-align: left; }
+    .kv th { color: #6b7280; width: 220px; font-weight: 600; }
+    .kv td, .kv th { text-align: left; }
+    tr.muted { color: #9ca3af; }
+    tr.active { background: #eff6ff; }
+    pre { overflow: auto; background: #0f172a; color: #e5e7eb; padding: 14px; border-radius: 8px; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    svg { width: 100%; height: auto; }
+    svg text { fill: #4b5563; font-size: 12px; }
+    .legend { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 8px; color: #4b5563; }
+    .legend i { display: inline-block; width: 11px; height: 11px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+    .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+    .ok { color: #15803d; font-weight: 700; }
+    .bad { color: #b91c1c; font-weight: 700; }
+    .warn { color: #a16207; font-weight: 700; }
+    a { color: #2563eb; }
+  </style>
+
+</head>
+<body>
+<main>
+<h1>Exploratory per-query results</h1>
+<p class="bad">
+Warning: correctness validation failed. This graph must not be used as
+a publishable benchmark result.
+</p>
+
+<section>
+  <h2>Exploratory TPC-H Q1-Q22 Median Latency: Flight vs Direct</h2>
+  <p class="subtle">Median of observation-level medians for
+  each query type. <strong>Lower is faster.</strong></p>
+  <div class="legend">
+    <span><i style="background:#2563eb"></i>Flight (ms)</span>
+    <span><i style="background:#f97316"></i>Direct (ms)</span>
+  </div>
+  <svg viewBox="0 0 1120 430" role="img"
+       aria-label="TPC-H per-query average execution time comparison">
+    <rect x="0" y="0" width="1120" height="430" fill="#fff"/>
+    <line x1="72" y1="368.0" x2="1096" y2="368.0" stroke="#e5e7eb"/><text x="62" y="372.0" text-anchor="end">0.000</text><line x1="72" y1="287.5" x2="1096" y2="287.5" stroke="#e5e7eb"/><text x="62" y="291.5" text-anchor="end">990.2</text><line x1="72" y1="207.0" x2="1096" y2="207.0" stroke="#e5e7eb"/><text x="62" y="211.0" text-anchor="end">1980.4</text><line x1="72" y1="126.5" x2="1096" y2="126.5" stroke="#e5e7eb"/><text x="62" y="130.5" text-anchor="end">2970.6</text><line x1="72" y1="46.0" x2="1096" y2="46.0" stroke="#e5e7eb"/><text x="62" y="50.0" text-anchor="end">3960.9</text>
+    <line x1="72" y1="368" x2="1096"
+          y2="368" stroke="#9ca3af"/>
+    <line x1="72" y1="46" x2="72"
+          y2="368" stroke="#9ca3af"/>
+    <rect x="79.4" y="345.4" width="15.8" height="22.6" fill="#2563eb"><title>Flight Q1: 278.4 ms, 3 samples</title></rect><rect x="95.3" y="237.7" width="15.8" height="130.3" fill="#f97316"><title>Direct Q1: 1603.3 ms, 3 samples</title></rect><rect x="126.0" y="324.2" width="15.8" height="43.8" fill="#2563eb"><title>Flight Q2: 538.4 ms, 3 samples</title></rect><rect x="141.8" y="315.8" width="15.8" height="52.2" fill="#f97316"><title>Direct Q2: 642.3 ms, 3 samples</title></rect><rect x="172.5" y="309.5" width="15.8" height="58.5" fill="#2563eb"><title>Flight Q3: 719.0 ms, 3 samples</title></rect><rect x="188.4" y="302.1" width="15.8" height="65.9" fill="#f97316"><title>Direct Q3: 810.7 ms, 3 samples</title></rect><rect x="219.1" y="323.9" width="15.8" height="44.1" fill="#2563eb"><title>Flight Q4: 543.0 ms, 3 samples</title></rect><rect x="234.9" y="318.1" width="15.8" height="49.9" fill="#f97316"><title>Direct Q4: 613.4 ms, 3 samples</title></rect><rect x="265.6" y="250.9" width="15.8" height="117.1" fill="#2563eb"><title>Flight Q5: 1440.3 ms, 3 samples</title></rect><rect x="281.5" y="264.1" width="15.8" height="103.9" fill="#f97316"><title>Direct Q5: 1277.5 ms, 3 samples</title></rect><rect x="312.2" y="357.7" width="15.8" height="10.3" fill="#2563eb"><title>Flight Q6: 126.7 ms, 3 samples</title></rect><rect x="328.0" y="352.8" width="15.8" height="15.2" fill="#f97316"><title>Direct Q6: 187.4 ms, 3 samples</title></rect><rect x="358.7" y="284.1" width="15.8" height="83.9" fill="#2563eb"><title>Flight Q7: 1032.7 ms, 3 samples</title></rect><rect x="374.5" y="297.5" width="15.8" height="70.5" fill="#f97316"><title>Direct Q7: 867.5 ms, 3 samples</title></rect><rect x="405.3" y="304.5" width="15.8" height="63.5" fill="#2563eb"><title>Flight Q8: 780.5 ms, 3 samples</title></rect><rect x="421.1" y="300.8" width="15.8" height="67.2" fill="#f97316"><title>Direct Q8: 826.6 ms, 3 samples</title></rect><rect x="451.8" y="281.1" width="15.8" height="86.9" fill="#2563eb"><title>Flight Q9: 1069.2 ms, 3 samples</title></rect><rect x="467.6" y="225.9" width="15.8" height="142.1" fill="#f97316"><title>Direct Q9: 1747.8 ms, 3 samples</title></rect><rect x="498.4" y="314.3" width="15.8" height="53.7" fill="#2563eb"><title>Flight Q10: 661.0 ms, 3 samples</title></rect><rect x="514.2" y="280.3" width="15.8" height="87.7" fill="#f97316"><title>Direct Q10: 1079.1 ms, 3 samples</title></rect><rect x="544.9" y="317.8" width="15.8" height="50.2" fill="#2563eb"><title>Flight Q11: 618.1 ms, 3 samples</title></rect><rect x="560.7" y="319.6" width="15.8" height="48.4" fill="#f97316"><title>Direct Q11: 595.3 ms, 3 samples</title></rect><rect x="591.4" y="335.7" width="15.8" height="32.3" fill="#2563eb"><title>Flight Q12: 397.6 ms, 3 samples</title></rect><rect x="607.3" y="323.7" width="15.8" height="44.3" fill="#f97316"><title>Direct Q12: 544.3 ms, 3 samples</title></rect><rect x="638.0" y="309.0" width="15.8" height="59.0" fill="#2563eb"><title>Flight Q13: 726.1 ms, 3 samples</title></rect><rect x="653.8" y="315.6" width="15.8" height="52.4" fill="#f97316"><title>Direct Q13: 644.8 ms, 3 samples</title></rect><rect x="684.5" y="337.0" width="15.8" height="31.0" fill="#2563eb"><title>Flight Q14: 381.3 ms, 3 samples</title></rect><rect x="700.4" y="327.1" width="15.8" height="40.9" fill="#f97316"><title>Direct Q14: 502.6 ms, 3 samples</title></rect><rect x="731.1" y="313.8" width="15.8" height="54.2" fill="#2563eb"><title>Flight Q15: 666.4 ms, 3 samples</title></rect><rect x="746.9" y="278.3" width="15.8" height="89.7" fill="#f97316"><title>Direct Q15: 1103.5 ms, 3 samples</title></rect><rect x="777.6" y="318.7" width="15.8" height="49.3" fill="#2563eb"><title>Flight Q16: 606.8 ms, 3 samples</title></rect><rect x="793.5" y="312.9" width="15.8" height="55.1" fill="#f97316"><title>Direct Q16: 678.3 ms, 3 samples</title></rect><rect x="824.2" y="281.1" width="15.8" height="86.9" fill="#2563eb"><title>Flight Q17: 1069.3 ms, 3 samples</title></rect><rect x="840.0" y="286.2" width="15.8" height="81.8" fill="#f97316"><title>Direct Q17: 1006.0 ms, 3 samples</title></rect><rect x="870.7" y="46.0" width="15.8" height="322.0" fill="#2563eb"><title>Flight Q18: 3960.9 ms, 3 samples</title></rect><rect x="886.5" y="170.7" width="15.8" height="197.3" fill="#f97316"><title>Direct Q18: 2427.1 ms, 3 samples</title></rect><rect x="917.3" y="348.5" width="15.8" height="19.5" fill="#2563eb"><title>Flight Q19: 239.8 ms, 3 samples</title></rect><rect x="933.1" y="340.4" width="15.8" height="27.6" fill="#f97316"><title>Direct Q19: 339.6 ms, 3 samples</title></rect><rect x="963.8" y="323.4" width="15.8" height="44.6" fill="#2563eb"><title>Flight Q20: 549.0 ms, 3 samples</title></rect><rect x="979.6" y="321.0" width="15.8" height="47.0" fill="#f97316"><title>Direct Q20: 577.9 ms, 3 samples</title></rect><rect x="1010.4" y="241.1" width="15.8" height="126.9" fill="#2563eb"><title>Flight Q21: 1561.5 ms, 3 samples</title></rect><rect x="1026.2" y="224.7" width="15.8" height="143.3" fill="#f97316"><title>Direct Q21: 1762.2 ms, 3 samples</title></rect><rect x="1056.9" y="326.2" width="15.8" height="41.8" fill="#2563eb"><title>Flight Q22: 513.8 ms, 3 samples</title></rect><rect x="1072.7" y="279.4" width="15.8" height="88.6" fill="#f97316"><title>Direct Q22: 1090.0 ms, 3 samples</title></rect>
+    <text x="95.3" y="390" text-anchor="middle">q01</text><text x="141.8" y="390" text-anchor="middle">q02</text><text x="188.4" y="390" text-anchor="middle">q03</text><text x="234.9" y="390" text-anchor="middle">q04</text><text x="281.5" y="390" text-anchor="middle">q05</text><text x="328.0" y="390" text-anchor="middle">q06</text><text x="374.5" y="390" text-anchor="middle">q07</text><text x="421.1" y="390" text-anchor="middle">q08</text><text x="467.6" y="390" text-anchor="middle">q09</text><text x="514.2" y="390" text-anchor="middle">q10</text><text x="560.7" y="390" text-anchor="middle">q11</text><text x="607.3" y="390" text-anchor="middle">q12</text><text x="653.8" y="390" text-anchor="middle">q13</text><text x="700.4" y="390" text-anchor="middle">q14</text><text x="746.9" y="390" text-anchor="middle">q15</text><text x="793.5" y="390" text-anchor="middle">q16</text><text x="840.0" y="390" text-anchor="middle">q17</text><text x="886.5" y="390" text-anchor="middle">q18</text><text x="933.1" y="390" text-anchor="middle">q19</text><text x="979.6" y="390" text-anchor="middle">q20</text><text x="1026.2" y="390" text-anchor="middle">q21</text><text x="1072.7" y="390" text-anchor="middle">q22</text>
+    <text x="18" y="215.0" text-anchor="middle"
+          transform="rotate(-90 18 215.0)">average query execution time, ms</text>
+  </svg>
+</section>
+
+</main>
+</body>
+</html>

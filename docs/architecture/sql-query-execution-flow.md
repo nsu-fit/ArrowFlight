@@ -42,9 +42,9 @@ server, byte estimate, and load-accounting flag. The payload is authenticated
 with HMAC-SHA256 using a cluster-shared secret created through Hazelcast. Any
 Flight node can therefore verify a ticket without a distributed lookup.
 
-When every shard has one owner, endpoint planning and `DoGet` do not store or
-load per-query state in Hazelcast. For replicated shards, Hazelcast retains only
-a 10-minute load lease so an abandoned ticket cannot leak its reservation.
+Endpoint planning and `DoGet` do not store query payloads in Hazelcast.
+Every endpoint retains a 10-minute load lease so an abandoned ticket cannot
+leak its reservation.
 Legacy UUID handles still use the local/distributed statement-cache fallback.
 
 ## Building the Result Schema
@@ -63,11 +63,15 @@ The planner parses the SQL and filters the distributed file inventory to the
 referenced tables. Table-to-file assignments are cached for 30 seconds and are
 refreshed immediately if current cluster membership invalidates a cached plan.
 
-Next, the server retrieves all registered Flight servers from `serverRegistry`. Each Flight node registers itself in `serverRegistry` during startup.
+Next, the server retrieves registered Flight servers from `serverRegistry` and
+fresh `NodeLoadSnapshot` values from Hazelcast. For every file, the planner
+compares reserved bytes, observed throughput, active and queued slots, CPU,
+memory, and data locality.
 
-For each file, the server calls `pickServer`. This method chooses the Flight server that will read the file.
-
-If a Flight server runs on a host that stores the file blocks, that node is preferred. If no useful locality is available, the file is assigned using round-robin distribution across all Flight servers.
+For HDFS and other shared storage, every live node can read a file: locality
+reduces the score, but an overloaded local node can lose to an idle remote node.
+For a local filesystem, file ownership remains a hard constraint. Files are
+assigned from largest to smallest so the most expensive work is balanced first.
 
 The result of this phase is a grouping of files by server. A separate endpoint is created for each group.
 
@@ -85,9 +89,19 @@ the SQL query and the file list assigned to that endpoint.
 When the client calls `DoGet`, the server enters `FlightSqlProducer.getStreamStatement`.
 
 The server verifies the ticket signature and decodes the SQL query and assigned
-file list locally.
+file list locally, exclusively claims the endpoint lease, and requests a permit
+from `AdaptiveAdmissionController`. When no execution slot is available, the
+request waits in a bounded FIFO queue.
 
-The server then calls `ExecutionService.readParquet`, passing the allocator, SQL query, file list, listener, and stream-start flag.
+If the local node becomes overloaded, an endpoint that has not started may be
+atomically reassigned to another node. The server returns a replacement URI and
+signed ticket in error metadata, and the client repeats only that `DoGet`.
+Because no first Arrow batch was exposed, this does not duplicate data. Queue
+overflow or timeout without a suitable target remains a normal
+`RESOURCE_EXHAUSTED`.
+
+After admission, the server calls `ExecutionService.readParquet`, passing the
+allocator, SQL query, file list, listener, and stream-start flag.
 
 Actual query execution starts at this point.
 
@@ -160,10 +174,10 @@ After reading is complete, the server completes the stream.
 
 The current implementation distributes work at the whole-file level. A single large file is not split between multiple Flight nodes.
 
-Round-robin distribution balances the number of files but does not account for data volume. For more accurate benchmark/production scenarios, file sizes or row groups should be considered.
+The planner accounts for whole-file byte estimates but does not split a single
+large file or schedule individual row groups.
 
-Signed endpoint tickets are self-contained. Only replicated-shard load leases
-depend on Hazelcast, and lease expiry affects accounting rather than ticket
-decoding.
+Signed endpoint tickets are self-contained. Endpoint load leases depend on
+Hazelcast, and lease expiry affects accounting rather than ticket decoding.
 
 Actual query execution starts only during `DoGet`. `GetFlightInfo` is responsible for planning, schema construction, endpoints, and tickets.

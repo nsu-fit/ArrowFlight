@@ -28,10 +28,14 @@ import net.surpin.data.arrowflight.server.adapters.FlightSqlProducer;
 import net.surpin.data.arrowflight.server.adapters.HazelcastAdapter;
 import net.surpin.data.arrowflight.server.adapters.ParquetAdapter;
 import net.surpin.data.arrowflight.server.model.AppConfig;
+import net.surpin.data.arrowflight.server.model.SchedulerConfig;
+import net.surpin.data.arrowflight.server.services.AdaptiveAdmissionController;
 import net.surpin.data.arrowflight.server.services.ClusterService;
 import net.surpin.data.arrowflight.server.services.ExecutionService;
 import net.surpin.data.arrowflight.server.services.MetadataService;
+import net.surpin.data.arrowflight.server.services.NodeResourceMonitor;
 import net.surpin.data.arrowflight.server.services.QueryPlanner;
+import net.surpin.data.arrowflight.server.services.TaskRedirectService;
 
 /**
  * Dagger module that wires all server components as singletons.
@@ -97,6 +101,48 @@ public final class ServerModule {
     @Singleton
     ClusterService cluster(HazelcastAdapter hazelcast, AppConfig config) {
         return new ClusterService(hazelcast, config, serverUri);
+    }
+
+    /**
+     * Provides adaptive scheduler configuration.
+     *
+     * @param config application configuration
+     * @return scheduler configuration
+     */
+    @Provides
+    @Singleton
+    SchedulerConfig schedulerConfig(AppConfig config) {
+        return config.scheduler();
+    }
+
+    /**
+     * Provides the local adaptive query admission controller.
+     *
+     * @param config scheduler configuration
+     * @return admission controller
+     */
+    @Provides
+    @Singleton
+    AdaptiveAdmissionController admissionController(SchedulerConfig config) {
+        return new AdaptiveAdmissionController(config);
+    }
+
+    /**
+     * Provides cross-node reassignment for queued endpoint tasks.
+     *
+     * @param clusterService cluster state service
+     * @param parquetAdapter Parquet storage adapter
+     * @param config scheduler configuration
+     * @return endpoint redirect service
+     */
+    @Provides
+    @Singleton
+    TaskRedirectService taskRedirectService(
+            ClusterService clusterService,
+            ParquetAdapter parquetAdapter,
+            SchedulerConfig config) {
+        return new TaskRedirectService(
+                clusterService, parquetAdapter, config);
     }
 
     /**
@@ -249,18 +295,43 @@ public final class ServerModule {
      * @param queryPlanner query planner
      * @param executionService execution service
      * @param clusterService cluster service
+     * @param admissionController local query admission controller
+     * @param taskRedirectService cross-node endpoint redirect service
      * @return Flight SQL producer
      */
     @Provides
     @Singleton
     FlightSqlProducer producer(AppConfig config, BufferAllocator allocator,
             MetadataService metadataService, QueryPlanner queryPlanner,
-            ExecutionService executionService, ClusterService clusterService) {
+            ExecutionService executionService, ClusterService clusterService,
+            AdaptiveAdmissionController admissionController,
+            TaskRedirectService taskRedirectService) {
         int port = config.port();
         String localhost = "0.0.0.0";
         Location location = Location.forGrpcInsecure(localhost, port);
         return new FlightSqlProducer(location, allocator, metadataService,
-                queryPlanner, executionService, clusterService);
+                queryPlanner, executionService, clusterService,
+                admissionController, taskRedirectService);
+    }
+
+    /**
+     * Provides the monitor that publishes local load snapshots.
+     *
+     * @param clusterService cluster state service
+     * @param admissionController local query admission controller
+     * @param allocator Arrow allocator
+     * @param schedulerConfig scheduler configuration
+     * @return node resource monitor
+     */
+    @Provides
+    @Singleton
+    NodeResourceMonitor nodeResourceMonitor(
+            ClusterService clusterService,
+            AdaptiveAdmissionController admissionController,
+            BufferAllocator allocator,
+            SchedulerConfig schedulerConfig) {
+        return new NodeResourceMonitor(
+                clusterService, admissionController, allocator, schedulerConfig);
     }
 
     /**

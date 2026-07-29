@@ -1,10 +1,11 @@
 x-arrowflight-image: &arrowflight-image
-  image: arrowflight-test:latest
+  image: "${ARROWFLIGHT_IMAGE:-arrowflight-test:latest}"
   build:
     context: .
     dockerfile: docker/Dockerfile
     args:
       UBUNTU_MIRROR: "${UBUNTU_MIRROR:-http://mirror.yandex.ru/ubuntu}"
+      ARROWFLIGHT_SOURCE_DIR: "${ARROWFLIGHT_SOURCE_DIR:-.}"
 
 x-server-node-env: &server-node-env
   FLIGHT_DATA_DIR: "${HDFS_DATA_DIR:-hdfs://hdfs-namenode:8020/bench}"
@@ -373,7 +374,7 @@ services:
       - server-node-9-staging:/server-data/server-node-9
       - server-node-10-staging:/server-data/server-node-10
       - ./benchmarks/benchbase-spark/generate-duckdb-data.py:/generate-duckdb-data.py:ro
-      - ./benchmarks/benchbase-spark/results:/benchbase/results
+      - ${BENCHBASE_RESULTS_HOST_DIR:-./benchmarks/benchbase-spark/results}:/benchbase/results
     restart: "no"
 
   spark-thrift-server:
@@ -388,12 +389,13 @@ services:
       SPARK_WAREHOUSE_DIR: /spark-warehouse
       SPARK_METASTORE_DB: /spark-warehouse/metastore_db
       SPARK_SQL_ANSI_ENABLED: "${SPARK_SQL_ANSI_ENABLED:-true}"
+      SPARK_SESSION_CATALOG_CLASS: "${SPARK_SESSION_CATALOG_CLASS:-net.surpin.data.arrowflight.client.spark.FlightSessionCatalog}"
     ports:
       - "10000:10000"
       - "4040:4040"
     volumes:
       - spark-warehouse:/spark-warehouse
-      - ./benchmarks/benchbase-spark/results:/benchbase/results
+      - ${BENCHBASE_RESULTS_HOST_DIR:-./benchmarks/benchbase-spark/results}:/benchbase/results
     healthcheck:
       test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/10000'"]
       interval: 5s
@@ -414,7 +416,7 @@ services:
         condition: service_healthy
     volumes:
       - ./benchmarks/benchbase-spark/config:/benchbase/config/custom:ro
-      - ./benchmarks/benchbase-spark/results:/benchbase/results
+      - ${BENCHBASE_RESULTS_HOST_DIR:-./benchmarks/benchbase-spark/results}:/benchbase/results
 
   prometheus:
     image: prom/prometheus:v2.55.1

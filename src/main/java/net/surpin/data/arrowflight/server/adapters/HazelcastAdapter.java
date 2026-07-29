@@ -8,6 +8,8 @@ import com.hazelcast.core.Hazelcast;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.map.IMap;
 import com.hazelcast.map.listener.EntryExpiredListener;
+import com.hazelcast.transaction.TransactionalMap;
+import com.hazelcast.transaction.TransactionalTaskContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -15,6 +17,7 @@ import java.io.Serializable;
 import java.util.Map;
 
 import net.surpin.data.arrowflight.server.model.AppConfig;
+import net.surpin.data.arrowflight.server.model.NodeLoadSnapshot;
 
 /**
  * Wraps HazelcastInstance lifecycle and distributed map access.
@@ -27,12 +30,14 @@ public final class HazelcastAdapter implements AutoCloseable {
     private static final String STATEMENT_CACHE_MAP = "statement-cache";
     private static final String SERVER_HEARTBEAT_MAP = "server-heartbeats";
     private static final String SERVER_FILES_MAP = "server-files";
+    private static final String NODE_LOAD_SNAPSHOT_MAP = "node-load-snapshots-v1";
 
     private final HazelcastInstance instance;
     private final IMap<String, Long> serverRegistry;
     private final IMap<String, Serializable> statementCache;
     private final IMap<String, Long> serverHeartbeats;
     private final IMap<String, Map<String, Long>> serverFiles;
+    private final IMap<String, NodeLoadSnapshot> nodeLoadSnapshots;
 
     /**
      * Creates a new Hazelcast instance using TCP/IP join on the given hosts.
@@ -58,6 +63,7 @@ public final class HazelcastAdapter implements AutoCloseable {
         this.statementCache = instance.getMap(STATEMENT_CACHE_MAP);
         this.serverHeartbeats = instance.getMap(SERVER_HEARTBEAT_MAP);
         this.serverFiles = instance.getMap(SERVER_FILES_MAP);
+        this.nodeLoadSnapshots = instance.getMap(NODE_LOAD_SNAPSHOT_MAP);
     }
 
     /**
@@ -89,6 +95,15 @@ public final class HazelcastAdapter implements AutoCloseable {
     }
 
     /**
+     * Returns distributed node load snapshots used for adaptive scheduling.
+     *
+     * @return node URI to recent load snapshot
+     */
+    public IMap<String, NodeLoadSnapshot> nodeLoadSnapshots() {
+        return nodeLoadSnapshots;
+    }
+
+    /**
      * Registers an entry-expired listener on the statement cache.
      *
      * @param listener the listener to attach
@@ -104,6 +119,28 @@ public final class HazelcastAdapter implements AutoCloseable {
      */
     public HazelcastInstance instance() {
         return instance;
+    }
+
+    /**
+     * Returns the statement cache inside a Hazelcast transaction.
+     *
+     * @param context active transaction context
+     * @return transactional statement cache
+     */
+    public TransactionalMap<String, Serializable> transactionalStatementCache(
+            TransactionalTaskContext context) {
+        return context.getMap(STATEMENT_CACHE_MAP);
+    }
+
+    /**
+     * Returns the server load registry inside a Hazelcast transaction.
+     *
+     * @param context active transaction context
+     * @return transactional server registry
+     */
+    public TransactionalMap<String, Long> transactionalServerRegistry(
+            TransactionalTaskContext context) {
+        return context.getMap(SERVER_REGISTRY_MAP);
     }
 
     @Override

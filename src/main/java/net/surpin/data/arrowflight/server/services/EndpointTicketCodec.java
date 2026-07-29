@@ -18,7 +18,8 @@ import java.security.MessageDigest;
  */
 final class EndpointTicketCodec {
 
-    private static final int MAGIC = 0x41465431;
+    private static final int MAGIC_V1 = 0x41465431;
+    private static final int MAGIC_V2 = 0x41465432;
     private static final int SIGNATURE_BYTES = 32;
     private static final int MAX_FIELD_BYTES = 16 * 1024 * 1024;
     private static final int MAX_FILE_COUNT = 1_000_000;
@@ -48,7 +49,7 @@ final class EndpointTicketCodec {
         try {
             ByteArrayOutputStream payloadBytes = new ByteArrayOutputStream();
             try (DataOutputStream output = new DataOutputStream(payloadBytes)) {
-                output.writeInt(MAGIC);
+                output.writeInt(MAGIC_V2);
                 writeString(output, state.query());
                 String[] paths = state.filePaths();
                 output.writeInt(paths == null ? -1 : paths.length);
@@ -60,6 +61,7 @@ final class EndpointTicketCodec {
                 writeString(output, state.serverUri());
                 output.writeLong(state.bytes());
                 output.writeBoolean(state.loadTracked());
+                output.writeInt(state.redirectCount());
             }
             byte[] payload = payloadBytes.toByteArray();
             byte[] signature = sign(payload);
@@ -93,7 +95,8 @@ final class EndpointTicketCodec {
 
         try (DataInputStream input =
                      new DataInputStream(new ByteArrayInputStream(payload))) {
-            if (input.readInt() != MAGIC) {
+            int magic = input.readInt();
+            if (magic != MAGIC_V1 && magic != MAGIC_V2) {
                 throw new IllegalArgumentException("Unsupported Flight endpoint ticket");
             }
             String query = readString(input);
@@ -110,10 +113,17 @@ final class EndpointTicketCodec {
             String serverUri = readString(input);
             long bytes = input.readLong();
             boolean loadTracked = input.readBoolean();
+            int redirectCount = magic == MAGIC_V2 ? input.readInt() : 0;
+            if (redirectCount < 0) {
+                throw new IllegalArgumentException(
+                        "Invalid Flight endpoint redirect count");
+            }
             if (input.available() != 0) {
                 throw new IllegalArgumentException("Unexpected Flight endpoint ticket data");
             }
-            return new HandleState(query, paths, serverUri, bytes, loadTracked);
+            return new HandleState(
+                    query, paths, serverUri, bytes,
+                    loadTracked, redirectCount);
         } catch (IOException e) {
             throw new IllegalArgumentException("Malformed Flight endpoint ticket", e);
         }
@@ -128,7 +138,8 @@ final class EndpointTicketCodec {
     boolean isEncoded(byte[] encoded) {
         return encoded != null
                 && encoded.length >= Integer.BYTES + SIGNATURE_BYTES
-                && readInt(encoded) == MAGIC;
+                && (readInt(encoded) == MAGIC_V1
+                        || readInt(encoded) == MAGIC_V2);
     }
 
     /**

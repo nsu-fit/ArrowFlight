@@ -12,9 +12,10 @@ import java.util.Objects;
  * @param serverUri URI of the server holding the files
  * @param bytes total file size
  * @param loadTracked whether the bytes were added to distributed server load
+ * @param redirectCount number of completed cross-node redirects
  */
 public record HandleState(String query, String[] filePaths, String serverUri,
-        long bytes, boolean loadTracked) implements Serializable {
+        long bytes, boolean loadTracked, int redirectCount) implements Serializable {
 
     /**
      * Compares handle states using file-path contents.
@@ -30,6 +31,7 @@ public record HandleState(String query, String[] filePaths, String serverUri,
         return other instanceof HandleState state
                 && bytes == state.bytes
                 && loadTracked == state.loadTracked
+                && redirectCount == state.redirectCount
                 && Objects.equals(query, state.query)
                 && Arrays.equals(filePaths, state.filePaths)
                 && Objects.equals(serverUri, state.serverUri);
@@ -42,7 +44,8 @@ public record HandleState(String query, String[] filePaths, String serverUri,
      */
     @Override
     public int hashCode() {
-        int result = Objects.hash(query, serverUri, bytes, loadTracked);
+        int result = Objects.hash(
+                query, serverUri, bytes, loadTracked, redirectCount);
         return 31 * result + Arrays.hashCode(filePaths);
     }
 
@@ -57,7 +60,22 @@ public record HandleState(String query, String[] filePaths, String serverUri,
                 + ", filePaths=" + Arrays.toString(filePaths)
                 + ", serverUri=" + serverUri
                 + ", bytes=" + bytes
-                + ", loadTracked=" + loadTracked + "]";
+                + ", loadTracked=" + loadTracked
+                + ", redirectCount=" + redirectCount + "]";
+    }
+
+    /**
+     * Creates state compatible with the original five-field representation.
+     *
+     * @param query SQL query text
+     * @param filePaths paths to Parquet files
+     * @param serverUri URI of the server holding the files
+     * @param bytes total file size
+     * @param loadTracked whether the bytes were added to distributed server load
+     */
+    public HandleState(String query, String[] filePaths, String serverUri,
+            long bytes, boolean loadTracked) {
+        this(query, filePaths, serverUri, bytes, loadTracked, 0);
     }
 
     /**
@@ -69,7 +87,8 @@ public record HandleState(String query, String[] filePaths, String serverUri,
      * @param bytes total file size
      */
     public HandleState(String query, String[] filePaths, String serverUri, long bytes) {
-        this(query, filePaths, serverUri, bytes, serverUri != null && bytes > 0);
+        this(query, filePaths, serverUri, bytes,
+                serverUri != null && bytes > 0, 0);
     }
 
     /**
@@ -77,7 +96,7 @@ public record HandleState(String query, String[] filePaths, String serverUri,
      * @return handle state with no file paths or server URI
      */
     public static HandleState forQuery(String query) {
-        return new HandleState(query, null, null, 0L, false);
+        return new HandleState(query, null, null, 0L, false, 0);
     }
 
     /**
@@ -88,7 +107,7 @@ public record HandleState(String query, String[] filePaths, String serverUri,
      * @return handle state with all fields populated
      */
     public static HandleState forServerFiles(String query, String[] filePaths, String serverUri, long bytes) {
-        return new HandleState(query, filePaths, serverUri, bytes, true);
+        return new HandleState(query, filePaths, serverUri, bytes, true, 0);
     }
 
     /**
@@ -103,6 +122,19 @@ public record HandleState(String query, String[] filePaths, String serverUri,
      */
     public static HandleState forServerFiles(String query, String[] filePaths,
             String serverUri, long bytes, boolean loadTracked) {
-        return new HandleState(query, filePaths, serverUri, bytes, loadTracked);
+        return new HandleState(
+                query, filePaths, serverUri, bytes, loadTracked, 0);
+    }
+
+    /**
+     * Creates the next signed assignment in a redirect chain.
+     *
+     * @param targetServerUri newly assigned Flight server URI
+     * @return state assigned to the target with an incremented redirect count
+     */
+    public HandleState redirectedTo(String targetServerUri) {
+        return new HandleState(
+                query, filePaths, targetServerUri, bytes,
+                loadTracked, redirectCount + 1);
     }
 }

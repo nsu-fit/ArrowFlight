@@ -5,6 +5,7 @@ import java.io.InputStream;
 import java.util.Properties;
 
 import net.surpin.data.arrowflight.server.model.AppConfig;
+import net.surpin.data.arrowflight.server.model.SchedulerConfig;
 
 /**
  * Loads configuration from arrowflight.properties, system properties, and environment variables.
@@ -77,6 +78,7 @@ public class ConfigAdapter {
         int clientMaxRetries = getInt("client.maxRetries", null, 3, props);
         int clientRetryBackoffMs = getInt("client.retryBackoffMs", null, 1000, props);
         int clientConnectTimeoutMs = getInt("client.connectTimeoutMs", null, 0, props);
+        SchedulerConfig schedulerConfig = schedulerConfig(props, duckDbThreads);
 
         return new AppConfig(
                 numServers, batchSize, ioParallelism, ioFileBufferSize,
@@ -88,7 +90,98 @@ public class ConfigAdapter {
                 grpcMaxInboundMessageSize, flightBackpressureThresholdBytes,
                 flightListenerReadyTimeoutMillis,
                 dataDir, localDataDir, port, hazelcastPort, hazelcastClusterJoinTimeoutSec,
-                clientMaxRetries, clientRetryBackoffMs, clientConnectTimeoutMs);
+                clientMaxRetries, clientRetryBackoffMs, clientConnectTimeoutMs,
+                schedulerConfig);
+    }
+
+    /**
+     * Loads adaptive scheduling configuration and resolves automatic concurrency.
+     *
+     * @param props loaded properties
+     * @param duckDbThreads DuckDB threads consumed by one query
+     * @return validated scheduler configuration
+     */
+    private static SchedulerConfig schedulerConfig(
+            Properties props, int duckDbThreads) {
+        boolean enabled = getBoolean("adaptiveSchedulingEnabled",
+                "arrowflight.scheduler.enabled", true, props);
+        long snapshotIntervalMillis = getLong("schedulerSnapshotIntervalMs",
+                "arrowflight.scheduler.snapshotIntervalMs", 1_000L, props);
+        long snapshotStaleMillis = getLong("schedulerSnapshotStaleMs",
+                "arrowflight.scheduler.snapshotStaleMs", 5_000L, props);
+        long controlIntervalMillis = getLong("schedulerControlIntervalMs",
+                "arrowflight.scheduler.controlIntervalMs", 5_000L, props);
+        int minConcurrentQueries = getInt("admissionMinConcurrentQueries",
+                "arrowflight.admission.minConcurrentQueries", 1, props);
+        int configuredMaximum = getInt("admissionMaxConcurrentQueries",
+                "arrowflight.admission.maxConcurrentQueries", 0, props);
+        int automaticMaximum = Math.max(1, Math.min(8,
+                Runtime.getRuntime().availableProcessors()
+                        / Math.max(1, duckDbThreads)));
+        int maxConcurrentQueries = configuredMaximum > 0
+                ? configuredMaximum : automaticMaximum;
+        int maxQueuedQueries = getInt("admissionMaxQueuedQueries",
+                "arrowflight.admission.maxQueuedQueries", 64, props);
+        long maxQueueWaitMillis = getLong("admissionMaxQueueWaitMs",
+                "arrowflight.admission.maxQueueWaitMs", 30_000L, props);
+        double cpuLowWatermark = getDouble("schedulerCpuLowWatermark",
+                "arrowflight.scheduler.cpuLowWatermark", 0.65, props);
+        double cpuHighWatermark = getDouble("schedulerCpuHighWatermark",
+                "arrowflight.scheduler.cpuHighWatermark", 0.90, props);
+        double memoryLowWatermark = getDouble("schedulerMemoryLowWatermark",
+                "arrowflight.scheduler.memoryLowWatermark", 0.70, props);
+        double memoryHighWatermark = getDouble("schedulerMemoryHighWatermark",
+                "arrowflight.scheduler.memoryHighWatermark", 0.85, props);
+        long remotePenaltyMillis = getLong("schedulerRemoteLocalityPenaltyMs",
+                "arrowflight.scheduler.remoteLocalityPenaltyMs", 250L, props);
+        boolean redirectEnabled = getBoolean("admissionRedirectEnabled",
+                "arrowflight.admission.redirectEnabled", true, props);
+        long redirectAfterMillis = getLong("admissionRedirectAfterMs",
+                "arrowflight.admission.redirectAfterMs", 500L, props);
+        int maxRedirects = getInt("admissionMaxRedirects",
+                "arrowflight.admission.maxRedirects", 2, props);
+        double redirectMinScoreImprovement = getDouble(
+                "admissionRedirectMinScoreImprovement",
+                "arrowflight.admission.redirectMinScoreImprovement",
+                0.30, props);
+
+        if (snapshotIntervalMillis <= 0L
+                || snapshotStaleMillis < snapshotIntervalMillis
+                || controlIntervalMillis <= 0L
+                || minConcurrentQueries <= 0
+                || maxConcurrentQueries < minConcurrentQueries
+                || maxQueuedQueries < 0
+                || maxQueueWaitMillis <= 0L
+                || remotePenaltyMillis < 0L
+                || redirectAfterMillis < 0L
+                || maxRedirects < 0
+                || redirectEnabled && maxRedirects == 0
+                || redirectMinScoreImprovement < 0.0
+                || redirectMinScoreImprovement >= 1.0) {
+            throw new IllegalArgumentException("Invalid adaptive scheduler limits");
+        }
+        validateWatermarks(
+                cpuLowWatermark, cpuHighWatermark, "CPU");
+        validateWatermarks(
+                memoryLowWatermark, memoryHighWatermark, "memory");
+        return new SchedulerConfig(
+                enabled,
+                snapshotIntervalMillis,
+                snapshotStaleMillis,
+                controlIntervalMillis,
+                minConcurrentQueries,
+                maxConcurrentQueries,
+                maxQueuedQueries,
+                maxQueueWaitMillis,
+                cpuLowWatermark,
+                cpuHighWatermark,
+                memoryLowWatermark,
+                memoryHighWatermark,
+                remotePenaltyMillis,
+                redirectEnabled,
+                redirectAfterMillis,
+                maxRedirects,
+                redirectMinScoreImprovement);
     }
 
     /**
@@ -228,6 +321,21 @@ public class ConfigAdapter {
     }
 
     /**
+     * Reads a boolean configuration value.
+     *
+     * @param key primary config key
+     * @param sysAlias secondary system property key
+     * @param fallback default value
+     * @param props loaded properties
+     * @return resolved boolean value
+     */
+    private static boolean getBoolean(
+            String key, String sysAlias, boolean fallback, Properties props) {
+        String value = getString(key, sysAlias, null, props);
+        return value == null ? fallback : Boolean.parseBoolean(value);
+    }
+
+    /**
      * Reads a long config with fallback.
      *
      * @param key      primary config key
@@ -242,6 +350,40 @@ public class ConfigAdapter {
             return Long.parseLong(raw);
         } catch (NumberFormatException e) {
             throw new IllegalArgumentException("Invalid long for " + key + ": " + raw, e);
+        }
+    }
+
+    /**
+     * Reads a double configuration value with fallback.
+     *
+     * @param key primary config key
+     * @param sysAlias secondary system property key
+     * @param fallback default value
+     * @param props loaded properties
+     * @return resolved double value
+     */
+    private static double getDouble(
+            String key, String sysAlias, double fallback, Properties props) {
+        String raw = getString(key, sysAlias, String.valueOf(fallback), props);
+        try {
+            return Double.parseDouble(raw);
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(
+                    "Invalid double for " + key + ": " + raw, e);
+        }
+    }
+
+    /**
+     * Validates an adaptive controller watermark pair.
+     *
+     * @param low low utilization threshold
+     * @param high high utilization threshold
+     * @param name resource name
+     */
+    private static void validateWatermarks(double low, double high, String name) {
+        if (low < 0.0 || high > 1.0 || low >= high) {
+            throw new IllegalArgumentException(
+                    "Invalid " + name + " scheduler watermarks");
         }
     }
 

@@ -7,7 +7,7 @@ QUERY_SET="${3:-}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 COMPOSE_FILE="${REPO_ROOT}/docker-compose.yml"
-RESULTS_ROOT="${SCRIPT_DIR}/results"
+RESULTS_ROOT="${BENCHBASE_RESULTS_ROOT:-${SCRIPT_DIR}/results}"
 PAGES_DIR="${REPO_ROOT}/pages"
 RESULTS_RUN_ID="${BENCHBASE_RESULTS_ID:-}"
 RESULTS_DIR="${RESULTS_ROOT}"
@@ -40,7 +40,10 @@ export BENCHMARK_GENERATOR_IMAGE="${BENCHMARK_GENERATOR_IMAGE:-arrowflight-duckd
 BENCHMARK_GENERATOR_BUILD_RETRIES="${BENCHMARK_GENERATOR_BUILD_RETRIES:-4}"
 BENCHMARK_REBUILD_GENERATOR="${BENCHMARK_REBUILD_GENERATOR:-false}"
 BENCHBASE_IMAGE_READY=false
+BENCHBASE_VARIANT="${BENCHBASE_VARIANT:-}"
 PYTHON_CMD=()
+export ARROWFLIGHT_SOURCE_DIR="${ARROWFLIGHT_SOURCE_DIR:-.}"
+export ARROWFLIGHT_IMAGE="${ARROWFLIGHT_IMAGE:-arrowflight-test:latest}"
 
 usage() {
   cat >&2 <<'EOF'
@@ -203,9 +206,12 @@ configure_cluster() {
   echo "HDFS_BLOCK_SIZE_BYTES=${HDFS_BLOCK_SIZE_BYTES}"
   echo "BENCHMARK_SCALE_FACTOR=${BENCHMARK_SCALE_FACTOR}"
   echo "SPARK_SQL_ANSI_ENABLED=${SPARK_SQL_ANSI_ENABLED}"
-  echo "FLIGHT_BATCH_SIZE=${FLIGHT_BATCH_SIZE}"
-  echo "FLIGHT_DUCKDB_THREADS=${FLIGHT_DUCKDB_THREADS:-properties default}"
-  echo "FLIGHT_TIMING_LOG_LEVEL=${FLIGHT_TIMING_LOG_LEVEL:-inherits FLIGHT_LOG_LEVEL}"
+  echo "FLIGHT_BATCH_SIZE=${FLIGHT_BATCH_SIZE_EFFECTIVE:-${FLIGHT_BATCH_SIZE}}"
+  echo "FLIGHT_DUCKDB_THREADS=${FLIGHT_DUCKDB_THREADS_EFFECTIVE:-${FLIGHT_DUCKDB_THREADS:-properties default}}"
+  echo "FLIGHT_TIMING_LOG_LEVEL=${FLIGHT_TIMING_LOG_LEVEL_EFFECTIVE:-${FLIGHT_TIMING_LOG_LEVEL:-inherits FLIGHT_LOG_LEVEL}}"
+  echo "ARROWFLIGHT_SOURCE_DIR=${ARROWFLIGHT_SOURCE_DIR}"
+  echo "ARROWFLIGHT_IMAGE=${ARROWFLIGHT_IMAGE}"
+  echo "BENCHBASE_VARIANT=${BENCHBASE_VARIANT:-current}"
   if [[ "${SPARK_SQL_ANSI_ENABLED,,}" != "true" ]]; then
     echo "WARNING: ANSI=false prevents Spark 3.5 from pushing TPC-H Q1 decimal aggregates" >&2
     echo "to Flight; use SPARK_SQL_ANSI_ENABLED=true for representative Flight performance." >&2
@@ -217,7 +223,7 @@ prepare_results_dir() {
     local query_label="${QUERY_SET:-all}"
     query_label="${query_label,,}"
     query_label="${query_label//[^a-z0-9,]/-}"
-    RESULTS_RUN_ID="${BENCHMARK}-${MODE}-${query_label}-$(date +%Y%m%d-%H%M%S)"
+    RESULTS_RUN_ID="${BENCHMARK}${BENCHBASE_VARIANT:+-${BENCHBASE_VARIANT}}-${MODE}-${query_label}-$(date +%Y%m%d-%H%M%S)"
   fi
 
   RESULTS_DIR="${RESULTS_ROOT}/${RESULTS_RUN_ID}"
@@ -270,9 +276,9 @@ init_machine_result() {
     --java-opts "${JAVA_OPTS:--Xmx2g}" \
     --flight-source-host "${FLIGHT_SOURCE_HOST}" \
     --flight-source-port "${FLIGHT_SOURCE_PORT}" \
-    --flight-batch-size "${FLIGHT_BATCH_SIZE}" \
-    --flight-duckdb-threads "${FLIGHT_DUCKDB_THREADS:-properties-default}" \
-    --flight-timing-log-level "${FLIGHT_TIMING_LOG_LEVEL:-inherited}" \
+    --flight-batch-size "${FLIGHT_BATCH_SIZE_EFFECTIVE:-${FLIGHT_BATCH_SIZE}}" \
+    --flight-duckdb-threads "${FLIGHT_DUCKDB_THREADS_EFFECTIVE:-${FLIGHT_DUCKDB_THREADS:-properties-default}}" \
+    --flight-timing-log-level "${FLIGHT_TIMING_LOG_LEVEL_EFFECTIVE:-${FLIGHT_TIMING_LOG_LEVEL:-inherited}}" \
     --flight-log-level "${FLIGHT_LOG_LEVEL:-INFO}" >/dev/null
 }
 
@@ -1029,7 +1035,7 @@ init_compare_run() {
   if [[ -n "${RESULTS_RUN_ID}" ]]; then
     COMPARE_PARENT_RUN_ID="${RESULTS_RUN_ID}"
   else
-    COMPARE_PARENT_RUN_ID="${BENCHMARK}-compare-${query_label}-$(date +%Y%m%d-%H%M%S)"
+    COMPARE_PARENT_RUN_ID="${BENCHMARK}${BENCHBASE_VARIANT:+-${BENCHBASE_VARIANT}}-compare-${query_label}-$(date +%Y%m%d-%H%M%S)"
   fi
   RESULTS_RUN_ID="${COMPARE_PARENT_RUN_ID}"
   prepare_results_dir
