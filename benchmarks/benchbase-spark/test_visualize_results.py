@@ -60,6 +60,34 @@ class PerQueryLatencyTest(unittest.TestCase):
         self.assertIn("average query execution time, ms", chart)
 
 
+class FlightDeliveryTimingTest(unittest.TestCase):
+    def test_calculates_rpc_delivery_share_from_metric_snapshots(self):
+        with tempfile.TemporaryDirectory() as directory:
+            results = Path(directory)
+            metrics = results / "flight-metrics"
+            metrics.mkdir()
+            (metrics / "before-server-node-1.prom").write_text(
+                "arrowflight_parquet_query_duration_seconds_sum{path=\"duckdb-scan\"} 10\n"
+                "arrowflight_flight_backpressure_seconds_total{path=\"duckdb-scan\"} 2\n",
+                encoding="utf-8",
+            )
+            (metrics / "after-server-node-1.prom").write_text(
+                "arrowflight_parquet_query_duration_seconds_sum{path=\"duckdb-scan\"} 18\n"
+                "arrowflight_flight_backpressure_seconds_total{path=\"duckdb-scan\"} 4\n",
+                encoding="utf-8",
+            )
+
+            timing = VISUALIZE_RESULTS.flight_delivery_timing(results)
+            chart = VISUALIZE_RESULTS.flight_delivery_pie_chart(timing)
+
+        self.assertEqual(
+            {"total_seconds": 8.0, "rpc_seconds": 2.0, "other_seconds": 6.0},
+            timing,
+        )
+        self.assertIn("25.0%", chart)
+        self.assertIn("RPC delivery wait", chart)
+
+
 class ReadConfigTest(unittest.TestCase):
     def test_collects_queries_from_all_timed_work_phases(self):
         config_text = """<?xml version="1.0"?>

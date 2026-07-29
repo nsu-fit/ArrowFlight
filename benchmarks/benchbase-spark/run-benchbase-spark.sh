@@ -687,6 +687,25 @@ capture_execution_path_events() {
   done
 }
 
+capture_flight_metrics_snapshot() {
+  local phase="$1"
+  local service output_dir output
+  if ! is_flight_schema "${BENCHBASE_DB_SCHEMA:-${BENCHMARK}}"; then
+    return
+  fi
+  output_dir="${RESULTS_DIR}/flight-metrics"
+  mkdir -p "${output_dir}"
+  for service in "${FLIGHT_SERVER_SERVICES[@]}"; do
+    output="${output_dir}/${phase}-${service}.prom"
+    if ! compose --profile benchbase exec -T "${service}" sh -c \
+      "if command -v curl >/dev/null 2>&1; then curl -fsS http://127.0.0.1:9404/metrics; else wget -qO- http://127.0.0.1:9404/metrics; fi" \
+      > "${output}"; then
+      rm -f "${output}"
+      echo "Could not capture Flight metrics from ${service}" >&2
+    fi
+  done
+}
+
 record_benchmark_failure() {
   local reason="$1"
   local exit_code="$2"
@@ -870,6 +889,7 @@ benchbase_execute() {
   local progress_pid=""
   if is_flight_schema "${db_schema}"; then
     reset_execution_path_events
+    capture_flight_metrics_snapshot before
   fi
   echo "[BenchBase] Starting schema=${db_schema}, initialWarmup=${BENCHBASE_WARMUP_SECONDS:-0}s, measurement=${BENCHBASE_TIME_SECONDS:-serial}s/query, timedQueries=${BENCHBASE_TIMED_QUERY_COUNT}, repetitions=${BENCHBASE_QUERY_REPETITIONS}, terminals=${BENCHBASE_TERMINALS:-config default}"
   if [[ -n "${BENCHBASE_TIME_SECONDS}" ]]; then
@@ -894,6 +914,7 @@ benchbase_execute() {
 
   if is_flight_schema "${db_schema}"; then
     capture_execution_path_events
+    capture_flight_metrics_snapshot after
   fi
 
   if (( benchbase_status != 0 )); then

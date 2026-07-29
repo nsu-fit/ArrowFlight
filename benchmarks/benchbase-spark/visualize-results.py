@@ -3,6 +3,7 @@ import argparse
 import csv
 import html
 import json
+import math
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -125,6 +126,54 @@ def metadata_for(run_dir):
         if path.exists():
             return read_json(path)
     return {}
+
+
+def prometheus_counter_totals(metrics_dir, phase, metric_name):
+    total = 0.0
+    found = False
+    for path in metrics_dir.glob(f"{phase}-*.prom"):
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.startswith(metric_name):
+                continue
+            parts = line.rsplit(" ", 1)
+            if len(parts) != 2:
+                continue
+            try:
+                total += float(parts[1])
+                found = True
+            except ValueError:
+                continue
+    return total if found else None
+
+
+def flight_delivery_timing(results_dir):
+    metrics_dir = results_dir / "flight-metrics"
+    if not metrics_dir.exists():
+        return None
+    query_before = prometheus_counter_totals(
+        metrics_dir, "before", "arrowflight_parquet_query_duration_seconds_sum"
+    )
+    query_after = prometheus_counter_totals(
+        metrics_dir, "after", "arrowflight_parquet_query_duration_seconds_sum"
+    )
+    backpressure_before = prometheus_counter_totals(
+        metrics_dir, "before", "arrowflight_flight_backpressure_seconds_total"
+    )
+    backpressure_after = prometheus_counter_totals(
+        metrics_dir, "after", "arrowflight_flight_backpressure_seconds_total"
+    )
+    if None in (query_before, query_after, backpressure_before, backpressure_after):
+        return None
+    total_seconds = max(0.0, query_after - query_before)
+    rpc_seconds = max(0.0, backpressure_after - backpressure_before)
+    if total_seconds <= 0:
+        return None
+    rpc_seconds = min(rpc_seconds, total_seconds)
+    return {
+        "total_seconds": total_seconds,
+        "rpc_seconds": rpc_seconds,
+        "other_seconds": total_seconds - rpc_seconds,
+    }
 
 
 def metric_from_last(rows, column):
@@ -396,6 +445,7 @@ def svg_query_latency_chart(flight_rows, direct_rows, expected_query_ids=None):
 </section>
 """
 
+
     width = 1120
     height = 430
     pad_left = 72
@@ -478,6 +528,50 @@ def svg_query_latency_chart(flight_rows, direct_rows, expected_query_ids=None):
     <text x="18" y="{height/2:.1f}" text-anchor="middle"
           transform="rotate(-90 18 {height/2:.1f})">average query execution time, ms</text>
   </svg>
+</section>
+"""
+
+
+def flight_delivery_pie_chart(timing):
+    if not timing:
+        return """
+<section>
+  <h2>Flight RPC Delivery Time</h2>
+  <p class="subtle">No before/after Flight metrics snapshots were captured for this run.</p>
+</section>
+"""
+    total = timing["total_seconds"]
+    rpc = timing["rpc_seconds"]
+    other = timing["other_seconds"]
+    rpc_percent = rpc / total * 100
+    radius = 104
+    circumference = 2 * math.pi * radius
+    rpc_length = circumference * rpc / total
+    other_length = circumference - rpc_length
+    return f"""
+<section>
+  <h2>Flight RPC Delivery Time</h2>
+  <p class="subtle">Server query service time accumulated across all Flight nodes.
+  RPC delivery is time blocked by Flight flow control; it is not raw wire time.</p>
+  <div class="grid2">
+    <svg viewBox="0 0 300 240" role="img" aria-label="Flight RPC delivery time share">
+      <circle cx="120" cy="120" r="{radius}" fill="none" stroke="#e5e7eb" stroke-width="44"/>
+      <circle cx="120" cy="120" r="{radius}" fill="none" stroke="#2563eb" stroke-width="44"
+        stroke-dasharray="{rpc_length:.3f} {other_length:.3f}" transform="rotate(-90 120 120)"/>
+      <text x="120" y="114" text-anchor="middle" style="font-size:24px; font-weight:700">{rpc_percent:.1f}%</text>
+      <text x="120" y="136" text-anchor="middle">RPC delivery wait</text>
+    </svg>
+    <div>
+      <h3>Time breakdown</h3>
+      <table>
+        <tbody>
+          <tr><th>RPC delivery wait</th><td>{fmt(rpc)} s ({rpc_percent:.1f}%)</td></tr>
+          <tr><th>Other server query work</th><td>{fmt(other)} s ({100-rpc_percent:.1f}%)</td></tr>
+          <tr><th>Total server query time</th><td>{fmt(total)} s</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
 </section>
 """
 
@@ -717,6 +811,7 @@ def build_report(results_dir, base, output):
   {cards(run)}
   {run_context(run["summary"], run["config"], run["rows"], run["dir"].name)}
   {settings_section(metadata)}
+  {flight_delivery_pie_chart(flight_delivery_timing(run["dir"]))}
   {svg_line_chart(run["rows"], [LAT_AVG, LAT_P95, LAT_MAX], "Latency", "ms")}
   {svg_line_chart(run["rows"], [THROUGHPUT], "Throughput", "req/s")}
   {query_table(run["query_rows"])}
