@@ -273,7 +273,7 @@ init_machine_result() {
     --hdfs-benchmark-path "${HDFS_BENCHMARK_PATH}" \
     --hdfs-block-size-bytes "${HDFS_BLOCK_SIZE_BYTES}" \
     --hdfs-replication "1" \
-    --java-opts "${JAVA_OPTS:--Xmx2g}" \
+    --java-opts="${JAVA_OPTS:--Xmx2g}" \
     --flight-source-host "${FLIGHT_SOURCE_HOST}" \
     --flight-source-port "${FLIGHT_SOURCE_PORT}" \
     --flight-batch-size "${FLIGHT_BATCH_SIZE_EFFECTIVE:-${FLIGHT_BATCH_SIZE}}" \
